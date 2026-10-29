@@ -1587,21 +1587,57 @@ describe('a handoff never promises what is not there', () => {
      * cannot carry ticks and both end labels.
      */
     /*
-     * Still a ladder, and still ungated on baseline or density -- it simply
-     * has a rung above it now (the price column at hero and large), so the
-     * explain branch is a continuation rather than the opening `{`.
+     * ── It is no longer a ladder, and the ladder was the defect ───────────
+     *
+     * This asserted the ladder's shape -- `work === 'explain' ? (` as a
+     * continuation rung -- and that assertion was pinning the thing in
+     * place. Mutually exclusive rungs mean a record with a price AND a
+     * record gap draws exactly one of them, with the other unreachable
+     * without opening the record, and which one you got was invisible from
+     * the outside. Measured on the live field of 26 cards: 11 drew gaps, 8
+     * drew a sparkline, 7 drew nothing, 0 drew the shared chart and 0
+     * offered a second visual.
+     *
+     * The rungs are pages of the shared pager now. What this case was
+     * actually about survives unchanged -- every card gets a visual, ungated
+     * on baseline weight and ungated on density -- and is asserted on the
+     * panel list instead of on the `?:` chain.
      */
-    expect(ws).toContain("work === 'explain' ? (")
+    expect(ws).toContain("key: 'gaps'")
+    expect(ws).toContain("key: 'size'")
+    expect(ws).toContain("key: 'price'")
+    expect(ws).toContain("key: 'path'")
+    expect(ws).toContain('<PanelCarousel')
     /*
      * One deliberate density gate, which is the opposite of the two this case
      * removed. Those suppressed a visual that had something to draw. This one
-     * chooses BETWEEN visuals on the smallest tile, where there is room for
-     * exactly one: the share-of-book bar is the object this product draws most
-     * -- every lens has one -- so at compact the price takes the slot, being
-     * the one object that differs from the tile above.
+     * chooses BETWEEN visuals on the smallest tile: the share-of-book bar is
+     * the object this product draws most -- every lens has one -- so at
+     * compact it does not take a page, and the price is the one object that
+     * differs from the tile above.
      */
     expect(ws).toContain("outcome === 'open' && size !== 'compact'")
-    expect(ws).toContain('drawsSpark')
+    /*
+     * And the price is the SHARED chart, not a second smaller drawing of the
+     * same data. `TileSparkline` had no price axis, no horizon chips, no
+     * anchor marker, its caption above the line rather than beside the
+     * percentage, an 11px readout against 18, and a stroke that scaled with
+     * the SVG so the line changed weight along its own path. Four lenses
+     * drew `TilePriceChart` and this one drew that, one tab away -- which is
+     * the exact complaint that made `TilePriceChart` shared in the first
+     * place, reported again about this lens.
+     */
+    expect(ws).toContain("import { TilePriceChart } from '../desktop/TilePriceChart'")
+    expect(ws).toContain('<TilePriceChart')
+    expect(ws).not.toContain('<TileSparkline')
+    /*
+     * The box is floored to the tallest page and the page is out of flow, so
+     * turning a page cannot resize the card. `overflow-hidden` is not enough
+     * and the Ideas grid measured why: clipping governs painting, not
+     * intrinsic sizing, and paging grew four of its cards by 39px.
+     */
+    expect(ws).toContain('style={{ minHeight: box }}')
+    expect(ws).toContain("className=\"absolute inset-0 flex min-h-0 flex-col justify-center overflow-hidden\"")
     const visual = src('components/decisions-v2/DecisionVisual.tsx')
     expect(visual).toContain('const known = from != null')
     expect(visual).toContain('compact?: boolean')

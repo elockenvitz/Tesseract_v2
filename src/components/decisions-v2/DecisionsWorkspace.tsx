@@ -46,8 +46,19 @@ import { DecisionDetailPane } from './DecisionDetail'
 import {
   DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileReason, TileLead,
   TileMeta, TileFigure, sizeByRecency, GallerySkeleton, type TileSize,
-  TileVisualSlot, TileAction as ShelfAction, TileSparkline,
+  /* `TileVisualSlot` went with the ladder it wrapped: the carousel's box
+     reserves the height now, and reserving it twice put a fixed-height slot
+     inside a floored one. */
+  TileAction as ShelfAction,
+  /* `TileSparkline` is no longer imported here -- see `PanelCarousel`. It
+     stays in `DesktopTile` for any surface that genuinely wants a 48px mark
+     rather than a chart; this lens does not. */
 } from '../desktop/DesktopTile'
+/* The shared price chart, which is what the other four lenses draw. */
+import { TilePriceChart } from '../desktop/TilePriceChart'
+/* The shared pager, so paging a decision card is the same gesture as paging
+   an Ideas card -- same control, same place, same words. */
+import { VisualPager } from '../desktop/VisualPager'
 import { EYEBROW } from '../desktop/DesktopModule'
 import {
   openDashboardFocus, type RailCard,
@@ -935,14 +946,43 @@ function DecisionTile({
      the fill", "after this fill". Passing "Filled" produced "Price since
      Filled" and the unreadable "this is not a since-Filled move". */
   const priceAnchorLabel = d.execution?.completedAt ? 'fill' : 'decision'
-  const drawsPrice = big && priceAnchor != null && !!d.symbol
+  /* `drawsPrice` is gone. It required an anchor, which is what kept the slot
+     off the two COIN heroes entirely, and it required `big`, which is what
+     kept the shared chart out of every small card. `priceSlot` and
+     `hasSeries` below replace it and say which of the two they mean. */
   /* Whether the track is this tile's one visual. Named once, because the
      visual slot and the figures strip have to agree: what the track draws,
      the words stop saying. */
   const drawsPath = big && objectCandidates.path
-  /* The small-tile fallback: a name with stored closes always has a line
-     worth drawing, and below `large` this lens used to draw nothing at all. */
-  const drawsSpark = !batched && !!d.symbol && closes.length >= 2
+  /*
+   * ── A drawable series, and a slot to put it in ───────────────────────────
+   *
+   * `drawsSpark` was the small-tile fallback at the BOTTOM of a ladder, so a
+   * card with anything else to draw never showed a price. It is now one page
+   * of a carousel rather than a last resort, and the name says what it is:
+   * whether there is a series at all.
+   */
+  const hasSeries = !batched && !!d.symbol && closes.length >= 2
+  /*
+   * At hero and large the price column is the composition -- the record on
+   * the left, the price on the right -- so the slot is drawn for any single
+   * name even with nothing to put in it, and `TilePriceChart`'s `empty` node
+   * says which name and why. That is the two COIN heroes, which stood 233px
+   * tall around the bare words "No dated prices since this decision" with no
+   * drawn slot at all.
+   */
+  const priceSlot = hasSeries || (big && !batched && !!d.symbol)
+
+  /*
+   * ── Which page of the carousel is showing ────────────────────────────────
+   *
+   * Declared here, above the `big` branch, because that branch returns early
+   * and a hook cannot live inside it. Clamped at render rather than reset by
+   * an effect: `closes` arriving or failing changes the panel COUNT after the
+   * card has painted, and an index past the end would blank the picture --
+   * the same reasoning as the Ideas grid, which hit it first.
+   */
+  const [panel, setPanel] = useState(0)
 
   /*
    * ── A composed tile at hero and large, not the stack with a chart under it ─
@@ -975,6 +1015,67 @@ function DecisionTile({
     /* Two decimals, and a label that says which quantity it is. "1.0%
        target" and "+1.00% change" were a weight and a DIFFERENCE of weights
        wearing the same unit -- the change is percentage POINTS. */
+    /*
+     * ── The pages of the right column, in the order the ladder tried them ──
+     *
+     * The old chain was `drawsPrice → sizes → path → bare text`, and
+     * `drawsPrice` required an ANCHOR -- a fill, or failing that a decision
+     * date. That is what decided the lead, not the mere existence of a
+     * symbol, and it has to stay that way: an undecided request has no fill,
+     * so "the price since the fill" is not a question it can answer, while
+     * "6.1% held against 6.4% asked for" is the question itself.
+     *
+     * A first pass here drew the price slot for any single name and put it
+     * first, which silently demoted the sizing rail on exactly those cards.
+     * So the lead is still the anchor: anchored records lead with the price,
+     * un-anchored ones lead with their own object and carry the price behind
+     * it. Nothing is unreachable either way, which is the point.
+     */
+    const pricePanel = {
+      key: 'price', tab: 'Price', label: 'the price',
+      node: (
+        <PriceColumn
+          symbol={d.symbol!}
+          anchorISO={priceAnchor}
+          anchorLabel={priceAnchorLabel}
+          height={size === 'hero' ? 200 : 168}
+          points={closes}
+          isLoading={closesLoading}
+          error={closesError}
+        />
+      ),
+    }
+    const recordPanels = [
+      ...(objectCandidates.sizes ? [{
+        key: 'size', tab: 'Size', label: 'the size being asked for',
+        node: (
+          <DecisionSize
+            from={d.baselineWeight!}
+            to={d.sizingWeight!}
+            requestedAt={d.requestedAt}
+            decidedAt={d.decidedAt}
+            open
+          />
+        ),
+      }] : []),
+      ...(drawsPath ? [{
+        key: 'path', tab: 'Path', label: 'how long each step took',
+        node: (
+          <DecisionPath
+            requestedAt={d.requestedAt}
+            decidedAt={d.decidedAt}
+            executedAt={d.execution?.completedAt ?? null}
+            resolved={outcome !== 'open'}
+          />
+        ),
+      }] : []),
+    ]
+    const bigPanels = !priceSlot
+      ? recordPanels
+      : priceAnchor != null
+        ? [pricePanel, ...recordPanels]
+        : [...recordPanels, pricePanel]
+
     const metrics: { cap: string; val: React.ReactNode }[] = []
     if (e?.targetWeight != null) {
       metrics.push({ cap: 'Target weight', val: <>{e.targetWeight.toFixed(2)}%</> })
@@ -1258,47 +1359,44 @@ function DecisionTile({
             )}
           </div>
 
-          {/* ── The price ────────────────────────────────────────────────── */}
+          {/*
+            ── The price, and the record's own objects beside it ───────────
+
+            This was a ladder of four mutually exclusive rungs, so a decision
+            that had both a price AND an unanswered size, or both a price and
+            a requested-to-filled path, drew exactly one of them and the
+            other was unreachable without opening the record. Measured on the
+            live field, no tile in this lens drew the shared chart and none
+            offered a second visual, while the Ideas field next door offered
+            45 of them.
+
+            The rungs become pages of the shared pager, in the order they
+            used to be tried -- so whatever each card led with before, it
+            still leads with, and the rest is now one press away.
+          */}
           <div className="flex min-w-0 flex-1 flex-col justify-center">
-            {drawsPrice ? (
+            <PanelCarousel
+              testId="decision-visuals"
+              index={panel}
+              onChange={setPanel}
               /* Taller than the left column needs, deliberately: the record
                  stops after four short rows and the remaining height was
                  empty ground. The chart is the one element here that gets
                  better with vertical room -- it is where the price detail
                  lives -- so it takes the slack instead of the padding. */
-              <PriceColumn
-                symbol={d.symbol!}
-                anchorISO={priceAnchor!}
-                anchorLabel={priceAnchorLabel}
-                height={size === 'hero' ? 200 : 168}
-                points={closes}
-                isLoading={closesLoading}
-                error={closesError}
-              />
-            ) : outcome === 'open' && d.sizingWeight != null && d.baselineWeight != null ? (
-              /* An unanswered request is about the SIZE being asked for, not
-                 about a price since a fill that has not happened. */
-              <DecisionSize
-                from={d.baselineWeight}
-                to={d.sizingWeight}
-                requestedAt={d.requestedAt}
-                decidedAt={d.decidedAt}
-                open
-              />
-            ) : drawsPath ? (
-              <DecisionPath
-                requestedAt={d.requestedAt}
-                decidedAt={d.decidedAt}
-                executedAt={d.execution?.completedAt ?? null}
-                resolved={outcome !== 'open'}
-              />
-            ) : (
-              /* No dated series and no intervals: say so rather than draw a
-                 shape. An empty panel here is information. */
-              <div className="text-[10px] text-gray-400">
-                {d.symbol ? 'No dated prices since this decision' : 'No single price series for a batch'}
-              </div>
-            )}
+              /* Same rule as the stacked body: the chart's height is
+                 reserved where the chart is one of the pages. */
+              box={priceSlot ? (size === 'hero' ? 200 : 168) + CHART_CHROME : 72}
+              panels={bigPanels}
+              /* A batch has no one price series and may have no intervals
+                 either: say so rather than draw a shape. An empty panel here
+                 is information. */
+              empty={
+                <div className="text-[10px] text-gray-400">
+                  {d.symbol ? 'No dated prices since this decision' : 'No single price series for a batch'}
+                </div>
+              }
+            />
           </div>
         </div>
       </DesktopTile>
@@ -1780,104 +1878,137 @@ function DecisionTile({
         empty right column means "we cannot date this", never a line starting
         wherever the cache happens to begin.
       */}
-      {drawsPrice ? (
-        <PriceColumn
-          symbol={d.symbol!}
-          anchorISO={priceAnchor!}
-          anchorLabel={priceAnchorLabel}
-          points={closes}
-          isLoading={closesLoading}
-          error={closesError}
-        />
-      ) : drawsPath ? (
-        <TileVisualSlot size={size}>
-          <DecisionPath
-            requestedAt={d.requestedAt}
-            decidedAt={d.decidedAt}
-            executedAt={d.execution?.completedAt ?? null}
-            resolved={outcome !== 'open'}
-          />
-        </TileVisualSlot>
-      ) : work === 'explain' ? (
-        <div className="mt-1">
-          <RecordGaps
-            requested={d.requestedAt != null}
-            sized={d.sizingWeight != null || d.sizingShares != null}
-            decided={d.decidedAt != null}
-            explained={provenanceOf(d.decisionNote) === 'human'}
-            // Only outcomes that call for a trade have an execution to miss.
-            executed={outcome === 'accepted' ? d.execution?.completedAt != null : null}
-            compact
-          />
-        </div>
-      ) : outcome === 'open' && size !== 'compact'
-          && d.sizingWeight != null && d.baselineWeight != null ? (
+      {/*
+        ── The same ladder, as pages ──────────────────────────────────────
+
+        Below `large` this was five mutually exclusive rungs ending in a
+        sparkline, and the sparkline was the LAST of them -- so a card with
+        a record gap or a sizing question never showed a price, and a card
+        that showed a price was one with nothing else to say. Measured on the
+        live field of 26 tiles: 11 drew record gaps, 8 drew a sparkline, 7
+        drew nothing, and none offered a second visual.
+
+        The rungs keep their precedence as the page ORDER, so each card
+        still leads with what it led with and the rest is one press away.
+      */}
+      <PanelCarousel
+        testId="decision-visuals"
+        index={panel}
+        onChange={setPanel}
         /*
-          The rail earns its space only where it draws a real change.
-
-          `from → to` on an undecided request is the question itself: what the
-          book holds against what is being asked for. Everywhere else it was a
-          wide band restating one number the line above already carries -- and
-          on a committed decision the figures are what was actually executed,
-          which the rail cannot draw. Those cards are denser for its absence.
-
-          Not at compact. A share-of-book bar is the object this product draws
-          most -- every lens has one, several have two -- so on the smallest
-          tile, where there is room for exactly one visual, it is the least
-          informative thing that could occupy it. The price goes there instead:
-          it is the object that actually differs from the tile above.
+          `flex-1`, so the carousel is the element that takes a row's spare
+          height. A gallery row is as tall as its tallest card, and without
+          this the box sat at its floor while the difference went to padding
+          -- measured on the live field, a 65px plot inside a 370px card. The
+          chart is in `fill` mode, so the box growing is the plot growing.
         */
-        <div className="mt-1">
-          <DecisionSize
-            from={d.baselineWeight}
-            to={d.sizingWeight}
-            requestedAt={d.requestedAt}
-            decidedAt={d.decidedAt}
-            open
-            compact
-          />
-        </div>
-      ) : drawsSpark ? (
+        className="mt-1.5 min-h-0 flex-1"
         /*
-          ── The fallback that used to be nothing ──────────────────────────
+          ── Reserve the chart's height only where a chart is a page ────────
 
-          Below `large` this ladder ended in `null`, so a decision with no
-          gaps in its record, no intervals to draw and no sizing question --
-          which is most committed decisions -- rendered as text over text. A
-          run of them is what reads as "no variety among the smaller cards",
-          and the repetition is real: the tiles genuinely were identical in
-          structure and differed only in the words.
+          The box is floored to the tallest page so that turning one never
+          relayouts the field, and the chart is comfortably the tallest page
+          there is. But a floor derived from the chart was being applied to
+          cards that have no chart at all -- a gaps-only record reserved
+          125px for a drawing of about 50, and measured on the live field
+          that put 93px onto cards that gained nothing for it.
 
-          A price path is the one object that differs per name, and this lens
-          already holds the series -- `DecisionTile` reads it once for the
-          headline and the big chart, so a small tile costs no extra request.
+          `RecordGaps` and `DecisionSize` are a track and two labels, so 56
+          holds either of them with room. The reserved height is still
+          identical across the pages a given card actually has, which is the
+          property that matters.
         */
-        <div className="mt-1.5">
-          {/*
-            ── 22px is a rule, not a chart ─────────────────────────────────
+        box={hasSeries ? (size === 'compact' ? 64 : 80) + CHART_CHROME : 56}
+        panels={[
+          ...(work === 'explain' ? [{
+            key: 'gaps', tab: 'Record', label: 'what the record is missing',
+            node: (
+              <RecordGaps
+                requested={d.requestedAt != null}
+                sized={d.sizingWeight != null || d.sizingShares != null}
+                decided={d.decidedAt != null}
+                explained={provenanceOf(d.decisionNote) === 'human'}
+                // Only outcomes that call for a trade have an execution to miss.
+                executed={outcome === 'accepted' ? d.execution?.completedAt != null : null}
+                compact
+              />
+            ),
+          }] : []),
+          ...(outcome === 'open' && size !== 'compact'
+            && d.sizingWeight != null && d.baselineWeight != null ? [{
+            key: 'size', tab: 'Size', label: 'the size being asked for',
+            /*
+              The rail earns its space only where it draws a real change.
 
-            These heights were chosen when this branch existed only to stop
-            the small cards being text over text -- any mark that differed
-            per name was an improvement on none. Measured in the lens, a
-            compact decision tile is 260px tall and was spending 22 of them
-            on its only drawing: a 429px-wide hairline in which no move is
-            legible and the anchor cannot be placed. Reported as "charts are
-            too narrow" alongside the big tiles' width.
+              `from → to` on an undecided request is the question itself:
+              what the book holds against what is being asked for.
+              Everywhere else it was a wide band restating one number the
+              line above already carries -- and on a committed decision the
+              figures are what was actually executed, which the rail cannot
+              draw.
 
-            48 and 56 are what the same card sizes get elsewhere on the
-            desktop -- Research's compacts draw 65px plots -- and the card
-            has the room: the figure rows above it are fixed, so this comes
-            out of slack, not out of another element.
-          */}
-          <TileSparkline
-            points={closes}
-            anchorISO={priceAnchor}
-            label={`Since the ${priceAnchorLabel}`}
-            height={size === 'compact' ? 48 : 56}
-            compact={size === 'compact'}
-          />
-        </div>
-      ) : null}
+              Still not at compact. A share-of-book bar is the object this
+              product draws most, so on the smallest tile it is the least
+              informative thing that could take the one slot. The price goes
+              there instead: it is the object that actually differs from the
+              tile above.
+            */
+            node: (
+              <DecisionSize
+                from={d.baselineWeight}
+                to={d.sizingWeight}
+                requestedAt={d.requestedAt}
+                decidedAt={d.decidedAt}
+                open
+                compact
+              />
+            ),
+          }] : []),
+          ...(hasSeries ? [{
+            key: 'price', tab: 'Price', label: 'the price since the decision',
+            /*
+              ── The shared chart, not a sparkline reduction of it ─────────
+
+              `TileSparkline` drew a visibly different object from the one
+              every other lens draws: no price axis, no horizon chips, no
+              anchor marker, the caption above the line instead of beside the
+              percentage, an 11px readout instead of 18px, and a stroke that
+              scales with the SVG so the line changed weight along its own
+              path. Reported as the charts here not matching the other
+              lenses, and that is exactly what it was -- the same complaint
+              Portfolio's 20-30px micro sparkline drew, which is why
+              `TilePriceChart` exists at all.
+
+              Same component, same geometry, same ink, same horizon ladder.
+              The heights are what Research gives the same card sizes.
+            */
+            node: (
+              <TilePriceChart
+                points={closes}
+                anchorISO={priceAnchor}
+                anchorLabel={priceAnchorLabel}
+                fill
+                height={size === 'compact' ? 64 : 80}
+              />
+            ),
+          }] : []),
+        ]}
+      />
+      {/*
+        ── What the sparkline branch was, and why it is gone ──────────────
+
+        It began as the rung that stopped this lens drawing NOTHING below
+        `large`: "a decision with no gaps in its record, no intervals to draw
+        and no sizing question rendered as text over text." Then its heights
+        went 22 -> 48/56 because 22px of hairline is a rule, not a chart.
+
+        Both steps were right about the problem and wrong about the object.
+        The answer to "this card needs a price" is the price chart the other
+        four lenses draw, not a second, smaller drawing of the same data with
+        its own geometry -- which is the whole reason `TilePriceChart` was
+        pulled out of this lens in the first place. It is a carousel page now,
+        and it is the same chart.
+      */}
 
       {/*
         Enough of what happened to answer "does this deserve another look?".
@@ -1966,6 +2097,94 @@ function Empty() {
 }
 
 /**
+ * Everything `TilePriceChart` draws around its plot: the horizon chips, the
+ * date axis and the percentage readout.
+ *
+ * Duplicated from that component's own `CHROME` rather than exported from it,
+ * and the duplication is deliberate: there it is the floor the chart states
+ * for itself, here it is how tall a carousel box has to be to hold that
+ * chart without the page resizing when the reader moves between panels. Two
+ * callers, two reasons, one measurement -- if it drifts, the symptom is 2px
+ * of slack in a box, not a broken chart.
+ */
+const CHART_CHROME = 61
+
+/**
+ * The tile's visuals, as pages rather than as a ladder.
+ *
+ * ── Why a carousel and not a choice ──────────────────────────────────────
+ *
+ * Every visual on a decision card used to be a rung of one `?:` chain, so a
+ * record that had a price AND an unanswered size, or a price AND a
+ * requested-to-filled path, drew exactly one of them -- and which one was
+ * invisible from the outside. It looked as though charts came and went by
+ * name. Measured on the live field of 26 cards: 11 drew record gaps, 8 drew
+ * a sparkline, 7 drew nothing, 0 drew the shared chart and 0 offered a
+ * second visual, while the Ideas field next door offered 45.
+ *
+ * None of these drawings is droppable -- a gap in the record, the size being
+ * asked for and the price since the decision answer three different
+ * questions -- so the resolution is the one Ideas reached: page between them.
+ * Same shared `VisualPager`, same position under the picture, same words.
+ *
+ * ── The box is sized to the TALLEST panel, by a floor ────────────────────
+ *
+ * A read must not relayout the field under the reader's cursor. The panel is
+ * taken out of flow and the box carries a `minHeight`, so the box's own
+ * intrinsic height is identical whichever page is showing while `flex-1`
+ * still lets a tall row hand it more. `overflow-hidden` is NOT enough and
+ * that is worth keeping: clipping governs painting, not intrinsic sizing.
+ * The Ideas grid measured the cost of getting this wrong -- paging grew the
+ * card by 39px on four of its carousels, and the page grew with it.
+ */
+function PanelCarousel({
+  panels, index, onChange, box, testId, className, empty = null,
+}: {
+  panels: { key: string; tab: string; label: string; node: React.ReactNode }[]
+  index: number
+  onChange: (next: number) => void
+  /** The floor the box holds whichever page is showing. */
+  box: number
+  testId: string
+  className?: string
+  /** Drawn in place of the box when the record has no visual at all. */
+  empty?: React.ReactNode
+}) {
+  if (!panels.length) return <>{empty}</>
+  /* Clamped rather than reset: the panel COUNT changes after the card has
+     painted when `closes` arrive or fail, and an index past the end would
+     blank the picture. Derived, so there is no effect to miss. */
+  const shown = Math.min(Math.max(index, 0), panels.length - 1)
+
+  return (
+    <div className={clsx('flex min-h-0 min-w-0 flex-col', className)}>
+      <div
+        data-testid={testId}
+        data-panel={panels[shown].key}
+        data-panels={String(panels.length)}
+        data-no-portal
+        className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+        style={{ minHeight: box }}
+      >
+        <div className="absolute inset-0 flex min-h-0 flex-col justify-center overflow-hidden">
+          {panels[shown].node}
+        </div>
+      </div>
+      {/* Draws nothing for a single page -- a pager over one page is
+          furniture, and `VisualPager` already refuses it. */}
+      <VisualPager
+        className="mt-1.5 ml-auto"
+        labels={panels.map(p => p.tab)}
+        keys={panels.map(p => p.key)}
+        index={shown}
+        onChange={onChange}
+        describe={i => `Show ${panels[i].label}`}
+      />
+    </div>
+  )
+}
+
+/**
  * The tile's price column.
  *
  * Its own component so the fetch is a hook in a child rather than a
@@ -1980,7 +2199,11 @@ function PriceColumn({
   symbol, anchorISO, anchorLabel, height = 92, points, isLoading, error,
 }: {
   symbol: string
-  anchorISO: string
+  /* Nullable now. The column is drawn for any single name at hero and large,
+     including one with no anchor to measure from -- `TilePriceChart` already
+     refuses the since-claim and renders `empty` instead, which is what the
+     two COIN heroes needed. An un-anchored column is not a broken one. */
+  anchorISO: string | null
   anchorLabel: string
   height?: number
   /*

@@ -302,7 +302,26 @@ describe('the smaller tiles draw a price, not another paragraph', () => {
     })
     expect(smallOnes.length).toBeGreaterThan(0)
     for (const t of smallOnes) {
-      expect(within(t).getByTestId('tile-sparkline')).toBeInTheDocument()
+      /*
+        ── `tile-sparkline` -> `price-since-fill`, and that IS the subject ──
+
+        This asserted the small cards drew a sparkline, which was the right
+        assertion when the alternative was drawing nothing at all. It became
+        the wrong one once the sparkline was recognised as a second, lesser
+        price chart: no price axis, no horizon chips, no anchor marker, the
+        caption above the line rather than beside the percentage, an 11px
+        readout instead of 18px, and a stroke that scaled with the SVG so the
+        line changed weight along its own path. Four lenses drew
+        `TilePriceChart` and this one drew that, one tab away.
+
+        So the test keeps its name -- every tile below the lead has a visual
+        -- and now names the visual the rest of the product uses. The
+        carousel wraps it, hence the panel assertion beside it.
+      */
+      expect(within(t).getByTestId('price-since-fill')).toBeInTheDocument()
+      expect(within(t).getByTestId('decision-visuals')).toHaveAttribute('data-panel', 'price')
+      /* And it is no longer the sparkline anywhere in this lens. */
+      expect(within(t).queryByTestId('tile-sparkline')).not.toBeInTheDocument()
     }
   })
 
@@ -333,11 +352,81 @@ describe('the smaller tiles draw a price, not another paragraph', () => {
     ]
     gallery()
     render(<DecisionsWorkspace />)
-    for (const s of screen.getAllByTestId('tile-sparkline')) {
+    /* Same rewrite as the sibling test above: the subject is the refused
+       since-claim, not which of two charts refuses it. `TilePriceChart`
+       carries the same `data-reaches` contract and says "Price chart"
+       instead of naming a window it does not have. */
+    for (const s of screen.getAllByTestId('price-since-fill')) {
       expect(s).toHaveAttribute('data-reaches', 'false')
-      expect(s).toHaveTextContent(/price history/i)
+      expect(s).toHaveTextContent(/price chart/i)
       expect(s.textContent).not.toMatch(/since the fill/i)
     }
+  })
+
+  it('offers the record’s own object as a page rather than instead of the price', () => {
+    /*
+     * The defect this carousel exists for. Every visual on a decision card
+     * was a rung of one `?:` chain, so a record that owed a reason AND had a
+     * drawable series showed the gaps and the price was unreachable without
+     * opening the record -- and which one you got was invisible from the
+     * outside, so it read as charts coming and going by name.
+     *
+     * Measured on the live field of 26 cards before this: 11 drew record
+     * gaps, 8 drew a sparkline, 7 drew nothing, 0 drew the shared chart and
+     * 0 offered a second visual.
+     */
+    gallery()
+    // A record with no written reason owes one, which is what puts the gaps
+    // drawing on the card; the closes are still there to be paged to.
+    decisions = decisions.map(d => ({ ...d, decisionNote: null, contextNote: null }))
+    render(<DecisionsWorkspace />)
+    const small = screen.getAllByTestId('decision-tile')
+      .filter(t => ['medium', 'compact'].includes(t.getAttribute('data-size') ?? ''))
+    expect(small.length).toBeGreaterThan(0)
+    for (const t of small) {
+      const car = within(t).getByTestId('decision-visuals')
+      // Both pages exist, and the record's obligation still leads.
+      expect(Number(car.getAttribute('data-panels'))).toBeGreaterThanOrEqual(2)
+      expect(car).toHaveAttribute('data-panel', 'gaps')
+      // And the gesture is the shared one, named per page.
+      const tabs = within(t).getAllByTestId('visual-pager-tab')
+        .map(b => b.getAttribute('data-archetype'))
+      expect(tabs).toContain('price')
+    }
+  })
+
+  it('does not relayout the card when a page is turned', async () => {
+    /*
+     * A read must not move the field under the reader's cursor. The Ideas
+     * grid measured the cost of getting this wrong -- paging grew the card
+     * by 39px on four of its carousels -- so the box is floored to the
+     * tallest page and the page itself is taken out of flow.
+     *
+     * jsdom reports no geometry, so this asserts the MECHANISM: the floor is
+     * on the box and the page is absolutely positioned inside it. A height
+     * assertion here would pass on a 0x0 element and observe nothing.
+     */
+    gallery()
+    decisions = decisions.map(d => ({ ...d, decisionNote: null, contextNote: null }))
+    render(<DecisionsWorkspace />)
+    /* A small tile, because the hero's right column already leads with the
+       price and there would be no page change to observe. */
+    const tile = screen.getAllByTestId('decision-tile')
+      .filter(t => ['medium', 'compact'].includes(t.getAttribute('data-size') ?? ''))[0]
+    const car = within(tile).getByTestId('decision-visuals')
+    expect(car.style.minHeight).toMatch(/^\d+px$/)
+    expect(Number.parseInt(car.style.minHeight, 10)).toBeGreaterThan(60)
+    expect(car.firstElementChild).toHaveClass('absolute', 'inset-0')
+
+    // Turning the page swaps which object is mounted, and nothing else.
+    const before = car.getAttribute('data-panel')
+    expect(before).toBe('gaps')
+    const priceTab = within(tile).getAllByTestId('visual-pager-tab')
+      .find(b => b.getAttribute('data-archetype') === 'price')!
+    await userEvent.setup().click(priceTab)
+    const after = within(tile).getByTestId('decision-visuals')
+    expect(after.getAttribute('data-panel')).toBe('price')
+    expect(after.style.minHeight).toBe(car.style.minHeight)
   })
 })
 
