@@ -182,17 +182,54 @@ describe('the scan', () => {
     expect(screen.getByText('No thesis on file')).toBeInTheDocument()
 
     const tile = screen.getByTestId('research-tile')
-    // The missing structure is drawn: three named parts, each with a dash.
-    for (const part of ['Thesis', 'Where we differ', 'Risks to thesis']) {
-      expect(tile).toHaveTextContent(part)
-    }
-    // And what IS on file is named, so the card never reads as "we hold
-    // nothing on this name".
-    expect(tile).toHaveTextContent('6 research on file')
+    /*
+      ── Rewritten: both halves were the eyebrow again ────────────────────
+
+      This asserted the three part names and "6 research on file". With no
+      core section written, naming Thesis / Where we differ / Risks to
+      thesis is "No thesis on file" in seven more words -- the chip is
+      directly above them on the same card -- and the count has a home in
+      the weight chip's panel, as a "Research on file" row.
+
+      What this test is actually about is in its own name: the card must not
+      read as "we hold nothing on this name". That survives, and it is now
+      asserted on the thing that carries it rather than on a sentence. The
+      checklist form is still guarded, where SOME sections are written, by
+      the sibling test below -- there it states the remaining work, which
+      the chip cannot.
+    */
+    expect(screen.getByText('No thesis on file')).toBeInTheDocument()
+    expect(tile.textContent).not.toMatch(/no Where we differ/i)
+    expect(tile.textContent).not.toMatch(/research on file/i)
+    /* The price slot is drawn in the freed room rather than left as a hole. */
+    expect(within(tile).getByTestId('research-price-empty')).toBeInTheDocument()
 
     // The tile is a choice; the verb belongs to the expanded workspace.
     await user.click(tile)
     expect(opened.at(-1)!.target.objectId).toBe('a-amzn')
+  })
+
+  it('names the parts that are left when some of the case is written', () => {
+    /*
+      The other side of the test above, and the distinction the removal
+      rests on. With nothing written, naming the three parts is the eyebrow
+      chip in longer words. With SOME written, the checklist says what is
+      LEFT -- which section exists and which does not -- and the chip
+      ("Incomplete thesis") cannot carry that. So it stays.
+    */
+    scan = [subject({
+      thesisUpdatedAt: null, daysSinceReview: null,
+      evidenceCount: 2, sectionCount: 2, coreSectionCount: 1,
+      coreSections: ['thesis'],
+    })]
+    render(<ResearchWorkspace />)
+    const tile = screen.getByTestId('research-tile')
+    const facts = within(tile).getByTestId('research-tile-facts')
+    // The written one, and the two that are not, each named and marked.
+    expect(facts).toHaveTextContent('Thesis')
+    expect(facts).toHaveTextContent('Where we differ')
+    expect(facts).toHaveTextContent('written')
+    expect(facts).toHaveTextContent('—')
   })
 
   it('shows weight only where the name is actually held', () => {

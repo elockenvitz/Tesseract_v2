@@ -721,7 +721,9 @@ function SubjectTile({
             */}
           </div>
         ) : (
-          <div className="flex min-w-0 flex-1 flex-col">
+          /* Content-height, so the trailing chart takes the slack -- the
+             same correction as the two branches below. */
+          <div className="flex min-w-0 flex-col">
             <TileLead
               figure={subject.newSinceReview}
               label={<>new notes since<br />{age.sinceThe.replace(/^since /, '')}</>}
@@ -732,10 +734,14 @@ function SubjectTile({
                 {subject.newestEvidenceTitle}
               </p>
             )}
-            <TileMeta>
-              {arrivedDays != null && <span>newest {arrivedDays === 0 ? 'today' : `${arrivedDays}d ago`}</span>}
-              <span>{subject.evidenceCount} on file</span>
-            </TileMeta>
+            {/* `N on file` is gone -- the corner chip's panel carries it.
+                What stays is the one fact nothing else on this card says:
+                how recently the newest of those notes landed. */}
+            {arrivedDays != null && (
+              <TileMeta>
+                <span>newest {arrivedDays === 0 ? 'today' : `${arrivedDays}d ago`}</span>
+              </TileMeta>
+            )}
           </div>
         )
       ) : state === 'no-thesis' || state === 'incomplete-thesis' ? (
@@ -789,23 +795,41 @@ function SubjectTile({
             which is the horizontal space the stacked version was leaving
             empty to the right of every short line.
           */}
-          <div
-            data-testid="research-tile-facts"
-            className="flex min-w-0 flex-wrap items-baseline gap-x-5 gap-y-1 text-[11px] text-gray-500"
-          >
-            {(!subject.generated || big) && (
-              <MissingThesis present={subject.coreSections} size={size} />
-            )}
-            {/* No weight line here: the corner states it, names the book it
-                is in, and opens the rest. Saying it twice on one card is what
-                this pass removed. */}
-            {!!subject.generated?.liveIdeaCount && (
-              <span className="font-semibold text-gray-800 dark:text-gray-200">
-                {subject.generated.liveIdeaCount} open idea{subject.generated.liveIdeaCount === 1 ? '' : 's'}
-              </span>
-            )}
-            <span>{subject.evidenceCount ? `${subject.evidenceCount} research on file` : 'Nothing on file yet'}</span>
-          </div>
+          {/*
+            ── Gated, because the row can now be empty ─────────────────────
+
+            It used to be unconditional, and the thing guaranteeing it had
+            content was the "N research on file" span -- which was the
+            duplicative half. With that gone and `MissingThesis` silent on a
+            name with nothing written, a held no-thesis card would render an
+            empty 11px line box and the `gap-2` above it. The row draws when
+            it has a fact to carry.
+          */}
+          {((!subject.generated || big) && subject.coreSections.length > 0
+            || !!subject.generated?.liveIdeaCount) && (
+            <div
+              data-testid="research-tile-facts"
+              className="flex min-w-0 flex-wrap items-baseline gap-x-5 gap-y-1 text-[11px] text-gray-500"
+            >
+              {(!subject.generated || big) && (
+                <MissingThesis present={subject.coreSections} size={size} />
+              )}
+              {/* No weight line here: the corner states it, names the book it
+                  is in, and opens the rest. Saying it twice on one card is
+                  what the previous pass removed. */}
+              {/*
+                And no "N research on file" either. The corner chip's panel
+                carries a "Research on file" row with the same count, which
+                is where a reader goes for it -- and "Nothing on file yet"
+                was a third way of saying the absence the chip states.
+              */}
+              {!!subject.generated?.liveIdeaCount && (
+                <span className="font-semibold text-gray-800 dark:text-gray-200">
+                  {subject.generated.liveIdeaCount} open idea{subject.generated.liveIdeaCount === 1 ? '' : 's'}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Full width, and all the height the facts above did not use. At
               every size: this branch is where the smallest cards land, and
@@ -818,29 +842,59 @@ function SubjectTile({
                 anchorISO={subject.thesisUpdatedAt ?? null}
                 anchorLabel="review"
                 fill
-                height={size === 'hero' ? 190 : size === 'large' ? 160 : size === 'medium' ? 84 : 64}
+                /* The small sizes match the trailing chart's -- see the note
+                   there. The two must not disagree: this branch and that one
+                   land side by side in the same gallery row. */
+                height={size === 'hero' ? 190 : size === 'large' ? 160 : size === 'medium' ? 104 : 96}
               />
             </div>
           )}
         </div>
       ) : state === 'moved-since-review' ? (
         /* The move is the finding: the figure leads, the case's age beneath. */
-        <div className="flex min-w-0 flex-1 flex-col">
+        /*
+          ── No `flex-1`, and no footer to need it ─────────────────────────
+
+          This block was `flex-1` with its meta row pinned to the bottom by
+          `mt-auto`, which made it claim the card's whole slack -- while the
+          trailing chart, a `flex-1` sibling with a `minHeight` floor it
+          cannot go below, was pushed down and then spilled out of the tile.
+          Measured on the stale band at 1920x889: the chart started 164px
+          into a 260px tile and ended 28px PAST its bottom edge, which is the
+          "moved down and squished" in rows three and four.
+
+          The footer it was holding slack for is gone -- "14.2% held" is the
+          corner chip and "1 research on file" is that chip's panel -- so
+          the block is the height of its own text and the chart takes the
+          rest, exactly as it does on the no-thesis cards in row two.
+        */
+        <div className="flex min-w-0 flex-col">
           <TileLead
             figure={`${(subject.generated?.movePct ?? 0) >= 0 ? '+' : ''}${(subject.generated?.movePct ?? 0).toFixed(1)}`}
             unit="%"
             label={<>{age.sinceTheLines[0]}<br />{age.sinceTheLines[1]}</>}
             tone="review"
           />
-          <div className="mt-auto pt-3">
-            <TileMeta>
-              {subject.weightPct != null && <span>{subject.weightPct.toFixed(1)}% held</span>}
-              <span>{subject.evidenceCount} research on file</span>
-            </TileMeta>
-          </div>
         </div>
       ) : (
-        <div className="flex min-w-0 flex-1 flex-col">
+        /*
+          ── The band that was overflowing ────────────────────────────────
+
+          Same shape as the move branch above and the same fix: `flex-1` plus
+          an `mt-auto` footer, so the text claimed the slack and the chart
+          below it was pushed out of the card. This is the branch the whole
+          stale band lands in -- rows three and four of the gallery -- so it
+          is where the defect was reported.
+
+          The footer carried three facts and the card already carried all
+          three: "N research on file" is a row in the corner chip's panel,
+          "N% held" is the chip itself, and the review age is the eyebrow
+          figure beside it. `sectionCount` went with them rather than being
+          kept alone: a 27px row and its 12px gap to carry a count of thesis
+          headings is not a trade this card can make against its only chart.
+          The detail pane still states it.
+        */
+        <div className="flex min-w-0 flex-col">
           {big ? (
             <TileLead
               figure={subject.daysSinceReview ?? 0}
@@ -851,13 +905,6 @@ function SubjectTile({
           ) : (
             <TileReason>{whyItMatters(subject)}</TileReason>
           )}
-          <div className="mt-auto pt-3">
-            <TileMeta>
-              <span>{subject.evidenceCount} research on file</span>
-              {subject.sectionCount > 0 && <span>{subject.sectionCount} sections</span>}
-              {subject.weightPct != null && <span>{subject.weightPct.toFixed(1)}% held</span>}
-            </TileMeta>
-          </div>
         </div>
       )}
 
@@ -880,7 +927,24 @@ function SubjectTile({
             anchorISO={subject.thesisUpdatedAt ?? null}
             anchorLabel="review"
             fill
-            height={big ? 110 : size === 'medium' ? 84 : 64}
+            /*
+              ── Why the small sizes went up ────────────────────────────────
+
+              64px of plot was the reported "squished", and it was a real
+              mismatch rather than a preference: measured at 1920x889, the
+              `large` cards in row two drew 85-100px plots from their own box
+              while the compacts in rows three and four sat pinned at 64 --
+              same component, same width (455px tiles, 429px plots), a 6.7:1
+              aspect against row two's 4.3:1. A line that flat reads as a
+              different, lesser chart.
+
+              The room is the room the duplicative footer was using. Each of
+              these cards shed a 27px meta row and its 12px gap when "N
+              research on file · N sections · N% held" came off, and this is
+              where it goes -- so the card is no taller than it was before
+              that line was removed, and the chart is what grew.
+            */
+            height={big ? 110 : size === 'medium' ? 104 : 96}
             empty={
               <div
                 data-testid="research-price-empty"
@@ -947,11 +1011,23 @@ function MissingThesis({ present, size }: { present: string[]; size: TileSize })
       them, which is the half a reader needs -- not "something is missing" but
       which three things.
     */
-    return (
-      <span className={clsx('text-gray-500', big ? 'text-[12px]' : 'text-[11px]')}>
-        No {CORE_SECTIONS.map(k => SECTION_LABEL[k] ?? k).join(' · no ')}
-      </span>
-    )
+    /*
+      ── And now the one line goes too ──────────────────────────────────────
+
+      "No Thesis · no Where we differ · no Risks to thesis" was the last
+      survivor of a trio that said the same thing three times, and it is
+      still the eyebrow chip in longer words: the chip directly above it
+      reads "No thesis on file". Naming the three parts looked like it added
+      something -- not "something is missing" but which three things -- and
+      on a name with NOTHING written those three things are the whole thesis.
+      "No thesis" and "no thesis, no where we differ, no risks" are one fact.
+
+      The checklist below is untouched, and that is the distinction: with
+      some sections written it tells the reader what is LEFT, which the chip
+      cannot. With none written there is no remaining work to describe, only
+      the absence the chip already states.
+    */
+    return null
   }
 
   return (

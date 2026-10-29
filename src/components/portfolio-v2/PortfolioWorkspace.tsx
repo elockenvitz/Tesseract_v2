@@ -780,7 +780,11 @@ function PositionTile({
             is what the timeline draws. Both already existed in the frame and
             both went undrawn before this.
           */}
-          {(frame.thesisUpdatedAt || showScale || gap === 'no-framework') && (
+          {/* `|| gap === 'no-framework'` is gone from the gate with the
+              skeleton it was admitting: the row now has no third member, so
+              that clause would open an empty flex row and its `gap-3` on
+              exactly the cards it was meant to help. */}
+          {(frame.thesisUpdatedAt || showScale) && (
             <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2">
               {frame.thesisUpdatedAt && (
                 <div className="min-w-[180px] flex-1">
@@ -791,13 +795,11 @@ function PositionTile({
                   />
                 </div>
               )}
-              {showScale ? (
+              {showScale && (
                 <div className="min-w-[200px] flex-1">
                   <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
                 </div>
-              ) : gap === 'no-framework' ? (
-                <ThesisSkeleton />
-              ) : null}
+              )}
             </div>
           )}
 
@@ -1005,8 +1007,11 @@ function Empty({ message }: { message: string }) {
  * Every row is a dash by construction: this only renders for `no-framework`,
  * which is defined as having no core section written at all. It states a fact
  * the frame already proves rather than reading a field that does not exist.
+ *
+ * `THESIS_PARTS` is gone with `ThesisSkeleton`, its only reader -- see the
+ * note where that component was. The names it held are the three the eyebrow
+ * chip summarises as "No thesis on file".
  */
-const THESIS_PARTS = ['Thesis', 'Where we differ', 'Risks'] as const
 
 /**
  * ── Three rows of dashes said it three times ─────────────────────────────
@@ -1167,20 +1172,23 @@ function WeightChip({ position, active }: {
  * where every hero and large tile gets one rather than only the ones with no
  * written case -- and where it has the width to be read.
  */
-function ThesisSkeleton() {
-  return (
-    /*
-      "Nothing written" is gone: the eyebrow directly above it already reads
-      "No thesis on file", so the card opened by saying the same thing twice
-      in two different sets of words, in amber, on consecutive lines. What is
-      kept is the only part the eyebrow does not say -- WHICH parts are
-      missing -- and it keeps the amber, because that is the line now carrying
-      the condition.
-    */
-    <div className="flex items-baseline gap-2 text-[12px]">
-      <span className="min-w-0 truncate text-amber-700 dark:text-amber-500">
-        no {THESIS_PARTS.map(p => p.toLowerCase()).join(', no ')}
-      </span>
-    </div>
-  )
-}
+/*
+ * ── Retired, and both halves of its history are the same lesson ───────────
+ *
+ * It drew "Nothing written" over "no thesis, no where we differ, no risks".
+ * The first line went when the eyebrow above it was found to read "No thesis
+ * on file" already; the second has now gone for the same reason, one step
+ * later than it should have. Naming the three parts read as extra
+ * information -- not "something is missing" but which three things -- and on
+ * a name with no case at all those three things ARE the thesis. "No thesis
+ * on file" and "no thesis, no where we differ, no risks" are one fact in two
+ * sets of words, on consecutive lines, and Research was printing its own
+ * version of the same sentence on its own cards.
+ *
+ * Nothing replaces it in the slot. The eyebrow carries the condition and the
+ * space goes to the price chart below, which is the element on this card
+ * that gets better with room.
+ *
+ * Restoring it means restoring `THESIS_PARTS` with it -- which went too,
+ * because this was its only reader.
+ */

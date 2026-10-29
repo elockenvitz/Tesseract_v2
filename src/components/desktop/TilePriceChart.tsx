@@ -42,6 +42,18 @@ import { rangesFor, type RangeKey } from '../../lib/market-data/price-ranges'
  */
 const CHROME = 61
 
+/**
+ * How far past its asked-for `height` a filled plot may be stretched by the
+ * box it is measured in, before the bound kicks in.
+ *
+ * Three, because the widest legitimate gap measured on the live field is a
+ * compact tile (`height=64`) in a row sized by a `large` neighbour, which
+ * hands it about 100px -- a factor of 1.6. Three leaves that untouched and
+ * still caps a runaway at a height a reader could see rather than a page
+ * that grows without limit. See `H` below for why the bound is kept at all.
+ */
+const CEILING = 3
+
 /** One horizon chip. A real button, because the shelf's verbs are too. */
 function RangeChip({ label, on, onPick }: { label: string; on: boolean; onPick: () => void }) {
   return (
@@ -233,8 +245,32 @@ export function TilePriceChart({
    * Fill still does its job -- a chart in a short box shrinks to fit -- it
    * simply cannot inflate the box it is measuring.
    */
+  /*
+   * ── The ceiling is a safety net, not a size ──────────────────────────────
+   *
+   * This read `Math.min(height, …)`, so `height` was the floor (through
+   * `minHeight` on the block) AND the ceiling. One number doing both means a
+   * card that hands the chart MORE room than it asked for cannot use it.
+   *
+   * Measured on the Research field at 1920x889: a compact tile passes
+   * `height=64`, its chart block ended 13px above the bottom of the card with
+   * the plot pinned at 64px, while the `large` tiles in the row above -- same
+   * component, same mode, only a roomier `height` of 160 -- drew 85-100px
+   * plots from their measured box. The reported symptom was the compacts
+   * looking "squished" next to them, and the cause was the ceiling binding,
+   * not the floor.
+   *
+   * The ceiling still has a job. It is the second of two guards against the
+   * growth loop (the first is the SVG being `absolute inset-0`, which keeps
+   * the drawing out of its parent's measurement) and it is kept because
+   * either alone is fragile -- if some ancestor reintroduces a content-driven
+   * height, the ratchet is bounded rather than unbounded.
+   *
+   * So it becomes what it is: a bound, set well clear of any height a tile
+   * can legitimately give, rather than the plot's intended size.
+   */
   const H = fill
-    ? Math.min(height, Math.max(56, box.h > 0 ? box.h : height))
+    ? Math.min(height * CEILING, Math.max(56, box.h > 0 ? box.h : height))
     : height
   const min = Math.min(...w.series)
   const max = Math.max(...w.series)

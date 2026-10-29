@@ -537,16 +537,22 @@ describe('the tile drops prose that only restates itself', () => {
     // The sentence that repeated the ticker, the weight and the absent case.
     expect(tile.textContent).not.toMatch(/with no thesis behind it/i)
     /*
-      What it says instead: the absence, ONCE.
+      What it says instead: the absence, ONCE -- and the eyebrow is where.
 
-      This named the words "Nothing written", which were themselves the
-      eyebrow said again -- the card opened with "No thesis on file" and then
-      said "Nothing written" in amber on the next line. Removing the second
-      copy failed a test whose subject is that the absence is stated, not
-      which four words state it, so the assertion now names the part no
-      other element on the card carries: WHICH pieces are missing.
+      Rewritten twice, and the second time for the same reason as the first.
+      It originally named the words "Nothing written", which were the eyebrow
+      said again; that assertion was replaced with the parts list, "no
+      thesis, no where we differ, no risks", on the grounding that it carried
+      something the eyebrow did not -- WHICH pieces are missing.
+
+      That grounding was wrong on a card with nothing written, which is
+      exactly the fixture here: those three parts ARE the thesis, so the line
+      was "No thesis on file" in seven more words. The subject of this test
+      is that the absence is stated once, not which words state it, so it now
+      asserts the single statement and names both retired phrasings.
     */
-    expect(tile.textContent).toMatch(/no thesis, no where we differ, no risks/i)
+    expect(within(tile).getByText('No thesis on file')).toBeInTheDocument()
+    expect(tile.textContent).not.toMatch(/no thesis, no where we differ, no risks/i)
     expect(tile.textContent).not.toMatch(/Nothing written/i)
     // And the weight is still there, as the figure.
     expect(within(tile).getByTestId('position-weight')).toBeInTheDocument()
@@ -613,9 +619,12 @@ describe('the card stacks, and the chart runs full width', () => {
     frames = { 'a-1': { ...EMPTY_FRAME } }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     const tile = screen.getAllByTestId('position-tile')[0]
-    /* The absence, by the parts that are missing rather than by the line
-       that restated the eyebrow -- see the note on the sibling test. */
-    expect(tile.textContent).toMatch(/no thesis, no where we differ, no risks/i)
+    /* The absence stated once, by the eyebrow, and the parts line that used
+       to restate it gone -- see the note on the sibling test above for why
+       this assertion moved twice. The point this test is making is the
+       second clause: removing the line did not remove the chart. */
+    expect(within(tile).getByText('No thesis on file')).toBeInTheDocument()
+    expect(tile.textContent).not.toMatch(/no thesis, no where we differ, no risks/i)
     expect(within(tile).getByTestId('price-since-fill')).toBeInTheDocument()
   })
 

@@ -2079,13 +2079,120 @@ describe('the chart is not the element that yields', () => {
   })
 
   it('does not say "no thesis" twice on a position card', () => {
-    /* The eyebrow reads "No thesis on file" and the line under it read
-       "Nothing written", in amber, on consecutive rows. */
+    /*
+     * ── Rewritten, and the first version was half a guard ─────────────────
+     *
+     * It asserted two things: that "Nothing written" was gone, and that
+     * `THESIS_PARTS.map` -- the "no thesis, no where we differ, no risks"
+     * line -- had SURVIVED. The second half was wrong on its own terms. The
+     * eyebrow directly above reads "No thesis on file", and on a name with
+     * no case at all those three parts ARE the thesis, so that line was the
+     * eyebrow in longer words and this guard was pinning it in place.
+     *
+     * The subject was never which words state the absence. It is that the
+     * card states it ONCE, and the eyebrow is where. So the assertion is
+     * now that neither line is in the tile body, and both forms are named
+     * so a reinstatement of either is caught.
+     */
     const body = src('components/portfolio-v2/PortfolioWorkspace.tsx')
-    const skeleton = body.slice(body.indexOf('function ThesisSkeleton()'))
-    expect(skeleton.slice(0, 1200)).not.toContain('>Nothing written<')
-    /* The part the eyebrow does NOT say survives, and carries the tone. */
-    expect(skeleton.slice(0, 1200)).toContain('THESIS_PARTS.map')
+    /* The component is gone, so there is no slice to take -- the whole file
+       is the subject, and either string reappearing anywhere in it is the
+       regression. Rendered strings only: the notes recording the removal
+       necessarily discuss both, which is exactly how a previous guard in
+       this file came to pass on its own comment text. */
+    expect(body).not.toContain('>Nothing written<')
+    /*
+     * The JOINER, not the identifier. `not.toContain('THESIS_PARTS.map')`
+     * was the first version and an injection walked straight past it: the
+     * line was put back with an inline `['Thesis', …] as const` in place of
+     * the named constant, which renders the identical sentence. The guard
+     * has to name the rendered output, and `join(', no ')` is the piece
+     * that produces "no thesis, no where we differ, no risks" however the
+     * list reaching it is spelled.
+     */
+    expect(body).not.toContain("join(', no ')")
+    expect(body).not.toContain('function ThesisSkeleton()')
+    /* And the slot it sat in no longer admits an empty row. */
+    expect(body).not.toContain("|| gap === 'no-framework') && (")
+  })
+
+  it('leaves the Research card one statement of a missing case too', () => {
+    /*
+     * The same sentence, on the other lens: "No Thesis · no Where we differ
+     * · no Risks to thesis" under an eyebrow reading "No thesis on file".
+     * `MissingThesis` now returns null for a subject with nothing written
+     * and keeps the checklist only where some sections exist -- there it
+     * says what is LEFT, which the chip cannot.
+     */
+    const f = src('components/research-v2/ResearchWorkspace.tsx')
+    const fn = f.slice(f.indexOf('function MissingThesis('))
+    const nothingWritten = fn.slice(0, fn.indexOf('return (')) // the length-0 branch
+    expect(nothingWritten).toContain('present.length === 0')
+    expect(nothingWritten).toContain('return null')
+    /* The joined one-liner is gone from that branch. */
+    expect(nothingWritten).not.toContain("join(' · no ')")
+    /* The checklist, which is a different claim, is still drawn. */
+    expect(fn).toContain('CORE_SECTIONS.map(k => {')
+  })
+
+  it('states what is on file once, in the corner panel', () => {
+    /*
+     * "N research on file" appeared on the Research tile in three branches
+     * at once, while the weight chip's panel carries a "Research on file"
+     * row with the same count. The rendered copies go; the panel row stays.
+     */
+    const f = src('components/research-v2/ResearchWorkspace.tsx')
+    /*
+     * Every pattern here carries JSX punctuation, and that is deliberate: a
+     * bare `.not.toContain('Nothing on file yet')` failed the moment the
+     * note explaining the removal quoted the phrase it removed. That is the
+     * recurring defect in this file -- a guard a paragraph can satisfy, or
+     * in the negative case break -- and the fix is the same as last time:
+     * assert the rendered form, which prose cannot contain.
+     */
+    expect(f).not.toContain('research on file`}')
+    expect(f).not.toContain('} research on file</span>')
+    expect(f).not.toContain("'Nothing on file yet'}")
+    expect(f).not.toContain('} on file</span>')
+    /* The one home for it. */
+    expect(f).toContain("{ label: 'Research on file', value: String(subject.evidenceCount) }")
+  })
+
+  it('lets the chart take the room the footer gave up', () => {
+    /*
+     * The stale and moved branches were `flex-1` blocks with an `mt-auto`
+     * footer, so the text claimed the card's slack and the trailing chart --
+     * a `flex-1` sibling with a `minHeight` floor it cannot go below -- was
+     * pushed down and then spilled out. Measured at 1920x889: the chart
+     * started 164px into a 260px tile and ended 28px past its bottom edge,
+     * which is the "moved down and squished" in gallery rows three and four.
+     */
+    const f = src('components/research-v2/ResearchWorkspace.tsx')
+    /* No body in this file pins a footer to the bottom any more; `mt-auto`
+       was the mechanism in every one of them. */
+    expect(f).not.toContain('mt-auto pt-3')
+    /* And none of the four branches claims the slack the chart needs. */
+    expect(f).not.toContain('flex min-w-0 flex-1 flex-col"')
+  })
+
+  it('does not cap a filled plot at the size it asked for', () => {
+    /*
+     * `H = Math.min(height, …)` made `height` the floor AND the ceiling, so
+     * a compact tile handed more room than it asked for could not use it:
+     * measured on the Research field, the compacts sat pinned at 64px of
+     * plot while the `large` cards in the row above drew 85-100px from their
+     * own measured box -- same component, same 455px tile width.
+     *
+     * The bound is kept, because it is the second of two guards against the
+     * growth loop, and it is set clear of any height a tile can give.
+     */
+    const f = src('components/desktop/TilePriceChart.tsx')
+    expect(f).not.toContain('Math.min(height, Math.max(56')
+    expect(f).toContain('Math.min(height * CEILING')
+    const ceiling = Number(f.match(/^const CEILING = (\d+)$/m)?.[1] ?? 0)
+    expect(ceiling).toBeGreaterThanOrEqual(2)
+    /* The other guard is still the one doing the real work. */
+    expect(f).toContain("'absolute inset-0 h-full w-full'")
   })
 })
 
