@@ -374,7 +374,20 @@ export function TilePriceChart({
           pixels every resize.
         */}
         <div className={clsx('flex min-w-0 flex-1 flex-col', fill && 'min-h-0')}>
-        <div ref={boxRef} className={clsx('relative min-w-0', fill && 'min-h-0 flex-1')}>
+        {/*
+          ── The floor, now that the plot contributes no height ──────────────
+
+          In fill mode the plot is taken out of flow below, so this box's only
+          height comes from `flex-1`. Where the row is short that is near
+          zero, and a chart is not a chart at 4px. 56 is the same number `H`
+          has always floored at, stated once here so the box and the viewBox
+          agree.
+        */}
+        <div
+          ref={boxRef}
+          className={clsx('relative min-w-0', fill && 'min-h-0 flex-1')}
+          style={fill ? { minHeight: 56 } : undefined}
+        >
           <svg
             viewBox={`0 0 ${W} ${H}`}
             /*
@@ -393,11 +406,32 @@ export function TilePriceChart({
               one frame.
             */
             preserveAspectRatio="none"
-            className="w-full cursor-crosshair"
-            /* Percent in fill mode: an explicit pixel height here is content,
-               and content inside the very box being measured is the feedback
-               loop that made cards grow on every render. */
-            style={{ height: fill ? '100%' : H, display: 'block' }}
+            className={clsx('cursor-crosshair', fill ? 'absolute inset-0 h-full w-full' : 'w-full')}
+            /*
+              ── Out of flow in fill mode, not merely percentage-height ───────
+
+              This was `height: '100%'`, on the reasoning that a percentage is
+              not content and so cannot feed the box it is measured inside.
+              That is true only when the parent has a DEFINITE height. Here
+              the chain above is `min-h-0 flex-1` the whole way up with
+              nothing definite at the top, so `100%` resolves to `auto` -- and
+              an SVG sized `auto` falls back to its viewBox ASPECT RATIO.
+
+              The viewBox height is `H`, which is the measured box height. So
+              the chart drew itself at a height derived from the measurement,
+              that height was content, the box grew, the observer fired, and
+              `H` grew again. Measured on the Research field: the four
+              fill-mode tiles grew +1px per animation frame for 22 consecutive
+              frames on every switch into the lens -- the "charts slowly
+              increase in size" that was reported.
+
+              `absolute inset-0` is the fix the Ideas carousel needed for the
+              same reason, and it is worth stating plainly because the wrong
+              lesson is easy to draw: clipping and percentages govern
+              PAINTING, not intrinsic sizing. Only taking the element out of
+              flow removes it from its parent's measurement.
+            */
+            style={fill ? { display: 'block' } : { height: H, display: 'block' }}
             role="img"
             aria-label={`Price ${axisPrice(w.series[0])} to ${axisPrice(last)}, ${w.changePct.toFixed(1)} percent, ${axisDate(w.from)} to ${axisDate(w.to)}`}
             onPointerMove={(e) => {

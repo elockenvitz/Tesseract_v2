@@ -1826,3 +1826,64 @@ describe('the fields converge on one read and one shelf', () => {
     expect(body).toContain('discuss(')
   })
 })
+
+/**
+ * A chart may not be measured through its own drawing.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * `TilePriceChart` measures its plot box with a ResizeObserver and uses that
+ * height as the viewBox height `H`. In fill mode the plot was sized
+ * `height: '100%'`, on the reasoning that a percentage is not content and so
+ * cannot feed back into the box it sits in.
+ *
+ * That holds only when the parent has a DEFINITE height. On the Research
+ * field the chain above the plot is `min-h-0 flex-1` the whole way up with
+ * nothing definite at the top, so `100%` resolved to `auto` -- and an SVG
+ * sized `auto` falls back to its viewBox ASPECT RATIO. The chart therefore
+ * drew itself at a height derived from the measurement, that height was
+ * content, the box grew, the observer fired, and `H` grew again.
+ *
+ * Measured by sampling every animation frame while switching into Research:
+ * the four fill-mode tiles grew +1px per frame for 22 consecutive frames,
+ * every time. Reported as "the charts slowly increase in size". After the
+ * fix: 0 frames with any change, 0px drift.
+ *
+ * ── Why the source ────────────────────────────────────────────────────────
+ *
+ * jsdom performs no layout, so the loop itself cannot be reproduced in a
+ * unit test -- every rect reads 0 and the observer does not exist. What can
+ * be pinned is the property that makes the loop impossible: in fill mode the
+ * drawing is OUT OF FLOW, so it contributes nothing to the box being
+ * measured, whatever the parent chain does.
+ */
+describe('the plot cannot inflate the box it is measured in', () => {
+  const body = () => src('components/desktop/TilePriceChart.tsx')
+
+  it('takes the drawing out of flow in fill mode', () => {
+    /* `absolute inset-0` is the whole fix: clipping and percentage heights
+       govern painting, not intrinsic sizing. Only removing the element from
+       flow removes it from its parent's measurement. */
+    expect(body()).toMatch(/fill \? 'absolute inset-0 h-full w-full'/)
+  })
+
+  it('gives the plot no pixel height of its own while filling', () => {
+    /* An explicit pixel height in fill mode is content inside the measured
+       box -- the original form of this same bug. */
+    expect(body()).toMatch(/style=\{fill \? \{ display: 'block' \} : \{ height: H/)
+  })
+
+  it('floors the measured box, since the drawing no longer holds it open', () => {
+    /* Out of flow, the box's only height is `flex-1`. In a short row that is
+       near zero, and a chart is not a chart at 4px. */
+    expect(body()).toMatch(/minHeight: 56/)
+  })
+
+  it('still derives the viewBox from the measurement, which is the point', () => {
+    /* The fix must not quietly become "draw at a fixed height". The 1:1
+       scale that makes slopes true depends on the viewBox being the measured
+       pixel box. */
+    expect(body()).toContain('viewBox={`0 0 ${W} ${H}`}')
+    expect(body()).toMatch(/const H = fill/)
+  })
+})
