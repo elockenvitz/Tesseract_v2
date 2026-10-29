@@ -423,9 +423,24 @@ export function DashboardShell({
               activeId={activeId}
               onRotate={rotate}
               intent={deck.target.source?.intent}
-              /* Research draws its own ticker, company name, figures and
-                 actions, so the deck's header would be a second one. */
-              ownHeader={workLens === 'research'}
+              /*
+                Research and Decisions draw their own ticker, state and
+                actions, so the deck's header would be a second one.
+
+                Measured on the live Decisions pane: the deck printed
+                "NKE / sell · Awaiting decision / The Barbero Fund /
+                Mar 13, 2026" and the pane printed the same four facts again
+                40px below it, the second one three times the size. That is
+                the two-ticker bug `ownHeader` was added for, in the lens it
+                was not applied to.
+
+                Portfolio still relies on this header. It duplicates its pane
+                the same way -- and it is also the only lens a reader can
+                reach with a focus INTENT ("Position", "Framework"), which
+                nothing but this header states. Fixing it means deciding where
+                the intent goes, which is a separate change.
+              */
+              ownHeader={workLens === 'research' || workLens === 'decisions'}
             >
               {renderLens(workLens, activeId)}
             </WorkDeck>

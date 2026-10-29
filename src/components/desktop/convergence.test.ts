@@ -105,6 +105,71 @@ describe('a decision is never graded, though its price may be', () => {
     }
   })
 
+  /*
+   * The case above went vacuous the moment the drawing was shared.
+   *
+   * `PriceSinceDecision` has no hue ternary in it any more -- it has no SVG
+   * in it at all -- so "contains no `up ? 'stroke-emerald'`" is now true of a
+   * component that would render a bright red line, because the ternary moved
+   * into `AnchoredPriceChart` where that case does not look. What the rule
+   * was always about is the DECISION pane's ink, so it is asserted where the
+   * decision is now made: the pane asks for neutral, and the shared chart
+   * honours the ask.
+   */
+  it('asks the shared chart for a neutral ink, and is given one', () => {
+    const lens = src('components/decisions-v2/DecisionVisual.tsx')
+    const at = lens.indexOf('export function PriceSinceDecision')
+    expect(at).toBeGreaterThan(-1)
+    expect(lens.slice(at, at + 1400)).toContain('ink="neutral"')
+
+    const chart = src('components/desktop/AnchoredPriceChart.tsx')
+    // Graded is a mode, not the only mode, and `graded` is what every hue on
+    // the plot is keyed off -- the line and the figure's chip alike, so the
+    // two can never disagree about whether this chart is making a judgement.
+    expect(chart).toContain("const graded = ink === 'direction'")
+    expect(chart).toMatch(/!graded\s*\n?\s*\?\s*'text-slate-/)
+    // Research still grades, which is the counter-check: a chart that could
+    // only draw slate would pass the lines above by doing nothing.
+    expect(chart).toMatch(/up\s*\n?\s*\?\s*'text-emerald/)
+    expect(src('components/research-v2/ResearchVisual.tsx')).not.toContain('ink=')
+  })
+
+  it('draws every full-size price path from one geometry', () => {
+    /*
+     * Both lenses drew the same plot from two copies. Research's was fixed --
+     * measured box, 1:1 drawing, gridlines, a gutter, a dated axis, a scrub
+     * -- and Decisions' was not, so the detail pane went on rendering a
+     * 340x92 viewBox under `preserveAspectRatio="none"` at 636px wide: a
+     * 1.87x horizontal smear, 92px of plot against Research's 204.
+     */
+    const shared = src('components/desktop/AnchoredPriceChart.tsx')
+    // Every pattern here carries code punctuation or a line start, because
+    // the file's own header QUOTES the defect it replaced -- a guard a
+    // comment can break is a guard that will be loosened to shut it up.
+    expect(shared).toContain('useWidth<HTMLDivElement>')
+    expect(shared).toContain('viewBox={`0 0 ${W} ${H}`}')
+    expect(shared).toContain('width={W}')
+    expect(shared).not.toMatch(/^\s*preserveAspectRatio=/m)
+    for (const f of [
+      'components/research-v2/ResearchVisual.tsx',
+      'components/decisions-v2/DecisionVisual.tsx',
+    ]) {
+      const body = src(f)
+      expect(body).toContain("from '../desktop/AnchoredPriceChart'")
+      expect(body).toContain('<AnchoredPriceChart')
+    }
+    // And the lens no longer keeps a private copy of the slicing rule: the
+    // copy it kept still had the `Math.max(0, findIndex(...)) === 0` bug the
+    // shared one was fixed for, which claimed a since-decision window for a
+    // decision the price cache had not reached.
+    const lens = src('components/decisions-v2/DecisionVisual.tsx')
+    expect(lens).not.toContain('export function windowSinceDecision')
+    // Line-anchored: the retirement note quotes the broken slice verbatim,
+    // and a guard that its own explanation can break is worse than no guard.
+    expect(lens).not.toMatch(/^\s*const startIndex = reaches/m)
+    expect(lens).toContain('export { anchoredWindow }')
+  })
+
   it('never grades with the severity palette, on any visual surface', () => {
     /*
      * Direction and condition are different axes and must stay different.
@@ -514,13 +579,19 @@ describe('a detail page is not five white rectangles', () => {
     // Half-width modules auto-placed into a two-column grid stack down the
     // left and leave the right empty whenever the data is sparse, which is
     // what left these pages using a quarter of the canvas they were given.
-    for (const f of [
-      'components/ideas-v2/IdeaDetail.tsx',
-      'components/research-v2/ResearchDetail.tsx',
-      'components/portfolio-v2/PositionDetail.tsx',
-    ]) {
+    /*
+     * Decisions was left off this list and stayed on the raw grid for six
+     * passes. Measured on the live pane: `DeepLinks` auto-placed into a grid
+     * cell and drew 559px wide, and the whole region was capped at 1180px
+     * inside a 1605px surface -- 473px of empty canvas, 29% of it, beside a
+     * 92px chart. A list of the panes that converged is not a rule; the rule
+     * is every pane, so this iterates DETAILS.
+     */
+    for (const f of DETAILS) {
       expect(src(f)).toContain('<DesktopColumns')
       expect(src(f)).not.toMatch(/grid grid-cols-1 gap-3\.5 px-6 pt-4 xl:grid-cols-2/)
+      // The cap Decisions carried: a magic max-width instead of a column.
+      expect(src(f)).not.toContain('xl:max-w-[1180px]')
     }
     const shell = src('components/desktop/DesktopModule.tsx')
     // One column when there is no context to put beside it, so a sparse page

@@ -240,6 +240,38 @@ describe('expanding a card, in this tab', () => {
     expect(screen.queryByTestId('focus-header')).not.toBeInTheDocument()
   })
 
+  it('yields it to Decisions too, which also draws one', async () => {
+    /*
+     * The same bug, in the lens `ownHeader` was never applied to. Measured
+     * live: the deck printed "NKE / sell · Awaiting decision / The Barbero
+     * Fund / Mar 13, 2026" and `DecisionDetailPane` printed the same four
+     * facts again 40px below, the second at 30px against the deck's 22.
+     *
+     * Decisions is safe to yield in a way Portfolio is not: nothing raises a
+     * focus INTENT toward this lens -- only Today's and Ideas' tiles carry
+     * one, and both open Research -- so the deck's header is carrying nothing
+     * here that the pane does not already say.
+     */
+    render(<DashboardShell />)
+    await React.act(async () => {
+      openDashboardFocus({
+        target: {
+          originLens: 'decisions', workspaceLens: 'decisions', objectType: 'decision',
+          objectId: 'dec-1', symbol: 'NKE', issue: 'Awaiting decision', origin: 'decisions',
+        },
+        backLabel: 'Decisions',
+        rail: [card('dec-1', { workspaceLens: 'decisions', objectType: 'decision' })],
+      })
+    })
+
+    // Scoped to the expanded region: opening a Decisions card from the
+    // Decisions lens leaves the browse lens of the same name mounted behind
+    // it, so an unscoped query matches two.
+    const focus = screen.getByTestId('dashboard-focus')
+    expect(within(focus).getByTestId('lens-decisions')).toBeInTheDocument()
+    expect(within(focus).queryByTestId('focus-header')).not.toBeInTheDocument()
+  })
+
   it('finds the expanded card by id, never by symbol', async () => {
     // Two findings can concern one ticker. Matching on symbol would collapse
     // them and put the wrong claim above the workspace.

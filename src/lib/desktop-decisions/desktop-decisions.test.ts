@@ -18,7 +18,15 @@ import {
   eyebrowLabels, REASON_LABEL, NO_OUTCOME_FACTS,
   type OutcomeFacts, type DecisionReason,
 } from './classes'
-import { windowSinceDecision } from '../../components/decisions-v2/DecisionVisual'
+/*
+ * `windowSinceDecision` was this lens's own copy of the slicing rule and is
+ * retired; these cases now run against the shared `anchoredWindow` they
+ * should always have been running against. The subject is unchanged -- a
+ * since-the-decision window must tell the truth about its own span -- and
+ * one case is ADDED, for the bug the private copy still had: see
+ * "refuses the claim when no close sits after the decision at all".
+ */
+import { anchoredWindow } from '../../components/decisions-v2/DecisionVisual'
 
 const DAY = 86_400_000
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
@@ -237,30 +245,49 @@ describe('the since-decision window tells the truth about its own span', () => {
     }))
 
   it('slices at the decision when history reaches it', () => {
-    const w = windowSinceDecision(series(300, 300), daysAgo(160))!
-    expect(w.reachesDecision).toBe(true)
+    const w = anchoredWindow(series(300, 300), daysAgo(160))!
+    expect(w.reachesAnchor).toBe(true)
     expect(w.series.length).toBeLessThan(180)
     expect(w.days).toBeLessThanOrEqual(161)
   })
 
   it('refuses to claim a since-decision move when history starts later', () => {
-    const w = windowSinceDecision(series(60, 60), daysAgo(400))!
-    expect(w.reachesDecision).toBe(false)
+    const w = anchoredWindow(series(60, 60), daysAgo(400))!
+    expect(w.reachesAnchor).toBe(false)
     expect(w.series.length).toBe(60)
   })
 
+  /*
+   * The case the lens's private copy got wrong for its whole life.
+   *
+   * History COVERS the decision date (it starts well before it) but ends
+   * before it, which is the normal state of `price_history_cache`: it trails,
+   * so every decision taken since it last ran lands here. The old
+   * `Math.max(0, findIndex(...))` turned the -1 into 0, kept
+   * `reachesDecision` true, and handed the detail pane the whole series
+   * captioned "Price after decision" with the full-history move printed as
+   * the since-the-decision number.
+   */
+  it('refuses the claim when no close sits after the decision at all', () => {
+    const history = series(300, 400)          // ends ~100 days ago
+    const w = anchoredWindow(history, daysAgo(5))!
+    expect(w.reachesAnchor).toBe(false)
+    // And it does not pretend the window is five days long.
+    expect(w.days).toBeGreaterThan(200)
+  })
+
   it('refuses when the decision has no date at all', () => {
-    expect(windowSinceDecision(series(60, 60), null)!.reachesDecision).toBe(false)
+    expect(anchoredWindow(series(60, 60), null)!.reachesAnchor).toBe(false)
   })
 
   it('returns nothing rather than a line from one point', () => {
-    expect(windowSinceDecision([{ date: '2026-01-01', close: 100 }], daysAgo(30))).toBeNull()
-    expect(windowSinceDecision(undefined, daysAgo(30))).toBeNull()
+    expect(anchoredWindow([{ date: '2026-01-01', close: 100 }], daysAgo(30))).toBeNull()
+    expect(anchoredWindow(undefined, daysAgo(30))).toBeNull()
   })
 
   it('measures the move over the slice, not the whole series', () => {
-    const sliced = windowSinceDecision(series(300, 300), daysAgo(160))!
-    const full = windowSinceDecision(series(300, 300), null)!
+    const sliced = anchoredWindow(series(300, 300), daysAgo(160))!
+    const full = anchoredWindow(series(300, 300), null)!
     expect(Math.abs(sliced.changePct - full.changePct)).toBeGreaterThan(1)
   })
 })

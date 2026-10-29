@@ -1868,16 +1868,31 @@ describe('price after a decision carries no verdict', () => {
     expect(within(chart).getByText(/^\+\d/)).toBeInTheDocument()
   })
 
+  /*
+   * Rewritten, not deleted: it read the first `<path>`'s class attribute.
+   *
+   * That was the right subject when this pane drew its own SVG and put the
+   * ink on the path. The shared `AnchoredPriceChart` colours the whole plot
+   * with `currentColor` and carries the ink on the `<svg>`, so both paths now
+   * return `null` and the old comparison passed `null === null` -- it would
+   * have gone on passing with `ink="direction"` and a red line on screen.
+   * The subject is unchanged: up and down must be the same colour here.
+   */
   it('draws the same ink either way', () => {
-    const down = withPath(false).querySelector('path')!.getAttribute('class')
-    screen.getByTestId('decision-detail')
-    const upChart = (() => {
+    const inkOf = (el: HTMLElement) => el.querySelector('svg')!.getAttribute('class')
+    const down = inkOf(withPath(false))
+    const up = (() => {
       detail = { history: priceSeries(300, true) }
       decisions = [decision({ id: 'y', decidedAt: daysAgo(160) })]
       const { container } = render(<DecisionsWorkspace selectedDecisionId="y" />)
-      return container.querySelector('[data-testid="price-since-decision"] path')!
+      return container.querySelector('[data-testid="price-since-decision"] svg')!
+        .getAttribute('class')
     })()
-    expect(upChart.getAttribute('class')).toBe(down)
+    expect(up).toBe(down)
+    // And it is an ink, not an absence -- the assertion above is only worth
+    // making because there is a colour here to be wrong about.
+    expect(down).toMatch(/text-slate-/)
+    expect(down).not.toMatch(/emerald|rose/)
   })
 
   it('keeps the sign on the number, because the sign is a fact', () => {
@@ -1886,11 +1901,28 @@ describe('price after a decision carries no verdict', () => {
     expect(value.className).not.toMatch(/rose|emerald|red-|green-/)
   })
 
+  /*
+   * The anchor is named on the x-axis now, not floated on the plot.
+   *
+   * `DECIDED` was 8px of letter-spaced capitals riding on the line at x=0,
+   * the least legible thing the old chart drew. The shared plot states the
+   * anchor where a reader looks for it -- on the axis, beside the date the
+   * window actually starts at -- so the assertion follows the word rather
+   * than the typography, and gains the date it never checked.
+   */
   it('anchors at the decision only when history reaches it', () => {
-    withPath(false)
+    const chart = withPath(false)
     expect(screen.getByText('Price after decision')).toBeInTheDocument()
-    expect(screen.getByText('DECIDED')).toBeInTheDocument()
+    expect(chart.textContent).toMatch(/decided · \w+ \d+, \d{4}/)
     expect(screen.getByText(/Not a verdict on the decision/)).toBeInTheDocument()
+  })
+
+  it('says how long the window is, and from when', () => {
+    // The axis is the part of this plot the old one had nothing of: a window
+    // whose span the reader had to guess from the pixel width.
+    const chart = withPath(false)
+    expect(chart.textContent).toContain('d since decision')
+    expect(chart.querySelectorAll('[data-tick]').length).toBeGreaterThan(1)
   })
 
   it('refuses the claim when history starts after the decision', () => {
@@ -1899,6 +1931,60 @@ describe('price after a decision carries no verdict', () => {
     render(<DecisionsWorkspace selectedDecisionId="x" />)
     expect(screen.getByText('Price over available history')).toBeInTheDocument()
     expect(screen.queryByText('DECIDED')).not.toBeInTheDocument()
+  })
+
+  /*
+   * The lens's private slicer claimed a since-decision move for a decision
+   * the price cache had not reached yet, because `Math.max(0, findIndex(...))`
+   * turned "no close after the anchor" into "start at the beginning". The
+   * caption said "Price after decision", the axis said the window began at
+   * the decision, and the figure was the whole series' move. The cache trails
+   * by design, so this was every recent decision.
+   */
+  it('refuses the claim when the cache ends before the decision', () => {
+    detail = { history: priceSeries(300, false) }   // ends today-ish, starts 300d back
+    decisions = [decision({ id: 'x', decidedAt: new Date(Date.now() + 2 * 86_400_000).toISOString() })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    expect(screen.getByText('Price over available history')).toBeInTheDocument()
+    expect(screen.queryByText('Price after decision')).not.toBeInTheDocument()
+    const chart = screen.getByTestId('price-since-decision').textContent ?? ''
+    expect(chart).not.toMatch(/decided · /)
+    // Nor anywhere else on the plot. The figure beside the percentage read
+    // "from decided" while the caption two inches away refused the claim.
+    expect(chart).not.toContain('from decided')
+  })
+
+  it('draws the plot at the size it is measured, not stretched to fit', () => {
+    /*
+     * The old plot was a 340x92 viewBox with `preserveAspectRatio="none"`,
+     * rendered 636px wide on the live pane: 1.87x across against 1.0x down,
+     * so the end dot painted as an ellipse and the dashes came out 1.87x
+     * longer than every other dash on the screen. The shared plot measures
+     * its own box and draws 1:1.
+     */
+    const svg = withPath(false).querySelector('svg')!
+    expect(svg.getAttribute('preserveAspectRatio')).toBeNull()
+    expect(svg.getAttribute('viewBox')).toMatch(/^0 0 \d+ 168$/)
+  })
+
+  it('still dates the record when there is no price to draw', () => {
+    /*
+     * The chronology was a child of `{win && ...}`, so a record with no
+     * cached closes -- every decision taken since the cache last ran -- lost
+     * its dates along with its chart. When it was proposed, when it was
+     * answered and when it executed are facts about the record; they do not
+     * depend on a price series existing.
+     */
+    detail = {}
+    decisions = [decision({
+      id: 'x', status: 'accepted', requestedAt: daysAgo(12), decidedAt: daysAgo(10),
+      decidedByName: 'Eric', requestedByName: 'Seb',
+    })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    const chron = screen.getByTestId('decision-chronology')
+    expect(within(chron).getByText(/Proposed by Seb/)).toBeInTheDocument()
+    expect(within(chron).getByText(/Accepted by Eric/)).toBeInTheDocument()
+    expect(screen.queryByTestId('price-since-decision')).not.toBeInTheDocument()
   })
 
   it('renders no module at all when nothing followed', () => {
