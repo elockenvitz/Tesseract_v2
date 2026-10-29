@@ -89,9 +89,68 @@ export function ActiveWeights({
   const over = rows.filter(r => r.activePct > 0).slice(0, 5)
   const under = rows.filter(r => r.activePct < 0).slice(0, 5).reverse()
   const shown = [...over, ...under]
-  const ceiling = Math.max(...shown.map(r => Math.abs(r.activePct)), 0.1)
   const on = at != null ? shown[at] : null
   const split = over.length
+
+  /*
+   * Zero sits where the data puts it, not at half height.
+   *
+   * ── What a fixed middle was costing ──────────────────────────────────────
+   *
+   * The axis was pinned at 50% and both halves scaled against ONE ceiling --
+   * the right call, because a shared scale is the only thing that makes an
+   * overweight and an underweight comparable. But a five-position book
+   * against a 483-name index has overweights in the tens of percent and
+   * underweights that are the index's own rounding: measured live on Large
+   * Cap Core, the top bar used all 44px available to it and all five
+   * underweights came out at the 1.5% floor, about 2px each.
+   *
+   * So the lower half of a 116px plot drew nothing, every time, and the
+   * strip read as a row of grey slabs hanging off a line with its labels
+   * adrift underneath -- reported as "not sized right and not very clean".
+   *
+   * ── Why not scale the halves separately ──────────────────────────────────
+   *
+   * Because that is the lie. Give the underweights their own ceiling and a
+   * 0.4% underweight draws the same height as a 28% overweight, and the one
+   * thing a reader does with this strip -- weigh one bet against another --
+   * stops working. The scale stays shared. What moves is the AXIS.
+   *
+   * Zero goes where the two extremes actually divide the range, so both ends
+   * use the height they need and neither reserves height it cannot fill.
+   *
+   * Clamped, because a label has to fit: at least 28% of the plot stays on
+   * each side whatever the data does, which is room for one 10px ticker plus
+   * its padding. A book with no underweights at all still gets a readable
+   * strip rather than an axis welded to the floor.
+   */
+  const maxUp = Math.max(...over.map(r => r.activePct), 0)
+  const maxDown = Math.max(...under.map(r => Math.abs(r.activePct)), 0)
+  const span = maxUp + maxDown
+  const zeroPct = span > 0
+    ? Math.min(72, Math.max(28, (maxUp / span) * 100))
+    : 50
+
+  /*
+   * ONE scale, sized to whichever side has less room for it.
+   *
+   * `scale` is percent-of-plot per point of active weight, and it is the
+   * same number on both sides of the axis -- that is what keeps the two ends
+   * comparable. It is set so the tallest bar on each side still leaves
+   * `LABEL_ROOM` for the ticker that belongs to it, and the binding
+   * constraint wins.
+   *
+   * This replaces a flat `* 38`, which was "38 of the 50 percent a half of a
+   * centred plot has, because a bar drawn to the full half-height leaves no
+   * room for its name and the labels were clipped off the bottom". Same
+   * reasoning, now derived from where the axis actually is instead of
+   * assuming it is in the middle.
+   */
+  const LABEL_ROOM = 12
+  const scale = Math.min(
+    maxUp > 0 ? (zeroPct - LABEL_ROOM) / maxUp : Infinity,
+    maxDown > 0 ? (100 - zeroPct - LABEL_ROOM) / maxDown : Infinity,
+  )
 
   /** Active share and the counts span the WHOLE book, not the ten drawn. */
   const activeShare = rows.reduce((s, r) => s + Math.abs(r.activePct), 0) / 2
@@ -171,13 +230,13 @@ export function ActiveWeights({
       >
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-1/2 z-[1] h-px -translate-y-1/2 bg-slate-300 dark:bg-white/20"
+          className="pointer-events-none absolute inset-x-0 z-[1] h-px -translate-y-1/2 bg-slate-300 dark:bg-white/20"
+          style={{ top: `${zeroPct}%` }}
         />
         {shown.map((r, i) => {
-          // 38, not 50: a bar drawn to the full half-height leaves no room
-          // for the name that belongs to it, and the labels were clipped off
-          // the bottom of the strip.
-          const h = (Math.abs(r.activePct) / ceiling) * 38
+          // Shared scale, floored so a bar that rounds to nothing is still
+          // visible as a mark rather than vanishing into the axis.
+          const h = Math.max(1.5, Math.abs(r.activePct) * scale)
           const up = r.activePct >= 0
           return (
             <button
@@ -208,11 +267,17 @@ export function ActiveWeights({
                     ? 'bg-slate-900 dark:bg-white'
                     : up
                       ? 'bg-slate-500/80 dark:bg-slate-300/80'
-                      : 'bg-slate-300 dark:bg-white/25',
+                      // slate-400, not 300: the underweights sit on the
+                      // lens's gray-100 ground, and at 300 a 5px bar was
+                      // about a two-step difference from the background --
+                      // present in the measurement and invisible on screen.
+                      // Still clearly the lighter of the two inks, which is
+                      // what carries the sign.
+                      : 'bg-slate-400 dark:bg-white/30',
                 )}
                 style={up
-                  ? { bottom: '50%', height: `${Math.max(1.5, h)}%` }
-                  : { top: '50%', height: `${Math.max(1.5, h)}%` }}
+                  ? { bottom: `${100 - zeroPct}%`, height: `${h}%` }
+                  : { top: `${zeroPct}%`, height: `${h}%` }}
               />
 
               {/*
@@ -224,9 +289,11 @@ export function ActiveWeights({
                 className={clsx(
                   'absolute inset-x-0 truncate font-mono text-[10px] tabular-nums',
                   at === i ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500',
-                  up ? 'bottom-[calc(50%+2px)] pb-1' : 'top-[calc(50%+2px)] pt-1',
+                  up ? 'pb-1' : 'pt-1',
                 )}
-                style={up ? { bottom: `calc(50% + ${Math.max(1.5, h)}%)` } : { top: `calc(50% + ${Math.max(1.5, h)}%)` }}
+                style={up
+                  ? { bottom: `calc(${100 - zeroPct}% + ${h}%)` }
+                  : { top: `calc(${zeroPct}% + ${h}%)` }}
               >
                 {r.symbol ?? '—'}
               </span>

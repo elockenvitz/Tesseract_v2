@@ -27,7 +27,7 @@
 
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { supabase } from '../lib/supabase'
+import { fetchDailyCloses, bySymbol } from '../lib/market-data/daily-closes'
 import type { Book } from '../lib/portfolio/holdings'
 import type { ActiveWeight } from './useDesktopPortfolio'
 
@@ -52,10 +52,59 @@ export interface DayPerformance {
   coverage: number
   /** Every held name that moved, best first. */
   movers: DayMove[]
+  /**
+   * Calendar days between `asOf` and now, or null when nothing was priced.
+   *
+   * The cache trails, and by how much is a fact about the figures above it.
+   * The panel reads this rather than guessing from `asOf`, so "four weeks
+   * behind" is stated in one place.
+   */
+  lagDays: number | null
+  /** True when the last close is too old to narrate as the latest day. */
+  stale: boolean
 }
 
 /** Below this share of the index, a benchmark return is a guess. */
 const BENCH_COVERAGE_FLOOR = 0.8
+
+/**
+ * How far back to look for the last two closes.
+ *
+ * ── Why this is 45 and was 10, and why 10 made the panel disappear ────────
+ *
+ * The window was ten calendar days from `Date.now()` -- "a long weekend
+ * against a holiday is four calendar days with no row in them", which is a
+ * true reason for ten rather than two and the wrong anchor entirely.
+ *
+ * `price_history_cache` is a CACHE and it trails. Measured against
+ * production on 2026-10-28: the newest close in the whole table was
+ * 2026-10-01, four weeks back, while the ten-day floor was 2026-10-19. The
+ * query therefore matched ZERO rows for every symbol the book holds, every
+ * `px` lookup came back undefined, `movers` came out empty -- and `DayPanel`
+ * returns null on an empty movers list, so the entire left half of the
+ * Portfolio header rendered nothing at all. Measured in the live app: the
+ * first column of `book-header-panels` was 909px wide and 0px tall.
+ *
+ * Nothing failed. No error, no empty state, no console warning. The panel
+ * was simply absent, and had been for as long as the cache was more than ten
+ * days stale.
+ *
+ * 45 days is the lag this codebase already decided it is willing to tolerate
+ * on a cached close -- `fitsTheLabel` in `daily-closes.ts` uses the same
+ * number for the same reason ("the cache may trail, but not by a quarter").
+ * Using it here means the panel survives a stale cache instead of vanishing,
+ * and `asOf` still reports the date that was actually read, so a reader is
+ * never told a four-week-old close is today's.
+ *
+ * It is NOT unbounded. A window that reaches back far enough to always find
+ * something would pair closes from either side of an arbitrary gap and call
+ * the difference a day's return. Past 45 days the honest output is to say so,
+ * which is what `stale` and the empty state now do.
+ */
+export const DAY_WINDOW_DAYS = 45
+
+/** Beyond this, the last close is too old to narrate as "the day". */
+const STALE_AFTER_DAYS = 5
 
 export function useDayPerformance(book: Book | null, active: ActiveWeight[]) {
   /*
@@ -105,32 +154,36 @@ export function useDayPerformance(book: Book | null, active: ActiveWeight[]) {
      */
     placeholderData: prev => prev,
     queryFn: async () => {
-      // Ten days back, not two: closes exist per trading day, and a long
-      // weekend against a holiday is four calendar days with no row in them.
-      const floor = new Date(Date.now() - 10 * 86_400_000).toISOString().slice(0, 10)
-      const { data, error } = await supabase
-        .from('price_history_cache')
-        .select('symbol, date, close')
-        .in('symbol', symbols)
-        .gte('date', floor)
-      if (error) throw new Error(error.message)
-
-      const bySymbol = new Map<string, { date: string; close: number }[]>()
-      for (const r of (data ?? []) as { symbol: string; date: string; close: number }[]) {
-        const close = Number(r.close)
-        if (!Number.isFinite(close) || close <= 0) continue
-        const list = bySymbol.get(r.symbol)
-        if (list) list.push({ date: r.date, close })
-        else bySymbol.set(r.symbol, [{ date: r.date, close }])
-      }
+      /*
+       * Through `fetchDailyCloses`, not a hand-rolled `.in()`.
+       *
+       * This query was its own `.in('symbol', symbols).gte('date', floor)`
+       * with no ordering, no chunking and no cap check -- which is exactly
+       * the shape that silently truncated Today's price series. At 137
+       * symbols over a ten-day window it was asking for roughly 960 rows
+       * against PostgREST's 1000-row ceiling: inside the cap by luck, not by
+       * construction, and one wider window or one bigger book away from
+       * dropping closes with no error. Widening the window to 45 days here
+       * would have taken it straight over.
+       *
+       * `fetchDailyCloses` sizes each request so the cap cannot be reached
+       * (`floor(1000 / days)` symbols apiece) and THROWS if a response comes
+       * back full. The safety is not this hook's to re-derive.
+       */
+      const rows = await fetchDailyCloses(symbols, { days: DAY_WINDOW_DAYS })
 
       const out: Record<string, { date: string; ret: number }> = {}
-      for (const [symbol, rows] of bySymbol) {
-        if (rows.length < 2) continue
-        rows.sort((a, b) => a.date.localeCompare(b.date))
-        const last = rows[rows.length - 1]
-        const prev = rows[rows.length - 2]
-        out[symbol] = { date: last.date, ret: ((last.close - prev.close) / prev.close) * 100 }
+      for (const [symbol, list] of bySymbol(rows)) {
+        // `bySymbol` returns each list oldest-first, so the last two entries
+        // are the most recent close and the one before it.
+        const clean = list.filter(r => Number.isFinite(Number(r.close)) && Number(r.close) > 0)
+        if (clean.length < 2) continue
+        const last = clean[clean.length - 1]
+        const prev = clean[clean.length - 2]
+        out[symbol] = {
+          date: last.date,
+          ret: ((Number(last.close) - Number(prev.close)) / Number(prev.close)) * 100,
+        }
       }
       return out
     },
@@ -194,12 +247,17 @@ export function useDayPerformance(book: Book | null, active: ActiveWeight[]) {
     }
 
     const coverage = benchTotal > 0 ? priced / benchTotal : 0
+    const lagDays = asOf
+      ? Math.max(0, Math.floor((Date.now() - Date.parse(`${asOf}T00:00:00Z`)) / 86_400_000))
+      : null
     return {
       asOf,
       portfolioPct,
       benchmarkPct: coverage >= BENCH_COVERAGE_FLOOR ? benchPct : null,
       coverage,
       movers: movers.sort((a, b) => b.contribPct - a.contribPct),
+      lagDays,
+      stale: lagDays != null && lagDays > STALE_AFTER_DAYS,
     }
   }, [book, data, active])
 }

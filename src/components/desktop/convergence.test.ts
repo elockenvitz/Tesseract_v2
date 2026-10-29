@@ -1324,7 +1324,20 @@ describe('a handoff never promises what is not there', () => {
      * them, and the strip looked interactive while being inert.
      */
     expect(panel).toContain('onClick={() => onOpen(r.assetId)}')
-    expect(panel).toContain('pointer-events-none absolute inset-x-0 top-1/2')
+    /*
+     * ── Why this no longer names `top-1/2` ───────────────────────────────
+     *
+     * The subject is `pointer-events-none`: the zero line was a sibling
+     * positioned to ride up over the bars and it intercepted every pointer
+     * event they had. The assertion pinned the whole class string, so when
+     * the axis stopped being welded to half height -- a five-position book
+     * drew all five underweights at the 2px floor and the lower half of the
+     * plot was permanently blank -- a guard about pointer events failed for
+     * a reason that had nothing to do with pointer events. It names the two
+     * properties it is actually about.
+     */
+    expect(panel).toContain('pointer-events-none absolute inset-x-0')
+    expect(panel).toMatch(/aria-hidden[\s\S]{0,200}pointer-events-none/)
 
     /*
      * Five each end, and nothing in between.
@@ -1676,11 +1689,25 @@ describe('a handoff never promises what is not there', () => {
      * And the panels carry no top margin of their own. A margin inside the
      * reserved row is height the row does not know about -- it was exactly
      * the 15px the grid kept stepping by.
+     *
+     * ── Why this stopped being a whole-tag match ─────────────────────────
+     *
+     * It asserted the literal `<section data-testid="day-panel">`, which
+     * tested the margin by testing that the tag had NOTHING else on it --
+     * so adding `data-day` to distinguish a priced panel from an unpriced
+     * one failed a guard about margins. The subject is the margin, so the
+     * assertion names the margin: every `<section>` in either file opens
+     * without an `mt-`/`my-`/`margin-top` of its own, whatever else it
+     * carries.
      */
-    expect(src('components/portfolio-v2/DayPanel.tsx'))
-      .toContain('<section data-testid="day-panel">')
-    expect(src('components/portfolio-v2/ActiveWeights.tsx'))
-      .toContain('<section data-testid="active-weights">')
+    for (const file of ['DayPanel', 'ActiveWeights'] as const) {
+      const body = src(`components/portfolio-v2/${file}.tsx`)
+      const tags = body.match(/<section[^>]*>/g) ?? []
+      expect(tags.length).toBeGreaterThan(0)
+      for (const tag of tags) {
+        expect(tag).not.toMatch(/\bm[ty]-\d|margin-?[Tt]op/)
+      }
+    }
   })
 })
 
@@ -1885,5 +1912,119 @@ describe('the plot cannot inflate the box it is measured in', () => {
        pixel box. */
     expect(body()).toContain('viewBox={`0 0 ${W} ${H}`}')
     expect(body()).toMatch(/const H = fill/)
+  })
+})
+
+/**
+ * The Portfolio header's left half cannot silently go missing.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * Reported as "half is showing nothing". Measured live at 1920x889: the
+ * first column of `book-header-panels` was 909px wide and 0px TALL, inside
+ * a row that reserves 200px, while the benchmark strip filled the second
+ * column at 142px.
+ *
+ * Two faults, compounding:
+ *
+ *   1. `useDayPerformance` floored its price query at `Date.now() - 10 days`.
+ *      `price_history_cache` is a cache and it trails -- measured against
+ *      production on 2026-10-28, its newest close anywhere was 2026-10-01
+ *      and the floor was 2026-10-19, so the query matched ZERO rows for
+ *      every symbol and `movers` came out empty.
+ *   2. `DayPanel` returned null on an empty movers list, so there was no
+ *      figure, no empty state and no error. The panel was simply absent.
+ *
+ * These assertions are source-text, which cannot run a query or lay out a
+ * page. They hold the two properties that make the pair unrepeatable: the
+ * window is wide enough to survive a trailing cache and goes through the
+ * batched reader that checks the row cap, and nothing-to-price renders a
+ * statement rather than nothing.
+ */
+describe('the book’s P&L states itself or states why not', () => {
+  const hook = () => src('hooks/useDayPerformance.ts')
+  const panel = () => src('components/portfolio-v2/DayPanel.tsx')
+
+  it('does not anchor the price window on a ten-day clock', () => {
+    /* The old floor, which a four-week-stale cache always fell outside. */
+    expect(hook()).not.toMatch(/Date\.now\(\) - 10 \* 86_?400_?000/)
+    expect(hook()).toMatch(/export const DAY_WINDOW_DAYS = (\d{2,})/)
+    const days = Number(hook().match(/export const DAY_WINDOW_DAYS = (\d+)/)?.[1] ?? 0)
+    expect(days).toBeGreaterThanOrEqual(30)
+  })
+
+  it('reads closes through the batched reader that checks the row cap', () => {
+    /*
+     * The hand-rolled `.in('symbol', symbols)` was the shape that silently
+     * truncated Today's series: 137 symbols over the window, no ordering,
+     * no chunking, no cap check. `fetchDailyCloses` sizes each request so
+     * the 1000-row ceiling cannot be reached and throws if it is.
+     */
+    expect(hook()).toContain('fetchDailyCloses(symbols, { days: DAY_WINDOW_DAYS })')
+    expect(hook()).not.toMatch(/from\('price_history_cache'\)/)
+  })
+
+  it('renders a statement, not nothing, when no close can price the book', () => {
+    /* The exact line that made the half disappear. */
+    expect(panel()).not.toContain('if (!day || !day.movers.length) return null')
+    expect(panel()).toContain('data-testid="day-unpriced"')
+    expect(panel()).toMatch(/data-day="unpriced"/)
+  })
+
+  it('says how far behind the close is rather than implying it is today’s', () => {
+    /*
+     * A reader sees a 26px "+0.33%" and reads "we are up today". On a cache
+     * four weeks stale that is the wrong month, so the lag is printed.
+     */
+    expect(hook()).toMatch(/stale: lagDays != null && lagDays > STALE_AFTER_DAYS/)
+    expect(panel()).toContain('data-testid="day-stale"')
+    expect(panel()).toMatch(/\{day\.lagDays\}d behind/)
+  })
+
+  it('puts the exposure axis where the data divides, on one shared scale', () => {
+    /*
+     * ── The defect ────────────────────────────────────────────────────────
+     *
+     * The axis was pinned at `top-1/2` and bar heights were a flat
+     * `(|active| / ceiling) * 38`. A five-position book against a 483-name
+     * index has overweights in the tens of percent and underweights that are
+     * the index's own rounding, so measured live on Large Cap Core the top
+     * bar used its full 44px and ALL FIVE underweights came out at the 1.5%
+     * floor -- about 2px each. Half of a 116px plot drew nothing, every
+     * time. After: 60/37/36/35/17 above and 19/8/7/5/5 below.
+     *
+     * ── The line it must never cross ──────────────────────────────────────
+     *
+     * Scaling the two halves separately would fix the picture and break the
+     * instrument: a 0.4% underweight drawn the same height as a 28%
+     * overweight stops a reader weighing one bet against another, which is
+     * the only thing this strip is for. ONE scale, a moving axis.
+     */
+    const body = src('components/portfolio-v2/ActiveWeights.tsx')
+    expect(body).not.toContain('top-1/2')
+    expect(body).not.toMatch(/activePct\) \/ ceiling\) \* 38/)
+    expect(body).toMatch(/style=\{\{ top: `\$\{zeroPct\}%` \}\}/)
+
+    /* One `scale`, taken as the MINIMUM of what each side can afford --
+       not one per side. */
+    expect(body).toMatch(/const scale = Math\.min\(/)
+    expect(body).toContain('Math.abs(r.activePct) * scale')
+    expect(body).not.toMatch(/scaleUp|scaleDown|upCeiling|downCeiling/)
+
+    /* And the axis keeps label room at both ends whatever the data does. */
+    expect(body).toMatch(/Math\.min\(72, Math\.max\(28,/)
+  })
+
+  it('names the left half, on the same baseline as the right', () => {
+    /*
+     * The panel opened straight onto a 26px figure while the strip beside it
+     * opened with an 18px title line, so the two halves of one row started
+     * at different heights and read as two unrelated things. One `h-[18px]`
+     * heading each.
+     */
+    expect(panel()).toContain('Profit &amp; loss')
+    for (const body of [panel(), src('components/portfolio-v2/ActiveWeights.tsx')]) {
+      expect(body).toContain('flex h-[18px] items-baseline')
+    }
   })
 })

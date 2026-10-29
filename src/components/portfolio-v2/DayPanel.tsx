@@ -22,6 +22,7 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 import { moveTone } from '../../lib/charts/tone'
+import { DAY_WINDOW_DAYS } from '../../hooks/useDayPerformance'
 import type { DayPerformance, DayMove } from '../../hooks/useDayPerformance'
 
 const pct = (n: number, dp = 2) => `${n >= 0 ? '+' : ''}${n.toFixed(dp)}%`
@@ -34,7 +35,36 @@ export function DayPanel({
   onOpen: (assetId: string) => void
 }) {
   const [at, setAt] = useState<string | null>(null)
-  if (!day || !day.movers.length) return null
+  if (!day) return null
+  /*
+   * An empty movers list is a STATE, not a reason to disappear.
+   *
+   * The guard used to fold the empty-movers case in with the null-day case
+   * and return nothing for both. With a stale price cache the movers term
+   * was always true -- so the whole left
+   * half of the Portfolio header rendered nothing, in a row that reserves
+   * 200px for it. Measured live: column one was 909px wide and 0px tall,
+   * which is the "half is showing nothing" this was reported as.
+   *
+   * `day` itself staying null is different and still returns null: that is
+   * the query not having landed yet, and the row's reserved height is
+   * holding the space for a fade. Nothing-to-price is a settled answer and
+   * says so.
+   */
+  if (!day.movers.length) {
+    return (
+      <section data-testid="day-panel" data-day="unpriced">
+        <div className="flex h-[18px] items-baseline gap-x-3 overflow-hidden whitespace-nowrap">
+          <h2 className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">
+            Profit &amp; loss
+          </h2>
+          <span data-testid="day-unpriced" className="text-[11px] text-gray-500">
+            No close in the last {DAY_WINDOW_DAYS} days to price the book from
+          </span>
+        </div>
+      </section>
+    )
+  }
 
   /*
    * Five each end, and never the same name twice.
@@ -50,8 +80,42 @@ export function DayPanel({
   const spread = day.benchmarkPct != null ? day.portfolioPct - day.benchmarkPct : null
 
   return (
-    <section data-testid="day-panel">
-      <div className="flex flex-wrap items-baseline gap-x-8 gap-y-2">
+    <section data-testid="day-panel" data-day="priced">
+      {/*
+        A heading row of exactly the same shape as the strip's, on purpose.
+        *
+        This panel opened straight onto a 26px figure while the benchmark
+        strip beside it opened with an 18px title line, so the two halves of
+        one row started at different heights and on different baselines and
+        read as two unrelated things that happened to be adjacent. One `h-18`
+        nowrap line each -- title, then the facts about the window -- lines
+        them up and names what the left half IS, which nothing did before.
+      */}
+      <div className="flex h-[18px] items-baseline gap-x-3 overflow-hidden whitespace-nowrap">
+        <h2 className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">
+          Profit &amp; loss
+        </h2>
+        {/* Never "today": this is the last close the cache holds. */}
+        <span className="font-mono text-[11px] tabular-nums text-gray-500">
+          close {day.asOf ?? '—'}
+        </span>
+        {/*
+          How far behind, said out loud.
+          *
+          The date alone was already here and it is not enough: a reader
+          sees a 26px "+0.33%" and reads "we are up today", and on a cache
+          four weeks stale that is the wrong month. The lag is printed
+          whenever it exceeds a long weekend.
+        */}
+        {day.stale && day.lagDays != null && (
+          <span data-testid="day-stale" className="text-[11px] text-amber-600 dark:text-amber-400">
+            {day.lagDays}d behind
+          </span>
+        )}
+        <span className="ml-auto text-[11px] text-gray-400">click a name to open it</span>
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-8 gap-y-2">
         <Figure label="Book" value={day.portfolioPct} lead />
         {day.benchmarkPct != null ? (
           <Figure label="Benchmark" value={day.benchmarkPct} />
@@ -66,11 +130,6 @@ export function DayPanel({
           </div>
         )}
         {spread != null && <Figure label="Active" value={spread} />}
-
-        <span className="ml-auto font-mono text-[10px] tabular-nums text-gray-400">
-          {/* Never "today": this is the last close the cache holds. */}
-          close {day.asOf ?? '—'}
-        </span>
       </div>
 
       <div className="mt-3 grid grid-cols-1 gap-x-8 gap-y-3 md:grid-cols-2">
