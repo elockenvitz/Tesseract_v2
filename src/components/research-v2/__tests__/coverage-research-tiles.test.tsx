@@ -34,6 +34,10 @@ let researchCloses: { date: Date; value: number }[] = []
 
 vi.mock('../../../hooks/useTileCloses', () => ({
   useTileCloses: () => ({ data: researchCloses, isLoading: false }),
+  /* The field's one batched read. Answers for every name with the same
+     series, so these tests see exactly what they saw when each tile fetched
+     its own. */
+  useGalleryCloses: () => ({ map: { get: () => researchCloses }, pending: false }),
 }))
 
 /* The position behind the corner weight. It reads the book through `useBook`,

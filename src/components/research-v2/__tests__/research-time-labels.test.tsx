@@ -32,6 +32,9 @@ const env = vi.hoisted(() => ({
    suite does not stand up. */
 vi.mock('../../../hooks/useTileCloses', () => ({
   useTileCloses: () => ({ data: [], isLoading: false }),
+  /* The field's one batched read. Empty for every name, as the solo hook is
+     here: this suite is about wording, not about the series. */
+  useGalleryCloses: () => ({ map: { get: () => [] }, pending: false }),
 }))
 
 /* The position behind the corner weight: reads the book through `useBook`,

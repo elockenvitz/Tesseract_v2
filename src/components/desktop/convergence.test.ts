@@ -1762,3 +1762,67 @@ describe('the ground is the same on every lens', () => {
     expect([...grounds]).toEqual(['bg-gray-100'])
   })
 })
+
+/**
+ * Every field reads its prices once, and every tile offers its actions.
+ *
+ * ── The two defects ───────────────────────────────────────────────────────
+ *
+ * ONE REQUEST PER TILE. Ideas called `useTileCloses(symbol)` on each card --
+ * 56 round trips at 1920x889, each resolving on its own schedule and each
+ * arrival changing its card's height as the chart appeared, so the grid
+ * reassembled under the cursor. It moved to a batched read. Research and
+ * Portfolio were left on the per-tile hook, which is the same defect at 13
+ * and at 5 tiles: smaller, and exactly as wrong.
+ *
+ * NO HOVER SHELF. Today, Ideas and Decisions offer Open / Ask AI / Discuss
+ * on a tile. Research and Portfolio drew the same card and offered nothing,
+ * though both lenses already had a `targetFor` their own detail surface was
+ * using -- the capability was present and simply never exposed.
+ *
+ * ── Why the source, and why over the set ──────────────────────────────────
+ *
+ * The subject is which HOOK a field calls, which is a fact about the module
+ * rather than about a rendered tree; a behavioural version would assert on a
+ * mock of the very hook in question. What matters is that both rules are
+ * asserted across every field at once, because both bugs were lenses each
+ * missing the same thing independently.
+ */
+describe('the fields converge on one read and one shelf', () => {
+  const FIELDS = [
+    ['Ideas', 'components/ideas-v2/OpportunityGrid.tsx'],
+    ['Research', 'components/research-v2/ResearchWorkspace.tsx'],
+    ['Portfolio', 'components/portfolio-v2/PortfolioWorkspace.tsx'],
+  ] as const
+
+  it.each(FIELDS)('%s reads every tile price in one batched call', (_lens, file) => {
+    expect(src(file)).toContain('useGalleryCloses(')
+  })
+
+  it.each(FIELDS)('%s hands the series down rather than refetching per tile', (_lens, file) => {
+    const body = src(file)
+    /* The solo hook survives as a fallback for a test that renders one tile
+       directly, so its PRESENCE is fine. What must not come back is calling
+       it unconditionally on the symbol -- that is the per-tile fetch. */
+    expect(body).toContain('closesIn')
+    expect(body).toMatch(/useTileCloses\(closesIn \? null : /)
+  })
+
+  it.each([
+    ['Ideas', 'components/ideas-v2/OpportunityGrid.tsx'],
+    ['Research', 'components/research-v2/ResearchWorkspace.tsx'],
+    ['Portfolio', 'components/portfolio-v2/PortfolioWorkspace.tsx'],
+    ['Decisions', 'components/decisions-v2/DecisionsWorkspace.tsx'],
+  ])('%s offers its tile actions on hover', (_lens, file) => {
+    expect(src(file)).toMatch(/actions=\{/)
+  })
+
+  it.each(FIELDS)('%s gates Discuss on the object being thread-able', (_lens, file) => {
+    /* `canDiscuss` is the gate. Offering Discuss on a subject with no
+       thread-able object is the dead control this shell has already shipped
+       once -- a button that is drawn, focusable, announced, and inert. */
+    const body = src(file)
+    expect(body).toContain('canDiscuss')
+    expect(body).toContain('discuss(')
+  })
+})

@@ -28,9 +28,13 @@ import { ActiveWeights } from './ActiveWeights'
 import { DayPanel } from './DayPanel'
 import { useDayPerformance } from '../../hooks/useDayPerformance'
 import {
-  gapOf, toneForGap, whyItMatters, comparePositions,
+  gapOf, toneForGap, whyItMatters, comparePositions, targetFor,
   GAP_LABEL, EMPTY_FRAME, type PositionFrame,
 } from '../../lib/desktop-portfolio/model'
+/* The same two engagements Today and Ideas offer on a tile, through the
+   shared dispatcher. `targetFor` is this lens's own and already exists; the
+   tile had the capability and simply never exposed it. */
+import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import type { SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
 /* Book minus index, for the panel behind the weight in the tile's corner. */
@@ -45,7 +49,7 @@ import {
   /* `TileMeta` and `TileHeroNumber` are both gone from this lens. They were
      two of the four ways it used to state what a position weighs; `WeightChip`
      in the tile's corner is the one way now. */
-  TileBar, TileScale,
+  TileBar, TileScale, TileAction,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 /* The shared price chart -- the same object Decisions draws, not a sparkline
@@ -54,7 +58,7 @@ import { TilePriceChart } from '../desktop/TilePriceChart'
 /* The shared dated closes, so a position with no written case still has an
    object worth looking at. Keyed by symbol with a five-minute staleTime, so a
    gallery on the same name makes one request. */
-import { useTileCloses } from '../../hooks/useTileCloses'
+import { useTileCloses, useGalleryCloses, type TileClose } from '../../hooks/useTileCloses'
 import { PositionDetailPane } from './PositionDetail'
 import {
   openDashboardFocus, type RailCard,
@@ -108,6 +112,14 @@ export function PortfolioWorkspace({
       .map(position => ({ position, frame: frames[position.assetId] ?? EMPTY_FRAME }))
       .sort(comparePositions)
   }, [book, frames])
+
+  /* Every tile's price in ONE batched read, rather than one request per tile
+     resolving on its own schedule and reflowing its card when it lands. The
+     same hook and the same reasoning as the Ideas and Research fields. */
+  const { map: fieldCloses } = useGalleryCloses(useMemo(
+    () => rows.map(r => r.position.symbol),
+    [rows],
+  ))
 
   /**
    * Selection lives in the deck. The lens draws the book and says which card
@@ -254,6 +266,7 @@ export function PortfolioWorkspace({
             // framework has come apart, weighted by size. Room follows it.
             size={sizeByRank(i, rows.length)}
             onOpen={() => open(r.position, r.frame)}
+            closesIn={fieldCloses.get(r.position.symbol ?? '')}
           />
         ))}
       </DesktopGallery>
@@ -610,7 +623,7 @@ function PortfolioSelector({
  * which is the honest answer to why the tile is there.
  */
 function PositionTile({
-  position, frame, maxWeight, weights, size, activeWeight, onOpen,
+  position, frame, maxWeight, weights, size, activeWeight, onOpen, closesIn,
 }: {
   position: Position
   frame: PositionFrame
@@ -621,13 +634,22 @@ function PositionTile({
   activeWeight: ActiveWeight | null
   /** The book being viewed, named beside the weight in the corner. */
   onOpen: () => void
+  /** This name's closes out of the field's one batched read. */
+  closesIn?: TileClose[]
 }) {
   const gap = gapOf(position, frame)
   const tone = toneForGap(gap)
-  /* Read for every tile, used where the card would otherwise show dashes or a
-     weight bar the reader has already seen five times. Unconditional because
-     it is a hook; cached by symbol, so the cost is one request per name. */
-  const { data: closes } = useTileCloses(position.symbol)
+  /* What the shelf's two engagements act on. Null where there is no object to
+     thread, and the actions are then not offered rather than offered inert. */
+  const engage = targetFor(position, frame)
+  const talkable = !!engage && canDiscuss(engage)
+  /* Handed down from the field in ONE batched read. This was
+     `useTileCloses(position.symbol)` -- one request per tile, each resolving
+     on its own schedule and reflowing its card as the chart appeared. The
+     solo hook survives as the fallback for a test that renders one tile
+     directly, where there is no batch to belong to. */
+  const soloCloses = useTileCloses(closesIn ? null : position.symbol)
+  const closes = closesIn ?? soloCloses.data
   const rung = (name: string) => frame.ladder?.cases.find(c => c.name === name)?.price ?? null
   const bear = rung('Bear'), bull = rung('Bull')
   const showScale = !!frame.ladder?.valid && bear != null && bull != null && position.price > 0
@@ -658,6 +680,21 @@ function PositionTile({
         are one click away, with the shares, the price and the active weight,
         which is where they belong: useful when asked for, noise when not.
       */
+      /*
+        The hover shelf, as on Today, Ideas and Research.
+        Nothing new is wired: `targetFor` is this lens's own, and `canDiscuss`
+        gates the second action so a position with no thread-able object is
+        not offered one.
+      */
+      actions={<>
+        <TileAction label="Open" onClick={onOpen} primary testId="position-open" />
+        {engage && (
+          <TileAction label="Ask AI" onClick={() => askAI(engage)} testId="position-ai" />
+        )}
+        {talkable && (
+          <TileAction label="Discuss" onClick={() => discuss(engage!)} testId="position-discuss" />
+        )}
+      </>}
       eyebrow={<>
         <TileState tone={tone}>{GAP_LABEL[gap]}</TileState>
         <WeightChip position={position} active={activeWeight} />

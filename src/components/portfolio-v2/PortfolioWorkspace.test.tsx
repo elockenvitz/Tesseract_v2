@@ -73,6 +73,11 @@ let tileCloses: { date: Date; value: number }[] = A_YEAR_RISING
 
 vi.mock('../../hooks/useTileCloses', () => ({
   useTileCloses: () => ({ data: tileCloses, isLoading: false }),
+  /* The field's one batched read. Answers for every name with the same
+     series, so these tests see exactly what they saw when each tile fetched
+     its own -- the change under test is where the data comes from, not what
+     it is. */
+  useGalleryCloses: () => ({ map: { get: () => tileCloses }, pending: false }),
 }))
 
 vi.mock('../../hooks/useDesktopPortfolio', () => ({

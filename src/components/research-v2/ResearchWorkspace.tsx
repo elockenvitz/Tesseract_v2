@@ -21,14 +21,18 @@ interface Arrival { issue?: string | null; origin?: string | null }
 import {
   stateOf, whyItMatters, compareSubjects, issueFor, withCoverageSubjects, subjectFromCoverage,
   subscribeToOpenResearch, CORE_SECTIONS, SECTION_LABEL, STATE_TONE,
-  dateWords, ageKindOf, thesisDateKindOf,
+  dateWords, ageKindOf, thesisDateKindOf, targetFor,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
+/* The same two engagements the Ideas field offers on a tile, through the
+   shared dispatcher. `targetFor` is this lens's own, already used by the
+   detail surface -- the tile had the capability and simply never exposed it. */
+import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
 import {
   TileTimeline,
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileMeta,
-  TileFigure, TileVisual, TileBar, TileLead,
+  TileFigure, TileVisual, TileBar, TileLead, TileAction,
   sizeByRankWithRhythm, GallerySkeleton, type TileSize,
 } from '../desktop/DesktopTile'
 /* The shared price chart, anchored on the date the case was last written. */
@@ -39,7 +43,7 @@ import { TileWeightChip } from '../desktop/TileWeightChip'
 import { useSubjectWeightDetail } from '../../hooks/useSubjectWeightDetail'
 /* Keyed by symbol with a five-minute staleTime, so a gallery on one name
    makes one request -- which is what makes a price affordable in this lens. */
-import { useTileCloses } from '../../hooks/useTileCloses'
+import { useTileCloses, useGalleryCloses, type TileClose } from '../../hooks/useTileCloses'
 import type { FocusIntent } from '../../lib/dashboard/focus'
 import { ResearchDetail } from './ResearchDetail'
 import { openAsset } from '../../lib/desktop-asset'
@@ -121,6 +125,14 @@ export function ResearchWorkspace({
     () => withCoverageSubjects(scanned, gaps.candidates),
     [scanned, gaps.candidates],
   )
+
+  /* Every tile's price in ONE batched read, rather than one request per tile
+     resolving on its own schedule and reflowing its card when it lands. The
+     same hook and the same reasoning as the Ideas field. */
+  const { map: fieldCloses } = useGalleryCloses(useMemo(
+    () => ranked.map(s => s.symbol),
+    [ranked],
+  ))
 
   /**
    * Selection lives in the deck, not here.
@@ -282,6 +294,7 @@ export function ResearchWorkspace({
                for having a chart to draw. */
             size={sizeByRankWithRhythm(i, ranked.length)}
             onOpen={() => open(s)}
+            closesIn={fieldCloses.get(s.symbol ?? '')}
           />
         ))}
       </DesktopGallery>
@@ -388,31 +401,43 @@ export function toRailCard(s: ResearchSubject): RailCard {
  * per card to decorate a gallery is exactly the cost this must not add.
  */
 function SubjectTile({
-  subject, maxWeight, weights, size, onOpen,
+  subject, maxWeight, weights, size, onOpen, closesIn,
 }: {
   subject: ResearchSubject; maxWeight: number; weights: number[]
   size: TileSize; onOpen: () => void
+  /** This name's closes out of the field's one batched read. */
+  closesIn?: TileClose[]
 }) {
   const state = stateOf(subject)
   const tone = STATE_TONE[state]
+  /* What the shelf's two engagements act on. Null for a subject that has no
+     object to thread -- the actions are then simply not offered, rather than
+     offered and silently inert. */
+  const engage = targetFor(subject)
+  const talkable = !!engage && canDiscuss(engage)
   const arrivedDays = subject.newestEvidenceAt ? daysSince(subject.newestEvidenceAt) : null
   const big = size === 'hero' || size === 'large'
 
   /*
-   * ── The price, now that it costs one request per name ────────────────────
+   * ── The price, handed down from the field ────────────────────────────────
    *
    * This lens deliberately drew no chart: "fetching one per card to decorate
-   * a gallery is exactly the cost this must not add." That was true when each
-   * card would have fetched its own series. `useTileCloses` is keyed by symbol
-   * alone with a five-minute staleTime, so a gallery of tiles on one name
-   * makes ONE request, and Decisions and Portfolio have usually already made
-   * it -- the reader arriving at Research is looking at names they just saw.
+   * a gallery is exactly the cost this must not add." Caching by symbol made
+   * that affordable, but it did not make it ONE read -- thirteen tiles still
+   * opened thirteen round trips, each resolving on its own schedule and each
+   * arrival changing its card's height as the chart appeared. Ideas measured
+   * the same pattern at 56 tiles and moved to a batched fetcher; this is the
+   * same move, and `useGalleryCloses` is the same hook.
+   *
+   * `closesIn` is optional so a test that renders one tile directly still
+   * works: with no batch to belong to it falls back to the single-symbol
+   * hook, exactly as the Ideas tile does.
    *
    * The constraint that survives is the real one: the price never displaces
    * this lens's own answer. See `trailing` below.
    */
-  const { data: closesData } = useTileCloses(subject.symbol)
-  const closes = closesData ?? []
+  const solo = useTileCloses(closesIn ? null : subject.symbol)
+  const closes = closesIn ?? solo.data ?? []
 
   /*
    * ── One object per tile, chosen by what this lens is asking ──────────────
@@ -546,6 +571,24 @@ function SubjectTile({
       tone={tone}
       size={size}
       onOpen={onOpen}
+      /*
+        The hover shelf, as on Today and Ideas.
+        Three lenses drew the same card and only two of them offered its
+        actions: a reader who learned Open / Ask AI / Discuss on the Ideas
+        field found bare tiles here. Nothing new is wired -- `targetFor` is
+        this lens's own and the detail surface already uses it with these
+        same two dispatchers. `canDiscuss` gates the second, because a
+        subject with no thread-able object must not be offered one.
+      */
+      actions={<>
+        <TileAction label="Open" onClick={onOpen} primary testId="research-open" />
+        {engage && (
+          <TileAction label="Ask AI" onClick={() => askAI(engage)} testId="research-ai" />
+        )}
+        {talkable && (
+          <TileAction label="Discuss" onClick={() => discuss(engage!)} testId="research-discuss" />
+        )}
+      </>}
       eyebrow={<>
         <TileState tone={tone}>{issueFor(subject)}</TileState>
         {/* The age, where there is one. Where there is not, the chip beside
