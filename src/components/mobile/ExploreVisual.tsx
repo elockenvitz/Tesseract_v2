@@ -187,6 +187,78 @@ const fills = (s: Scale, grow?: boolean) =>
  */
 const HEAVY = { bar: 'h-2.5', rail: 'h-1.5', rule: 'h-0.5', dot: 'h-3 w-3' }
 
+/**
+ * What an instrument is allowed to colour, and what each colour means.
+ *
+ * ── Why this is a vocabulary and not nine local choices ───────────────────
+ *
+ * The field was reported as bland, and measured it was: every mark in the
+ * range axis, the dumbbell and the weight bar was `bg-gray-900` or
+ * `bg-gray-400`, so fifty-six cards drew the same two greys and the only
+ * colour anywhere was the headline percentage. Lines, as the report put it.
+ *
+ * The fix is NOT to tint things so they look livelier. `semantic-tone.ts`
+ * records this codebase shipping colour-by-severity twice and removing it
+ * twice, and the rule it settled on holds here: a colour has to mean one
+ * thing, everywhere, or it is decoration that will eventually lie.
+ *
+ * So these are the only meanings, and they are properties of the DATA rather
+ * than judgements about it:
+ *
+ *   down   the low end of something the desk itself stated -- its lowest
+ *          case, a target under the last price. Not "bad": a bear case is
+ *          not a problem, it is one of the numbers that was written down.
+ *   up     the high end of the same. Not "good", for the same reason.
+ *   base   the middle of a stated ladder, where there is one.
+ *   scale  a measured quantity with no direction at all -- a position
+ *          weight is neither up nor down, it is simply how big.
+ *   mark   where the market actually is. Deliberately ink rather than a
+ *          colour, because it is the one thing on the axis the desk did not
+ *          choose, and it must not read as a fourth case.
+ *
+ * Severity is still absent, and still belongs to `tone` on the card around
+ * this picture. Nothing here is allowed to compute it.
+ */
+const INK = {
+  down: 'bg-rose-500 dark:bg-rose-400',
+  up: 'bg-emerald-500 dark:bg-emerald-400',
+  base: 'bg-slate-500 dark:bg-slate-400',
+  scale: 'bg-indigo-500 dark:bg-indigo-400',
+  mark: 'bg-gray-900 dark:bg-white',
+} as const
+
+/** The same five, as text. */
+const INK_TEXT = {
+  down: 'text-rose-600 dark:text-rose-400',
+  up: 'text-emerald-600 dark:text-emerald-400',
+  base: 'text-slate-600 dark:text-slate-400',
+  scale: 'text-indigo-600 dark:text-indigo-400',
+  mark: 'text-gray-900 dark:text-white',
+} as const
+
+type InkRole = keyof typeof INK
+
+/**
+ * Which end of the ladder a case sits on, from its PRICE rather than its name.
+ *
+ * The desk types these labels by hand -- "Bear", "Downside", "Street low" --
+ * so matching on the word would colour one desk's ladder and leave the next
+ * one's grey. Position in the sorted set is the fact the drawing actually
+ * needs, and it cannot be spelled differently.
+ *
+ * A two-case ladder has no middle, which is why `base` is only returned when
+ * there is something on both sides of it. A single case is `base` too: one
+ * number is not a direction.
+ */
+function caseRole(price: number, prices: readonly number[]): InkRole {
+  if (prices.length < 2) return 'base'
+  const lo = Math.min(...prices)
+  const hi = Math.max(...prices)
+  if (price <= lo) return 'down'
+  if (price >= hi) return 'up'
+  return 'base'
+}
+
 /** A small caps label. Used identically by every archetype so they read as a set. */
 function Cap({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -292,6 +364,10 @@ function ScenarioRange({ v, s, grow, interactive, year }: {
    */
   const [asked, setAsked] = useState<string | null>(null)
   const cases = v.cases ?? []
+  /* The ladder's own extent, computed once: every tick and every label asks
+     `caseRole` the same question, and recomputing min/max per mark would let
+     two marks disagree if the list ever changed under them. */
+  const casePrices = cases.map(c => c.price)
   const marks = [
     ...cases.map(c => ({ id: `case:${c.label}:${c.price}`, label: c.label, price: c.price, current: false })),
     { id: 'current', label: 'Last', price: v.current, current: true },
@@ -411,24 +487,30 @@ function ScenarioRange({ v, s, grow, interactive, year }: {
              the label row. */
           style={{ minHeight: 30, maxHeight: 76, marginBottom: usable ? 6 : 0 }}
         >
-          {/* The modelled range, as a shaded region. Ink at low alpha rather
-              than a grey fill, so it sits UNDER the marks instead of
-              competing with them. */}
+          {/* The modelled range, as a shaded region.
+              Tinted ALONG its own axis -- rose at the low end, emerald at the
+              high -- so the region states its own direction instead of being
+              a grey smudge the marks happen to sit in. Low alpha, because it
+              is the ground: the moment this competes with the ticks it has
+              stopped being a background. */}
           <div
             data-scenario-band
-            className="absolute bottom-0 h-[52%] bg-gray-900/[0.06] dark:bg-white/[0.07]"
+            className="absolute bottom-0 h-[52%] bg-gradient-to-r from-rose-500/[0.14] via-slate-400/[0.10] to-emerald-500/[0.16] dark:from-rose-400/20 dark:via-slate-300/10 dark:to-emerald-400/20"
             style={{ left: `${pos(v.low)}%`, width: `${pos(v.high) - pos(v.low)}%` }}
           />
           {/* Its edges, ruled, and standing a little proud of the fill. This
               is what makes it a bounded region and not a smudge -- the two
               numbers were STATED and the drawing should say exactly where.
+              Each edge takes the colour of the end it bounds, so the frame
+              and the case standing on it agree.
               The region is deliberately SHORTER than the axis: at full height
               a tinted rectangle reads as an empty box waiting for content,
               which is what the first attempt looked like. */}
-          {[v.low, v.high].map(p => (
+          {([['down', v.low], ['up', v.high]] as const).map(([role, p]) => (
             <div
-              key={`edge-${p}`}
-              className="absolute bottom-0 h-[66%] w-px bg-gray-400 dark:bg-white/30"
+              key={`edge-${role}`}
+              data-scenario-edge={role}
+              className={clsx('absolute bottom-0 h-[66%] w-0.5 opacity-70', INK[role])}
               style={{ left: `${pos(p)}%` }}
               aria-hidden
             />
@@ -465,18 +547,31 @@ function ScenarioRange({ v, s, grow, interactive, year }: {
           {cases.map(c => {
             const id = `case:${c.label}:${c.price}`
             const on = held?.id === id
+            /* Which end of the ladder this case is, by price. See `caseRole`:
+               the colour is the case's own position in the set the desk
+               wrote, not a verdict on it. */
+            const role = caseRole(c.price, casePrices)
             /* The handle rides the TICK, not the hit area around it: every
                reader of this attribute -- the density guard among them -- is
                asking about the drawn mark, and the 20px button is a box. */
             const tick = (
               <span
                 data-scenario-case={c.label}
+                data-scenario-role={role}
                 /* Taller than the region, so a case inside the range still
                    reads as a mark ON a scale rather than disappearing into
-                   the tint behind it. */
+                   the tint behind it.
+                   A hairline was the other half of "bland": at 1px a coloured
+                   tick is indistinguishable from a grey one, so the weight
+                   has to come up with the colour or the colour does nothing.
+                   Held gets a third step and a cap, so pointing at a mark is
+                   still visible against two neighbours that are already
+                   coloured. */
                 className={clsx(
-                  'absolute bottom-0 block h-[80%]',
-                  on ? 'w-0.5 bg-gray-900 dark:bg-white' : 'w-px bg-gray-500 dark:bg-gray-400',
+                  'absolute bottom-0 block h-[80%] rounded-t-[1px]',
+                  INK[role],
+                  on ? 'w-1' : 'w-0.5',
+                  on ? 'opacity-100' : 'opacity-80',
                 )}
               />
             )
@@ -507,16 +602,23 @@ function ScenarioRange({ v, s, grow, interactive, year }: {
               small diamond -- a marker that reads as placed rather than
               stuck on, and the only coloured thing in the picture. */}
           {(() => {
+            /* Ink by default, and the breach colour only on a breach. The
+               market is not one of the desk's cases and must not read as a
+               fourth coloured tick -- see `INK.mark`. When it HAS broken out
+               the colour is the finding, so it takes it. */
             const ink = outside
               ? above ? 'bg-emerald-600 dark:bg-emerald-400' : 'bg-rose-600 dark:bg-rose-400'
-              : 'bg-gray-900 dark:bg-white'
+              : INK.mark
             const mark = (
               <>
-                <span className={clsx('absolute inset-y-0 w-px', ink)} aria-hidden />
+                {/* The rule, now half a pixel heavier than the case ticks it
+                    crosses. At 1px against coloured 2px ticks the one mark
+                    that is not a claim was the faintest thing on the axis. */}
+                <span className={clsx('absolute inset-y-0 w-0.5 opacity-90', ink)} aria-hidden />
                 <span
                   data-scenario-current
                   className={clsx(
-                    'absolute top-0 h-[5px] w-[5px] -translate-y-1/2 rotate-45 transition-transform',
+                    'absolute top-0 h-[7px] w-[7px] -translate-y-1/2 rotate-45 shadow-sm ring-1 ring-white transition-transform dark:ring-gray-900',
                     ink,
                     held?.current && 'scale-150',
                   )}
@@ -599,9 +701,15 @@ function ScenarioRange({ v, s, grow, interactive, year }: {
               data-scenario-label={m.current ? 'current' : m.label}
               className={clsx(
                 'absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] font-bold uppercase leading-none tracking-wide tabular-nums',
+                /* A label takes its mark's colour, so the row reads as the
+                   axis rather than as a caption under it -- BEAR and the
+                   tick it names are now one thing. Grey labels over coloured
+                   ticks was the version that looked like a key for a chart
+                   printed somewhere else. */
                 m.current
                   ? 'text-gray-700 dark:text-gray-200'
-                  : held?.id === m.id ? 'text-gray-900 dark:text-white' : 'text-gray-400',
+                  : INK_TEXT[caseRole(m.price, casePrices)],
+                held?.id === m.id ? 'opacity-100' : 'opacity-90',
               )}
               style={{ left: `${clamp(pos(m.price))}%` }}
             >
@@ -654,6 +762,12 @@ function TargetCompare({ v, s, grow }: {
   const has = v.target != null
   const upside = has && v.current > 0 ? ((v.target! - v.current) / v.current) * 100 : null
   const dot = grow ? HEAVY.dot : s.dot
+  /* Which way the target sits from the market. `null` where there is no
+     target to point at, and where the two are equal -- a zero-length claim
+     has no direction and must not be coloured as though it did. */
+  const reach: InkRole | null = upside == null || Math.abs(upside) < 0.05
+    ? null
+    : upside > 0 ? 'up' : 'down'
 
   return (
     <div data-explore-visual="target_compare" className={fills(s, grow)}>
@@ -669,19 +783,53 @@ function TargetCompare({ v, s, grow }: {
         <span className={clsx('min-w-0 truncate font-bold tabular-nums text-gray-900 dark:text-white', s.value)}>
           {money(v.current)}
         </span>
-        <span className={clsx('shrink-0 rounded-full bg-gray-900 dark:bg-white', dot)} aria-hidden />
+        {/* The market end stays ink: it is where the price IS, not a number
+            anybody chose. The far end and the span between them take the
+            direction of the claim. */}
+        <span className={clsx('shrink-0 rounded-full', INK.mark, dot)} aria-hidden />
         <span
           className={clsx(
             'min-w-0 flex-1 rounded-full',
             has
-              ? clsx(grow ? HEAVY.rule : s.rule, TRACK)
-              : 'h-px border-t border-dashed border-gray-300 dark:border-gray-600',
+              ? clsx(
+                  grow ? HEAVY.rule : s.rule,
+                  /* The distance, drawn as a direction. A flat grey track
+                     between two dots is the "bunch of lines" this card was;
+                     the gradient runs from the market toward the target, so
+                     the span says which way the claim points before any
+                     number is read. */
+                  reach === 'up'
+                    ? 'bg-gradient-to-r from-gray-300 to-emerald-500 dark:from-gray-600 dark:to-emerald-400'
+                    : reach === 'down'
+                      ? 'bg-gradient-to-r from-gray-300 to-rose-500 dark:from-gray-600 dark:to-rose-400'
+                      : TRACK,
+                )
+              /* No target: the dashed run to nowhere is kept, because the
+                 shape of the absence IS the statement -- see the empty-state
+                 note below. What changes is its ink. Grey said "this part of
+                 the card is inactive"; every one of these is in fact a piece
+                 of work nobody has done, which `semantic-tone` calls
+                 `review` and draws amber. Unfinished, not broken. */
+              : 'h-px border-t border-dashed border-amber-300 dark:border-amber-700/70',
           )}
           aria-hidden
         />
         {has ? (
           <>
-            <span className={clsx('shrink-0 rounded-full border-2 border-gray-900 bg-white dark:border-white dark:bg-gray-900', dot)} aria-hidden />
+            <span
+              /* `'none'` rather than omitting the attribute: "this claim has
+                 no direction" is a state worth being able to read, and an
+                 absent attribute is indistinguishable from a dot that was
+                 never drawn. */
+              data-target-dot={reach ?? 'none'}
+              className={clsx(
+                'shrink-0 rounded-full border-2 bg-white dark:bg-gray-900', dot,
+                reach === 'up' ? 'border-emerald-500 dark:border-emerald-400'
+                  : reach === 'down' ? 'border-rose-500 dark:border-rose-400'
+                    : 'border-gray-900 dark:border-white',
+              )}
+              aria-hidden
+            />
             <span data-target-value className={clsx('min-w-0 truncate font-bold tabular-nums text-gray-900 dark:text-white', s.value)}>
               {money(v.target!)}
             </span>
@@ -691,14 +839,20 @@ function TargetCompare({ v, s, grow }: {
              number here is the one thing a no-target card must not do. */
           <span
             data-target-empty
-            className={clsx('min-w-0 shrink truncate rounded border border-dashed border-gray-300 px-1.5 py-0.5 font-bold uppercase tracking-wide text-gray-400 dark:border-gray-600', s.note)}
+            className={clsx('min-w-0 shrink truncate rounded border border-dashed border-amber-400 bg-amber-50 px-1.5 py-0.5 font-bold uppercase tracking-wide text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300', s.note)}
           >
             Not set
           </span>
         )}
       </div>
       {upside != null && (
-        <p className={clsx('mt-1 font-semibold tabular-nums text-gray-500 dark:text-gray-400', s.note)}>
+        <p className={clsx(
+          'mt-1 font-semibold tabular-nums', s.note,
+          /* The readout agrees with the dot it describes. Grey here while the
+             far end was coloured made the number look like a caption about
+             someone else's chart. */
+          reach ? INK_TEXT[reach] : 'text-gray-500 dark:text-gray-400',
+        )}>
           {upside >= 0 ? '+' : ''}{upside.toFixed(0)}% to target
         </p>
       )}
@@ -829,8 +983,27 @@ function Exposure({ v, s, grow }: {
         </span>
         <Cap className="min-w-0 truncate">{v.portfolioName ? `of ${v.portfolioName}` : 'of the book'}</Cap>
       </div>
-      <div className={clsx('mt-1.5 w-full overflow-hidden rounded-full', grow ? HEAVY.bar : s.bar, TRACK)}>
-        <div className="h-full rounded-full bg-gray-900 dark:bg-white" style={{ width: `${pct}%` }} />
+      {/* The bar, with the scale it is read against.
+          A weight has no direction -- 28% of a book is neither good nor bad
+          -- so it takes `scale`, the one colour in the vocabulary that makes
+          no claim. What it was missing was not colour but a RULER: a lone
+          filled bar says "some" and nothing else, and the ticks at each
+          quarter of the 20% span turn it back into a measurement. */}
+      <div className={clsx('relative mt-1.5 w-full overflow-hidden rounded-full', grow ? HEAVY.bar : s.bar, TRACK)}>
+        <div
+          data-exposure-fill
+          className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-indigo-600 dark:from-indigo-400 dark:to-indigo-300"
+          style={{ width: `${pct}%` }}
+        />
+        {grow && [25, 50, 75].map(t => (
+          <span
+            key={t}
+            data-exposure-tick={t}
+            className="absolute inset-y-0 w-px bg-white/55 dark:bg-gray-900/45"
+            style={{ left: `${t}%` }}
+            aria-hidden
+          />
+        ))}
       </div>
     </div>
   )
@@ -891,7 +1064,7 @@ function LastLook({ v, s, grow }: {
       className={clsx(s.root, grow && 'flex h-full min-h-0 flex-col justify-center')}
     >
       <div className={clsx('flex min-w-0 items-center', grow ? 'gap-2' : 'gap-1.5')}>
-        <span className={clsx('shrink-0 rounded-full border-2 border-gray-400 bg-white dark:bg-gray-900', dot)} aria-hidden />
+        <span className={clsx('shrink-0 rounded-full border-2 border-gray-400 bg-white dark:border-gray-500 dark:bg-gray-900', dot)} aria-hidden />
         {/* The label gives way before the number does: "+21%" is the finding
             and "Last look 10mo" is context for it. */}
         {/* "Last look 10mo" is 14 characters between a dot, a rule and a
@@ -900,8 +1073,18 @@ function LastLook({ v, s, grow }: {
             because a reader cannot tell 1mo from 18mo. The card's own age
             stamp is in the header; this label only has to name the marker. */}
         <Cap className="shrink-0">Last look</Cap>
+        {/* The run from the last look to today, drawn as a direction rather
+            than a grey connector. The two ends were already coloured and the
+            line between them was not, which is what made this card read as
+            "a bunch of lines" with a number stuck on the end. */}
         <span
-          className={clsx('min-w-0 flex-1 rounded-full', grow ? 'h-1' : s.rule, TRACK)}
+          data-lastlook-run
+          className={clsx(
+            'min-w-0 flex-1 rounded-full', grow ? 'h-1' : s.rule,
+            up
+              ? 'bg-gradient-to-r from-gray-300 to-emerald-500 dark:from-gray-600 dark:to-emerald-400'
+              : 'bg-gradient-to-r from-gray-300 to-rose-500 dark:from-gray-600 dark:to-rose-400',
+          )}
           aria-hidden
         />
         <span
@@ -1029,11 +1212,50 @@ function QuestionVisual({ v, s, grow }: {
       data-explore-visual="question"
       className={clsx(s.root, grow && 'flex h-full min-h-0 flex-col')}
     >
-      <HelpCircle className="h-3.5 w-3.5 shrink-0 text-amber-400 dark:text-amber-500" aria-hidden />
+      {/* A question is work waiting on a person, which is `review` in the
+          shared vocabulary. It was drawn as a 14px amber outline over grey
+          prose, so on a tall card it read as an afterthought rather than as
+          the one thing the card is asking. The icon is now filled and sits
+          in its own tinted disc, and an amber rule runs down the prose, so
+          the prompt reads as a prompt at a glance and at a distance. */}
+      <span
+        data-question-badge
+        className="inline-grid h-5 w-5 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300"
+        aria-hidden
+      >
+        <HelpCircle className="h-3.5 w-3.5" />
+      </span>
+      {/* The prompt sits ON a tinted ground rather than beside a rule.
+          A left border was the first attempt and it drew a 110px amber line
+          down the card next to one line of text -- the same "line to
+          nowhere" the rest of this pass is removing. A panel takes the
+          height honestly instead: where the card is tall the callout is
+          tall, and the question looks placed rather than stranded. */}
+      {/*
+        ── Two attempts that were wrong, and why there is no panel here ──────
+
+        First a 2px amber rule down the left of the text: on a tall card
+        that drew a 110px amber line beside one line of prose -- the same
+        "line to nowhere" the rest of this pass exists to remove.
+
+        Then a tinted callout around the text. Worse: stretched to the
+        card's height it is a 200px amber rectangle holding one sentence,
+        which is the same void as before only louder. Clamping it to hug the
+        text fixed the look and broke a real rule -- the density guard
+        requires this prose to show the lines that FIT rather than a fixed
+        count, so a long question would have been cut at four lines on a
+        card with room for eight.
+
+        The lesson is that a GROUND cannot carry the signal here, because
+        the ground is exactly what scales with the empty space. The badge
+        above can: it is a fixed size at every height. So the prompt reads
+        amber from the mark, not from a box, and the text keeps the height
+        behaviour the guard pins.
+      */}
       <p
         data-question-text
         className={clsx(
-          'mt-1 font-semibold leading-[1.35] text-gray-800 dark:text-gray-100',
+          'mt-1.5 font-semibold leading-[1.35] text-gray-800 dark:text-gray-100',
           grow ? 'min-h-0 flex-1 overflow-hidden' : 'line-clamp-3',
           s.body,
         )}
