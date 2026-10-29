@@ -1234,12 +1234,16 @@ function DecisionTile({
                   </span>
                 )}
               </div>
-              {d.companyName && (
-                <div className="truncate text-[12px] text-gray-500">{d.companyName}</div>
-              )}
-              {/* The book. Never the batch's own auto-generated name. */}
-              <div data-testid="decision-context" className="truncate text-[11px] text-gray-500">
-                {d.portfolioName}
+              {/* Company and book on ONE row. They are both quiet grey
+                  context at 11-12px and they were stacked, which spent two
+                  rows of a card whose chart is the thing below them. Two
+                  spans, not one joined string: the book is a fact a reader
+                  -- and a test -- addresses on its own. Never the batch's
+                  own auto-generated name. */}
+              <div data-testid="decision-context" className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-[12px] text-gray-500">
+                {d.companyName && <span className="truncate">{d.companyName}</span>}
+                {d.companyName && d.portfolioName && <span aria-hidden>·</span>}
+                {d.portfolioName && <span className="truncate">{d.portfolioName}</span>}
               </div>
             </div>
 
@@ -1341,9 +1345,17 @@ function DecisionTile({
                 {reason ?? proposedReason}
               </p>
             )}
-            {!reason && !proposedReason && (
-              <p className="text-[12px] text-amber-700 dark:text-amber-500">No decision reason</p>
-            )}
+            {/*
+              No "No decision reason".
+
+              It drew on 23 of the 26 cards in the live field, in amber, which
+              is a gallery announcing its own corpus rather than telling a
+              reader anything about a decision. Nothing is actionable about
+              it on a card -- the reader cannot write the missing reason from
+              here -- and the detail pane states the absence properly, in a
+              line that also says what WAS recorded. A label that is true of
+              almost every card is a background condition, not a finding.
+            */}
 
             {/* Readable figures, captioned, in a grid rather than a run-on
                 strip of microtext joined by middots. */}
@@ -1487,7 +1499,16 @@ function DecisionTile({
           size={size}
         />
       ) : (
-        <div className="flex min-w-0 items-center gap-2">
+        /*
+          The book rides on the identity row, not under it.
+
+          Measured on a 455x344 tile: the name row, the book row and the
+          figures row used 139px of 421px across and 99px down, and the chart
+          underneath got 141px. The book is three or four words; putting it
+          on its own line spent a 25px row to place them at x=0. On the row
+          above there is nothing to its right.
+        */
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
           <TileIdentity symbol={d.symbol} name={d.companyName} size={size} />
           {d.action && (
             <span
@@ -1504,6 +1525,16 @@ function DecisionTile({
               {d.action}
             </span>
           )}
+          {/* The book, and nothing else. This line used to append "committed
+              in <batch name>", which on a batch called "testing" rendered as
+              "committed in testing" -- an internal label reading as a
+              statement about the trade. The batch is named in the batch block
+              below, where it belongs. */}
+          {d.portfolioName && (
+            <span data-testid="decision-context" className="truncate text-[11px] text-gray-500">
+              {d.portfolioName}
+            </span>
+          )}
         </div>
       )}
 
@@ -1517,18 +1548,14 @@ function DecisionTile({
       */}
       {/* The date is in the eyebrow and the people are in the footer; this
           line carries what neither does. */}
-      {/*
-        The book, and nothing else.
-
-        This line used to append "committed in <batch name>", which on a batch
-        called "testing" rendered as "committed in testing" -- an internal
-        label reading as a statement about the trade. The batch is named in the
-        batch block below where it belongs; here the portfolio is the context
-        the reader needs.
-      */}
-      <p data-testid="decision-context" className="text-[11px] text-gray-500">
-        {d.portfolioName}
-      </p>
+      {/* The book moved onto the identity row above, where there was 280px of
+          empty space beside the ticker and this cost a 25px row of its own.
+          A batched card has no identity row to ride on, so it keeps one. */}
+      {batched && (
+        <p data-testid="decision-context" className="text-[11px] text-gray-500">
+          {d.portfolioName}
+        </p>
+      )}
 
       {/*
         What was actually committed, in the trade's own recorded figures.
@@ -1662,7 +1689,14 @@ function DecisionTile({
 
           Inside the figures block on purpose: as its own child of the tile it
           collected another `gap-3` above it for one short line. */}
-      {(facts.verdictLabel && situation.klass === 'recent') || !hasHumanReason(d) ? (
+      {/*
+        The missing-reason half of this line is gone; see the note on the big
+        branch. It was true of 23 of 26 cards, so the line it forced appeared
+        on nearly all of them -- 20px of vertical, in amber, on every card,
+        for a fact about the corpus. The VERDICT half stays: it is the one
+        piece of standing state that asks the reader for something.
+      */}
+      {facts.verdictLabel && situation.klass === 'recent' ? (
         <p data-testid="decision-state" className="mt-1 text-[11px]">
           {/*
             A tinted chip, not grey prose.
@@ -1685,11 +1719,6 @@ function DecisionTile({
                 {facts.verdictLabel}
               </span>
             )
-          )}
-          {!hasHumanReason(d) && (
-            <span className="text-amber-700 dark:text-amber-500">
-              {facts.verdictLabel && situation.klass === 'recent' ? ' · ' : ''}No decision reason
-            </span>
           )}
         </p>
       ) : null}

@@ -9,6 +9,8 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { CoverageResearchCandidate } from '../../../lib/research/coverage-research-gaps'
 import type { ResearchFraming } from '../../../lib/research/case-state'
 import type { ResearchSubject } from '../../../lib/desktop-research'
@@ -205,6 +207,35 @@ describe('a genuine recorded review', () => {
     const moved = subjectFromCoverage(candidate('price_move', 'reviewed', 30, 200))
     expect(issueFor(moved)).toBe('Moved since review')
     expect(toRailCard(moved).figureLabel).toBe('since review')
+  })
+
+  it('never offers a bare count as a figure', () => {
+    /*
+     * A no-thesis card carried `1` over the label `on file`, which reads as
+     * "1 ON FILE" under a ticker and answers no question a reader asked: one
+     * WHAT, on whose file, and so what? Reported as exactly that -- "I don't
+     * know what 1 on file means". The number still exists where it is a
+     * labelled row: "Research on file", in the weight chip's own panel. The
+     * same span came off the tile body three passes ago for the same reason
+     * and survived here as the rail card's secondary figure.
+     */
+    /*
+     * Asserted on the source, deliberately.
+     *
+     * The first version of this case built a no-thesis subject through
+     * `subjectFromCoverage` and read `toRailCard(...).secondary`, and it
+     * PASSED with the span reinstated: a coverage-derived subject does not
+     * reach the no-thesis branch, so the assertion was examining a card the
+     * defect could never appear on. The branch that renders it is what has
+     * to be checked, and the pattern carries its own code punctuation so
+     * the note above cannot satisfy or break it.
+     */
+    const ws = readFileSync(
+      join(process.cwd(), 'src/components/research-v2/ResearchWorkspace.tsx'), 'utf8',
+    )
+    expect(ws).not.toContain("label: 'on file'")
+    // The count still exists where it is a labelled row the reader can read.
+    expect(ws).toContain("label: 'Research on file'")
   })
 })
 

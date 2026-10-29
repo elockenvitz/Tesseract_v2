@@ -301,27 +301,30 @@ export function DecisionDetailPane({
               </DesktopModule>
             </div>
 
+          </>}
+          context={<>
             {/* ------------------------ what happened ------------------------ */}
-            {/* The chart has the lead column to itself. It used to share a row
-                with the chronology, at 92px tall inside a capped region, which
-                is how the one drawing on the page ended up the smallest thing
-                on it. */}
+            {/*
+              The chart sits where Research puts its own: the context column,
+              above the record's other dates. Giving it the lead column made
+              it 857px wide against Research's 585 -- the same component at a
+              different size on two tabs, which is the complaint this pane has
+              now had twice. Same column, same width, same height, same ink.
+            */}
             {win && (
               <DesktopModule title="What happened next">
                 <PriceSinceDecision w={win} executedOffsetPct={execOffset} />
               </DesktopModule>
             )}
-          </>}
-          context={
-            /*
-              The chronology, out of the price module and into its own column.
+            {/*
+              The chronology, out of the price module and under it.
 
               It was a child of `{win && ...}`, so a decision with no cached
               closes -- which is every decision taken since the cache last ran
               -- rendered no dates at all. The gap between proposing, deciding
               and executing is a fact about the record, not about the price,
               and it is now stated whether or not a line can be drawn.
-            */
+            */}
             <DesktopModule title="Chronology">
               <ol data-testid="decision-chronology" className="flex flex-col gap-2.5">
                 {d.requestedAt && (
@@ -349,7 +352,7 @@ export function DecisionDetailPane({
                 </p>
               )}
             </DesktopModule>
-          }
+          </>}
         />
 
         <DeepLinks>

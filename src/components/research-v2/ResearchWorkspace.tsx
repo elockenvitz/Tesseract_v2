@@ -357,8 +357,18 @@ export function toRailCard(s: ResearchSubject): RailCard {
       symbol: s.symbol, reason: issueFor(s), tone: STATE_TONE[state],
       figure: s.weightPct != null ? `${s.weightPct.toFixed(1)}%` : null,
       figureLabel: s.weightPct != null ? 'held' : null,
-      secondary: s.evidenceCount
-        ? { value: String(s.evidenceCount), label: 'on file' } : null,
+      /*
+        No "N on file".
+
+        It read as "1 ON FILE" under a ticker and answered no question a
+        reader was asking: one WHAT, on whose file, and so what? The count
+        that matters on a card with no thesis is the weight behind it, and
+        where a reader does want the number it is a labelled row -- "Research
+        on file" -- in the weight chip's own panel. The same span was removed
+        from the tile body three passes ago for the same reason and survived
+        here, as the rail card's secondary figure.
+      */
+      secondary: null,
       // Generated work says why it matters on this name; otherwise the missing
       // structure, named. Never a completion score.
       detail: s.generated ? whyItMatters(s) : missing.length ? `Missing: ${missing.join(', ')}` : whyItMatters(s),

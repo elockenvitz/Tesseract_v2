@@ -1052,6 +1052,85 @@ describe('what happened, in Outcomes’ own numbers', () => {
     expect(tile.textContent).not.toContain('No decision reason')
   })
 
+  it('never says a reason is missing, on any card', () => {
+    /*
+     * The case above asserted it for a card that HAS a reason, which is the
+     * easy half. Live, 23 of the 26 cards had none, so the amber line drew on
+     * nearly all of them: 20px of vertical, on every card, for a fact about
+     * the corpus rather than about any decision. A reader cannot write the
+     * missing reason from a card, and the detail pane states the absence
+     * properly, alongside what WAS recorded.
+     */
+    /*
+     * Six, so the field renders BOTH tile branches. The first version of this
+     * case rendered one record, which is a hero -- and the hero branch and
+     * the stacked branch each had their own copy of the line, so it passed
+     * with the stacked copy reinstated. It is asserted across every tile now.
+     */
+    decisions = Array.from({ length: 6 }, (_, i) => decision({
+      id: `x${i}`, status: 'accepted', decidedAt: daysAgo(10 + i),
+      decisionNote: null, contextNote: null,
+    }))
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles.length).toBeGreaterThan(3)
+    for (const t of tiles) expect(t.textContent).not.toContain('No decision reason')
+    const tile = tiles[0]
+    /*
+     * The queue's own reason for listing the card survives, and is not the
+     * same thing: "No reason recorded" is why this record is in front of the
+     * reader, it rides in the eyebrow row where it costs no vertical, and it
+     * is the one phrasing of the absence that is doing work.
+     */
+    expect(within(tile).getByTestId('decision-reason')).toHaveTextContent('No reason recorded')
+  })
+
+  it('puts the book on the name row, not on a row of its own', () => {
+    /*
+     * Measured on a 455x344 tile: the name row, the book row and the figures
+     * row used 139px of 421px across and 99px down, and the chart under them
+     * got 141. The book is three words; its own row spent 25px to place them
+     * at x=0 with nothing to their right. 344 -> 299px after, with the text
+     * above the chart down to 57px.
+     */
+    /*
+     * Six, so the field renders BOTH tile branches -- the same blindness that
+     * let the sibling case above pass with its defect reinstated. The first
+     * version of THIS case rendered one record, which is a hero, and asked
+     * `parentElement.querySelector(...)`: that search is recursive, so on a
+     * hero it found the stance nested two levels down and passed whatever the
+     * stacked branch did. Each branch is now asserted in its own shape.
+     */
+    decisions = Array.from({ length: 6 }, (_, i) => decision({
+      id: `x${i}`, decidedAt: daysAgo(10 + i), portfolioName: 'Large Cap Core',
+    }))
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles.length).toBeGreaterThan(3)
+    let heroes = 0
+    let stacked = 0
+    for (const t of tiles) {
+      const book = within(t).getByTestId('decision-context')
+      expect(book).toHaveTextContent('Large Cap Core')
+      if (book.textContent!.includes('Oracle')) {
+        // The hero puts company and book in one element, on one row.
+        heroes += 1
+      } else {
+        /*
+         * The stacked tile rides its book in the identity row, as a DIRECT
+         * sibling of the stance chip. `:scope >` matters: an unscoped
+         * querySelector walks the whole subtree and so is satisfied by a
+         * book on a row of its own, which is the defect.
+         */
+        expect(book.parentElement!.querySelector(':scope > [data-testid="decision-stance"]'))
+          .toBeInTheDocument()
+        stacked += 1
+      }
+    }
+    expect(heroes).toBeGreaterThan(0)
+    expect(stacked).toBeGreaterThan(0)
+  })
+
   /*
    * ── The move has to be trustworthy to be the biggest thing on the card ───
    *
@@ -1856,49 +1935,55 @@ describe('price after a decision carries no verdict', () => {
     return screen.getByTestId('price-since-decision')
   }
 
-  it('does not paint a fall in critical red', () => {
-    const chart = withPath(false)
-    expect(chart.querySelector('svg')!.innerHTML).not.toMatch(/rose|red-/)
-    expect(within(chart).getByText(/^-\d/)).toBeInTheDocument()
-  })
-
-  it('does not paint a rise in success green', () => {
-    const chart = withPath(true)
-    expect(chart.querySelector('svg')!.innerHTML).not.toMatch(/emerald|green-/)
-    expect(within(chart).getByText(/^\+\d/)).toBeInTheDocument()
-  })
-
   /*
-   * Rewritten, not deleted: it read the first `<path>`'s class attribute.
+   * ── Three cases rewritten, with the reason, because the rule changed ────
    *
-   * That was the right subject when this pane drew its own SVG and put the
-   * ink on the path. The shared `AnchoredPriceChart` colours the whole plot
-   * with `currentColor` and carries the ink on the `<svg>`, so both paths now
-   * return `null` and the old comparison passed `null === null` -- it would
-   * have gone on passing with `ink="direction"` and a red line on screen.
-   * The subject is unchanged: up and down must be the same colour here.
+   * They pinned a GREY line here: "does not paint a fall in critical red",
+   * "does not paint a rise in success green", "draws the same ink either
+   * way". The argument was that a red line beside a decision's own stated
+   * reason is the picture calling it a bad call while the caption denies
+   * doing so, and it is a good argument in isolation.
+   *
+   * It did not survive the lens it was in. The TILES in this gallery draw
+   * the shared `TilePriceChart`, which is graded -- so a reader saw a red
+   * NKE line on the card, opened it, and got a grey line of the same series
+   * one click later. Reported twice as "the chart is not the same as the
+   * other lenses", and the product owner called it, exactly as they called
+   * the same question for the tile charts a pass earlier.
+   *
+   * What these cases were really protecting is that the card and the
+   * workspace cannot disagree about one series, so that is what they assert
+   * now -- in the direction the product went. The neutral mode still exists
+   * and `DecisionPath`, which draws the decision rather than the market,
+   * still uses it.
    */
-  it('draws the same ink either way', () => {
-    const inkOf = (el: HTMLElement) => el.querySelector('svg')!.getAttribute('class')
-    const down = inkOf(withPath(false))
+  it('grades the line the same way the card that opened it does', () => {
+    const inkOf = (el: HTMLElement) => el.querySelector('svg')!.getAttribute('class') ?? ''
+    expect(inkOf(withPath(false))).toMatch(/text-rose-/)
+
     const up = (() => {
       detail = { history: priceSeries(300, true) }
       decisions = [decision({ id: 'y', decidedAt: daysAgo(160) })]
       const { container } = render(<DecisionsWorkspace selectedDecisionId="y" />)
       return container.querySelector('[data-testid="price-since-decision"] svg')!
-        .getAttribute('class')
+        .getAttribute('class') ?? ''
     })()
-    expect(up).toBe(down)
-    // And it is an ink, not an absence -- the assertion above is only worth
-    // making because there is a colour here to be wrong about.
-    expect(down).toMatch(/text-slate-/)
-    expect(down).not.toMatch(/emerald|rose/)
+    expect(up).toMatch(/text-emerald-/)
+  })
+
+  it('takes the hue from the same sign the figure takes', () => {
+    // The one thing that must never drift: a green line over a negative
+    // number. Both come off `w.changePct >= 0` in the shared chart.
+    const chart = withPath(false)
+    expect(within(chart).getByText(/^-\d/)).toBeInTheDocument()
+    expect(chart.querySelector('svg')!.getAttribute('class')).toMatch(/rose/)
+    expect(chart.querySelector('svg')!.getAttribute('class')).not.toMatch(/emerald/)
   })
 
   it('keeps the sign on the number, because the sign is a fact', () => {
     const chart = withPath(false)
-    const value = within(chart).getByText(/^-\d/)
-    expect(value.className).not.toMatch(/rose|emerald|red-|green-/)
+    expect(within(chart).getByText(/^-\d/)).toBeInTheDocument()
+    expect(within(chart).getByText(/^-\d/).textContent).toMatch(/^-\d+\.\d%$/)
   })
 
   /*
@@ -1964,7 +2049,9 @@ describe('price after a decision carries no verdict', () => {
      */
     const svg = withPath(false).querySelector('svg')!
     expect(svg.getAttribute('preserveAspectRatio')).toBeNull()
-    expect(svg.getAttribute('viewBox')).toMatch(/^0 0 \d+ 168$/)
+    // 204 is Research's height for the same slot, taken deliberately rather
+    // than a number of this lens's own.
+    expect(svg.getAttribute('viewBox')).toMatch(/^0 0 \d+ 204$/)
   })
 
   it('still dates the record when there is no price to draw', () => {

@@ -424,23 +424,27 @@ export function DashboardShell({
               onRotate={rotate}
               intent={deck.target.source?.intent}
               /*
-                Research and Decisions draw their own ticker, state and
-                actions, so the deck's header would be a second one.
+                Every lens whose pane draws its own identity row.
 
-                Measured on the live Decisions pane: the deck printed
-                "NKE / sell · Awaiting decision / The Barbero Fund /
-                Mar 13, 2026" and the pane printed the same four facts again
-                40px below it, the second one three times the size. That is
-                the two-ticker bug `ownHeader` was added for, in the lens it
-                was not applied to.
+                Measured live, both of the ones added here printed the deck's
+                header and then said the same thing again a few pixels below:
+                Decisions gave "NKE / sell · Awaiting decision / The Barbero
+                Fund / Mar 13, 2026" and then the same four facts at three
+                times the size; Portfolio gave "JNJ / No thesis on file /
+                28.2% of the book in JNJ, with no thesis behind it." and then
+                that sentence again, verbatim, 40px down. That is the
+                two-ticker bug `ownHeader` exists for, in the two lenses it
+                was never applied to.
 
-                Portfolio still relies on this header. It duplicates its pane
-                the same way -- and it is also the only lens a reader can
-                reach with a focus INTENT ("Position", "Framework"), which
-                nothing but this header states. Fixing it means deciding where
-                the intent goes, which is a separate change.
+                What Portfolio gives up is the focus INTENT chip ("Position",
+                "Framework"), which only this header renders. Research made
+                that trade first and it holds here: `PortfolioWorkspace` is
+                not passed the intent and does nothing with it, so the chip
+                was a label naming a mode the surface did not enter. The way
+                to honour an intent is to open on the part the reader reached
+                for, which is a behaviour, not a badge.
               */
-              ownHeader={workLens === 'research' || workLens === 'decisions'}
+              ownHeader={workLens === 'research' || workLens === 'decisions' || workLens === 'portfolio'}
             >
               {renderLens(workLens, activeId)}
             </WorkDeck>

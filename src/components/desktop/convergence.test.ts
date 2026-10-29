@@ -81,9 +81,24 @@ const DETAILS = [
  * cases hold them there.
  */
 describe('a decision is never graded, though its price may be', () => {
-  /** The objects that depict the decision itself, not the market. */
+  /**
+   * The objects that depict the decision itself, not the market.
+   *
+   * `PriceSinceDecision` came OFF this list, and the reason is the list's own
+   * wording: it depicts the market. It was held neutral on the argument that
+   * a red line beside a stated rationale reads as a verdict on the call --
+   * sound in isolation, and not survivable in the lens it lives in, because
+   * the TILES of that same lens draw the graded shared chart. A reader saw a
+   * red NKE line in the gallery, clicked it, and landed on a grey line of the
+   * same series. Reported twice as "the chart is not the same as the other
+   * lenses", and the product owner called it, exactly as they called the same
+   * question for the tile charts one pass earlier.
+   *
+   * `DecisionPath` stays, and it is the case the rule was always about: it
+   * draws the LIFECYCLE -- proposed, decided, executed -- which is the
+   * decision, not the price.
+   */
   const NEVER_GRADED = [
-    ['components/decisions-v2/DecisionVisual.tsx', 'export function PriceSinceDecision'],
     ['components/decisions-v2/DecisionVisual.tsx', 'export function DecisionPath'],
   ] as const
 
@@ -106,32 +121,32 @@ describe('a decision is never graded, though its price may be', () => {
   })
 
   /*
-   * The case above went vacuous the moment the drawing was shared.
-   *
-   * `PriceSinceDecision` has no hue ternary in it any more -- it has no SVG
-   * in it at all -- so "contains no `up ? 'stroke-emerald'`" is now true of a
-   * component that would render a bright red line, because the ternary moved
-   * into `AnchoredPriceChart` where that case does not look. What the rule
-   * was always about is the DECISION pane's ink, so it is asserted where the
-   * decision is now made: the pane asks for neutral, and the shared chart
-   * honours the ask.
+   * Rewritten, not deleted. It asserted `ink="neutral"` on the decision
+   * pane's chart, which was the rule until the gallery and the workspace of
+   * one lens were seen side by side: the tiles graded and the pane did not.
+   * What survives of its subject is that a price path is graded the SAME way
+   * wherever it is drawn -- which is now the thing worth pinning, because
+   * the way this went wrong was one surface opting out.
    */
-  it('asks the shared chart for a neutral ink, and is given one', () => {
+  it('grades a price path the same way in the gallery and in the workspace', () => {
     const lens = src('components/decisions-v2/DecisionVisual.tsx')
     const at = lens.indexOf('export function PriceSinceDecision')
     expect(at).toBeGreaterThan(-1)
-    expect(lens.slice(at, at + 1400)).toContain('ink="neutral"')
+    // No opt-out: the detail chart takes the shared default, like Research.
+    expect(lens.slice(at, at + 1600)).not.toContain('ink="neutral"')
+    expect(src('components/research-v2/ResearchVisual.tsx')).not.toContain('ink=')
 
     const chart = src('components/desktop/AnchoredPriceChart.tsx')
-    // Graded is a mode, not the only mode, and `graded` is what every hue on
-    // the plot is keyed off -- the line and the figure's chip alike, so the
-    // two can never disagree about whether this chart is making a judgement.
+    // `graded` is what every hue on the plot is keyed off -- the line and the
+    // figure's chip alike -- so the two can never disagree about which way
+    // the price went, and the default is the graded one.
     expect(chart).toContain("const graded = ink === 'direction'")
-    expect(chart).toMatch(/!graded\s*\n?\s*\?\s*'text-slate-/)
-    // Research still grades, which is the counter-check: a chart that could
-    // only draw slate would pass the lines above by doing nothing.
+    expect(chart).toContain("ink = 'direction'")
     expect(chart).toMatch(/up\s*\n?\s*\?\s*'text-emerald/)
-    expect(src('components/research-v2/ResearchVisual.tsx')).not.toContain('ink=')
+    // Neutral still EXISTS and still draws slate. The mode is not being
+    // deleted, only vacated -- a chart that could no longer draw one ink
+    // would pass the lines above by having nothing to opt out of.
+    expect(chart).toMatch(/!graded\s*\n?\s*\?\s*'text-slate-/)
   })
 
   it('draws every full-size price path from one geometry', () => {

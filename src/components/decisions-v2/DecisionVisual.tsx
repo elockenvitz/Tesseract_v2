@@ -86,17 +86,27 @@ export type { AnchoredWindow }
  * one for another six passes. The geometry lives in
  * `desktop/AnchoredPriceChart` now and both lenses mount it.
  *
- * ── What this lens keeps ─────────────────────────────────────────────────
+ * ── The grey line is gone, and the owner called it ───────────────────────
  *
- * The INK. This file's header argues it at length and it has not changed: at
- * full size, beside the decision's own stated reason, a red line under -39.0%
- * is the picture calling it a bad call while the caption denies doing so. So
- * `ink="neutral"` -- one colour either direction -- and `convergence.test.ts`
- * holds it there. The tile chart in a gallery stays graded, because a gallery
- * is scanned rather than read.
+ * This file's header argues at length that a red line under -39.0% is the
+ * picture calling it a bad decision while the caption denies doing so, and
+ * the detail chart was held neutral on that argument. It does not survive
+ * contact with the lens it is in. The TILES in this same gallery draw the
+ * shared `TilePriceChart`, which is graded -- so a reader saw a red line on
+ * the NKE card, clicked it, and landed on a grey line of the same series.
+ * Not a different judgement: a different product. The same complaint, twice
+ * reported: "the chart is still not the same as the other lenses."
  *
- * And the EXECUTION mark, which is this anchor's second date and no other
- * lens's.
+ * The protection the rule was written for survives where it belongs.
+ * `DecisionPath` -- the lifecycle drawing, which depicts the DECISION rather
+ * than the market -- is still one ink, and `convergence.test.ts` still holds
+ * it there. A price path is a fact about a price; the object that depicts
+ * the call is where a verdict could actually be implied.
+ *
+ * ── What this lens still keeps ───────────────────────────────────────────
+ *
+ * The EXECUTION mark, which is this anchor's second date and no other
+ * lens's, and the height Research gives the same slot.
  */
 export function PriceSinceDecision({
   w, executedOffsetPct,
@@ -117,8 +127,8 @@ export function PriceSinceDecision({
     <AnchoredPriceChart
       w={w}
       testId="price-since-decision"
-      height={168}
-      ink="neutral"
+      /* Research's height for the same slot, not a number of this lens's own. */
+      height={204}
       caption={w.reachesAnchor ? 'Price after decision' : 'Price over available history'}
       meta={w.reachesAnchor ? `${w.days}d since decision` : `${w.days}d of history`}
       anchorTick="decided"

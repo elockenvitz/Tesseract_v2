@@ -87,16 +87,33 @@ const card = (id: string, over: Partial<RailCard> = {}): RailCard => ({
 })
 
 /**
- * The same arrival, into a lens that does NOT draw its own identity header.
+ * An arrival into Portfolio, used by the deck's selection and rotation cases.
  *
- * Research does, so the deck yields to it (`ownHeader`) and there is no
- * `focus-header` to assert against. Portfolio still relies on the deck's,
- * which is where the deck-header rules are tested.
+ * It no longer carries the deck HEADER cases: Portfolio draws its own
+ * identity row and was printing the deck's above it, saying "JNJ / No thesis
+ * on file / 28.2% of the book in JNJ, with no thesis behind it." and then
+ * that sentence again, verbatim, 40px down. It yields now (`ownHeader`), so
+ * the header rules moved to `intoIdeas` below.
  */
 const intoPortfolio = (objectId = 'a-tgt', rail = [card('a-amzn', { workspaceLens: 'portfolio' })]) =>
   openDashboardFocus({
     target: {
       originLens: 'today', workspaceLens: 'portfolio', objectType: 'asset',
+      objectId, symbol: 'TGT', issue: 'Thesis may be stale', origin: 'today',
+    },
+    backLabel: 'Today',
+    rail,
+  })
+
+/**
+ * The same arrival, into the one lens that does NOT draw its own identity
+ * header and so still relies on the deck's. This is where the deck-header
+ * rules are tested.
+ */
+const intoIdeas = (objectId = 'a-tgt', rail = [card('a-amzn', { workspaceLens: 'ideas' })]) =>
+  openDashboardFocus({
+    target: {
+      originLens: 'today', workspaceLens: 'ideas', objectType: 'asset',
       objectId, symbol: 'TGT', issue: 'Thesis may be stale', origin: 'today',
     },
     backLabel: 'Today',
@@ -206,18 +223,19 @@ describe('expanding a card, in this tab', () => {
     // workspace loaded -- did not survive the click. The rail listed the three
     // things the reader did not choose; nothing named the one they did.
     /*
-     * Opened into PORTFOLIO, not research.
+     * Opened into IDEAS, which was PORTFOLIO, which was research.
      *
      * The rule is unchanged -- the surface answering a click must name the
-     * object that was clicked -- but who draws that name now depends on the
-     * lens. Research owns its own identity header (ticker, company, state,
-     * figures, actions), so the deck yields to it rather than stacking a
-     * second ticker row above; see `ownHeader`. Portfolio does not, so the
-     * deck's header is still the thing under test here.
+     * object that was clicked -- but who draws that name depends on the lens,
+     * and the list of lenses drawing their own identity row has grown each
+     * time one was measured against the deck's. Research, then Decisions,
+     * then Portfolio, each of which was printing the deck's header and then
+     * repeating it. Ideas is the one left that relies on the deck's, so it
+     * is where the deck-header rules are asserted.
      */
     render(<DashboardShell />)
     await React.act(async () => {
-      intoPortfolio('a-tgt', [card('a-tgt', { workspaceLens: 'portfolio' })])
+      intoIdeas('a-tgt', [card('a-tgt', { workspaceLens: 'ideas' })])
     })
 
     const header = screen.getByTestId('focus-header')
@@ -272,14 +290,37 @@ describe('expanding a card, in this tab', () => {
     expect(within(focus).queryByTestId('focus-header')).not.toBeInTheDocument()
   })
 
+  it('yields it to Portfolio, which was saying the same sentence twice', async () => {
+    /*
+     * Measured live: the deck printed "JNJ / No thesis on file / 28.2% of the
+     * book in JNJ, with no thesis behind it." and `PositionDetailPane`
+     * printed that sentence again, verbatim, 40px below, under a 30px ticker.
+     *
+     * What this gives up is the focus INTENT chip, which only the deck header
+     * renders. `PortfolioWorkspace` is not passed the intent and does nothing
+     * with it, so the chip named a mode the surface never entered.
+     */
+    render(<DashboardShell />)
+    await React.act(async () => {
+      intoPortfolio('a-tgt', [card('a-tgt', { workspaceLens: 'portfolio' })])
+    })
+
+    const focus = screen.getByTestId('dashboard-focus')
+    expect(within(focus).getByTestId('lens-portfolio')).toBeInTheDocument()
+    expect(within(focus).queryByTestId('focus-header')).not.toBeInTheDocument()
+  })
+
   it('finds the expanded card by id, never by symbol', async () => {
     // Two findings can concern one ticker. Matching on symbol would collapse
     // them and put the wrong claim above the workspace.
     render(<DashboardShell />)
     await React.act(async () => {
-      intoPortfolio('a-two', [
-        { ...card('a-one', { workspaceLens: 'portfolio' }), symbol: 'DUP', detail: 'The first finding.' },
-        { ...card('a-two', { workspaceLens: 'portfolio' }), symbol: 'DUP', detail: 'The second finding.' },
+      // Ideas, for the same reason as the case above: it is the lens whose
+      // pane does not draw its own identity, so the deck's header is here
+      // to be read.
+      intoIdeas('a-two', [
+        { ...card('a-one', { workspaceLens: 'ideas' }), symbol: 'DUP', detail: 'The first finding.' },
+        { ...card('a-two', { workspaceLens: 'ideas' }), symbol: 'DUP', detail: 'The second finding.' },
       ])
     })
     expect(screen.getByTestId('focus-header')).toHaveTextContent('The second finding.')
