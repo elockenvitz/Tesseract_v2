@@ -21,7 +21,7 @@ interface Arrival { issue?: string | null; origin?: string | null }
 import {
   stateOf, whyItMatters, compareSubjects, issueFor, withCoverageSubjects, subjectFromCoverage,
   subscribeToOpenResearch, CORE_SECTIONS, SECTION_LABEL, STATE_TONE,
-  dateWords, ageKindOf, thesisDateKindOf, targetFor,
+  dateWords, ageKindOf, targetFor,
   type ResearchSubject, type ResearchFocus,
 } from '../../lib/desktop-research'
 /* The same two engagements the Ideas field offers on a tile, through the
@@ -30,9 +30,8 @@ import {
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { useCoverageResearchGaps } from '../../hooks/useCoverageResearchGaps'
 import {
-  TileTimeline,
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileMeta,
-  TileFigure, TileVisual, TileBar, TileLead, TileAction,
+  TileFigure, TileLead, TileAction,
   sizeByRankWithRhythm, GallerySkeleton, type TileSize,
 } from '../desktop/DesktopTile'
 /* The shared price chart, anchored on the date the case was last written. */
@@ -186,15 +185,16 @@ export function ResearchWorkspace({
 
   // Nothing deep is fetched while browsing, or when a request missed.
   const { detail } = useResearchDetail(requested)
-  const maxWeight = ranked.reduce((m, r) => Math.max(m, r.weightPct ?? 0), 0)
   /*
-   * Every held stake in the queue, so a tile can draw the set it belongs to
-   * rather than a bar filled against its largest member -- which is 100% full
-   * for that largest member, the one a reader is most likely looking at.
+   * The field's weight distribution is no longer computed here.
+   *
+   * It existed for one consumer: the tile's `TileBar`, which drew each stake
+   * against the set it belongs to rather than against the largest member.
+   * That bar has gone -- the tile's corner chip states the same percentage
+   * and names the book -- so the field stopped needing to know its own
+   * distribution. Restoring the bar means restoring `maxWeight` and
+   * `weights` with it.
    */
-  const weights = ranked
-    .map(r => r.weightPct)
-    .filter((w): w is number => w != null && w > 0)
 
   /** Expand a card. The rail travels with it, built from what is already here. */
   const open = (s: ResearchSubject) => openDashboardFocus({
@@ -286,8 +286,6 @@ export function ResearchWorkspace({
           <SubjectTile
             key={s.assetId}
             subject={s}
-            maxWeight={maxWeight}
-            weights={weights}
             /* Ranked, with a larger cell every few rows past the leading band.
                The monotonic grade flattened into an unbroken run of compacts
                below the fold; the rhythm is positional, so nothing is promoted
@@ -401,9 +399,9 @@ export function toRailCard(s: ResearchSubject): RailCard {
  * per card to decorate a gallery is exactly the cost this must not add.
  */
 function SubjectTile({
-  subject, maxWeight, weights, size, onOpen, closesIn,
+  subject, size, onOpen, closesIn,
 }: {
-  subject: ResearchSubject; maxWeight: number; weights: number[]
+  subject: ResearchSubject
   size: TileSize; onOpen: () => void
   /** This name's closes out of the field's one batched read. */
   closesIn?: TileClose[]
@@ -550,8 +548,33 @@ function SubjectTile({
       ? `in ${books} portfolios`
       : 'weight'
 
-  const drawsTimeline = big && !!subject.thesisUpdatedAt && state !== 'no-thesis'
-  const drawsWeight = big && subject.weightPct != null && state !== 'no-thesis'
+  /*
+   * ── Two visuals removed, because both were restatement ───────────────────
+   *
+   * `drawsTimeline` drew "Case updated · 1 new since", a track with a mark on
+   * it, and "19 Feb · newest 20 Feb · today". Every one of those facts was
+   * already on the card in words: the eyebrow said New research, the header
+   * figure said 251d since update, and the body said when the note arrived.
+   * 62px of card to say a fourth time what the reader had already read three
+   * times.
+   *
+   * `drawsWeight` drew a bar captioned "Held, against the rest of the queue"
+   * under a corner chip that states the same percentage and opens a panel
+   * naming the book it is in. 30px for a second copy of one number.
+   *
+   * Between them they were taking 92px of a 452px card whose price chart had
+   * been squeezed to 56px. The chart gets it.
+   *
+   * ── What was NOT removed ─────────────────────────────────────────────────
+   *
+   * `TileTimeline` stays in `DesktopTile` and is still exported. It is the
+   * right drawing for a card whose question IS the window -- it is this
+   * lens's tiles that already answered that question in prose above it.
+   */
+  /* Nothing reads these any more; the blocks they gated are gone. The
+     reasoning stays here because this is where a future pass would add them
+     back, and the question it has to answer first is what the card would
+     then be saying twice. */
   /*
    * The no-thesis branch draws the chart inside its own body, so the trailing
    * one is skipped there -- that is the only remaining condition, and it is
@@ -559,7 +582,27 @@ function SubjectTile({
    * subject has earned one.
    */
   const composesOwnChart = drawsChart && (state === 'no-thesis' || state === 'incomplete-thesis')
-  const drawsSpark = drawsChart && !composesOwnChart
+  /*
+   * ── A big card draws the slot even with nothing to put in it ─────────────
+   *
+   * This was `drawsChart && !composesOwnChart`, so a hero whose name has no
+   * price history simply had no chart block -- and a hero's height is set by
+   * its row-mate, not by its own content. Measured on COIN, which holds under
+   * two closes in the cache: a 154px hole in the middle of a 452px card, then
+   * a 101px hole after the text around it was cut, because the card still had
+   * to stand as tall as PLTR beside it.
+   *
+   * Centring the claim in the space was tried first and is not an answer: it
+   * halves one hole into two. The slot is drawn instead, and `TilePriceChart`
+   * renders the caller's `empty` node in it -- the same seam Decisions uses
+   * for exactly this. The space is then accounted for rather than blank, and
+   * it says something true about the name.
+   *
+   * Only on the big sizes. A compact tile with no price would otherwise fill
+   * most of itself with a dashed box saying so, which trades one bad use of
+   * the space for another.
+   */
+  const drawsSpark = !composesOwnChart && (drawsChart || big)
   // The age, new-note count and move count from this date: a recorded review
   // only on a generated subject anchored on one (lib/desktop-research/anchor-words).
   const age = dateWords(ageKindOf(subject))
@@ -637,7 +680,16 @@ function SubjectTile({
       {state === 'evidence-since-review' ? (
         subject.newSinceReview === 1 && subject.newestEvidenceTitle ? (
           /* One note. The note IS the card. */
-          <div className="flex min-w-0 flex-1 flex-col">
+          /*
+            Not `flex-1` any more. This block held a headline, a date line and
+            a footer pinned to the bottom with `mt-auto`, so it had to own the
+            slack for the footer to sit where it did. With both those lines
+            gone it holds one headline, and keeping the slack meant the claim
+            stretched while the chart below it stayed at its floor -- on COIN,
+            83px of nothing between the headline and the price slot. The
+            chart takes the slack now, which is where the reader wants it.
+          */
+          <div className="flex min-w-0 flex-col">
             <p className={clsx(
               'font-medium leading-[1.3] text-gray-900 dark:text-gray-100',
               size === 'hero' ? 'line-clamp-3 text-[26px] tracking-tight'
@@ -646,15 +698,27 @@ function SubjectTile({
             )}>
               {subject.newestEvidenceTitle}
             </p>
-            <p className="mt-2 text-[11px] text-gray-500">
-              {subject.newestEvidenceAt && new Date(subject.newestEvidenceAt).toLocaleDateString(
-                undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
-              {arrivedDays != null && ` · ${arrivedDays === 0 ? 'today' : `${arrivedDays}d ago`}`}
-            </p>
-            <p className="mt-auto pt-3 text-[11px] text-gray-500">
-              1 new note {age.sinceThe}
-              {subject.weightPct != null && ` · ${subject.weightPct.toFixed(1)}% held`}
-            </p>
+            {/*
+              ── Two lines removed, and where each of them already was ───────
+
+              This card carried the note's title, then its date, then a line
+              saying a note had arrived since the review -- and then a
+              timeline drawing the same two dates again, and then a weight bar
+              drawing the number already in the corner chip. Measured on PLTR
+              at 923x452: 138px of that card was restatement and 56px was the
+              price chart.
+
+              `{date} · {n}d ago`      the corner panel's "Last reviewed" row
+                                       carries the age, and the header's
+                                       figure carries the days since update.
+              `1 new note since …`     the eyebrow already reads "New
+                                       research", which is what that sentence
+                                       says in five more words.
+
+              What stays is what nothing else on the card says: the note's own
+              headline. It is the claim somebody wrote, and it is now the only
+              prose on the card.
+            */}
           </div>
         ) : (
           <div className="flex min-w-0 flex-1 flex-col">
@@ -797,22 +861,8 @@ function SubjectTile({
         </div>
       )}
 
-      {/*
-        The window the case has been standing in, where there is room to draw
-        it. This is the lens's own question -- how long since we wrote it, and
-        how much has landed since -- and it was three sentences of prose above
-        three hundred pixels of nothing.
-      */}
-      {drawsTimeline && (
-        <div className="mt-3">
-          <TileTimeline
-            writtenAt={subject.thesisUpdatedAt!}
-            newestAt={subject.newestEvidenceAt}
-            count={subject.newSinceReview}
-            startLabel={dateWords(thesisDateKindOf(subject)).start}
-          />
-        </div>
-      )}
+      {/* The timeline that used to sit here is gone -- see the note beside
+          the removed flags above. */}
 
       {/*
         The price, where this lens has no standing window to draw instead.
@@ -831,23 +881,26 @@ function SubjectTile({
             anchorLabel="review"
             fill
             height={big ? 110 : size === 'medium' ? 84 : 64}
+            empty={
+              <div
+                data-testid="research-price-empty"
+                className="flex h-full min-h-0 flex-col justify-center rounded border border-dashed border-gray-200 px-3 text-[10px] text-gray-400 dark:border-white/10"
+              >
+                <span className="font-semibold uppercase tracking-[0.09em]">No price history</span>
+                {/* What the reader can do about it, not what the cache did.
+                    "No data" with no cause is what sent the Decisions column
+                    round three diagnosis passes. */}
+                <span className="mt-0.5 normal-case tracking-normal">
+                  {subject.symbol ?? 'This name'} is not in the price cache yet
+                </span>
+              </div>
+            }
           />
         </div>
       )}
 
-      {/* Exposure is why an unreviewed thesis matters -- but only where the
-          card has not already led with it. */}
-      {drawsWeight && (
-        <TileVisual>
-          <TileBar
-            pct={subject.weightPct!}
-            max={maxWeight}
-            population={weights}
-            label="Held, against the rest of the queue"
-            tone={tone === 'review' ? 'attention' : 'neutral'}
-          />
-        </TileVisual>
-      )}
+      {/* The weight bar that used to sit here is gone -- the corner chip
+          states the same number and names the book it is in. */}
     </DesktopTile>
   )
 }

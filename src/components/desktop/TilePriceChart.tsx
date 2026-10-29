@@ -31,6 +31,17 @@ import { clsx } from 'clsx'
 import { anchoredWindow } from '../../lib/market-data/anchored-window'
 import { rangesFor, type RangeKey } from '../../lib/market-data/price-ranges'
 
+/**
+ * Everything in the chart block that is not the plot.
+ *
+ * Measured on a live Research tile rather than estimated: the chip row is
+ * 16px plus its 4px margin, the date axis 8px plus 2, and the readout row
+ * 27px plus 4. A floor that forgets any of them puts the plot's own minimum
+ * past the edge of the slot, which is how the date axis ended up printed on
+ * top of the percentage.
+ */
+const CHROME = 61
+
 /** One horizon chip. A real button, because the shelf's verbs are too. */
 function RangeChip({ label, on, onPick }: { label: string; on: boolean; onPick: () => void }) {
   return (
@@ -298,7 +309,36 @@ export function TilePriceChart({
       data-reaches={w.reachesAnchor ? 'true' : 'false'}
       /* In fill mode the caption and chips keep their natural height and the
          plot row takes the rest, so the chart ends flush with the tile. */
-      className={fill ? 'flex h-full min-h-0 flex-col' : undefined}
+      /*
+        ── The floor the chart states for itself, once, at the top ───────────
+
+        56px of plot, 8px of date axis and a 27px readout do not fit in a 47px
+        slot, and a floor on any ONE of them makes that child overflow the
+        others instead of making the block ask for more room. It is stated
+        here, on the block, where the tile's own flex layout can satisfy it:
+        `min-height` on a flex item raises its hypothetical size, so the card
+        gives the chart its room and takes the difference from whatever else
+        was flexible.
+
+        ── Why it is `height`-derived and not a constant ─────────────────────
+
+        A flat 104px was tried and it is the wrong shape of answer. A tile's
+        height follows its CONTENT, so when the Research cards shed 92px of
+        restated text they did not hand that space to the chart -- the whole
+        card shrank from 452px to 259px and the plot went from 56px to 44.
+        Less text bought a smaller card, not a bigger chart, which is the
+        opposite of what the text was removed for.
+
+        `height` is the size the caller already says this chart deserves --
+        110 on a hero, 84 on a medium, 64 on a compact -- and in fill mode it
+        was being used only as a CEILING (`H = min(height, …)`), so a starved
+        slot could ignore it entirely in the other direction. Used as the
+        floor as well, it becomes what it reads as: the plot height this card
+        is asking for. CHROME is the fixed part around it -- the chip row, the
+        date axis and the readout -- measured rather than guessed.
+      */
+      className={fill ? 'flex h-full min-w-0 flex-col' : undefined}
+      style={fill ? { minHeight: height + CHROME } : undefined}
     >
       {/*
         ── The caption is a footer, not a heading ───────────────────────────
@@ -375,18 +415,35 @@ export function TilePriceChart({
         */}
         <div className={clsx('flex min-w-0 flex-1 flex-col', fill && 'min-h-0')}>
         {/*
-          ── The floor, now that the plot contributes no height ──────────────
+          ── Where the floor went, and why it could not live here ────────────
 
           In fill mode the plot is taken out of flow below, so this box's only
-          height comes from `flex-1`. Where the row is short that is near
-          zero, and a chart is not a chart at 4px. 56 is the same number `H`
-          has always floored at, stated once here so the box and the viewBox
-          agree.
+          height comes from `flex-1` -- near zero where the row is short, and
+          a chart is not a chart at 4px. The floor was therefore a
+          `minHeight: 56` ON THIS BOX, which was wrong in a way that only
+          showed up on a starved card.
+
+          A minimum here cannot shrink. The plot column is `plot + date axis`,
+          so a 56px floor made the column 64px tall inside whatever slot the
+          tile gave it -- and the Research tiles were handing it FORTY-SEVEN.
+          The column overflowed its row by 17px, and the next sibling, the
+          "+30.1%" readout, is laid out after the ROW, not after the
+          overflowing content. So the date axis landed on top of the
+          percentage. Measured on PLTR: "May 3" at y=619 under a readout
+          starting at y=611, an 8px collision, on every tile whose chart slot
+          was under 64px.
+
+          The floor belongs to the WHOLE chart, where it can be satisfied by
+          the tile giving the block more room rather than by a child spilling
+          out of it -- see `min-h-[104px]` on the root. This box now takes
+          what `flex-1` gives it and clips, which is the correct behaviour for
+          a plot that has been taken out of flow: `H` still floors at 56 for
+          the viewBox, so the drawing stays readable while the window onto it
+          narrows.
         */}
         <div
           ref={boxRef}
-          className={clsx('relative min-w-0', fill && 'min-h-0 flex-1')}
-          style={fill ? { minHeight: 56 } : undefined}
+          className={clsx('relative min-w-0 overflow-hidden', fill && 'min-h-0 flex-1')}
         >
           <svg
             viewBox={`0 0 ${W} ${H}`}

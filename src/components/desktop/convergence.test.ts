@@ -1900,10 +1900,45 @@ describe('the plot cannot inflate the box it is measured in', () => {
     expect(body()).toMatch(/style=\{fill \? \{ display: 'block' \} : \{ height: H/)
   })
 
-  it('floors the measured box, since the drawing no longer holds it open', () => {
-    /* Out of flow, the box's only height is `flex-1`. In a short row that is
-       near zero, and a chart is not a chart at 4px. */
-    expect(body()).toMatch(/minHeight: 56/)
+  it('floors the whole block, not the plot inside it', () => {
+    /*
+     * ── Why this assertion was rewritten, and how it was passing ─────────
+     *
+     * It read `expect(body()).toMatch(/minHeight: 56/)` -- a bare string
+     * against the whole file. When the floor moved off the plot box, that
+     * assertion kept passing, because the COMMENT explaining why it moved
+     * still contains the words `minHeight: 56`. A guard that a prose
+     * paragraph can satisfy is not observing anything.
+     *
+     * ── And why the floor moved ──────────────────────────────────────────
+     *
+     * A minimum on the plot box cannot shrink, and the plot column is
+     * `plot + date axis`. A 56px floor therefore made the column 64px tall
+     * inside whatever slot the tile gave it -- and the Research tiles were
+     * giving it 47. The column overflowed, and the readout row, which is
+     * laid out after the ROW rather than after the overflowing content, was
+     * printed under the date axis: "May 3" at y=619 beneath a "+30.1%"
+     * starting at y=611.
+     *
+     * The floor belongs on the block, where the tile's own flex layout can
+     * satisfy it by giving the chart more room. And it scales with the
+     * height the caller asked for, because a flat constant made cutting a
+     * card's text shrink the CARD instead of growing the chart: the Research
+     * heroes went 452px -> 259px and their plots 56px -> 44px.
+     */
+    const src = body()
+    /* The floor is on the root, derived from the caller's height. */
+    expect(src).toMatch(/style=\{fill \? \{ minHeight: height \+ CHROME \} : undefined\}/)
+    expect(src).toMatch(/^const CHROME = \d+$/m)
+
+    /* And NOT on the measured box, which must stay free to shrink. The box's
+       own attributes are checked, not the file, so no comment can satisfy
+       this. */
+    const boxTag = src.match(/<div\s+ref=\{boxRef\}[\s\S]*?>/)?.[0]
+    expect(boxTag).toBeTruthy()
+    expect(boxTag).not.toMatch(/minHeight/)
+    /* It clips instead: out of flow, the drawing can exceed the window. */
+    expect(boxTag).toMatch(/overflow-hidden/)
   })
 
   it('still derives the viewBox from the measurement, which is the point', () => {
@@ -1941,6 +1976,119 @@ describe('the plot cannot inflate the box it is measured in', () => {
  * batched reader that checks the row cap, and nothing-to-price renders a
  * statement rather than nothing.
  */
+/**
+ * A research card says each thing once, and gives the rest to the price.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * Reported as "too much text ... some of it should be either removed or
+ * hidden". Measured on the PLTR hero at 923x452, the card carried: the
+ * note's title, then its date, then a line saying a note had arrived since
+ * the review, then a 62px timeline drawing those same two dates again, then
+ * a 30px bar drawing the weight already in the corner chip. 138px of
+ * restatement above a price chart squeezed to 56px.
+ *
+ * And a hero whose name has no price history -- COIN, which holds under two
+ * closes -- had no chart block at all, so the card stood as tall as its
+ * row-mate around a 154px hole.
+ */
+describe('a research card states each fact once', () => {
+  const body = () => src('components/research-v2/ResearchWorkspace.tsx')
+
+  it('draws neither the timeline nor the weight bar', () => {
+    /* Both restated something already on the card in words: the timeline the
+       eyebrow and the two dates, the bar the corner chip's percentage. */
+    expect(body()).not.toContain('<TileTimeline')
+    expect(body()).not.toContain('<TileBar')
+    /* And nothing is left importing them, which is how a removal stays
+       removed rather than becoming an unused branch somebody re-enables. */
+    expect(body()).not.toMatch(/^\s*(TileTimeline|TileBar|TileVisual)[,\s]*$/m)
+  })
+
+  it('leaves one line of prose on the single-note card: the note', () => {
+    /* The headline is the claim somebody wrote. The date line and the
+       "1 new note since ..." line were the corner panel and the eyebrow
+       said again. */
+    expect(body()).not.toContain('1 new note {age.sinceThe}')
+    expect(body()).toContain('{subject.newestEvidenceTitle}')
+  })
+
+  it('draws the price slot on a big card even with nothing to put in it', () => {
+    /* A hero's height is set by its row-mate, not its own content, so a
+       missing chart is a hole rather than a shorter card. */
+    expect(body()).toContain('const drawsSpark = !composesOwnChart && (drawsChart || big)')
+    expect(body()).toContain('data-testid="research-price-empty"')
+    /* It says which name and why, not "no data" -- the shorthand that sent
+       the Decisions column round three diagnosis passes. */
+    expect(body()).toContain('is not in the price cache yet')
+  })
+
+  it('lets the chart take the slack, not the claim', () => {
+    /*
+     * The claim block kept `flex-1` after its `mt-auto` footer was removed,
+     * so it stretched while the chart sat at its floor: 83px of nothing
+     * between COIN's headline and its price slot.
+     */
+    expect(body()).toContain('/* One note. The note IS the card. */')
+    const branch = body().slice(body().indexOf('/* One note. The note IS the card. */'))
+    expect(branch.slice(0, 900)).not.toMatch(/<div className="flex min-w-0 flex-1 flex-col">/)
+  })
+})
+
+/**
+ * A price path gets the room, on every lens that draws one.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * Reported as "in decisions lens, charts are too narrow. same in portfolio
+ * lens". Measured at 1920x889, every chart on the desktop was sitting on its
+ * own minimum:
+ *
+ *   Research   923x452 tile    869x56  plot
+ *   Portfolio  923x286 tile    861x56  plot
+ *   Decisions  923x233 tile    384px   price column; 429x22 sparkline
+ *
+ * Three separate causes with one shape: the chart was always the element
+ * that yielded. Portfolio's and Research's were fixed by the shared floor in
+ * `TilePriceChart`; these two are the lens's own numbers.
+ */
+describe('the chart is not the element that yields', () => {
+  const dec = () => src('components/decisions-v2/DecisionsWorkspace.tsx')
+
+  it('gives the decision price column the majority of the width', () => {
+    /*
+     * The record column was `basis-[55%] shrink-0`, so the price got the
+     * remainder: 489px against 384px on a 923px tile. The record is four
+     * short rows that gain nothing past ~370px; width is where a price
+     * path's time axis lives.
+     */
+    expect(dec()).not.toContain('basis-[55%]')
+    const basis = dec().match(/basis-\[(\d+)%\]/)
+    expect(basis).toBeTruthy()
+    expect(Number(basis![1])).toBeLessThanOrEqual(45)
+  })
+
+  it('draws a decision sparkline tall enough to read a move in', () => {
+    /* 22px across 429px is a hairline: no move is legible in it and the
+       anchor cannot be placed. */
+    expect(dec()).not.toMatch(/height=\{size === 'compact' \? 22 : 28\}/)
+    const h = dec().match(/height=\{size === 'compact' \? (\d+) : (\d+)\}/)
+    expect(h).toBeTruthy()
+    expect(Number(h![1])).toBeGreaterThanOrEqual(40)
+    expect(Number(h![2])).toBeGreaterThanOrEqual(40)
+  })
+
+  it('does not say "no thesis" twice on a position card', () => {
+    /* The eyebrow reads "No thesis on file" and the line under it read
+       "Nothing written", in amber, on consecutive rows. */
+    const body = src('components/portfolio-v2/PortfolioWorkspace.tsx')
+    const skeleton = body.slice(body.indexOf('function ThesisSkeleton()'))
+    expect(skeleton.slice(0, 1200)).not.toContain('>Nothing written<')
+    /* The part the eyebrow does NOT say survives, and carries the tone. */
+    expect(skeleton.slice(0, 1200)).toContain('THESIS_PARTS.map')
+  })
+})
+
 describe('the book’s P&L states itself or states why not', () => {
   const hook = () => src('hooks/useDayPerformance.ts')
   const panel = () => src('components/portfolio-v2/DayPanel.tsx')

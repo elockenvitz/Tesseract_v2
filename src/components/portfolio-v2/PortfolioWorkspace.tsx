@@ -1169,9 +1169,16 @@ function WeightChip({ position, active }: {
  */
 function ThesisSkeleton() {
   return (
+    /*
+      "Nothing written" is gone: the eyebrow directly above it already reads
+      "No thesis on file", so the card opened by saying the same thing twice
+      in two different sets of words, in amber, on consecutive lines. What is
+      kept is the only part the eyebrow does not say -- WHICH parts are
+      missing -- and it keeps the amber, because that is the line now carrying
+      the condition.
+    */
     <div className="flex items-baseline gap-2 text-[12px]">
-      <span className="font-semibold text-amber-700 dark:text-amber-500">Nothing written</span>
-      <span className="min-w-0 truncate text-gray-500">
+      <span className="min-w-0 truncate text-amber-700 dark:text-amber-500">
         no {THESIS_PARTS.map(p => p.toLowerCase()).join(', no ')}
       </span>
     </div>

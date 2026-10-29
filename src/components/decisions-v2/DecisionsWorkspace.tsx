@@ -1088,7 +1088,23 @@ function DecisionTile({
       >
         <div data-testid="decision-composed" className="flex min-w-0 gap-4">
           {/* ── The record ───────────────────────────────────────────────── */}
-          <div className="flex min-w-0 shrink-0 basis-[55%] flex-col gap-2">
+          {/*
+            ── 45/55, not 55/45 ───────────────────────────────────────────
+
+            The record had the majority of the width and the price had the
+            remainder: measured on a 923px tile, 489px of record against
+            384px of chart. Reported as "charts are too narrow", and it is
+            the wrong way round for what each half does with the space. The
+            record is a symbol, a reason line and a two-column figure grid --
+            four short rows that stop wrapping somewhere around 370px and
+            gain nothing above it. A price path keeps getting more readable
+            for every pixel of width it is given, because width is where the
+            time axis lives.
+
+            So the record takes what it needs and the chart takes the rest:
+            ~373px and ~500px on the same tile.
+          */}
+          <div className="flex min-w-0 shrink-0 basis-[42%] flex-col gap-2">
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
                 <span className="truncate text-[22px] font-black leading-none tracking-[-0.03em]">
@@ -1837,11 +1853,27 @@ function DecisionTile({
           headline and the big chart, so a small tile costs no extra request.
         */
         <div className="mt-1.5">
+          {/*
+            ── 22px is a rule, not a chart ─────────────────────────────────
+
+            These heights were chosen when this branch existed only to stop
+            the small cards being text over text -- any mark that differed
+            per name was an improvement on none. Measured in the lens, a
+            compact decision tile is 260px tall and was spending 22 of them
+            on its only drawing: a 429px-wide hairline in which no move is
+            legible and the anchor cannot be placed. Reported as "charts are
+            too narrow" alongside the big tiles' width.
+
+            48 and 56 are what the same card sizes get elsewhere on the
+            desktop -- Research's compacts draw 65px plots -- and the card
+            has the room: the figure rows above it are fixed, so this comes
+            out of slack, not out of another element.
+          */}
           <TileSparkline
             points={closes}
             anchorISO={priceAnchor}
             label={`Since the ${priceAnchorLabel}`}
-            height={size === 'compact' ? 22 : 28}
+            height={size === 'compact' ? 48 : 56}
             compact={size === 'compact'}
           />
         </div>
