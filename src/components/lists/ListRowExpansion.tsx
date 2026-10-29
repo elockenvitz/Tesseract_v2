@@ -41,7 +41,8 @@
  * cannot honestly collect, so those link into their own workspace.
  */
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { ExternalLink, Flag, ArrowUpRight, Plus, Pencil, Check } from 'lucide-react'
+// `Check` went with the "Review recorded" confirmation it was the tick for.
+import { ExternalLink, Flag, ArrowUpRight, Plus, Pencil } from 'lucide-react'
 import { clsx } from 'clsx'
 import { format, parseISO } from 'date-fns'
 import { ListAssigneeCell } from './ListAssigneeCell'
@@ -63,7 +64,10 @@ import {
   useAnalystRatings, useRatingScales,
   type ConvictionLevel,
 } from '../../hooks/useAnalystRatings'
-import { useRecordThesisReview, type ThesisReviewOutcome } from '../../hooks/useThesisReview'
+import {
+  useRecordThesisReview, useCurrentThesisConclusion, type ThesisReviewOutcome,
+} from '../../hooks/useThesisReview'
+import { conclusionWords } from '../../lib/memory/thesis-review'
 import { useContributions } from '../../hooks/useContributions'
 import { CORE_SECTIONS, STATE_LABEL } from '../../lib/desktop-research/model'
 import { windowReturn } from '../../lib/lists/price-metrics'
@@ -230,6 +234,10 @@ export function ListRowExpansion({
    * exactly as it does on the research surface.
    */
   const review = useRecordThesisReview(asset?.id ?? null)
+  /* What the record currently says, so the row can show it back and offer to
+     change it. Same hook, same cache entry as the research pane -- the two
+     surfaces must not disagree about the standing verdict. */
+  const { current: reviewState } = useCurrentThesisConclusion(asset?.id ?? null)
 
   const {
     spot, target, positions, liveIdeas, decisions, sections, evidence, caseWrittenAt, ladder,
@@ -665,29 +673,56 @@ export function ListRowExpansion({
 
   // ── Footers, per mode ────────────────────────────────────────────────
 
-  const reviewGroup = review.isDone ? (
-    <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[11.5px] font-semibold text-emerald-700 dark:text-emerald-300">
-      <Check className="h-3 w-3" />
-      Review recorded
-    </span>
-  ) : (
-    <div className="flex items-center gap-1.5 min-w-0">
-      {REVIEW_CHOICES.map(({ outcome, label }) => (
-        <button
-          key={outcome}
-          onClick={() => review.record(outcome)}
-          disabled={review.isPending}
-          className={clsx(
-            'px-2 py-1 text-[11.5px] font-semibold rounded-md transition-colors flex-shrink-0',
-            outcome === 'holds'
-              ? 'bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900'
-              : 'text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700',
-            review.isPending && 'opacity-50 cursor-wait',
+  /*
+   * ── The choice stays open, and says what is on the record ───────────────
+   *
+   * This used to swap all three buttons for a green "Review recorded" the
+   * moment one was pressed, and `isDone` lives on the mutation -- so the
+   * confirmation vanished with the component and the row reopened as if
+   * nothing had ever been answered. Between those two states a reader could
+   * neither see their own conclusion nor take back the wrong one, which is
+   * the moment they are most likely to want to.
+   *
+   * The standing verdict is read from the event log instead. It survives the
+   * remount, it is marked on the button that holds it, and the other two stay
+   * live: pressing one records a correction, and the newest conclusion is the
+   * one every consumer reads.
+   */
+  const reviewGroup = (
+    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+      {REVIEW_CHOICES.map(({ outcome, label }) => {
+        const standing = reviewState?.outcome === outcome
+        return (
+          <button
+            key={outcome}
+            aria-pressed={standing}
+            data-slot={`list-review-${outcome}`}
+            onClick={() => review.record(outcome)}
+            // Pressing the answer already on the record writes a second
+            // identical event and looks like nothing happened. The other two
+            // are the correction path and stay live.
+            disabled={review.isPending || standing}
+            className={clsx(
+              'px-2 py-1 text-[11.5px] font-semibold rounded-md transition-colors flex-shrink-0',
+              standing
+                ? 'bg-gray-900 text-white ring-2 ring-gray-900/20 cursor-default dark:bg-gray-100 dark:text-gray-900 dark:ring-white/25'
+                : 'text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700',
+              review.isPending && 'opacity-50 cursor-wait',
+            )}
+          >
+            {label}
+          </button>
+        )
+      })}
+      {review.isPending ? (
+        <span className="text-[11.5px] text-gray-500">Recording…</span>
+      ) : reviewState ? (
+        <span data-slot="list-review-standing" className="text-[11.5px] text-gray-500">
+          {conclusionWords(
+            reviewState.outcome, reviewState.occurredAt, reviewState.byMe, new Date(),
           )}
-        >
-          {label}
-        </button>
-      ))}
+        </span>
+      ) : null}
     </div>
   )
 

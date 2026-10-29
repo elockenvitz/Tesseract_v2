@@ -10,12 +10,12 @@
  * `actor_id = auth.uid()`, so this cannot attribute a conclusion to anyone
  * else. Nothing is widened here.
  */
-import { useCallback, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useMemo, useState } from 'react'
+import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
-import { latestReviewByAsset } from '../lib/memory/thesis-review'
+import { latestConclusionByAsset, latestReviewByAsset } from '../lib/memory/thesis-review'
 
 /**
  * What the reader concluded. Only the outcome is stored -- the semantic
@@ -78,7 +78,7 @@ export function useThesisReviews() {
  *  waiting to happen. */
 const EMPTY_CONCERNS: ReadonlyArray<{
   id: string; subject_id: string; occurred_at: string
-  outcome: string; organization_id: string | null
+  outcome: string; organization_id: string | null; actor_id: string | null
 }> = []
 
 /**
@@ -114,7 +114,10 @@ export function useThesisReviewConclusions() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('memory_events')
-        .select('id, subject_id, occurred_at, payload, organization_id')
+        // `actor_id` so a surface can say "you marked this" rather than
+        // "somebody did": a reader correcting an accidental press needs to
+        // know whose conclusion they are about to overwrite.
+        .select('id, subject_id, occurred_at, payload, organization_id, actor_id')
         .eq('organization_id', currentOrgId!)
         .eq('event_type', 'thesis.reviewed')
         .eq('subject_type', 'asset')
@@ -123,7 +126,8 @@ export function useThesisReviewConclusions() {
 
       const rows = (data ?? []) as {
         id: string; subject_id: string; occurred_at: string
-        payload?: { outcome?: string } | null; organization_id?: string | null
+        payload?: { outcome?: string } | null
+        organization_id?: string | null; actor_id?: string | null
       }[]
 
       // Only rows that actually recorded a conclusion. Which conclusions
@@ -137,11 +141,48 @@ export function useThesisReviewConclusions() {
           occurred_at: r.occurred_at,
           outcome: r.payload!.outcome!,
           organization_id: r.organization_id ?? null,
+          actor_id: r.actor_id ?? null,
         }))
     },
   })
 
   return data ?? EMPTY_CONCERNS
+}
+
+/**
+ * The conclusion standing on one asset right now, for showing back.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ *
+ * The review bar used to render three identical unanswered buttons on every
+ * mount, and a transient "Recorded" that vanished with the component. So an
+ * accidental press was invisible by the next page load, and the reader had no
+ * way to see -- let alone correct -- what was on the record. The conclusion is
+ * durable; the only thing missing was reading it back.
+ *
+ * Built on the existing conclusions query, not a new one. That query already
+ * fetches every row for the org and is already cached under the shared key, so
+ * a per-asset read would cost a round trip to answer a question the client can
+ * already answer. `isLoading` is surfaced because a bar that renders "nobody
+ * has answered" while the answer is in flight is the same lie in a smaller
+ * window.
+ */
+export function useCurrentThesisConclusion(assetId: string | null | undefined) {
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+  const rows = useThesisReviewConclusions()
+  const isLoading = useIsFetching({ queryKey: [...THESIS_REVIEWS_KEY, 'conclusions', currentOrgId] }) > 0
+
+  const current = useMemo(() => {
+    if (!assetId) return null
+    const forAsset = rows.filter(r => r.subject_id === assetId)
+    if (!forAsset.length) return null
+    const latest = latestConclusionByAsset(forAsset).get(assetId) ?? null
+    if (!latest) return null
+    return { ...latest, byMe: !!user?.id && latest.actorId === user.id }
+  }, [rows, assetId, user?.id])
+
+  return { current, isLoading: isLoading && !current }
 }
 
 /**

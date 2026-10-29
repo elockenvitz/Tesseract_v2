@@ -99,6 +99,7 @@ vi.mock('../../hooks/useThesisReview', () => ({
   useRecordThesisReview: () => ({
     record: vi.fn(), isPending: false, isDone: false, error: null,
   }),
+  useCurrentThesisConclusion: () => ({ current: null, isLoading: false }),
 }))
 vi.mock('../../hooks/useObjectViewCursor', () => ({
   useRecordObjectView: () => ({ previous: null, ready: true }),

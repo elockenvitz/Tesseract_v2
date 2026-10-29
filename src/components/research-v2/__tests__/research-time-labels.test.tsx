@@ -57,6 +57,9 @@ vi.mock('../../../hooks/useDesktopResearch', () => ({
 vi.mock('../../../hooks/useThesisReview', () => ({
   useThesisReviews: () => new Map(),
   useRecordThesisReview: () => ({ record: vi.fn(), isPending: false, isDone: false, error: null }),
+  // Nothing on the record: this suite is about the wording of DATES, and a
+  // standing verdict would add a second age sentence to every assertion here.
+  useCurrentThesisConclusion: () => ({ current: null, isLoading: false }),
 }))
 
 /* Same reason: the view cursor needs auth and org context this suite does not

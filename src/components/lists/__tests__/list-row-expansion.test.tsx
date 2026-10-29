@@ -46,6 +46,8 @@ const hooks = vi.hoisted(() => ({
   /** Every `thesis.reviewed` outcome recorded, in order. */
   reviews: [] as any[],
   reviewDone: false,
+  /** The standing conclusion, as `useCurrentThesisConclusion` hands it over. */
+  reviewStanding: null as null | { outcome: string; occurredAt: string; byMe: boolean },
   /** Everything `saveContribution` was called with, in order. */
   caseWrites: [] as any[],
   workspaceLoading: false,
@@ -82,6 +84,10 @@ vi.mock('../../../hooks/useThesisReview', () => ({
     isDone: hooks.reviewDone,
     error: null,
   }),
+  /* The conclusion already on the record, which the row reads back so it can
+     offer to change it. Driven by a fixture because "nobody has answered" and
+     "somebody answered, possibly by mistake" are different rows. */
+  useCurrentThesisConclusion: () => ({ current: hooks.reviewStanding, isLoading: false }),
 }))
 vi.mock('../../../hooks/lists/useUpdateListItem', () => ({
   useUpdateListItem: () => ({ mutate: (v: any) => hooks.updates.push(v) }),
@@ -220,6 +226,7 @@ beforeEach(() => {
   hooks.ratingWrites = []
   hooks.reviews = []
   hooks.reviewDone = false
+  hooks.reviewStanding = null
   hooks.caseWrites = []
   hooks.workspaceLoading = false
 })
@@ -855,12 +862,51 @@ describe('reviewing evidence is recorded, not just linked', () => {
     expect(hooks.reviews).toEqual(['holds'])
   })
 
-  it('collapses to a confirmation once recorded, so a second verdict is not invited', () => {
+  /*
+   * ── Rewritten, and why ──────────────────────────────────────────────────
+   *
+   * This case was "collapses to a confirmation once recorded, so a second
+   * verdict is not invited", and asserted that the three buttons DISAPPEARED
+   * in favour of a green "Review recorded".
+   *
+   * Two things were wrong with the behaviour it pinned. The confirmation came
+   * from the mutation's `isDone`, so it died with the component -- reopen the
+   * row and it read as though nobody had ever answered. And a reader who
+   * pressed the wrong verdict had no way back at the one moment they were
+   * certain to notice, because the control that took the answer had removed
+   * itself. "A second verdict" is not a thing to discourage; on this surface
+   * it is the only way to correct the first.
+   *
+   * The standing conclusion is read from the event log now, so it survives
+   * the remount, and every answer but that one stays pressable.
+   */
+  it('shows the standing verdict and still offers the other two', () => {
     unread()
-    hooks.reviewDone = true
+    hooks.reviewStanding = { outcome: 'holds', occurredAt: new Date().toISOString(), byMe: true }
     renderRow({ onOpenAsset: () => {} })
-    expect(screen.getByText('Review recorded')).toBeInTheDocument()
-    expect(screen.queryByText('Still holds')).not.toBeInTheDocument()
+
+    // All three still on screen. The record is shown, not swapped in.
+    for (const label of ['Still holds', 'Changed', 'Needs work']) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
+    expect(screen.getByText(/You marked this Still holds/)).toBeInTheDocument()
+
+    const standing = screen.getByText('Still holds')
+    expect(standing).toHaveAttribute('aria-pressed', 'true')
+    expect(standing).toBeDisabled()
+    // The correction path: the other two are live.
+    expect(screen.getByText('Changed')).toBeEnabled()
+    expect(screen.getByText('Needs work')).toBeEnabled()
+  })
+
+  it('records a correction when a different verdict is pressed', async () => {
+    unread()
+    hooks.reviewStanding = { outcome: 'holds', occurredAt: new Date().toISOString(), byMe: true }
+    renderRow({ onOpenAsset: () => {} })
+    await userEvent.click(screen.getByText('Changed'))
+    // The correction goes through the same canonical writer. Nothing deletes
+    // the hold -- the newest conclusion is the one every consumer reads.
+    expect(hooks.reviews).toEqual(['changed'])
   })
 })
 

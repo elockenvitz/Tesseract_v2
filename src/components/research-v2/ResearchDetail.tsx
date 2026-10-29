@@ -34,8 +34,11 @@ import { clsx } from 'clsx'
 import { TONE_INK } from '../../lib/semantic-tone'
 import { ArrowDown, ArrowUpRight, MessageSquare, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
-import { useRecordThesisReview, type ThesisReviewOutcome } from '../../hooks/useThesisReview'
+import {
+  useRecordThesisReview, useCurrentThesisConclusion, type ThesisReviewOutcome,
+} from '../../hooks/useThesisReview'
 import { useRecordObjectView } from '../../hooks/useObjectViewCursor'
+import { conclusionWords } from '../../lib/memory/thesis-review'
 import { openAsset } from '../../lib/desktop-asset'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
 
@@ -77,6 +80,30 @@ const VERDICT_TONE: Record<ThesisReviewOutcome, string> = {
   needs_work:
     'border-rose-300 bg-white text-rose-800 hover:border-rose-500 hover:bg-rose-50 '
     + 'dark:border-rose-900 dark:bg-transparent dark:text-rose-300 dark:hover:bg-rose-950/40',
+}
+
+/**
+ * The answer that is already on the record.
+ *
+ * Filled, where the other two stay outlined. The outlined set exists so that
+ * no button looks recommended; a FILLED one is not a recommendation, it is a
+ * statement that this is what the record says -- the same distinction the
+ * product makes everywhere between an invitation and a fact.
+ *
+ * `opacity` is deliberately not used to show it is unpressable. The standing
+ * verdict is the most informative thing on the bar and dimming it would make
+ * the record quieter than the two alternatives to it.
+ */
+const VERDICT_SELECTED: Record<ThesisReviewOutcome, string> = {
+  holds:
+    'border-emerald-600 bg-emerald-600 text-white cursor-default '
+    + 'dark:border-emerald-500 dark:bg-emerald-600 dark:text-white',
+  changed:
+    'border-amber-600 bg-amber-600 text-white cursor-default '
+    + 'dark:border-amber-500 dark:bg-amber-600 dark:text-white',
+  needs_work:
+    'border-rose-600 bg-rose-600 text-white cursor-default '
+    + 'dark:border-rose-500 dark:bg-rose-600 dark:text-white',
 }
 
 /**
@@ -202,8 +229,18 @@ export function ResearchDetail({
       : 'case'
 
   const {
-    record: recordReview, isPending: reviewPending, isDone: reviewDone,
+    record: recordReview, isPending: reviewPending,
   } = useRecordThesisReview(subject.assetId)
+  /*
+   * `isDone` is deliberately not read any more.
+   *
+   * It used to disable all three buttons for the life of the component, so a
+   * reader who pressed the wrong one had no way back inside the pane that had
+   * just taken their answer -- the one moment they were certain to notice the
+   * mistake. The standing conclusion below is read from the record instead,
+   * which outlives the mount and is what makes a correction possible at all.
+   */
+  const { current: reviewState } = useCurrentThesisConclusion(subject.assetId)
 
   /*
    * This is a genuine view: the detail pane is mounted, which only happens
@@ -369,27 +406,57 @@ export function ResearchDetail({
                 Does the case still hold?
               </span>
               <span className="flex items-center gap-1.5">
-                {REVIEW_CHOICES.map(choice => (
-                  <button
-                    key={choice.outcome}
-                    type="button"
-                    data-slot={`research-review-${choice.outcome}`}
-                    onClick={() => recordReview(choice.outcome)}
-                    disabled={reviewPending || reviewDone}
-                    className={clsx(
-                      'rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors disabled:opacity-60',
-                      VERDICT_TONE[choice.outcome],
-                    )}
-                  >
-                    {choice.label}
-                  </button>
-                ))}
+                {REVIEW_CHOICES.map(choice => {
+                  const standing = reviewState?.outcome === choice.outcome
+                  return (
+                    <button
+                      key={choice.outcome}
+                      type="button"
+                      data-slot={`research-review-${choice.outcome}`}
+                      // The standing answer is the one thing pressing cannot
+                      // usefully do: it would write a second identical event
+                      // and read as if nothing happened. Every OTHER answer
+                      // stays live, which is the correction path.
+                      aria-pressed={standing}
+                      onClick={() => recordReview(choice.outcome)}
+                      disabled={reviewPending || standing}
+                      className={clsx(
+                        'rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors',
+                        standing
+                          ? VERDICT_SELECTED[choice.outcome]
+                          : clsx(VERDICT_TONE[choice.outcome], 'disabled:opacity-60'),
+                      )}
+                    >
+                      {choice.label}
+                    </button>
+                  )
+                })}
               </span>
-              {(reviewPending || reviewDone) && (
-                <span className="text-[12px] text-gray-500">
-                  {reviewDone ? 'Recorded' : 'Recording…'}
+              {/*
+                What is on the record, and that it can be changed.
+
+                This replaced a transient "Recorded" that lived only as long
+                as the component: by the next page load the bar read as
+                unanswered, so an accidental press was invisible and a
+                deliberate one looked like it had done nothing. The line is
+                read from the event log, so it survives the remount and says
+                who answered -- correcting your own conclusion and overwriting
+                a colleague's are different acts.
+              */}
+              {reviewPending ? (
+                <span className="text-[12px] text-gray-500">Recording…</span>
+              ) : reviewState ? (
+                <span
+                  data-slot="research-review-standing"
+                  className="text-[12px] text-gray-500"
+                >
+                  {conclusionWords(
+                    reviewState.outcome, reviewState.occurredAt, reviewState.byMe, new Date(),
+                  )}
+                  {' · '}
+                  <span className="text-gray-400">change it above</span>
                 </span>
-              )}
+              ) : null}
             </span>
           )}
 

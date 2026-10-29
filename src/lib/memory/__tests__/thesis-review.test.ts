@@ -14,7 +14,10 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, it, expect } from 'vitest'
-import { effectiveThesisDate, thesisAgeDays, latestReviewByAsset } from '../thesis-review'
+import {
+  effectiveThesisDate, thesisAgeDays, latestReviewByAsset,
+  latestConclusionByAsset, conclusionWords,
+} from '../thesis-review'
 import { stateOf } from '../../desktop-research/model'
 import { evaluateThesisStale } from '../../../engine/decisionEngine/evaluators/thesisStale'
 
@@ -82,15 +85,44 @@ describe('only "still holds" stops the staleness clock', () => {
     expect(m.has('a')).toBe(false)
   })
 
-  /* A newer "changed" does not overwrite an older "holds" with silence, and it
-     does not resurrect it either -- the clock simply keeps the last date
-     anybody actually stood behind the case. */
-  it('keeps the last holds when a later review says otherwise', () => {
+  /*
+   * ── Rewritten: a superseded hold is not an answer ───────────────────────
+   *
+   * This case used to be called "keeps the last holds when a later review
+   * says otherwise", and asserted `m.get('a') === daysAgo(10)` -- the older
+   * hold stayed as the clock's answer on the reasoning that it was "the last
+   * date anybody actually stood behind the case".
+   *
+   * That reasoning does not survive the correction path. The producer
+   * discarded every non-`holds` row BEFORE comparing dates, so a reader who
+   * pressed "Still holds" by accident and immediately pressed "Changed" left
+   * today's hold standing as the clock's answer and the case read `current`
+   * against their own stated conclusion. No later word could overturn it.
+   * With a 10-day-old hold the old assertion happened to be harmless; with a
+   * one-minute-old one it made an accidental press permanent.
+   *
+   * The newest conclusion per asset is resolved first and then tested, which
+   * is the order `thesisChangedAfterCommit` already used for the same
+   * question. A superseded hold is absent, and absent is what brings the flag
+   * back.
+   */
+  it('drops a hold the reader has since replaced', () => {
     const m = latestReviewByAsset([
       { subject_id: 'a', occurred_at: daysAgo(10), payload: { outcome: 'holds' } },
       { subject_id: 'a', occurred_at: daysAgo(1), payload: { outcome: 'changed' } },
     ])
-    expect(m.get('a')).toBe(daysAgo(10))
+    expect(m.has('a')).toBe(false)
+  })
+
+  /* The other direction, unchanged: a later hold overturns an earlier concern
+     and the clock runs from the hold. Correction works both ways or it is not
+     a correction. */
+  it('lets a later hold overturn an earlier concern', () => {
+    const m = latestReviewByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(10), payload: { outcome: 'changed' } },
+      { subject_id: 'a', occurred_at: daysAgo(1), payload: { outcome: 'holds' } },
+    ])
+    expect(m.get('a')).toBe(daysAgo(1))
   })
 
   /* Every review written before outcomes were offered was a "still holds" --
@@ -151,6 +183,101 @@ describe('all three conclusions are reachable and write the same way', () => {
       detail.indexOf('research-thesis-review'),
     )
     expect(detail).not.toMatch(/research-review-holds[\s\S]{0,400}bg-blue-700/)
+  })
+})
+
+/**
+ * ── A conclusion you can see, and therefore take back ────────────────────
+ *
+ * Pressing one of the three used to produce a "Recorded" that lived on the
+ * mutation object, so it vanished with the component: by the next page load
+ * the bar read as unanswered. An accidental press was invisible, a deliberate
+ * one looked like it had done nothing, and all three buttons were disabled for
+ * the life of the mount -- so the one moment a reader was certain to notice
+ * the wrong answer was the one moment they could not fix it.
+ *
+ * Correction is an append, not an edit: the wrong conclusion stays on the
+ * record and the newest one speaks. That is what `memory_events` is, and it
+ * also means a reader's change of mind is itself auditable.
+ */
+describe('the standing conclusion is shown back, and can be replaced', () => {
+  const detail = src('components/research-v2/ResearchDetail.tsx')
+  const row = src('components/lists/ListRowExpansion.tsx')
+
+  it('resolves the newest conclusion per asset, whatever it said', () => {
+    const m = latestConclusionByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(1), outcome: 'changed', actor_id: 'u1' },
+      { subject_id: 'a', occurred_at: daysAgo(9), outcome: 'holds', actor_id: 'u2' },
+      { subject_id: 'b', occurred_at: daysAgo(3), outcome: 'needs_work', actor_id: null },
+    ])
+    expect(m.get('a')).toEqual({ outcome: 'changed', occurredAt: daysAgo(1), actorId: 'u1' })
+    expect(m.get('b')?.outcome).toBe('needs_work')
+  })
+
+  /* A pre-outcome review has no verdict word to print. `resetsStaleClock`
+     still counts it as a hold for the CLOCK, which is a different question
+     from what to show on a button. */
+  it('has nothing to display for a row that recorded no outcome', () => {
+    expect(latestConclusionByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(1), outcome: null },
+    ]).get('a')).toBeUndefined()
+  })
+
+  /* Whose conclusion it is decides whether pressing another button is a
+     correction or an override of a colleague. */
+  it('says whose conclusion is on the record, and how old it is', () => {
+    expect(conclusionWords('changed', daysAgo(2), true, NOW)).toBe('You marked this Changed · 2d ago')
+    expect(conclusionWords('holds', daysAgo(2), false, NOW)).toBe('Marked this Still holds · 2d ago')
+    expect(conclusionWords('needs_work', daysAgo(0), true, NOW)).toBe('You marked this Needs work · today')
+  })
+
+  /* Clock skew between the browser and Postgres must not print "-1d ago". */
+  it('reads a future timestamp as today rather than as negative age', () => {
+    const ahead = new Date(NOW.getTime() + 60_000).toISOString()
+    expect(conclusionWords('holds', ahead, true, NOW)).toContain('· today')
+  })
+
+  /*
+   * The mount-scoped confirmation is gone from BOTH surfaces, by name. A
+   * `not.toContain` on the word "Recorded" would be satisfied -- or broken --
+   * by the comments that explain its removal, so these name the variable the
+   * defect was spelled with.
+   */
+  it('no longer gates the choice on a mutation flag that dies with the mount', () => {
+    expect(detail).not.toContain('reviewDone')
+    expect(row).not.toMatch(/review\.isDone/)
+  })
+
+  /*
+   * The non-vacuity pair for the case above: a surface could satisfy it by
+   * dropping the review bar entirely. Each one must still read the record and
+   * print it.
+   */
+  it('reads the standing conclusion from the record on both surfaces', () => {
+    for (const body of [detail, row]) {
+      expect(body).toContain('useCurrentThesisConclusion')
+      expect(body).toContain('conclusionWords(')
+    }
+    expect(detail).toContain('data-slot="research-review-standing"')
+    expect(row).toContain('data-slot="list-review-standing"')
+  })
+
+  /* The standing answer is the only one pressing cannot usefully do. Every
+     other one stays live, which IS the correction path -- a bar that disabled
+     all three after an answer is the defect. */
+  it('leaves every answer but the standing one pressable', () => {
+    expect(detail).toContain('disabled={reviewPending || standing}')
+    expect(row).toContain('disabled={review.isPending || standing}')
+    for (const body of [detail, row]) expect(body).toContain('aria-pressed={standing}')
+  })
+
+  /* A correction writes a new event. Nothing deletes or rewrites the old one:
+     the record of a reader changing their mind is the point. */
+  it('corrects by appending, never by editing or deleting the old row', () => {
+    const hook = src('hooks/useThesisReview.ts')
+    expect(hook).toContain('.insert({')
+    expect(hook).not.toContain('.delete(')
+    expect(hook).not.toMatch(/from\('memory_events'\)\s*\n?\s*\.update\(/)
   })
 })
 
@@ -243,10 +370,20 @@ describe('a review is recorded, not disguised as an edit', () => {
     expect(hook).toContain('mutationFn: async (outcome: ThesisReviewOutcome)')
   })
 
+  /*
+   * The in-flight guard, still both halves -- but the button's half no longer
+   * latches.
+   *
+   * It asserted `disabled={reviewPending || reviewDone}`, which disabled all
+   * three controls permanently once any answer was taken. That is what made
+   * an accidental press unfixable inside the pane that had just accepted it.
+   * The second clause is now the STANDING answer, so pressing is blocked only
+   * where it would write a duplicate; the two alternatives stay live.
+   */
   it('refuses a second submit while one is in flight', () => {
     expect(src('hooks/useThesisReview.ts')).toContain('if (mutation.isPending) return')
     expect(src('components/research-v2/ResearchDetail.tsx'))
-      .toContain('disabled={reviewPending || reviewDone}')
+      .toContain('disabled={reviewPending || standing}')
   })
 
   /* The displayed date must stay the real one. `daysSinceReview` drives every

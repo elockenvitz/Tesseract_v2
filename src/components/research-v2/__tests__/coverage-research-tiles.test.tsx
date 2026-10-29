@@ -60,6 +60,9 @@ vi.mock('../../../hooks/useDesktopResearch', () => ({
 vi.mock('../../../hooks/useThesisReview', () => ({
   useThesisReviews: () => new Map(),
   useRecordThesisReview: () => ({ record: vi.fn(), isPending: false, isDone: false, error: null }),
+  // No conclusion on record: a coverage name nobody has reviewed is exactly
+  // the subject this suite is about.
+  useCurrentThesisConclusion: () => ({ current: null, isLoading: false }),
 }))
 
 /* Same reason: the view cursor needs auth and org context this suite does not
