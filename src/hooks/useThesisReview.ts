@@ -237,5 +237,25 @@ export function useRecordThesisReview(assetId: string | null | undefined) {
     mutation.mutate(outcome)
   }, [mutation])
 
-  return { record, isPending: mutation.isPending, isDone: mutation.isSuccess, error: mutation.error }
+  return {
+    record,
+    isPending: mutation.isPending,
+    isDone: mutation.isSuccess,
+    error: mutation.error,
+    /*
+     * The answer currently in flight, so the button can light up on the press
+     * rather than on the round trip.
+     *
+     * Without it the bar sat on the PREVIOUS verdict until the insert landed
+     * and the conclusions query refetched -- so for the length of a network
+     * round trip the reader's click appeared to have selected nothing, or
+     * worse, to have left the old answer standing. Then it snapped. A verdict
+     * is a click on a local decision; it should not look like it failed while
+     * the server agrees with it.
+     *
+     * `variables` is the outcome passed to this submit and is only read while
+     * pending, so a settled mutation never speaks over the record.
+     */
+    pendingOutcome: mutation.isPending ? (mutation.variables ?? null) : null,
+  }
 }

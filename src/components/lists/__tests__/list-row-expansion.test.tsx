@@ -48,6 +48,8 @@ const hooks = vi.hoisted(() => ({
   reviewDone: false,
   /** The standing conclusion, as `useCurrentThesisConclusion` hands it over. */
   reviewStanding: null as null | { outcome: string; occurredAt: string; byMe: boolean },
+  /** The outcome currently being written, as the recorder reports it. */
+  reviewPendingOutcome: null as null | string,
   /** Everything `saveContribution` was called with, in order. */
   caseWrites: [] as any[],
   workspaceLoading: false,
@@ -83,6 +85,10 @@ vi.mock('../../../hooks/useThesisReview', () => ({
     isPending: false,
     isDone: hooks.reviewDone,
     error: null,
+    /* The answer in flight. Driven by a fixture because the gap between the
+       press and the refetch is exactly where the bar used to show nothing
+       selected. */
+    pendingOutcome: hooks.reviewPendingOutcome,
   }),
   /* The conclusion already on the record, which the row reads back so it can
      offer to change it. Driven by a fixture because "nobody has answered" and
@@ -227,6 +233,7 @@ beforeEach(() => {
   hooks.reviews = []
   hooks.reviewDone = false
   hooks.reviewStanding = null
+  hooks.reviewPendingOutcome = null
   hooks.caseWrites = []
   hooks.workspaceLoading = false
 })
@@ -897,6 +904,24 @@ describe('reviewing evidence is recorded, not just linked', () => {
     // The correction path: the other two are live.
     expect(screen.getByText('Changed')).toBeEnabled()
     expect(screen.getByText('Needs work')).toBeEnabled()
+  })
+
+  /*
+   * The press is acknowledged on the press, not on the round trip.
+   *
+   * The bar used to read its selection only from the refetched record, so
+   * between the click and the server's answer it showed the PREVIOUS verdict
+   * as the selected one -- the click appeared to have done nothing, or to
+   * have chosen the thing the reader was trying to replace, and then it
+   * snapped. The in-flight answer wins while it is in flight.
+   */
+  it('lights up the answer being written, not the one it replaces', () => {
+    unread()
+    hooks.reviewStanding = { outcome: 'holds', occurredAt: new Date().toISOString(), byMe: true }
+    hooks.reviewPendingOutcome = 'changed'
+    renderRow({ onOpenAsset: () => {} })
+    expect(screen.getByText('Changed')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Still holds')).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('records a correction when a different verdict is pressed', async () => {

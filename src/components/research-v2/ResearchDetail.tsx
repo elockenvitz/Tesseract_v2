@@ -229,7 +229,7 @@ export function ResearchDetail({
       : 'case'
 
   const {
-    record: recordReview, isPending: reviewPending,
+    record: recordReview, isPending: reviewPending, pendingOutcome,
   } = useRecordThesisReview(subject.assetId)
   /*
    * `isDone` is deliberately not read any more.
@@ -241,6 +241,9 @@ export function ResearchDetail({
    * which outlives the mount and is what makes a correction possible at all.
    */
   const { current: reviewState } = useCurrentThesisConclusion(subject.assetId)
+  /* The answer in flight wins over the record while it is in flight, so the
+     press is acknowledged immediately and never un-acknowledged. */
+  const standingOutcome = pendingOutcome ?? reviewState?.outcome ?? null
 
   /*
    * This is a genuine view: the detail pane is mounted, which only happens
@@ -407,7 +410,7 @@ export function ResearchDetail({
               </span>
               <span className="flex items-center gap-1.5">
                 {REVIEW_CHOICES.map(choice => {
-                  const standing = reviewState?.outcome === choice.outcome
+                  const standing = standingOutcome === choice.outcome
                   return (
                     <button
                       key={choice.outcome}
@@ -443,20 +446,38 @@ export function ResearchDetail({
                 who answered -- correcting your own conclusion and overwriting
                 a colleague's are different acts.
               */}
-              {reviewPending ? (
-                <span className="text-[12px] text-gray-500">Recording…</span>
-              ) : reviewState ? (
-                <span
-                  data-slot="research-review-standing"
-                  className="text-[12px] text-gray-500"
-                >
-                  {conclusionWords(
-                    reviewState.outcome, reviewState.occurredAt, reviewState.byMe, new Date(),
-                  )}
-                  {' · '}
-                  <span className="text-gray-400">change it above</span>
-                </span>
-              ) : null}
+              {/*
+                ── One slot, one width, whatever it is saying ───────────────
+
+                This bar is centred between two `flex-1` siblings, so its own
+                width is what positions the three buttons. The status text
+                measured 272px, and it appeared, changed and disappeared under
+                a single click: empty -> "Recording…" -> the sentence. Each
+                step resized the bar and slid the buttons sideways by about
+                half the delta, which is why pressing one felt like chasing
+                it. Measured at 1920: the group moved ~140px across one press.
+
+                So the slot is always present and always the same width. The
+                longest sentence it can hold ("Marked this Needs work · 365d
+                ago · change it above") fits inside it, and the empty state
+                says what the empty state IS rather than reserving a blank.
+              */}
+              <span
+                data-slot="research-review-standing"
+                className="w-[19rem] shrink-0 whitespace-nowrap text-[12px] text-gray-500"
+              >
+                {reviewPending ? 'Recording…' : reviewState ? (
+                  <>
+                    {conclusionWords(
+                      reviewState.outcome, reviewState.occurredAt, reviewState.byMe, new Date(),
+                    )}
+                    {' · '}
+                    <span className="text-gray-400">change it above</span>
+                  </>
+                ) : (
+                  <span className="text-gray-400">Not reviewed yet</span>
+                )}
+              </span>
             </span>
           )}
 

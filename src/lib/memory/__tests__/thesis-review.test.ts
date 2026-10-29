@@ -271,6 +271,44 @@ describe('the standing conclusion is shown back, and can be replaced', () => {
     for (const body of [detail, row]) expect(body).toContain('aria-pressed={standing}')
   })
 
+  /*
+   * ── The press is acknowledged by the press ──────────────────────────────
+   *
+   * Selection was read only from the refetched record, so for the length of
+   * an insert plus a refetch the bar still showed the PREVIOUS verdict as the
+   * chosen one -- the click looked ignored, or looked like it had re-chosen
+   * the thing being replaced, and then jumped. Both surfaces now prefer the
+   * answer in flight.
+   */
+  it('selects the answer in flight before the record comes back', () => {
+    expect(src('hooks/useThesisReview.ts')).toContain('pendingOutcome: mutation.isPending')
+    for (const body of [detail, row]) {
+      expect(body).toMatch(/standingOutcome = (review\.)?pendingOutcome \?\? reviewState\?\.outcome \?\? null/)
+      expect(body).toContain('standingOutcome === ')
+    }
+  })
+
+  /*
+   * ── The buttons stop moving under the cursor ────────────────────────────
+   *
+   * The research bar is centred between two `flex-1` siblings, so its own
+   * width positions the three buttons. The status text measured 272px and
+   * appeared, changed and vanished within one click -- empty, "Recording…",
+   * the sentence -- sliding the group about 140px sideways at 1920 each time.
+   * The slot is fixed-width and always rendered now, so nothing it says can
+   * move the thing the reader is aiming at.
+   *
+   * The class is asserted because this is the whole fix: a slot that sizes to
+   * its content is the defect, and no behavioural assertion can see it --
+   * jsdom does no layout.
+   */
+  it('reserves one fixed slot for whatever the status says', () => {
+    expect(detail).toMatch(/data-slot="research-review-standing"[\s\S]{0,160}w-\[19rem\] shrink-0/)
+    // Always rendered: the empty state says so rather than collapsing.
+    expect(detail).toContain('Not reviewed yet')
+    expect(detail).not.toMatch(/\) : reviewState \? \(\s*\n\s*<span\s*\n\s*data-slot="research-review-standing"/)
+  })
+
   /* A correction writes a new event. Nothing deletes or rewrites the old one:
      the record of a reader changing their mind is the point. */
   it('corrects by appending, never by editing or deleting the old row', () => {

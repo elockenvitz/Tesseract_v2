@@ -238,6 +238,9 @@ export function ListRowExpansion({
      change it. Same hook, same cache entry as the research pane -- the two
      surfaces must not disagree about the standing verdict. */
   const { current: reviewState } = useCurrentThesisConclusion(asset?.id ?? null)
+  /* The answer in flight wins while it is in flight, so a press lights up its
+     own button immediately instead of after the insert and the refetch. */
+  const standingOutcome = review.pendingOutcome ?? reviewState?.outcome ?? null
 
   const {
     spot, target, positions, liveIdeas, decisions, sections, evidence, caseWrittenAt, ladder,
@@ -691,7 +694,7 @@ export function ListRowExpansion({
   const reviewGroup = (
     <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
       {REVIEW_CHOICES.map(({ outcome, label }) => {
-        const standing = reviewState?.outcome === outcome
+        const standing = standingOutcome === outcome
         return (
           <button
             key={outcome}
