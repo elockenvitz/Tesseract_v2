@@ -13,6 +13,8 @@ import { render, screen, within, fireEvent } from '@testing-library/react'
 import type { CoverageResearchCandidate } from '../../../lib/research/coverage-research-gaps'
 import type { ResearchFraming } from '../../../lib/research/case-state'
 import type { ResearchSubject } from '../../../lib/desktop-research'
+import { ENGAGEMENT_EVENT } from '../../../lib/engagement/open-engagement'
+import { DASHBOARD_FOCUS_EVENT } from '../../../lib/dashboard/focus'
 
 const DAY = 86_400_000
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
@@ -393,6 +395,90 @@ describe('generated tiles navigate like every Research tile', () => {
     const detail = screen.getByTestId('research-detail')
     expect(detail).toHaveTextContent('U40 is on your coverage with no thesis yet.')
     expect(screen.queryByText(/Nothing on record for that name/)).not.toBeInTheDocument()
+  })
+})
+
+describe('every control in the detail header does something', () => {
+  /*
+   * ── The bug this exists for ─────────────────────────────────────────────
+   *
+   * A `MoreHorizontal` button sat in the header's action group from the day
+   * the bar was drawn, with no `onClick`, no menu state and no popover. It
+   * hovered, it took focus, it was announced as "More actions", and clicking
+   * it did nothing. Nobody noticed until it was reported, because nothing
+   * here was asking whether a control in that bar is wired.
+   *
+   * Asserting the absence of that one button would guard the symptom. What
+   * is checked instead is the rule: a control in this group either does
+   * something or should not be drawn. A dead button is worse than a missing
+   * one -- it tells the reader a capability exists and then declines to say
+   * what it was.
+   */
+  const headerButtons = (detail: HTMLElement) => {
+    /* The action group, not the whole page: the verdict buttons and the
+       body's own controls are a different question. `Ask AI` is always in
+       this group when there is a target, which is what anchors it. */
+    const group = within(detail).getByText('Ask AI').closest('span')!
+    return [...group.querySelectorAll('button')] as HTMLButtonElement[]
+  }
+
+  it('leaves no control that answers a click with nothing', () => {
+    env.gaps = { status: 'ready', candidates: [candidate('AMZN')], coveredCount: 1 }
+    render(<ResearchWorkspace focusObjectId="a-amzn" />)
+    const buttons = headerButtons(screen.getByTestId('research-detail'))
+    expect(buttons.length).toBeGreaterThan(0)
+
+    /*
+     * React attaches one delegated listener at the root, so `onclick` is null
+     * even on a wired button and `addEventListener` cannot be inspected.
+     * What IS observable is the EFFECT, and this header has exactly three
+     * kinds: a window event on a shared seam, a navigation this suite
+     * records, or a change to the DOM.
+     *
+     * Ask AI and Discuss dispatch `tesseract:open-engagement`; the idea and
+     * asset buttons call seams `env` records; `CreateMenu`'s trigger opens a
+     * menu. A dead button produces none of the three, which is exactly how
+     * the reported one behaved -- so the three together are the definition
+     * of "did something" rather than a heuristic that happens to pass.
+     */
+    let events = 0
+    const count = () => { events += 1 }
+    for (const name of [ENGAGEMENT_EVENT, DASHBOARD_FOCUS_EVENT]) {
+      window.addEventListener(name, count)
+    }
+
+    try {
+      for (const b of buttons) {
+        const seams = () => env.opened.length + env.assetOpened.length + events
+        const beforeSeams = seams()
+        const beforeDom = document.body.innerHTML
+
+        fireEvent.click(b)
+
+        const moved = seams() !== beforeSeams
+        const changed = document.body.innerHTML !== beforeDom
+        expect(
+          moved || changed,
+          `"${(b.getAttribute('aria-label') || b.textContent || '').trim()}" `
+          + 'is drawn in the header action group but does nothing when clicked',
+        ).toBe(true)
+      }
+    } finally {
+      for (const name of [ENGAGEMENT_EVENT, DASHBOARD_FOCUS_EVENT]) {
+        window.removeEventListener(name, count)
+      }
+    }
+  })
+
+  it('draws no overflow control, because there is nothing behind one', () => {
+    /* Removed rather than filled: every action this header offers already
+       has its own labelled control, and "Open full asset" is a deep link at
+       the foot of the page. Stated as its own case so that re-adding the
+       icon without a menu fails here by name. */
+    env.gaps = { status: 'ready', candidates: [candidate('AMZN')], coveredCount: 1 }
+    render(<ResearchWorkspace focusObjectId="a-amzn" />)
+    const detail = screen.getByTestId('research-detail')
+    expect(within(detail).queryByRole('button', { name: /More actions/i })).toBeNull()
   })
 })
 

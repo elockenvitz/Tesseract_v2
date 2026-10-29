@@ -32,7 +32,7 @@ import {
 } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
 import { TONE_INK } from '../../lib/semantic-tone'
-import { ArrowDown, ArrowUpRight, MessageSquare, MoreHorizontal, PencilLine } from 'lucide-react'
+import { ArrowDown, ArrowUpRight, MessageSquare, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { useRecordThesisReview, type ThesisReviewOutcome } from '../../hooks/useThesisReview'
 import { useRecordObjectView } from '../../hooks/useObjectViewCursor'
@@ -460,10 +460,28 @@ export function ResearchDetail({
                 Discuss
               </button>
             )}
-            <button type="button" aria-label="More actions"
-                    className="grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]">
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
+            {/*
+              There is no overflow control here, deliberately.
+
+              A `MoreHorizontal` button sat in this slot from the day the bar
+              was drawn and had no `onClick`, no menu state and no popover --
+              it hovered, it focused, it was announced to assistive tech as
+              "More actions", and clicking it did nothing. Reported as a bug;
+              it was never wired, so there was no regression to fix.
+
+              It is removed rather than filled because nothing was waiting to
+              go in it. Every action this header offers already has its own
+              labelled control beside it -- the idea, Ask AI, Create, Discuss
+              -- and "Open full asset" is a deep link at the foot of the page.
+              An overflow menu is for actions that exist and do not fit, and
+              there were none of either.
+
+              If one is wanted later, the candidate is deferring this name
+              from the deck, which `src/lib/attention-state` already supports
+              and this surface does not expose. That is a capability with a
+              write path and per-user state, not a slot to be backfilled, so
+              it arrives with its own tests or not at all.
+            */}
           </span>
         </div>
       </div>
