@@ -250,8 +250,16 @@ export function ResearchWorkspace({
     )
   }
 
+  /* The ground is stated on the scroll box below, not inherited. Measured,
+     that element was transparent and the field showed through to the shell's
+     `bg-gray-50/60` -- about #fcfcfd against white cards, so the tiles had no
+     edge at all. Today settled this first and Ideas took the same pair; this
+     is the third lens of five to carry it, not a third answer. */
   return (
-    <div className="h-full overflow-y-auto" data-testid="research-lens">
+    <div
+      className="h-full overflow-y-auto bg-gray-100 dark:bg-[#070a10]"
+      data-testid="research-lens"
+    >
       <DesktopGallery
         title="Research"
         count={ranked.length}

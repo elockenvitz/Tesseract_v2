@@ -213,8 +213,14 @@ export function PortfolioWorkspace({
     )
   }
 
+  /* The ground, as on Today, Ideas and Research. See the note there: left
+     transparent, this showed through to the shell's `bg-gray-50/60` and the
+     cards lost their edge. */
   return (
-    <div className="h-full overflow-y-auto pb-10" data-testid="portfolio-lens">
+    <div
+      className="h-full overflow-y-auto bg-gray-100 pb-10 dark:bg-[#070a10]"
+      data-testid="portfolio-lens"
+    >
       {/* The book map and its totals describe the WHOLE book, so they belong
           to browsing it -- and they are why this lens exists: where is
           capital, and where has the framework come apart. */}

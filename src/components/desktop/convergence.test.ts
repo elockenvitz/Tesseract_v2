@@ -1683,3 +1683,82 @@ describe('a handoff never promises what is not there', () => {
       .toContain('<section data-testid="active-weights">')
   })
 })
+
+/**
+ * Every lens draws its field on the same ground.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * A lens's scroll container is what sits behind its cards, and three of the
+ * five declared no background at all. Measured live, those three computed
+ * `rgba(0, 0, 0, 0)` and showed through to the shell's `bg-gray-50/60` --
+ * about #fcfcfd against a white card, which is a step small enough that a
+ * cheap monitor renders it as nothing. The field read as one undivided
+ * sheet; the cards had no edge.
+ *
+ * Today settled the pair first and Ideas took it verbatim rather than
+ * inventing a second answer. Research, Portfolio and Decisions had simply
+ * never been given it.
+ *
+ * ── Why this is asserted on the source ────────────────────────────────────
+ *
+ * The subject IS a static class string on a known element. Standing up five
+ * lenses with their queries, books and detail hooks to read one computed
+ * colour would be a far larger harness asserting the same fact less
+ * directly. What matters is that the rule is asserted over the whole SET --
+ * the bug was three lenses each missing it independently, so a test naming
+ * one lens would have left the other two broken.
+ */
+describe('the ground is the same on every lens', () => {
+  const GROUND = ['bg-gray-100', 'dark:bg-[#070a10]']
+
+  /*
+   * The LENS ROOT's classes, not the file's first scroller.
+   *
+   * The first version of this helper took `className="…h-full
+   * overflow-y-auto…"` and matched whichever came first in the file.
+   * Portfolio and Decisions both have an inner scrolling panel above their
+   * lens root, so the guard read the wrong element and failed on two lenses
+   * that were in fact correct. Anchoring on `data-testid="<x>-lens"` and
+   * reading backwards is the only way to be sure of the element -- Today
+   * has no testid, so it is matched by its scroller as before.
+   */
+  const lensRoot = (file: string) => {
+    const body = src(file)
+    const at = body.search(/data-testid="[a-z-]+-lens"/)
+    if (at < 0) {
+      const scroller = body.match(/className="[^"]*h-full overflow-y-auto[^"]*"/)
+      return scroller?.[0] ?? null
+    }
+    /* The opening tag this testid belongs to, back to its `<`. */
+    const open = body.lastIndexOf('<', at)
+    const tag = body.slice(open, at)
+    return /h-full overflow-y-auto/.test(tag) ? tag : null
+  }
+
+  it.each([
+    ['Today', 'components/today/TodayPage.tsx'],
+    ['Ideas', 'components/ideas-v2/IdeasWorkspace.tsx'],
+    ['Research', 'components/research-v2/ResearchWorkspace.tsx'],
+    ['Portfolio', 'components/portfolio-v2/PortfolioWorkspace.tsx'],
+    ['Decisions', 'components/decisions-v2/DecisionsWorkspace.tsx'],
+  ])('%s states it on its own scroll container', (_lens, file) => {
+    /* The scrolling element, not merely the file: a `bg-gray-100` on some
+       pill or hover state inside it would satisfy a naive substring check
+       while the field behind the cards stayed transparent. */
+    const root = lensRoot(file)
+    expect(root, 'no scrolling lens root found').toBeTruthy()
+    for (const token of GROUND) expect(root!).toContain(token)
+  })
+
+  it('gives no lens a contrast of its own', () => {
+    /* The reason Ideas took Today's values instead of picking its own: this
+       shell draws the same cards on five surfaces, and a lens that tuned its
+       own ground would make the identical card look wrong on one of them. */
+    const grounds = new Set<string>()
+    for (const file of ['components/today/TodayPage.tsx', ...WORKSPACES]) {
+      grounds.add((lensRoot(file)!.match(/bg-gray-\d+/) ?? ['none'])[0])
+    }
+    expect([...grounds]).toEqual(['bg-gray-100'])
+  })
+})

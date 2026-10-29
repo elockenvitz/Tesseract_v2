@@ -264,8 +264,15 @@ export function DecisionsWorkspace({
     )
   }
 
+  /* The ground, as on Today, Ideas, Research and Portfolio. See the note on
+     Ideas: left transparent, this showed through to the shell's
+     `bg-gray-50/60` and the cards lost their edge. Five lenses, one pair of
+     values -- no lens gets its own contrast. */
   return (
-    <div className="h-full overflow-y-auto" data-testid="decisions-lens">
+    <div
+      className="h-full overflow-y-auto bg-gray-100 dark:bg-[#070a10]"
+      data-testid="decisions-lens"
+    >
       <DesktopGallery
         title="Decisions"
         count={rows.length}
