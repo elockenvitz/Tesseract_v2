@@ -114,9 +114,15 @@ const VERDICT_SELECTED: Record<ThesisReviewOutcome, string> = {
  * and on the many names with no open idea it would land nowhere.
  */
 function routeToIdea(ideaId: string, issue: string) {
+  /*
+   * The lens first, a tab only as a fallback. Research and Ideas are two
+   * lenses of one shell, so firing both unconditionally -- which is what this
+   * did -- always fell through to the descriptor and opened a second
+   * Dashboard tab rather than moving the reader one lens across.
+   */
   const request = { ideaId, focus: 'thesis' as const, issue, origin: 'research' }
+  if (openIdea(request)) return
   window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: ideasTabFor(request) }))
-  openIdea(request)
 }
 import {
   stateOf, whyItMatters, primaryActionFor, targetFor, issueFor,

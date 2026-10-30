@@ -45,21 +45,29 @@ import { FrameworkScale, WeightBar, money, bigMoney } from './PortfolioVisual'
 /**
  * Open another workspace on this object.
  *
- * Two dispatches, neither timed: the tab descriptor opens or focuses the one
- * fixed tab and carries the selection in its data, and the typed event
- * re-selects inside a tab that is already mounted. Whichever applies, the
- * other is a no-op. Exactly the pattern Today uses.
+ * ── Not two dispatches any more ──────────────────────────────────────────
+ *
+ * This fired both unconditionally, on the theory that the typed event would
+ * re-select inside a mounted workspace and the tab descriptor would be a
+ * no-op if one existed. The theory was wrong in the common case: Portfolio,
+ * Research and Ideas are three lenses of ONE shell that renders one lens at a
+ * time, so from Portfolio neither target workspace is mounted, nothing heard
+ * the typed event, and the descriptor opened a second Dashboard tab.
+ *
+ * The typed call now reports whether anything took the reader there. The tab
+ * descriptor is sent only when nothing did, which is the real handoff case:
+ * a surface outside the Dashboard.
  */
 function routeToResearch(assetId: string, focus: ResearchFocus, issue: string) {
   const request = { assetId, focus, issue, origin: 'portfolio' }
+  if (openResearch(request)) return
   window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: researchTabFor(request) }))
-  openResearch(request)
 }
 
 function routeToIdea(ideaId: string, issue: string) {
   const request = { ideaId, focus: 'decision' as const, issue, origin: 'portfolio' }
+  if (openIdea(request)) return
   window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: ideasTabFor(request) }))
-  openIdea(request)
 }
 
 export function PositionDetailPane({

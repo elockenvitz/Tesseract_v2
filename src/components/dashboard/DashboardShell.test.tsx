@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 
@@ -29,6 +29,10 @@ const stub = vi.hoisted(() => (lens: string) => (props: any) =>
       'data-selected': props.focusObjectId ?? '',
       'data-book': props.selectedPortfolioId ?? '',
       'data-issue': props.issue ?? '',
+      // What a cross-lens arrival hands the lens it lands on. Distinct from
+      // `data-selected`, which is the deck.
+      'data-idea': props.selectedIdeaId ?? '',
+      'data-asset': props.selectedAssetId ?? '',
     },
     $$typeof: Symbol.for('react.element'),
   }) as any)
@@ -76,6 +80,75 @@ describe('one Dashboard, five lenses', () => {
   it('opens a saved v2 session on its own lens', () => {
     render(<DashboardShell initialLens="portfolio" selectedPortfolioId="p1" />)
     expect(screen.getByTestId('lens-portfolio')).toHaveAttribute('data-book', 'p1')
+  })
+})
+
+/**
+ * Crossing lenses is a move inside this tab.
+ *
+ * The defect, measured in the running app: on the Decisions lens, "Open the
+ * idea" opened a SECOND Dashboard tab. Both lenses are this one shell, so the
+ * reader's words were exact: "it opens another tab that shows the same
+ * workspace screen."
+ *
+ * The cause was a pair of dispatches fired unconditionally -- a tab descriptor
+ * for `ideas-v2` plus the typed `openIdea` event -- on the theory that the
+ * typed one would be handled when a workspace was mounted and the descriptor
+ * would be a harmless no-op otherwise. Only `IdeasWorkspace` subscribed, and
+ * this shell renders ONE lens at a time, so from Decisions the typed event had
+ * no listener and the descriptor fired every time.
+ *
+ * The shell is what knows a lens exists to switch to, so the shell is what
+ * listens.
+ */
+describe('a cross-lens request is answered in place, not in a new tab', () => {
+  it('switches to Ideas and hands it the idea', async () => {
+    const { openIdea } = await import('../../lib/desktop-ideas/navigate')
+    render(<DashboardShell initialLens="decisions" />)
+    expect(screen.getByTestId('lens-decisions')).toBeInTheDocument()
+
+    let claimed = false
+    await act(async () => { claimed = openIdea({ ideaId: 'tq-9', issue: 'Awaiting decision' }) })
+
+    // Claimed, so the caller knows not to open a tab.
+    expect(claimed).toBe(true)
+    const ideas = screen.getByTestId('lens-ideas')
+    expect(ideas).toHaveAttribute('data-idea', 'tq-9')
+    expect(ideas).toHaveAttribute('data-issue', 'Awaiting decision')
+    expect(screen.queryByTestId('lens-decisions')).not.toBeInTheDocument()
+    // The whole point: no tab.
+    expect(tabEvents).toHaveLength(0)
+  })
+
+  it('switches to Research and hands it the asset', async () => {
+    const { openResearch } = await import('../../lib/desktop-research/navigate')
+    render(<DashboardShell initialLens="portfolio" selectedPortfolioId="p1" />)
+
+    let claimed = false
+    await act(async () => { claimed = openResearch({ assetId: 'a-orcl', issue: 'No thesis on file' }) })
+
+    expect(claimed).toBe(true)
+    expect(screen.getByTestId('lens-research')).toHaveAttribute('data-asset', 'a-orcl')
+    expect(tabEvents).toHaveLength(0)
+  })
+
+  it('does not let an arrival outlive the lens the reader leaves', async () => {
+    /*
+     * The arrival overrides the tab's own selection, so it has to end when
+     * the reader navigates by hand. Otherwise coming back to Ideas later
+     * re-opens an idea they finished with, and the AI subject chip keeps
+     * reading it -- the same staleness `onFocusConsumed` exists to prevent
+     * for the tab payload.
+     */
+    const user = userEvent.setup()
+    const { openIdea } = await import('../../lib/desktop-ideas/navigate')
+    render(<DashboardShell initialLens="decisions" />)
+    await act(async () => { openIdea({ ideaId: 'tq-9' }) })
+    expect(screen.getByTestId('lens-ideas')).toHaveAttribute('data-idea', 'tq-9')
+
+    await user.click(screen.getByRole('button', { name: /Research/i }))
+    await user.click(screen.getByRole('button', { name: /Ideas/i }))
+    expect(screen.getByTestId('lens-ideas')).toHaveAttribute('data-idea', '')
   })
 })
 

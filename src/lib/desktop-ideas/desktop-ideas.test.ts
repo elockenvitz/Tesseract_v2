@@ -220,8 +220,46 @@ describe('arriving from another surface', () => {
     const seen: any[] = []
     const off = subscribeToOpenIdea(r => seen.push(r))
     expect(openIdea({ ideaId: 'tq-9', focus: 'framework', issue: 'Spot above bull', origin: 'today' })).toBe(true)
-    expect(seen[0]).toEqual({ ideaId: 'tq-9', focus: 'framework', issue: 'Spot above bull', origin: 'today' })
+    /*
+     * `toMatchObject`, not `toEqual`: the request on the wire now also carries
+     * the acknowledgement a listener writes back, which the case below is
+     * about. Every field a CALLER set is still pinned exactly.
+     */
+    expect(seen[0]).toMatchObject({ ideaId: 'tq-9', focus: 'framework', issue: 'Spot above bull', origin: 'today' })
     off()
+  })
+
+  it('reports whether anything was actually listening', () => {
+    /*
+     * The return value used to be `true` for any well-formed request, which
+     * made it useless as a decision -- and every caller treated it as one,
+     * pairing it with a tab descriptor "in case nothing heard".
+     *
+     * Nothing ever heard, inside the Dashboard. Its five lenses are one shell
+     * rendering one lens at a time, so from Decisions there was no Ideas
+     * workspace subscribed, and the fallback fired every single time: a second
+     * Dashboard tab, same shell, same lens bar.
+     */
+    expect(openIdea({ ideaId: 'tq-9' })).toBe(false)
+
+    const off = subscribeToOpenIdea(() => {})
+    expect(openIdea({ ideaId: 'tq-9' })).toBe(true)
+    off()
+
+    // And it goes back to false the moment the surface unmounts, which is the
+    // whole point: an unsubscribed app has nowhere to put the reader.
+    expect(openIdea({ ideaId: 'tq-9' })).toBe(false)
+  })
+
+  it('does not leak the acknowledgement back into a later request', () => {
+    // The flag rides on a COPY of the request, so a caller that reuses one
+    // request object cannot be told "yes" by a previous dispatch.
+    const request = { ideaId: 'tq-9' }
+    const off = subscribeToOpenIdea(() => {})
+    expect(openIdea(request)).toBe(true)
+    off()
+    expect((request as Record<string, unknown>).claimed).toBeUndefined()
+    expect(openIdea(request)).toBe(false)
   })
 
   it('refuses a request with no object rather than opening a generic destination', () => {

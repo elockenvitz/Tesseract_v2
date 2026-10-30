@@ -253,6 +253,23 @@ describe('arrival is typed, and reuses one tab', () => {
     expect(seen[0]).toMatchObject({ assetId: 'a-1', focus: 'evidence' })
   })
 
+  it('reports whether anything was actually listening', () => {
+    /*
+     * The same change `openIdea` records, for the same reason. The return
+     * value was `true` for any well-formed request, so a caller could not use
+     * it to decide between "the reader has arrived" and "nobody heard that" --
+     * and Portfolio's "Review the case" therefore opened a second Dashboard
+     * tab every time, rather than moving one lens across.
+     */
+    expect(openResearch({ assetId: 'a-1' })).toBe(false)
+
+    const off = subscribeToOpenResearch(() => {})
+    expect(openResearch({ assetId: 'a-1' })).toBe(true)
+    off()
+
+    expect(openResearch({ assetId: 'a-1' })).toBe(false)
+  })
+
   it('ignores a request with no subject', () => {
     const seen: any[] = []
     listeners.push(subscribeToOpenResearch(r => seen.push(r)))

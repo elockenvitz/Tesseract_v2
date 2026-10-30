@@ -50,10 +50,25 @@ const DOM_HINT = /@testing-library|\brender\(|document\.|window\.|screen\.|HTMLE
  * `ReferenceError: window is not defined` on the first run, naming itself.
  * It cannot decay into a silent pass, so the worst a stale entry costs is
  * one red run and a one-line edit.
+ *
+ * ── One counter-example, found the hard way ──────────────────────────────
+ *
+ * That "loud" claim has an exception, and `desktop-research.test.ts` was it.
+ * Its subject is `openResearch`, which OPENS with
+ * `if (typeof window === 'undefined') return false` -- a guard that exists so
+ * a surface does not break when rendered without a DOM. Under the node
+ * project that guard turned "there is no DOM here" into "the request was
+ * refused", so the suite neither crashed nor passed: it sat red on an
+ * assertion about behaviour it could not reach, and stayed there.
+ *
+ * So the rule is narrower than it reads: a module that GUARDS on `window`
+ * instead of touching it degrades quietly, and the misclassification shows up
+ * as a confusing failure rather than a self-naming one.
  */
 const NEEDS_DOM_DESPITE_NO_HINT = [
   'src/lib/asset-work/__tests__/requirement-drafts.test.ts',
   'src/lib/desktop-ideas/desktop-ideas.test.ts',
+  'src/lib/desktop-research/desktop-research.test.ts',
   'src/lib/mobile/__tests__/feed-backgrounded.test.ts',
   'src/lib/mobile/__tests__/feed-position-teardown.test.ts',
   'src/lib/mobile/__tests__/feed-session-scope.test.ts',

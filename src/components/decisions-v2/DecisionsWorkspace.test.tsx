@@ -17,6 +17,7 @@ import React from 'react'
 import type { DecisionRecord } from '../../lib/desktop-decisions'
 import { NO_OUTCOME_FACTS, type OutcomeFacts } from '../../lib/desktop-decisions/classes'
 import type { BatchPnl } from '../../lib/outcomes/batch-groups'
+import { subscribeToOpenIdea } from '../../lib/desktop-ideas/navigate'
 
 const DAY = 86_400_000
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
@@ -2202,11 +2203,45 @@ describe('navigating and routing', () => {
     expect(tab.data.origin).toBe('decisions')
   })
 
-  it('opens Ideas V2 on the exact idea, never the legacy pipeline', async () => {
+  /*
+   * "Open the idea" opened a SECOND Dashboard tab, and that is what the
+   * reader reported: "it opens another tab that shows the same workspace
+   * screen."
+   *
+   * This case used to assert the tab descriptor unconditionally, because that
+   * is what the button did unconditionally. Ideas and Decisions are two
+   * lenses of ONE shell, so crossing between them is a move inside the
+   * surface the reader is already looking at, not a new application. The two
+   * cases below split the old one along that line: in place when there is a
+   * lens to receive it, a tab only when there is not.
+   */
+  it('moves to the idea in place when a lens is mounted to receive it', async () => {
+    const user = userEvent.setup()
+    decisions = [decision({ id: 'x', ideaId: 'tq-9' })]
+    /*
+     * Subscribed through the real seam, which is what makes this case
+     * non-vacuous: the suite's own `window.addEventListener` probes are raw
+     * listeners that never claim, so they could not tell the two paths apart.
+     * `subscribeToOpenIdea` is exactly what `DashboardShell` uses.
+     */
+    const claimed: string[] = []
+    const off = subscribeToOpenIdea(r => claimed.push(r.ideaId))
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    await user.click(screen.getByRole('button', { name: 'Open the idea' }))
+    off()
+
+    expect(claimed).toEqual(['tq-9'])
+    expect(tabEvents.some(e => e.detail?.id === 'ideas-v2')).toBe(false)
+  })
+
+  it('falls back to a tab, on the exact idea, when nothing is mounted', async () => {
     const user = userEvent.setup()
     decisions = [decision({ id: 'x', ideaId: 'tq-9' })]
     render(<DecisionsWorkspace selectedDecisionId="x" />)
     await user.click(screen.getByRole('button', { name: 'Open the idea' }))
+    // The genuine hand-off: no Dashboard on screen, so a tab is the only
+    // place to put the reader -- and it still lands on the idea itself,
+    // never the legacy pipeline.
     expect(tabEvents.at(-1)!.detail.id).toBe('ideas-v2')
     expect(tabEvents.at(-1)!.detail.data.selectedIdeaId).toBe('tq-9')
     expect(tabEvents.some(e => e.detail?.type === 'trade-queue')).toBe(false)

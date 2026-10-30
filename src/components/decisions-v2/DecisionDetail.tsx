@@ -46,10 +46,19 @@ function routeToResearch(assetId: string, symbol: string | null, issue: string) 
   openAsset({ assetId, symbol, focus: 'research', issue, origin: 'decisions' })
 }
 
+/**
+ * Decisions -> Ideas. The lens first, a tab only if there is no lens.
+ *
+ * This used to fire BOTH, unconditionally. Ideas and Decisions are two lenses
+ * of one shell, so the typed event had no mounted listener while the reader
+ * was on Decisions, and the tab descriptor opened a second Dashboard tab
+ * showing the same shell. `openIdea` now reports whether anything took the
+ * request, so the descriptor is the fallback it was always described as.
+ */
 function routeToIdea(ideaId: string, issue: string) {
   const request = { ideaId, focus: 'decision' as const, issue, origin: 'decisions' }
+  if (openIdea(request)) return
   window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: ideasTabFor(request) }))
-  openIdea(request)
 }
 
 export function DecisionDetailPane({
