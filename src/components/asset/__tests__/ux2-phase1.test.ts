@@ -134,6 +134,13 @@ describe('UX2 P1: scoped tokens do not touch the global theme', () => {
     expect(STRIP).toContain("variant === 'band'")
     // Band is now a compact inline row (thin dividers, no boxed tiles); the
     // default variant keeps its tiled grid.
-    expect(STRIP).toContain('divide-x divide-[color:var(--ux2-band-line)]')
+    // Rewritten, not deleted: the strip's dividers moved off --ux2-band-line
+    // onto their own --ux2-strip-line. They shared the band's bottom hairline
+    // at 8% alpha — about 1.1:1 on white, invisible — and once the cells
+    // spread across the row they became the only cue that these are five
+    // separate facts. The band hairline itself is unchanged and still meant to
+    // be barely there, which is why this is a second token rather than a
+    // darker first one.
+    expect(STRIP).toContain('divide-x divide-[color:var(--ux2-strip-line)]')
   })
 })

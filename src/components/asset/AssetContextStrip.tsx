@@ -56,7 +56,7 @@ const SUB = 'text-[11px] text-gray-500 dark:text-gray-400 leading-tight mt-0.5 t
 const DASH = 'text-[14px] font-semibold text-gray-300 dark:text-gray-600 leading-tight'
 
 function Cell({
-  label, onClick, title, children, band, eyebrow, dimmed,
+  label, onClick, title, children, band, eyebrow,
 }: {
   label: string
   onClick?: () => void
@@ -64,20 +64,29 @@ function Cell({
   children: React.ReactNode
   band?: boolean
   eyebrow: string
-  /** An absent metric (no rating / no target): kept in place but visually
-   *  quieted so the metrics that DO carry data lead the row. */
-  dimmed?: boolean
 }) {
   const base = band ? 'bg-transparent' : 'bg-white dark:bg-gray-800'
   const hover = band
     ? 'hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
     : 'hover:bg-gray-50 dark:hover:bg-gray-700/60'
-  // Band cells size to their content (a lean row); default cells share the row
-  // equally (the tiled grid).
-  const sizing = clsx(
-    band ? 'flex-none px-4 py-1 first:pl-0' : 'flex-1 min-w-[132px] px-3 py-2',
-    band && dimmed && 'opacity-55',
-  )
+  /*
+   * Both variants now SHARE the row rather than shrink-wrapping.
+   *
+   * Band cells used to be `flex-none`, so the five facts bunched into 593px of
+   * a 1,856px row — 32% — with a thousand pixels of empty surface to their
+   * right and the dividers crowded together. `flex-1` spreads them evenly and
+   * puts real air between the hairlines; `min-w` keeps them readable and
+   * `overflow-x-auto` on the wrapper still carries a narrow viewport.
+   *
+   * `opacity-55` on an absent metric is gone. Layered on ink-2 it took the
+   * label to roughly 2.6:1 — unreadable, not quieted — and on a name with no
+   * rating, target or case that was most of the strip. Absence is now said in
+   * words ("No target yet") at full contrast, which is the honest version of
+   * the same signal.
+   */
+  const sizing = band
+    ? 'flex-1 min-w-[150px] max-w-[300px] px-5 py-1 first:pl-0'
+    : 'flex-1 min-w-[132px] px-3 py-2'
   const inner = (
     <>
       <span className={eyebrow}>{label}</span>
@@ -106,8 +115,11 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
   const band = variant === 'band'
   // Band variant swaps the cell text to the light-on-navy tokens; default keeps
   // the existing light-surface styling. Logic below is identical either way.
+  // 11px rather than 10px, and ink-3 rather than ink-2: at 10px/slate-500 the
+  // labels sat at 4.8:1 — technically AA for body copy, but this is uppercase
+  // type at well under half body size, and it read as washed out.
   const EYEBROW_C = band
-    ? 'block text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--ux2-ink-2)]'
+    ? 'block text-[11px] font-semibold uppercase tracking-[0.07em] text-[color:var(--ux2-ink-3)]'
     : EYEBROW
   const VALUE_C = band
     ? 'text-[13.5px] font-semibold tabular-nums tracking-tight text-[color:var(--ux2-ink)] leading-tight'
@@ -115,15 +127,18 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
   const SUB_C = band
     ? 'text-[11px] text-[color:var(--ux2-ink-2)] leading-tight mt-0.5 truncate'
     : SUB
+  // "No target yet" is an ANSWER, not a missing value, so the dash reads at the
+  // same weight as a number would. It used to share ink-2 with the sub-line,
+  // which made the whole cell one tone.
   const DASH_C = band
-    ? 'text-[14px] font-semibold text-[color:var(--ux2-ink-2)] leading-tight'
+    ? 'text-[14px] font-semibold text-[color:var(--ux2-ink-3)] leading-tight'
     : DASH
   // Band variant (the asset header): a compact inline context ROW — thin
   // dividers between facts, no boxed cells, no outer frame — so it supports the
   // page rather than dominating it as five equal tiles. Default keeps the tiled
   // grid used elsewhere.
   const wrapC = band
-    ? 'flex flex-nowrap overflow-x-auto items-stretch divide-x divide-[color:var(--ux2-band-line)]'
+    ? 'flex flex-nowrap overflow-x-auto items-stretch divide-x divide-[color:var(--ux2-strip-line)]'
     : 'flex flex-nowrap overflow-x-auto gap-px rounded-lg bg-gray-200 dark:bg-gray-700 border border-gray-200 dark:border-gray-700'
 
   const ws = data ?? null
@@ -176,7 +191,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
       className={`${wrapC} ${className ?? ''}`}
     >
       {/* Firm rating */}
-      <Cell label="Firm rating" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm consensus rating" band={band} eyebrow={EYEBROW_C} dimmed={!topRating}>
+      <Cell label="Firm rating" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm consensus rating" band={band} eyebrow={EYEBROW_C}>
         {topRating ? (
           <>
             <div className={VALUE_C + ' truncate'}>{topRating.value}</div>
@@ -195,7 +210,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
       </Cell>
 
       {/* Price target + upside */}
-      <Cell label="Price target" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm price target" band={band} eyebrow={EYEBROW_C} dimmed={target == null}>
+      <Cell label="Price target" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm price target" band={band} eyebrow={EYEBROW_C}>
         {target != null ? (
           <>
             <div className={VALUE_C + ' tabular-nums flex items-baseline gap-1.5'}>
@@ -227,7 +242,10 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
           </>
         ) : (
           <>
-            <div className={VALUE_C + ' text-gray-500 dark:text-gray-400'}>Not held</div>
+            {/* "Not held" is the answer to Exposure, so it reads at the value
+                level. The appended text-gray-500 used to override the band
+                token and drop it below the label beside it. */}
+            <div className={band ? VALUE_C : VALUE_C + ' text-gray-500 dark:text-gray-400'}>Not held</div>
             <div className={SUB_C}>no book you can see</div>
           </>
         )}
@@ -244,7 +262,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
           </>
         ) : (
           <>
-            <div className={VALUE_C + ' text-gray-500 dark:text-gray-400'}>None open</div>
+            <div className={band ? VALUE_C : VALUE_C + ' text-gray-500 dark:text-gray-400'}>None open</div>
             <div className={SUB_C}>nothing waiting</div>
           </>
         )}

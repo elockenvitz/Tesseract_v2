@@ -15,8 +15,19 @@
   --ux2-band-2:#f1f4f9;    /* chips / controls on the band */
   --ux2-band-hover:#e7ecf4;/* chip hover */
   --ux2-band-line:rgba(15,23,42,.08); /* hairline between band and content */
-  --ux2-ink:#1e293b;       /* primary text on the band (slate-800) */
-  --ux2-ink-2:#64748b;     /* muted text on the band (slate-500) */
+  /* Dividers INSIDE the context strip. Separate from the band hairline above,
+     which is meant to be barely there. At .08 these were ~1.1:1 on white — not
+     subtle, invisible — and once the cells spread across the row they are the
+     only cue that these are five separate facts rather than one run of text. */
+  --ux2-strip-line:rgba(15,23,42,.16);
+  --ux2-ink:#1e293b;       /* primary text on the band (slate-800) — 14.5:1 */
+  /* Eyebrow / label level. Was ink-2, which put the label, the value and the
+     sub-line all on the same slate-500 and left the strip with no hierarchy to
+     read — on a name with no rating, target or case, every character in it was
+     one flat grey. slate-600 is 7.6:1 on white, and carries 10-11px uppercase
+     type far better than 4.8:1 does. */
+  --ux2-ink-3:#475569;     /* labels on the band (slate-600) — 7.6:1 */
+  --ux2-ink-2:#64748b;     /* muted sub-line on the band (slate-500) — 4.8:1 */
   --ux2-pos:#059669;       /* positive change (emerald-600) */
   --ux2-neg:#dc2626;       /* negative change (red-600) */
   --ux2-crit:#dc2626;      /* attention count pill */
@@ -27,7 +38,9 @@
   --ux2-band-2:#223150;
   --ux2-band-hover:#344665;
   --ux2-band-line:rgba(157,176,202,.20);
+  --ux2-strip-line:rgba(157,176,202,.34);
   --ux2-ink:#eaf1fb;
+  --ux2-ink-3:#b9c9e0;     /* labels: between ink and ink-2, same role as light */
   --ux2-ink-2:#8ca0bd;
   --ux2-pos:#6ee7a8;
   --ux2-neg:#ffb4ab;
