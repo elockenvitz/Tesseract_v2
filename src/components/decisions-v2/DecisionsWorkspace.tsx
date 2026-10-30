@@ -44,7 +44,10 @@ import { usePilotProgress } from '../../hooks/usePilotProgress'
 import { operationalAfterPilot } from '../../lib/pilot/seed-visibility'
 import { DecisionDetailPane } from './DecisionDetail'
 import {
-  DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileReason, TileLead,
+  /* `TileReason` went with "Why it was proposed" — it existed to render the
+     generated sentence that block labelled, and no decision tile draws one
+     now. The component itself stays for its other callers. */
+  DesktopGallery, DesktopTile, TileIdentity, TileQuote, TileLead,
   TileMeta, TileFigure, sizeByRecency, GallerySkeleton, type TileSize,
   /* `TileVisualSlot` went with the ladder it wrapped: the carousel's box
      reserves the height now, and reserving it twice put a fixed-height slot
@@ -1164,11 +1167,11 @@ function DecisionTile({
         flow="chronological"
         onOpen={onOpen}
         eyebrow={<DecisionEyebrow d={d} situation={situation} facts={facts} />}
-        context={
-          <span data-testid="decision-next">
-            {facts.reviewed ? 'Reviewed in Outcomes' : 'Review outcome →'}
-          </span>
-        }
+        /* No standing context line here either — this is the two-column
+           variant of the same card and it carried its own copy. Its version
+           was the plainest case of all: the rail said "Review outcome →"
+           directly beneath a shelf action labelled "Review outcome". A whole
+           reserved rail spent restating the button next to it. */
         actions={<>
           {d.ideaId && (
             <ShelfAction
@@ -1336,13 +1339,19 @@ function DecisionTile({
               </div>
             )}
 
-            {/* Two lines, and the reader opens the record for the rest. */}
-            {(reason || proposedReason) && (
+            {/* Two lines, and the reader opens the record for the rest.
+
+                The generated `proposedReason` fallback is gone here too. This
+                is the stacked branch of the same card and it carried its own
+                copy of the line — the hero branch is not the whole card, and
+                changing one is how a defect survives a fix. A human-written
+                reason still shows. */}
+            {reason && (
               <p
                 data-testid="decision-rationale"
                 className="line-clamp-2 text-[12px] leading-snug text-gray-700 dark:text-gray-300"
               >
-                {reason ?? proposedReason}
+                {reason}
               </p>
             )}
             {/*
@@ -1456,17 +1465,19 @@ function DecisionTile({
         <TileFigure>{when ? shortDate(when) : '—'}</TileFigure>
       </>}
       /*
-        At rest: where the rest of the answer lives. On reach: the verbs.
-        Both in the shell's reserved rail, so the reveal costs no pixels.
+        No standing context line.
+
+        It read "Review in Outcomes" / "Committed in a batch" / "Open the
+        record" — four ways of naming a destination, directly under a card
+        whose top-right corner already carries the button that GOES there.
+        The verbs left the shelf for that corner in an earlier pass; what
+        stayed behind was a caption for them.
+
+        `TileShelf` renders nothing without `context`, so dropping it returns
+        the whole rail — its height plus a top border and padding — to the
+        card: 34px on a hero or large tile, 30px medium, 26px compact. That
+        is room the chart and the figures were short of.
       */
-      context={
-        <span data-testid="decision-next">
-          {facts.reviewed ? 'Reviewed in Outcomes'
-            : d.ideaId ? 'Review in Outcomes'
-            : situation.batch ? 'Committed in a batch'
-            : 'Open the record'}
-        </span>
-      }
       actions={(situation.klass !== 'action' || situation.reason === 'confirm') ? <>
         {d.ideaId && (
           <ShelfAction
@@ -1593,15 +1604,22 @@ function DecisionTile({
         thing this history holds. Where nobody did, the tile says so by
         staying quiet and spends the room on the price instead.
       */}
-      {!batched && (
-        reason ? <TileQuote size={size}>{reason}</TileQuote>
-          : proposedReason ? (
-            <div>
-              <div className={EYEBROW}>Why it was proposed</div>
-              <TileReason>{proposedReason}</TileReason>
-            </div>
-          ) : null
-      )}
+      {/*
+        "Why it was proposed" is gone, and with it the generated sentence it
+        labelled.
+
+        Two lines of boilerplate plus an eyebrow, on a card that already
+        carries the ticker, the stance, the state, the date and the move. The
+        note above says it: the generated sentence has the same shape on every
+        card, so the paragraph meant to differentiate them differed least. It
+        was spending three rows to say less than the figure beside it.
+
+        A human-written reason still shows, unlabelled — it is the rarest
+        thing this history holds and the one line here worth the space. The
+        generated version belongs in the workspace, where there is room to
+        read it, not on a tile.
+      */}
+      {!batched && reason && <TileQuote size={size}>{reason}</TileQuote>}
 
       {/*
         The move since the decision, where the tile has room to lead with it.

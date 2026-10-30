@@ -874,16 +874,20 @@ describe('the index is a queue of what still wants something', () => {
     expect(screen.getAllByTestId('decision-tile')).toHaveLength(1)
   })
 
-  it('shows the ask on a tile, and keeps the rationale for the record', () => {
+  it('keeps BOTH rationales for the record, and neither on the tile', () => {
     /*
-     * ── Reframed, because the old subject cannot occur ────────────────────
+     * ── Rewritten, not deleted: the tile no longer carries prose ──────────
      *
-     * This asserted that a tile quotes a real written rationale. Under the
-     * queue it cannot: a decision with a human reason is explained, and an
-     * explained decision is not work, so it never tiles. The words are still
-     * shown -- in the detail pane, which its own tests cover -- and the tile
-     * carries what the queued record actually has, which is why it was asked
-     * for in the first place.
+     * It asserted the opposite — that a tile renders the generated
+     * `contextNote` under a "Why it was proposed" eyebrow. That block is
+     * gone. The generated sentence has the same shape on every record, so a
+     * run of tiles all said the same thing in three rows each; it belongs in
+     * the workspace, where there is room to read it.
+     *
+     * The human `decisionNote` was already unreachable here and still is: an
+     * explained decision is not work, so it never tiles. Both halves of the
+     * old assertion therefore now point the same way, and the tile is left
+     * identifying the record rather than narrating it.
      */
     decisions = [
       decision({ id: 'owed', decisionNote: null, contextNote: 'we need 2%' }),
@@ -892,8 +896,11 @@ describe('the index is a queue of what still wants something', () => {
     render(<DecisionsWorkspace />)
     const tiles = screen.getAllByTestId('decision-tile')
     expect(tiles).toHaveLength(1)
-    expect(within(tiles[0]).getByText(/we need 2%/)).toBeInTheDocument()
+    expect(within(tiles[0]).queryByText(/we need 2%/)).not.toBeInTheDocument()
+    expect(within(tiles[0]).queryByText(/Why it was proposed/)).not.toBeInTheDocument()
     expect(screen.queryByText(/i like this idea, makes sense/)).not.toBeInTheDocument()
+    // Still a usable tile: it names the decision it stands for.
+    expect(within(tiles[0]).getByTestId('decision-stance')).toBeInTheDocument()
   })
 })
 
@@ -1129,6 +1136,53 @@ describe('what happened, in Outcomes’ own numbers', () => {
     }
     expect(heroes).toBeGreaterThan(0)
     expect(stacked).toBeGreaterThan(0)
+  })
+
+  /*
+   * ── The card stopped narrating itself ────────────────────────────────────
+   *
+   * Two blocks came off every decision tile, each of which had its own copy
+   * in BOTH branches — so six records are rendered here for the same reason
+   * the case above renders six: a one-record fixture only ever exercises the
+   * hero, and the branch that was not looked at is where the defect lives.
+   *
+   *  - "Why it was proposed" plus the generated sentence under it. The
+   *    sentence has the same shape on every record, so a run of tiles spent
+   *    three rows each saying the same thing. It is still in the detail pane,
+   *    which has room to read it and its own cases below.
+   *  - The standing context rail: "Review in Outcomes" / "Review outcome →" /
+   *    "Committed in a batch" / "Open the record" — a caption naming the
+   *    destination of the button already in the card's top-right corner. One
+   *    variant literally said "Review outcome →" beneath a shelf action
+   *    labelled "Review outcome".
+   *
+   * `TileShelf` renders nothing without `context`, so the rail's whole
+   * reserved height comes back to the card: 34px hero and large, 30 medium,
+   * 26 compact.
+   */
+  it('draws no proposal rationale and no context rail, in EITHER branch', () => {
+    decisions = Array.from({ length: 6 }, (_, i) => decision({
+      id: `n${i}`, decidedAt: daysAgo(10 + i),
+      decisionNote: null, contextNote: 'rebalancing toward quality',
+    }))
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles.length).toBeGreaterThan(3)
+
+    // Both branches are actually present, or this asserts about one shape.
+    const composed = tiles.filter(t => t.getAttribute('data-composed') === 'two-column')
+    expect(composed.length).toBeGreaterThan(0)
+    expect(composed.length).toBeLessThan(tiles.length)
+
+    for (const t of tiles) {
+      expect(within(t).queryByText('Why it was proposed')).not.toBeInTheDocument()
+      expect(within(t).queryByText(/rebalancing toward quality/)).not.toBeInTheDocument()
+      expect(within(t).queryByTestId('decision-next')).not.toBeInTheDocument()
+      expect(within(t).queryByTestId('tile-shelf')).not.toBeInTheDocument()
+    }
+
+    // The verbs are untouched — they live in the corner, not the rail.
+    expect(screen.getAllByTestId('decision-review-outcome').length).toBeGreaterThan(0)
   })
 
   /*
