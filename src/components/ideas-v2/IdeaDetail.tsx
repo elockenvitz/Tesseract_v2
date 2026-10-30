@@ -26,7 +26,21 @@ import {
 import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openAsset } from '../../lib/desktop-asset'
+import { pipelineTabFor } from '../../lib/desktop-ideas'
 import { useHasResearch } from '../../hooks/useDesktopResearch'
+
+/**
+ * Open the Pipeline on this idea's card.
+ *
+ * The descriptor comes from `pipelineTabFor` rather than being written out
+ * here, because writing it out here is how both call sites below ended up
+ * dispatching `data: null` and opening the workspace with nothing selected.
+ */
+function openPipeline(ideaId: string | null | undefined) {
+  const tab = pipelineTabFor(ideaId)
+  if (!tab) return
+  window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: tab }))
+}
 
 /**
  * Ideas → Research.
@@ -371,11 +385,17 @@ export function IdeaDetail({
                 <p className="text-[13px] text-gray-800 dark:text-gray-200">
                   Add this idea to a portfolio before recording a decision.
                 </p>
+                {/*
+                  Was labelled "Open idea" and dispatched a `trade-queue` tab
+                  with `data: null` — so it opened the bare Pipeline WORKSPACE,
+                  not this idea, while the reader was already looking at the
+                  idea it claimed to open. The Pipeline is the right
+                  destination here (it is where a portfolio gets attached), so
+                  the label now says that and the card is actually focused.
+                */}
                 <DeepLink
-                  label="Open idea"
-                  onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                    detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
-                  }))}
+                  label="Open in Pipeline"
+                  onClick={() => openPipeline(idea.id)}
                 />
               </DesktopSection>
             )}
@@ -514,11 +534,12 @@ export function IdeaDetail({
               onClick={() => routeToResearch(idea.assetId!, idea.symbol, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}
             />
           )}
+          {/* Same defect as the Decision section above: "Open idea" opened
+              the Pipeline workspace with nothing selected, from inside the
+              idea itself. */}
           <DeepLink
-            label="Open idea"
-            onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
-              detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
-            }))}
+            label="Open in Pipeline"
+            onClick={() => openPipeline(idea.id)}
           />
         </DeepLinks>
       </div>

@@ -6,6 +6,7 @@ import { MobileDecisionMemory } from './MobileDecisionMemory'
 import { MobileCaseView } from './MobileCaseView'
 import { TickerQuoteBadge } from '../TickerQuoteBadge'
 import { ExpandableText } from '../ExpandableText'
+import { pipelineTabFor } from '../../../lib/desktop-ideas'
 import { useAssetTradeIdeas } from '../../../hooks/useAssetTradeIdeas'
 import { useAssetRecentDecisions, getDecisionLabel } from '../../../hooks/useAssetRecentDecisions'
 import { useAssetHeaderContext } from '../../../hooks/useAssetHeaderContext'
@@ -317,9 +318,13 @@ function InFlightList({
         <button
           key={idea.id}
           type="button"
-          onClick={() =>
-            onNavigate?.({ id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue', data: null })
-          }
+          /* The row is a specific idea, but the descriptor was hand-rolled with
+             `data: null`, so every card in the list opened the same bare
+             Pipeline and discarded the `idea.id` it was sitting on. */
+          onClick={() => {
+            const tab = pipelineTabFor(idea.id)
+            if (tab) onNavigate?.(tab)
+          }}
           className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 active:bg-gray-50 dark:active:bg-gray-800"
         >
           <div className="flex items-center gap-2 mb-1.5">

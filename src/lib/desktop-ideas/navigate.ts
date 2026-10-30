@@ -87,3 +87,30 @@ export function ideasTabFor(request: OpenIdeaRequest) {
     },
   }
 }
+
+/**
+ * The tab descriptor for the Pipeline, with one idea's card focused.
+ *
+ * This exists because the descriptor was being hand-rolled at every call site,
+ * and three of them in the lens workspaces hand-rolled it WRONG — they passed
+ * `data: null`, which carries no record, so the button landed the reader on
+ * the bare Pipeline workspace instead of on the idea whose name was on the
+ * button. That is the same class of defect `ideasTabFor` was introduced to end
+ * for the Ideas lens; the Pipeline needed its own.
+ *
+ * `focusIdeaId` is the spelling both receivers already read: `TradeQueuePage`
+ * on desktop and `MobilePipeline` on a phone. Both consume it once and clear
+ * it, so a later visit does not re-scroll to the same card forever.
+ *
+ * Returns null when there is no idea, so a caller with nothing to open can
+ * decline to draw the link rather than open an empty tab.
+ */
+export function pipelineTabFor(ideaId: string | null | undefined) {
+  if (!ideaId) return null
+  return {
+    id: 'trade-queue',
+    title: 'Idea Pipeline',
+    type: 'trade-queue' as const,
+    data: { focusIdeaId: ideaId },
+  }
+}

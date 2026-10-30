@@ -68,6 +68,7 @@ import {
   useRecordThesisReview, useCurrentThesisConclusion, type ThesisReviewOutcome,
 } from '../../hooks/useThesisReview'
 import { conclusionWords } from '../../lib/memory/thesis-review'
+import { pipelineTabFor } from '../../lib/desktop-ideas'
 import { useContributions } from '../../hooks/useContributions'
 import { CORE_SECTIONS, STATE_LABEL } from '../../lib/desktop-research/model'
 import { windowReturn } from '../../lib/lists/price-metrics'
@@ -849,9 +850,21 @@ export function ListRowExpansion({
       return (
         <PrimaryButton
           icon={ArrowUpRight}
-          onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
-            detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
-          }))}
+          /* The descriptor used to be written out here with `data: null`, so a
+             button about THIS row's idea opened the bare Pipeline with nothing
+             selected and the reader had to find the name again.
+
+             The id comes from `signal.idea`, which is the idea that PRODUCED
+             this tier (`work: workStateFor(idea, …)`), so it is present
+             exactly when this branch renders. `activeIdea` — the first of the
+             workspace query's `liveIdeas` — is a different and later-arriving
+             list, and reaching for it made the button inert on a row whose
+             signal had an idea all along. */
+          onClick={() => {
+            const tab = pipelineTabFor(signal?.idea?.id ?? activeIdea?.id)
+            if (!tab) return
+            window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: tab }))
+          }}
         >
           Decide in Pipeline
         </PrimaryButton>

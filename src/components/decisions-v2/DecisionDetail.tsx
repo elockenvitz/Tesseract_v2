@@ -29,6 +29,7 @@ import { ArrowUpRight } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openAsset } from '../../lib/desktop-asset'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
+import { openTradeBookFor } from '../../lib/desktop-decisions/navigate'
 import {
   outcomeOf, OUTCOME_LABEL, statusDetail, summaryOf, headline,
   provenanceOf, provable,
@@ -374,12 +375,24 @@ export function DecisionDetailPane({
           {d.ideaId && (
             <DeepLink label="Open idea" onClick={() => routeToIdea(d.ideaId!, headline(d))} />
           )}
-          <DeepLink
-            label="View decision record"
-            onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
-              detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
-            }))}
-          />
+          {/*
+            This said "View decision record" and dispatched a hardcoded
+            `trade-queue` tab with `data: null` — so it opened the bare
+            Pipeline WORKSPACE rather than any record, and it offered to do
+            that even for a decision with nothing committed behind it.
+
+            The committed record is the Trade Book entry. `openTradeBookFor`
+            returns false when there is no batch and no execution, which is
+            also the condition for not drawing the link at all: a click with
+            nothing to open must be inert, not open an empty tab. Same rule
+            DecisionTimeline settled on.
+          */}
+          {(d.batch?.id || d.execution?.id) && (
+            <DeepLink
+              label="View trade record"
+              onClick={() => openTradeBookFor(d)}
+            />
+          )}
         </DeepLinks>
       </div>
     </div>

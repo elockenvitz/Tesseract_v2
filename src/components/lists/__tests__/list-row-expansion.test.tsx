@@ -1049,7 +1049,14 @@ describe('Overview is the written case, not a second dashboard', () => {
       const btn = screen.getByRole('button', { name: /Decide in Pipeline/ })
       await userEvent.click(btn)
       expect(events).toHaveLength(1)
-      expect(events[0]).toMatchObject({ type: 'trade-queue' })
+      // Strengthened, not rewritten: `{ type: 'trade-queue' }` alone passed
+      // while the button dispatched `data: null`, which opened the bare
+      // Pipeline workspace with nothing selected. The destination was never
+      // the bug; carrying the record is the whole point of the handoff.
+      expect(events[0]).toMatchObject({
+        type: 'trade-queue',
+        data: { focusIdeaId: 'i1' },
+      })
     } finally {
       window.removeEventListener('decision-engine-action', onAction)
     }
