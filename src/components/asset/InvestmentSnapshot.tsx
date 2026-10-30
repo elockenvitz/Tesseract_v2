@@ -42,8 +42,8 @@
  * executions are portfolio-team scoped, so a reader can legitimately see a
  * name held in three books and a history covering fewer.
  */
-import { useMemo, useState } from 'react'
-import { useAssetWorkspace, primaryPosition, otherPositions } from '../../hooks/useAssetWorkspace'
+import { useMemo } from 'react'
+import { useAssetWorkspace } from '../../hooks/useAssetWorkspace'
 import { DecisionMemorySummary } from './DecisionMemorySummary'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
 import { OBSERVED_PROOFS, isAwaitingDecision } from '../../types/decision-timeline'
@@ -60,7 +60,6 @@ import { OBSERVED_PROOFS, isAwaitingDecision } from '../../types/decision-timeli
  * returns `consensus` sorted by count, so the dominant rating is `[0]`.
  */
 import { useAnalystRatings } from '../../hooks/useAnalystRatings'
-import { usePortfolioList } from '../../hooks/useDesktopPortfolio'
 import { CORE_SECTIONS } from '../../lib/desktop-research/model'
 /*
  * Snapshot-local blocks, NOT the shared `DesktopModule` grammar.
@@ -75,10 +74,10 @@ import {
   SnapBlock, StatusChip, GapChip, ActionRow, QuietLine, FactRow,
 } from './SnapshotBlocks'
 import { FrameworkScale, WeightBar, money, bigMoney } from '../portfolio-v2/PortfolioVisual'
-import {
-  CoverageDisplay, type CoverageRecord, type ThesisStatus,
-} from '../coverage/CoverageDisplay'
-import { BookFilter, type BookOption } from '../shared/BookFilter'
+/* Only the TYPE now: coverage is still read to resolve who is responsible
+   for the name, but it is no longer DRAWN here — the asset's own sticky
+   header carries the roster, and this page was the second copy. */
+import { type CoverageRecord } from '../coverage/CoverageDisplay'
 import { EXPOSURE_ANCHOR_ID } from '../../lib/asset-workspace/strip-targets'
 /* The bear/bull arithmetic only — the big conclusion CARD is gone; its figures
    now sit inline in Our view, and its absences are gap chips rather than a
@@ -119,7 +118,6 @@ export interface InvestmentSnapshotProps {
   asset: SnapshotAsset
   /** Already fetched by AssetTab; not re-queried here. */
   coverage: CoverageRecord[]
-  thesisStatuses?: ThesisStatus[]
   /** AssetTab's live quote (`['stock-quote', symbol]`), or undefined. */
   currentQuote?: {
     price?: number | null
@@ -178,21 +176,33 @@ const SECTION_LABEL: Record<string, string> = {
 
 
 export function InvestmentSnapshot({
-  asset, coverage, thesisStatuses = [], currentQuote, onOpenSubPage,
+  asset, coverage, currentQuote, onOpenSubPage,
   contributions, contributionFields, coveringAnalystIds, onOpenAnalyst, currentUserId,
   onOpenEvidence,
 }: InvestmentSnapshotProps) {
   const symbol = asset.symbol ?? null
 
   /*
-   * Organization-wide is the DEFAULT, and null is what expresses it.
+   * ── There is no book selector any more, and nothing to configure ───────
    *
-   * Not "no portfolio chosen yet" — the whole-organization view is the answer
-   * most readers want first, and it is the only view that can say "held in
-   * three of nine books". Selecting a book narrows every domain below at
-   * once; it never changes what the data means.
+   * This was a three-state control at the top of the Overview — a chip, the
+   * coverage roster and an "Organization-wide" dropdown — that narrowed every
+   * domain below at once.
+   *
+   * The reason it goes: an Overview is the answer you get before you have
+   * asked a question. Opening a name and being handed a scope selector asks
+   * the reader to configure the page before it will tell them anything, and
+   * the configuration they nearly always want is the one it already defaults
+   * to. The narrowing it offered is also available where it belongs — the
+   * Decisions and Work surfaces scope themselves, and every book this name
+   * sits in is now listed outright in "Exposure & valuation" rather than one
+   * being picked and the rest named in a footnote.
+   *
+   * Kept as a `const null` rather than deleted so the four consumers below
+   * still read as "org-wide" explicitly, and so re-introducing a scope — in
+   * a place a reader asked for one — is one line here.
    */
-  const [portfolioId, setPortfolioId] = useState<string | null>(null)
+  const portfolioId: string | null = null
 
   const { data, isLoading } = useAssetWorkspace(asset.id, symbol, 'overview')
   /*
@@ -203,7 +213,6 @@ export function InvestmentSnapshot({
    */
   const { allEvents: timelineEvents } = useAssetDecisionTimeline({ assetId: asset.id, portfolioId })
   const { consensus, ratings, myRating } = useAnalystRatings({ assetId: asset.id })
-  const { portfolios } = usePortfolioList()
 
   /*
    * The dominant rating, and the n it rests on.
@@ -217,31 +226,15 @@ export function InvestmentSnapshot({
    */
   const dominant = consensus[0] ?? null
 
-  const held = data.positions.length > 0
-  const heldIds = useMemo(() => new Set(data.positions.map(p => p.portfolioId)), [data.positions])
-
   /*
-   * Every book the reader may see, flagged by whether it holds this name.
+   * The list of every book the reader may see went with the selector.
    *
-   * `usePortfolioList` is the visibility source: org-scoped, RLS-scoped, and
-   * the only reader in the repo that normalises BOTH role spellings
-   * production carries ('pm' and 'Portfolio Manager'). The older
-   * `getUserPMPortfolios` / `getVisiblePortfoliosForUser` helpers read one
-   * spelling each, have no live callers, and would silently offer a different
-   * set of books than the actions accept.
-   *
-   * Each book is marked "held" or not, which is what a reader picking a book
-   * on an ASSET page needs to know before picking. As a word, not a 1/0 —
-   * a bare digit beside a book name reads as a quantity of something.
+   * It existed to populate the scope dropdown, each entry flagged "held" or
+   * not so a reader could tell before picking. With nothing to pick, what
+   * matters is only the books that DO hold this name, and those come from
+   * `data.positions` — which is the set "Exposure & valuation" now draws in
+   * full. `usePortfolioList` is no longer read here at all.
    */
-  const books = useMemo(
-    () => portfolios.map(p => ({
-      id: p.id,
-      name: p.name,
-      badge: heldIds.has(p.id) ? 'held' : undefined,
-    })),
-    [portfolios, heldIds],
-  )
 
   /*
    * ── Every hook in this component lives ABOVE the `isLoading` return ──
@@ -315,16 +308,22 @@ export function InvestmentSnapshot({
     }
   }, [contributions, currentUserId])
 
-  const position = primaryPosition(data.positions, portfolioId)
-  const others = otherPositions(data.positions, position)
+  /* The bar scale is shared across every book's row, so two weights drawn on
+     this page are comparable by eye. Each is still a percentage of its OWN
+     book and they are never summed. */
   const maxWeight = data.positions.reduce((m, p) => Math.max(m, p.weightPct ?? 0), 0)
+
+  /* `primaryPosition` / `otherPositions` are gone from this surface. They
+     nominated one book as the principal holding so the rest could be a
+     footnote; every book is drawn the same way now, so there is no principal
+     to pick. The newest as-of across them dates the block. */
+  const positionAsOf = data.positions.reduce<string | null>(
+    (max, p) => (p.asOf && (max == null || p.asOf > max) ? p.asOf : max),
+    null,
+  )
 
   const core = data.sections.filter(s => (CORE_SECTIONS as readonly string[]).includes(s.section))
   const newEvidence = data.evidence.filter(e => e.isNewSinceReview)
-
-  /* A book was chosen and this name is not in it. That is a fact, not an empty state. */
-  const selectedBookName = portfolioId ? books.find(b => b.id === portfolioId)?.name ?? null : null
-  const notInSelectedBook = portfolioId != null && position == null
 
   const quotePrice = currentQuote?.price != null && currentQuote.price > 0 ? currentQuote.price : null
 
@@ -587,56 +586,57 @@ export function InvestmentSnapshot({
 
   /* ----------------------------------------------------------- position */
 
-  const positionBody = notInSelectedBook ? (
-    <p className="text-[12px] text-gray-600 dark:text-gray-400">
-      {selectedBookName} does not hold {symbol ?? 'this name'}.
-      {data.positions.length > 0 && ` It is held in ${data.positions.length} other book${data.positions.length === 1 ? '' : 's'}.`}
-    </p>
-  ) : position ? (
-    <>
-      {position.weightPct != null ? (
-        <WeightBar weightPct={position.weightPct} max={maxWeight} label={`Weight in ${position.portfolioName}`} />
-      ) : (
-        <p className="text-[11px] text-gray-500">
-          This book&apos;s market value could not be derived, so no weight is shown.
-        </p>
-      )}
-      <ul className="mt-3 flex flex-col gap-1 text-[12px]">
-        <FactRow label="Shares" value={shares(position.shares)} />
-        <FactRow label="Market value" value={bigMoney(position.marketValue)} />
-        <FactRow label="Average cost" value={position.avgCost != null ? money(position.avgCost) : null} />
-        <FactRow
-          label="Unrealised"
-          value={position.unrealisedGain != null
-            ? `${position.unrealisedGain >= 0 ? '+' : ''}${bigMoney(position.unrealisedGain)} (${pct(position.unrealisedPct!)})`
-            : null}
-        />
-      </ul>
-      {position.avgCost == null && (
-        <p className="mt-2 text-xs text-gray-500">
-          No average cost on record, so no unrealised figure is shown.
-        </p>
-      )}
-      {others.length > 0 && !portfolioId && (
-        <div className="mt-4 border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
-          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Also held in</div>
-          <div className="mt-2 flex flex-col gap-1">
-            {/* Each book's weight is against its OWN market value. 25% of one
-                fund plus 4% of another is not 29% of anything, so these are
-                never summed. */}
-            {others.map(o => (
-              <div key={o.portfolioId} className="flex items-baseline gap-2 text-[12px]">
-                <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">{o.portfolioName}</span>
-                <span className="font-mono text-[11px] text-gray-500">{shares(o.shares)} sh</span>
-                <span className="w-14 text-right font-mono text-[11px] font-semibold tabular-nums">
-                  {o.weightPct != null ? `${o.weightPct.toFixed(1)}%` : '—'}
-                </span>
-              </div>
-            ))}
-          </div>
+  /*
+   * ── Every book that holds it, each stated the same way ─────────────────
+   *
+   * This drew ONE book in full — a weight bar, shares, market value, average
+   * cost and unrealised — and then listed the others under "Also held in" as
+   * a name, a share count and a percentage. Which book got the full treatment
+   * was `primaryPosition`'s pick, so the page silently nominated a principal
+   * holding the firm had not nominated, and the reader was told four things
+   * about one book and two about the rest.
+   *
+   * On AMZN that read as "Weight in Large Cap Growth 14.2% / 95 sh / $15k /
+   * $148.90 / +$608" and then, in a footnote, "Vision Fund 10K · 16,947 sh ·
+   * 3.9%" — a far larger position, demoted to a line because of a sort order.
+   *
+   * Now each book is a row of the same shape. The weights are still never
+   * summed: each is against its OWN book's market value, so 14.2% of one fund
+   * and 3.9% of another is not 18.1% of anything.
+   */
+  const positionBody = data.positions.length > 0 ? (
+    <div className="flex flex-col gap-4">
+      {data.positions.map(p => (
+        <div key={p.portfolioId}>
+          {p.weightPct != null ? (
+            <WeightBar weightPct={p.weightPct} max={maxWeight} label={p.portfolioName} />
+          ) : (
+            <div className="text-[12px] font-medium text-gray-800 dark:text-gray-200">
+              {p.portfolioName}
+              <span className="ml-2 text-[11px] font-normal text-gray-500">
+                market value could not be derived, so no weight is shown
+              </span>
+            </div>
+          )}
+          <ul className="mt-2 flex flex-col gap-1 text-[12px]">
+            <FactRow label="Shares" value={shares(p.shares)} />
+            <FactRow label="Market value" value={bigMoney(p.marketValue)} />
+            <FactRow label="Average cost" value={p.avgCost != null ? money(p.avgCost) : null} />
+            <FactRow
+              label="Unrealised"
+              value={p.unrealisedGain != null
+                ? `${p.unrealisedGain >= 0 ? '+' : ''}${bigMoney(p.unrealisedGain)} (${pct(p.unrealisedPct!)})`
+                : null}
+            />
+          </ul>
+          {p.avgCost == null && (
+            <p className="mt-1.5 text-xs text-gray-500">
+              No average cost on record, so no unrealised figure is shown.
+            </p>
+          )}
         </div>
-      )}
-    </>
+      ))}
+    </div>
   ) : (
     <QuietLine>Not held in any book you can see.</QuietLine>
   )
@@ -664,7 +664,7 @@ export function InvestmentSnapshot({
          position is actually drawn. See `lib/asset-workspace/strip-targets`. */
       anchorId={EXPOSURE_ANCHOR_ID}
       title="Exposure & valuation"
-      meta={position?.asOf ? `position as of ${new Date(position.asOf).toLocaleDateString()}` : undefined}
+      meta={positionAsOf ? `position as of ${new Date(positionAsOf).toLocaleDateString()}` : undefined}
     >
       {positionBody}
       {/*
@@ -714,9 +714,9 @@ export function InvestmentSnapshot({
    */
   const openDecisions = data.decisions.filter(isAwaitingDecision)
 
-  const scopedOpen = portfolioId
-    ? openDecisions.filter(d => d.portfolioId === portfolioId)
-    : openDecisions
+  /* Every book, because there is no selector to narrow it to one. Each row
+     still names its own book, so nothing is lost by not filtering. */
+  const scopedOpen = openDecisions
 
   /*
    * An idea with a pending request on it is ONE piece of work, not two.
@@ -725,10 +725,7 @@ export function InvestmentSnapshot({
    * idea row is suppressed; an idea with no request still stands on its own.
    */
   const queuedIdeaIds = new Set(scopedOpen.map(d => d.ideaId).filter((v): v is string => !!v))
-  const scopedIdeas = (portfolioId
-    ? data.liveIdeas.filter(i => i.portfolioName === selectedBookName)
-    : data.liveIdeas
-  ).filter(i => !queuedIdeaIds.has(i.id))
+  const scopedIdeas = data.liveIdeas.filter(i => !queuedIdeaIds.has(i.id))
 
   /*
    * A request carries the idea's words when it has none of its own.
@@ -769,7 +766,6 @@ export function InvestmentSnapshot({
       testId="snapshot-needs-decision"
       rail="action"
       title="Needs a decision"
-      meta={portfolioId ? selectedBookName ?? undefined : undefined}
     >
       <div className="flex flex-col gap-0.5">
         {scopedOpen.map(d => (
@@ -1054,26 +1050,22 @@ export function InvestmentSnapshot({
       data-workspace-state={workspaceState}
       className="flex flex-col gap-5"
     >
-      <SnapshotHeader
-        /*
-         * The chip answers the question IN THE CURRENT SCOPE.
-         *
-         * It used to always report the organization-wide truth, so selecting
-         * a book that does not hold the name left "Held · 3 books" sitting
-         * directly above "Large Cap Value does not hold AAPL". Both were
-         * true and together they read as a contradiction — the exact
-         * incoherence a single governing selector is supposed to remove.
-         */
-        held={portfolioId ? position != null : held}
-        heldLabel={portfolioId
-          ? (position != null ? `Held in ${selectedBookName}` : `Not held in ${selectedBookName}`)
-          : held ? `Held · ${data.positions.length} book${data.positions.length === 1 ? '' : 's'}` : 'Not held'}
-        coverage={coverage}
-        thesisStatuses={thesisStatuses}
-        books={books}
-        portfolioId={portfolioId}
-        onSelectBook={setPortfolioId}
-      />
+      {/*
+        ── No header row ──────────────────────────────────────────────────
+
+        A "Held · 2 books" chip, the coverage roster and an "Organization-wide"
+        selector used to sit here, above everything.
+
+        All three were either answered elsewhere or asked the reader to set
+        something up before the page would speak. HELD is now stated properly
+        rather than counted — "Exposure & valuation" lists every book by name
+        with its own weight. COVERAGE is on the asset's own sticky header,
+        under the ticker, which is where it belongs: it is a fact about the
+        name, not about this one sub-page, and it was being drawn twice.
+        The SELECTOR is gone with the scope it set.
+
+        What is left is the brief itself, starting at the top of the surface.
+      */}
       {/*
         The brief, in the order a reader asks the questions:
 
@@ -1134,85 +1126,28 @@ export function InvestmentSnapshot({
   )
 }
 
-/* ---------------------------------------------------------------- header */
-
-/**
- * The Snapshot's context strip — NOT a second asset header.
+/*
+ * `SnapshotHeader` is gone, with everything it drew.
  *
- * ── What it deliberately does not render ─────────────────────────────────
+ * It was written as "the Snapshot's context strip — NOT a second asset
+ * header", and that framing is the thing that kept it alive: each round of
+ * pruning asked only whether it repeated the sticky header, and the answer
+ * was no. The question it never got asked is whether a reader opening a name
+ * needs any of it before the page will say something.
  *
- * Symbol, company name, price and change. The page's own sticky header sits
- * roughly eight pixels above this and already carries all four. The first
- * build of this strip repeated them, and seeing the same quote printed twice
- * in one eyeful is exactly the incoherence this page exists to remove: a
- * reader cannot tell whether two figures that agree are one fact or two
- * reads, and the moment they disagree — they ARE two independent fetches of
- * the same symbol — the page is lying in one of the two places.
+ * It carried three things. The HELD CHIP counted books ("Held · 2 books")
+ * where "Exposure & valuation" now names each one and states its weight — a
+ * count is the least useful form of that fact. COVERAGE was a second copy:
+ * the asset's own sticky header renders the same roster from the same prop,
+ * under the ticker, where it describes the name rather than this one
+ * sub-page. The BOOK FILTER narrowed every domain below, which is a question
+ * an Overview should not make the reader answer before it will speak; the
+ * surfaces that genuinely need a scope — Work, Decisions — set their own.
  *
- * So this carries only what the header above it cannot say:
- *
- *   as-of     the header shows a price with NO date. A figure presented as
- *             "current" with no date invites the reader to trade against a
- *             number that may be hours or days old. When no live quote
- *             resolves, the last close is named AS the last close rather
- *             than silently standing in for today.
- *   held      whether this organization owns it at all, and in how many books
- *   coverage  who is responsible for it
- *   scope     the one selector, which governs all three domains below
+ * Its comment argued the held chip earned its place by being SCOPE-reactive.
+ * That was true while there was a scope. There is not one now, so the
+ * argument retires with it.
  */
-function SnapshotHeader({
-  held, heldLabel,
-  coverage, thesisStatuses, books, portfolioId, onSelectBook,
-}: {
-  /** Held IN THE CURRENT SCOPE — drives the chip's tone. */
-  held: boolean
-  heldLabel: string
-  coverage: CoverageRecord[]
-  thesisStatuses: ThesisStatus[]
-  books: BookOption[]
-  portfolioId: string | null
-  onSelectBook: (id: string | null) => void
-}) {
-  /* The price basis line was removed: the Asset Page header above states the
-     price and its as-of, and repeating it here was the duplicate-header-metric
-     problem. The held chip stays — it is SCOPE-reactive (it answers the book
-     the reader has selected), which the page header is not. */
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-gray-200 pb-3 dark:border-white/[0.08]">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span
-          className={`rounded-full px-2 py-px text-[10px] font-semibold uppercase tracking-wide ${
-            held
-              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-              : 'bg-gray-100 text-gray-600 dark:bg-white/[0.06] dark:text-gray-400'
-          }`}
-        >
-          {heldLabel}
-        </span>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {coverage.length > 0 ? (
-          <CoverageDisplay
-            coverage={coverage}
-            showHeader={false}
-            thesisStatuses={thesisStatuses}
-            showThesisStatus
-          />
-        ) : (
-          <span className="text-[11px] text-gray-500">No coverage assigned</span>
-        )}
-        <BookFilter
-          books={books}
-          portfolioId={portfolioId}
-          onSelect={onSelectBook}
-          allLabel="Organization-wide"
-          testId="snapshot-book-filter"
-        />
-      </div>
-    </div>
-  )
-}
 
 /* ----------------------------------------------------------------- bits */
 

@@ -251,3 +251,64 @@ describe('nothing the strip already states is restated', () => {
     expect(screen.getByTestId('snapshot-exposure')).toHaveTextContent('No price target set')
   })
 })
+
+describe('every book is stated the same way', () => {
+  const pos = (name: string, over: Record<string, unknown> = {}) => ({
+    portfolioId: `p-${name}`, portfolioName: name,
+    shares: 95, price: 243, marketValue: 15_000, weightPct: 14.2,
+    avgCost: 148.9, unrealisedGain: 608, unrealisedPct: 4.3,
+    asOf: '2025-08-01', ...over,
+  }) as never
+
+  it('draws no principal holding and no "also held in" footnote', () => {
+    /*
+     * One book used to get the full treatment — weight bar, shares, market
+     * value, average cost, unrealised — and the rest were a name, a share
+     * count and a percentage under "Also held in". Which book was promoted
+     * was `primaryPosition`'s sort order, not a decision the firm made.
+     *
+     * On AMZN that demoted a 16,947-share position in Vision Fund 10K to a
+     * footnote beneath a 95-share position in Large Cap Growth.
+     */
+    data = {
+      ...BASE,
+      positions: [pos('Large Cap Growth'), pos('Vision Fund 10K', { shares: 16_947, weightPct: 3.9 })],
+    }
+    renderSnapshot({ currentUserId: 'me' })
+    const exposure = screen.getByTestId('snapshot-exposure')
+    expect(exposure).not.toHaveTextContent('Also held in')
+    // Both books get the same four facts, not one book four and the other two.
+    expect(exposure.querySelectorAll('[data-testid="weight-bar"]').length).toBe(2)
+    expect(exposure.textContent?.match(/Average cost/g)?.length).toBe(2)
+    expect(exposure.textContent?.match(/Unrealised/g)?.length).toBe(2)
+  })
+
+  it('names a book whose weight cannot be derived, rather than dropping it', () => {
+    data = {
+      ...BASE,
+      positions: [pos('Large Cap Growth'), pos('Opaque Fund', { weightPct: null })],
+    }
+    renderSnapshot({ currentUserId: 'me' })
+    const exposure = screen.getByTestId('snapshot-exposure')
+    expect(exposure).toHaveTextContent('Opaque Fund')
+    expect(exposure).toHaveTextContent(/market value could not be derived/)
+  })
+
+  it('dates the block from the newest position it draws', () => {
+    // Two books settle on different days; the block must not claim the older.
+    data = {
+      ...BASE,
+      positions: [
+        pos('A', { asOf: '2025-08-01' }),
+        pos('B', { portfolioId: 'p-B', asOf: '2026-02-14' }),
+      ],
+    }
+    renderSnapshot({ currentUserId: 'me' })
+    /* The rendered date is localised, and an ISO date parses as UTC midnight,
+       so the day can shift by one west of Greenwich. The YEAR is what
+       distinguishes the two as-ofs and is immune to that. */
+    const exposure = screen.getByTestId('snapshot-exposure')
+    expect(exposure).toHaveTextContent(/position as of .*2026/)
+    expect(exposure).not.toHaveTextContent(/position as of .*2025/)
+  })
+})

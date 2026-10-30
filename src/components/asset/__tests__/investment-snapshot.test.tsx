@@ -14,8 +14,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
+// No userEvent here any more: the only interaction this suite ever drove was
+// the book/org selector, and there is no longer a control to drive.
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import type { AssetWorkspaceData } from '../../../hooks/useAssetWorkspace'
 
 const BASE: AssetWorkspaceData = {
@@ -101,7 +102,26 @@ beforeEach(() => {
   books = []
 })
 
-describe('the one selector governs every domain', () => {
+/*
+ * ── This block used to be "the one selector governs every domain" ────────
+ *
+ * Four cases asserted that a book picker at the top of the Overview narrowed
+ * the position, the queue and the held chip together, and that the chip could
+ * not contradict the panel below it. Every one of them was true and every one
+ * of them is now moot: the selector is gone.
+ *
+ * It was removed because an Overview is the answer you get BEFORE you have
+ * asked a question. Handing a reader a scope control on arrival asks them to
+ * configure the page before it will tell them anything, and the setting they
+ * nearly always want is the one it already defaulted to. The narrowing it
+ * offered survives where it belongs — Work and Decisions scope themselves —
+ * and the fact it was really being used for ("which books hold this, and how
+ * much") is now stated outright, one row per book.
+ *
+ * Kept, inverted, rather than deleted: the subject is still "what scope does
+ * this surface speak in", and the answer must stay "all of them".
+ */
+describe('the Overview speaks for the whole organisation, with nothing to set', () => {
   beforeEach(() => {
     data = {
       ...BASE,
@@ -115,50 +135,37 @@ describe('the one selector governs every domain', () => {
     ]
   })
 
-  it('defaults to organization-wide, which is a real state and not "unset"', () => {
+  it('offers no scope control at all', () => {
+    renderSnapshot()
+    expect(screen.queryByTestId('snapshot-book-filter')).toBeNull()
+    expect(screen.queryByText(/Organization-wide/i)).toBeNull()
+  })
+
+  it('still declares the scope it is speaking in', () => {
+    // `data-portfolio` is read by other suites and by the layout guards; the
+    // surface says "all" because that is now the only thing it can say.
     renderSnapshot()
     expect(screen.getByTestId('investment-snapshot')).toHaveAttribute('data-portfolio', 'all')
-    expect(screen.getByText(/Held · 1 book/i)).toBeInTheDocument()
   })
 
-  it('marks which books hold the name, as a word rather than a 1/0', async () => {
+  it('counts no books in a chip — it names them', () => {
+    // "Held · 1 book" was the least useful form of the fact. The row says
+    // which book and what weight.
     renderSnapshot()
-    await userEvent.click(screen.getByTestId('snapshot-book-filter').querySelector('button')!)
-    const growth = screen.getByRole('option', { name: /Large Cap Growth/ })
-    const value = screen.getByRole('option', { name: /Large Cap Value/ })
-    expect(growth).toHaveTextContent('held')
-    // A book that does not hold it carries no badge at all -- "0" would read
-    // as a count of zero somethings.
-    expect(value.textContent).toBe('Large Cap Value')
+    expect(screen.queryByText(/Held · 1 book/i)).toBeNull()
+    expect(screen.getByTestId('snapshot-exposure')).toHaveTextContent('Large Cap Growth')
   })
 
-  it('narrows POSITION and ACTIVE WORK together when a book is chosen', async () => {
+  it('draws no coverage roster, because the asset header already does', () => {
     renderSnapshot()
-    await userEvent.click(screen.getByTestId('snapshot-book-filter').querySelector('button')!)
-    await userEvent.click(screen.getByRole('option', { name: /Large Cap Value/ }))
-
-    // Position: an honest fact, not an empty card.
-    expect(screen.getByText(/Large Cap Value does not hold AAPL/)).toBeInTheDocument()
-    /*
-     * "Needs a decision" narrows with it, and when the chosen book has nothing
-     * owed the block is ABSENT rather than a card announcing emptiness — the
-     * page only spends space on something a reader can act on.
-     */
-    expect(screen.queryByTestId('snapshot-needs-decision')).toBeNull()
+    expect(screen.queryByText(/No coverage assigned/)).toBeNull()
   })
 
-  it('does not let the header contradict the position panel', async () => {
+  it('shows the work owed in every book, not one', () => {
+    // Each row names its own book, so there is nothing to disambiguate by
+    // filtering the list down to one of them.
     renderSnapshot()
-    await userEvent.click(screen.getByTestId('snapshot-book-filter').querySelector('button')!)
-    await userEvent.click(screen.getByRole('option', { name: /Large Cap Value/ }))
-
-    /*
-     * The chip reported the ORGANISATION-WIDE truth while a non-holding book
-     * was selected, so "Held · 3 books" sat directly above "Large Cap Value
-     * does not hold AAPL". Both true, and together unreadable.
-     */
-    expect(screen.getByText(/Not held in Large Cap Value/i)).toBeInTheDocument()
-    expect(screen.queryByText(/^Held · /i)).not.toBeInTheDocument()
+    expect(screen.getByTestId('snapshot-needs-decision')).toHaveTextContent('Add to AAPL')
   })
 })
 
@@ -171,7 +178,9 @@ describe('absent data says it is absent', () => {
     expect(screen.queryByTestId('snapshot-needs-decision')).toBeNull()
     expect(screen.getByText(/Not held in any book you can see/)).toBeInTheDocument()
     expect(screen.getByText(/No decision has been recorded against AAPL yet/)).toBeInTheDocument()
-    expect(screen.getByText(/No coverage assigned/)).toBeInTheDocument()
+    /* "No coverage assigned" was asserted here. The Overview no longer draws
+       a coverage roster at all — the asset's own sticky header renders it
+       from the same prop, and this page was the second copy. */
   })
 
   it('shows a weightless position as shares, and says why there is no weight', () => {
@@ -438,16 +447,17 @@ describe('the decision queue lists only outstanding obligations', () => {
     expect(screen.getByText('Add to AAPL before the print')).toBeInTheDocument()
   })
 
-  it('scopes the queue to the chosen book', async () => {
-    books = [
-      { id: 'p-growth', name: 'Large Cap Growth', role: 'pm' },
-      { id: 'p-value', name: 'Large Cap Value', role: 'analyst' },
-    ]
+  it('shows a request from any book, because there is no book to choose', () => {
+    /*
+     * Was "scopes the queue to the chosen book": pick a book that owes
+     * nothing and the block disappears. With the selector gone there is no
+     * choice to honour, and the inverse property is what must hold — a
+     * request owed in ANY book reaches the reader. Each row still names its
+     * own book, so nothing is ambiguous.
+     */
     data = { ...BASE, decisions: [request({ decisionNote: 'Growth only' })] }
     renderSnapshot()
-    await userEvent.click(screen.getByTestId('snapshot-book-filter').querySelector('button')!)
-    await userEvent.click(screen.getByRole('option', { name: /Large Cap Value/ }))
-    expect(screen.queryByTestId('snapshot-needs-decision')).toBeNull()
+    expect(screen.getByTestId('snapshot-needs-decision')).toHaveTextContent('Growth only')
   })
 })
 

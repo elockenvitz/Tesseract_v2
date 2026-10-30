@@ -4390,7 +4390,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             /* Already fetched above for the ticker dropdown — passed down so
                the Snapshot adds no second read of the same rows. */
             coverage={coverage || []}
-            thesisStatuses={thesisStatuses}
+            /* `thesisStatuses` no longer goes down: the Overview stopped
+               drawing its own coverage roster, which was the only consumer.
+               The sticky header above still renders it. */
             currentQuote={currentQuote}
             /*
               The firm's contributors, on the OVERVIEW rather than inside
