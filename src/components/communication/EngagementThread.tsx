@@ -49,15 +49,24 @@ export function EngagementThread({ target }: EngagementThreadProps) {
   const key = toThreadKey(target)
 
   if (!key) {
-    // Deliberately explicit rather than silently redirecting to the asset.
-    // See the note on toThreadKey: a comment about a note is not a comment
-    // about the asset, and moving it would lose it.
+    /*
+     * Deliberately explicit rather than silently redirecting to the asset.
+     * See the note on toThreadKey: a comment about a note is not a comment
+     * about the asset, and moving it would lose it.
+     *
+     * This branch is now the ordinary case for every object that is not a
+     * post. Assets, portfolios, themes and notes were removed from the
+     * allowlist because an org-wide thread cannot answer "who is this for" --
+     * the reasoning is on DISCUSSABLE_OBJECT_TYPES. Surfaces gate on
+     * canDiscuss, so a reader should not reach this by pressing anything;
+     * it catches a target carried in from elsewhere.
+     */
     return (
       <div className="flex h-full flex-col">
         <EngagementContextHeader target={target} mode="discuss" />
         <EmptyState
-          title="Discussion isn't available for this object yet"
-          body={`Threads attach to assets, portfolios, themes, notes, trade ideas and quick thoughts. ${target.label} is none of those, so there is nowhere to put the conversation that you would find again.`}
+          title="Discussion isn't available for this object"
+          body={`Threads attach to trade ideas and quick thoughts, where the whole organisation is the audience because somebody published the post. ${target.label} is a shared record rather than a post, so a thread on it has no audience to inherit — use Direct Messages, where you choose who is in the conversation.`}
         />
       </div>
     )

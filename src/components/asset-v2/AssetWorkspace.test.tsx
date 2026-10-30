@@ -360,11 +360,28 @@ describe('Ask AI and Team bind to the asset', () => {
     expect(target.contextChips.map((c: any) => c.label)).toContain('Weight')
   })
 
-  it('offers Team, because an asset can hold a thread', async () => {
-    const user = userEvent.setup()
+  /*
+   * ── Rewritten: an asset can hold a thread, but not an audience ──────────
+   *
+   * This pressed "Team" and asserted it raised a `discuss` request, on the
+   * premise in its own title -- that an asset can hold a thread. The database
+   * never stopped it and still would not.
+   *
+   * What stops it is that `messages` SELECT is `organization_id =
+   * current_org_id()` and the table carries no participant column, so a
+   * thread on an asset is readable by every member of the organisation. A
+   * reader who wants to discuss a name with one team and not another is
+   * describing a conversation with a membership list, which Direct Messages
+   * already is. Posts keep their threads, because org-wide is the audience
+   * they were published to; a shared record has no audience to inherit.
+   *
+   * Ask AI is asserted alongside, so this cannot pass by the control row
+   * having disappeared for some unrelated reason.
+   */
+  it('offers no Team control, because an asset thread has no audience', () => {
     render(<AssetWorkspacePane asset={asset} />)
-    await user.click(screen.getByRole('button', { name: 'Team' }))
-    expect(openEngagement.mock.calls[0][0]).toBe('discuss')
+    expect(screen.queryByRole('button', { name: 'Team' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Ask AI/ })).toBeInTheDocument()
   })
 })
 

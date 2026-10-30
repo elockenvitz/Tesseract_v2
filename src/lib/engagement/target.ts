@@ -67,30 +67,43 @@ export function toAITags(target: EngagementTarget): TagRef[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Object types that can carry a `messages` thread today.
+ * Object types that can carry a `messages` thread.
  *
- * This list is evidence-based, not aspirational. `supabase/migrations/` does
- * not contain a definition of `messages` at all — production and the migration
- * ledger describe different databases — so the constraint on
- * `messages.context_type` cannot be read statically, and a value that violates
- * it would fail at insert time in front of a user.
+ * ── Why assets, portfolios, themes and notes were removed ────────────────
  *
- * Every entry below is a value that shipping production code already reads or
- * writes against `messages`:
- *   asset / portfolio / theme / note  — read by MessagingSection's inbox
- *   trade_idea                        — written by TradeIdeaDiscussion
- *   quick_thought                     — written by IdeaComments
+ * Not a schema limit. Every one of them still works at the database. They
+ * were removed because a thread on them has no answer to "who is this for".
  *
- * `research_note`, `decision` and `coverage` are deliberately absent. Stage D1
- * would rather offer no Discuss button on those surfaces than offer one that
- * throws. Widening this list is a schema question for a later stage, and the
- * seam is built so that widening it is a one-line change here.
+ * `messages` SELECT is `organization_id = current_org_id()` — verified live,
+ * not assumed — so every thread is readable by the whole organisation and
+ * there is no participant list anywhere in the table. The moment a reader
+ * wants to discuss a name with one team and not another, they have described
+ * a conversation with a membership list, which is `conversations` +
+ * `conversation_participants` + `conversation_messages`: a system that
+ * already exists, already enforces membership, and already notifies. Scoping
+ * object threads would have meant building a second one of each.
+ *
+ * What survives is the case where org-wide IS the right audience. A trade
+ * idea and a quick thought are POSTS: somebody published them to the
+ * organisation, so comments on them are public for the same reason the post
+ * is. An asset is not published — it is a shared record — which is why a
+ * thread hanging off it has no natural audience to inherit.
+ *
+ * Everything downstream gates on `canDiscuss`, so this list is the whole
+ * removal: the control disappears from Research, Decisions, Positions, the
+ * asset workspace and Today without those files knowing why.
+ *
+ * The rows already written against the removed types are NOT deleted. 20
+ * asset messages across 5 threads and 3 theme messages are in production,
+ * newest February 2026; they become unreachable rather than lost, and where
+ * they should end up is a migration question for whoever builds
+ * "conversation about this asset".
+ *
+ * `research_note`, `decision` and `coverage` were never here: `messages`
+ * constrains `context_type` and the constraint cannot be read from
+ * `supabase/migrations/`, which does not define the table at all.
  */
 export const DISCUSSABLE_OBJECT_TYPES = [
-  'asset',
-  'portfolio',
-  'theme',
-  'note',
   'trade_idea',
   'quick_thought',
 ] as const satisfies readonly EngagementObjectType[]

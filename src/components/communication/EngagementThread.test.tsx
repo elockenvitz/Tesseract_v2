@@ -72,17 +72,38 @@ describe('EngagementContextHeader', () => {
 })
 
 describe('EngagementThread', () => {
+  /*
+   * ── These two moved off the asset, and why ─────────────────────────────
+   *
+   * Both used to render AMZN. An asset no longer carries a thread: `messages`
+   * is readable by the whole organisation and has no participant column, so a
+   * thread on a shared record cannot say who it is for. The binding and the
+   * issue-carrying they assert are unchanged behaviour -- they just have to
+   * be asserted on an object that still has a thread, which is a post.
+   *
+   * The asset's own behaviour is now the refusal case below.
+   */
+  const IDEA: EngagementTarget = { ...AMZN, objectType: 'trade_idea', objectId: 'ti-9', label: 'Add AMZN' }
+
   it('binds the thread to the target object, not to the active tab', () => {
-    render(<EngagementThread target={AMZN} />)
+    render(<EngagementThread target={IDEA} />)
     const thread = screen.getByTestId('thread')
-    expect(thread).toHaveAttribute('data-context-type', 'asset')
-    expect(thread).toHaveAttribute('data-context-id', 'asset-amzn')
+    expect(thread).toHaveAttribute('data-context-type', 'trade_idea')
+    expect(thread).toHaveAttribute('data-context-id', 'ti-9')
   })
 
   it('carries the triggering issue in, so the thread is not context-free', () => {
-    render(<EngagementThread target={AMZN} />)
+    render(<EngagementThread target={IDEA} />)
     expect(screen.getByText('Framework broken')).toBeInTheDocument()
-    expect(screen.getByText(/attached to AMZN — Amazon.com/)).toBeInTheDocument()
+    expect(screen.getByText(/attached to Add AMZN/)).toBeInTheDocument()
+  })
+
+  /* The removal itself, at the surface a reader would see it. */
+  it('offers an asset no thread, and says to use Direct Messages instead', () => {
+    render(<EngagementThread target={AMZN} />)
+    expect(screen.queryByTestId('thread')).not.toBeInTheDocument()
+    expect(screen.getByText(/Direct Messages, where you choose who is in the conversation/))
+      .toBeInTheDocument()
   })
 
   it('binds a trade idea to its own thread rather than to its asset', () => {
@@ -100,7 +121,7 @@ describe('EngagementThread', () => {
       assetId: 'asset-amzn',
     }} />)
     expect(screen.queryByTestId('thread')).not.toBeInTheDocument()
-    expect(screen.getByText(/Discussion isn't available for this object yet/)).toBeInTheDocument()
+    expect(screen.getByText(/Discussion isn't available for this object/)).toBeInTheDocument()
     // and it still shows what it bound, rather than looking broken
     expect(screen.getByTestId('engagement-context-header')).toBeInTheDocument()
   })

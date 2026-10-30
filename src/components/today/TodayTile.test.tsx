@@ -95,18 +95,27 @@ describe('TodayTile', () => {
     expect(requests[0].target.contextChips?.length).toBeGreaterThan(0)
   })
 
-  it('carries all three engagement slots on the same seam', () => {
-    // Discuss was withheld here so that scattering the affordance would not
-    // pre-empt the communication-pane review. That review question is now
-    // settled in the product -- the Ideas field carries Respond / Ask AI /
-    // Discuss -- so Today withholding it was the inconsistency rather than the
-    // caution, and a finding could only be raised with the team by opening it.
-    //
-    // Still one seam: `discuss()` raises an EngagementRequest and the existing
-    // CommunicationPane answers it. No second messaging system is introduced.
+  /*
+   * ── Rewritten: Today's tiles are about assets, and assets lost Discuss ──
+   *
+   * This asserted that Today carried Discuss alongside Ask AI, on the
+   * reasoning that withholding it was an inconsistency with the Ideas field.
+   * That reasoning was sound while an asset could hold a thread.
+   *
+   * It cannot now. `messages` SELECT is `organization_id = current_org_id()`
+   * and the table has no participant column, so a thread on an asset is
+   * readable by the whole organisation and cannot be scoped to a team. The
+   * consistency the case was defending is preserved -- every surface lost it
+   * at once, because they all gate on `canDiscuss` -- but it is consistency
+   * about its ABSENCE on shared records now.
+   *
+   * Ask AI is untouched and is asserted here precisely so that this cannot
+   * pass by the whole control row having gone away.
+   */
+  it('carries Ask AI, and no Discuss on an object that cannot scope a thread', () => {
     renderTile()
     expect(screen.getByRole('button', { name: /Ask AI/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^Discuss$/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Discuss$/ })).not.toBeInTheDocument()
   })
 
   it('opens the object from the card body, and calls that overview', () => {

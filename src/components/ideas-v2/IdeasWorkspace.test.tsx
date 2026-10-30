@@ -424,10 +424,26 @@ describe('the verbs on a tile', () => {
     expect(req.rail.length).toBeGreaterThan(0)
   })
 
-  it('offers Ask AI and Discuss only where there is an asset to talk about', () => {
+  /*
+   * ── Rewritten: the candidate's verbs bind to an ASSET, which lost Discuss ─
+   *
+   * This asserted that a resolvable candidate offered Ask AI AND Discuss, both
+   * bound to the asset, so "a thread raised from a candidate lands where a
+   * thread raised from the idea it becomes lands".
+   *
+   * That landing place is gone. An asset thread lives in `messages`, whose
+   * SELECT is `organization_id = current_org_id()` with no participant
+   * column, so it is readable by the whole organisation and cannot be scoped
+   * to a team. A trade idea keeps its thread -- it is a published post, so
+   * org-wide is the right audience -- but a candidate is not yet one.
+   *
+   * The asset-resolution rule the case exists for is unchanged and still
+   * asserted on Ask AI, which is the half that still binds to the asset.
+   */
+  it('offers Ask AI only where there is an asset to talk about, and no Discuss', () => {
     // The negative first, and it is a real product rule rather than a
     // convenience: a candidate the adapter could not resolve to an asset gets
-    // Open alone, because both verbs bind to the asset and would open nothing.
+    // Open alone, because the verb binds to the asset and would open nothing.
     env.produced = [item({
       id: 'e-none', dedupeKey: 'e-none', symbol: 'QQQ', assetId: null, companyName: 'Quad Ltd',
     })]
@@ -440,12 +456,12 @@ describe('the verbs on a tile', () => {
 
     env.produced = [item({ id: 'e-1', dedupeKey: 'e-1', symbol: 'AAA', assetId: 'a-aaa' })]
     render(<IdeasWorkspace />)
+    // Ask AI survives and still resolves; Discuss is gone with the asset
+    // thread, on this surface and every other one, via `canDiscuss`.
+    expect(screen.queryByTestId('opportunity-discuss')).not.toBeInTheDocument()
     fireEvent.click(screen.getByTestId('opportunity-ai'))
-    fireEvent.click(screen.getByTestId('opportunity-discuss'))
 
-    expect(env.engaged.map(([verb]) => verb)).toEqual(['ai', 'discuss'])
-    // Bound to the ASSET, so a thread raised from a candidate lands where a
-    // thread raised from the idea it becomes lands.
+    expect(env.engaged.map(([verb]) => verb)).toEqual(['ai'])
     for (const [, target] of env.engaged) {
       expect(target).toMatchObject({ objectType: 'asset', objectId: 'a-aaa' })
     }
