@@ -28,7 +28,7 @@ import { clsx } from 'clsx'
 import { ArrowUpRight } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openAsset } from '../../lib/desktop-asset'
-import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
+import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import { openTradeBookFor } from '../../lib/desktop-decisions/navigate'
 import {
   outcomeOf, OUTCOME_LABEL, statusDetail, summaryOf, headline,
@@ -47,19 +47,23 @@ function routeToResearch(assetId: string, symbol: string | null, issue: string) 
 }
 
 /**
- * Decisions -> Ideas. The lens first, a tab only if there is no lens.
+ * Decisions -> the idea itself: the Idea Pipeline, with the idea's detail open.
  *
- * This used to fire BOTH, unconditionally. Ideas and Decisions are two lenses
- * of one shell, so the typed event had no mounted listener while the reader
- * was on Decisions, and the tab descriptor opened a second Dashboard tab
- * showing the same shell. `openIdea` now reports whether anything took the
- * request, so the descriptor is the fallback it was always described as.
+ * Two earlier destinations were both wrong. It first fired an `ideas-v2` tab
+ * descriptor unconditionally, which opened a SECOND Dashboard tab showing the
+ * same shell. It then moved the Ideas LENS in place, which is the right
+ * mechanic for crossing lenses but the wrong place for this button: the Ideas
+ * lens is a gallery for finding work, and the reader who clicks "Open the
+ * idea" has already found it.
+ *
+ * `openIdeaDetail` is the mechanism the Pipeline already consumes -- switch to
+ * the `trade-queue` tab, then pop `TradeIdeaDetailModal` once it is mounted.
+ * A top-level tab is correct here, because the Pipeline genuinely is a
+ * different screen rather than a lens of the one the reader is on.
+ *
+ * The `issue` caption does not travel: the Pipeline's modal has no slot that
+ * displays why the reader was sent, and inventing one is a separate decision.
  */
-function routeToIdea(ideaId: string, issue: string) {
-  const request = { ideaId, focus: 'decision' as const, issue, origin: 'decisions' }
-  if (openIdea(request)) return
-  window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: ideasTabFor(request) }))
-}
 
 export function DecisionDetailPane({
   decision, detail,
@@ -150,7 +154,7 @@ export function DecisionDetailPane({
           {d.ideaId && (
             <button
               type="button"
-              onClick={() => routeToIdea(d.ideaId!, headline(d))}
+              onClick={() => openIdeaDetail(d.ideaId!)}
               className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               Open the idea
@@ -382,7 +386,7 @@ export function DecisionDetailPane({
             />
           )}
           {d.ideaId && (
-            <DeepLink label="Open idea" onClick={() => routeToIdea(d.ideaId!, headline(d))} />
+            <DeepLink label="Open idea" onClick={() => openIdeaDetail(d.ideaId!)} />
           )}
           {/*
             This said "View decision record" and dispatched a hardcoded

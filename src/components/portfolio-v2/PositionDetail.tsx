@@ -31,7 +31,7 @@ import { clsx } from 'clsx'
 import { ArrowUpRight } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openResearch, researchTabFor, type ResearchFocus } from '../../lib/desktop-research'
-import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
+import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import {
   gapOf, toneForGap, whyItMatters, primaryActionFor, targetFor, GAP_LABEL,
   type PositionFrame,
@@ -64,11 +64,13 @@ function routeToResearch(assetId: string, focus: ResearchFocus, issue: string) {
   window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: researchTabFor(request) }))
 }
 
-function routeToIdea(ideaId: string, issue: string) {
-  const request = { ideaId, focus: 'decision' as const, issue, origin: 'portfolio' }
-  if (openIdea(request)) return
-  window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: ideasTabFor(request) }))
-}
+/*
+ * Portfolio -> the idea itself: the Idea Pipeline, with the idea's detail open.
+ *
+ * `openIdeaDetail`, not the Ideas lens. See the note on the same button in
+ * `decisions-v2/DecisionDetail.tsx`. The `GAP_LABEL` caption does not travel,
+ * because the Pipeline's modal has nowhere to show it.
+ */
 
 export function PositionDetailPane({
   position, frame, detail, portfolioName, role, maxWeight,
@@ -96,7 +98,7 @@ export function PositionDetailPane({
         GAP_LABEL[gap],
       )
     } else if (action.route === 'ideas' && frame.liveIdea) {
-      routeToIdea(frame.liveIdea.id, GAP_LABEL[gap])
+      openIdeaDetail(frame.liveIdea.id)
     }
   }
 
@@ -404,10 +406,13 @@ export function PositionDetailPane({
                     permission layer will refuse. */}
                 <button
                   type="button"
-                  onClick={() => routeToIdea(frame.liveIdea!.id, GAP_LABEL[gap])}
+                  onClick={() => openIdeaDetail(frame.liveIdea!.id)}
                   className="mt-2.5 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
                 >
-                  {role === 'pm' && frame.liveIdea.awaitingDecision ? 'Decide in Ideas' : 'Open in Ideas'}
+                  {/* Named for the destination it now has. "Open in Ideas"
+                      described the Ideas lens, which is no longer where this
+                      goes. */}
+                  {role === 'pm' && frame.liveIdea.awaitingDecision ? 'Decide on the idea' : 'Open the idea'}
                   <ArrowUpRight className="h-3 w-3" />
                 </button>
                 {role !== 'pm' && frame.liveIdea.awaitingDecision && (

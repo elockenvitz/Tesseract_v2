@@ -40,7 +40,7 @@ import {
 import { useRecordObjectView } from '../../hooks/useObjectViewCursor'
 import { conclusionWords } from '../../lib/memory/thesis-review'
 import { openAsset } from '../../lib/desktop-asset'
-import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
+import { openIdeaDetail } from '../../lib/navigation/open-idea'
 
 /**
  * The three conclusions, in the order a reader reaches them.
@@ -106,24 +106,18 @@ const VERDICT_SELECTED: Record<ThesisReviewOutcome, string> = {
     + 'dark:border-rose-500 dark:bg-rose-600 dark:text-white',
 }
 
-/**
- * Research → Ideas.
+/*
+ * Research -> the idea itself: the Idea Pipeline, with the idea's detail open.
  *
  * Offered only when the asset actually carries a live, non-terminal idea. A
  * standing "Go to Ideas" button on every name would be a link, not an action --
  * and on the many names with no open idea it would land nowhere.
+ *
+ * The destination is `openIdeaDetail`, not the Ideas lens. See the note on the
+ * same button in `decisions-v2/DecisionDetail.tsx`: the lens is a gallery for
+ * finding work, and this reader has already found it. The `issue` caption does
+ * not travel, because the Pipeline's modal has nowhere to show it.
  */
-function routeToIdea(ideaId: string, issue: string) {
-  /*
-   * The lens first, a tab only as a fallback. Research and Ideas are two
-   * lenses of one shell, so firing both unconditionally -- which is what this
-   * did -- always fell through to the descriptor and opened a second
-   * Dashboard tab rather than moving the reader one lens across.
-   */
-  const request = { ideaId, focus: 'thesis' as const, issue, origin: 'research' }
-  if (openIdea(request)) return
-  window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: ideasTabFor(request) }))
-}
 import {
   stateOf, whyItMatters, primaryActionFor, targetFor, issueFor,
   SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS, STATE_TONE,
@@ -500,10 +494,7 @@ export function ResearchDetail({
             {detail?.liveIdea && (
               <button
                 type="button"
-                onClick={() => routeToIdea(
-                  detail.liveIdea!.id,
-                  `${subject.symbol ?? 'Asset'} — ${issueFor(subject)}`,
-                )}
+                onClick={() => openIdeaDetail(detail.liveIdea!.id)}
                 className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 {detail.liveIdea.action
@@ -821,7 +812,7 @@ export function ResearchDetail({
           {detail?.liveIdea && (
             <DeepLink
               label="Open idea"
-              onClick={() => routeToIdea(detail.liveIdea!.id, why)}
+              onClick={() => openIdeaDetail(detail.liveIdea!.id)}
             />
           )}
         </DeepLinks>

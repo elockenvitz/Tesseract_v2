@@ -171,10 +171,22 @@ describe('the shell drops the id once a lens has used it', () => {
     expect(arm.slice(0, 400)).toContain('delete data.issue')
   })
 
+  /*
+   * This matched `onFocusConsumed={onFocusConsumed}` exactly, so it broke the
+   * moment the shell stopped forwarding the prop raw. It now forwards a local
+   * `focusConsumed`, which clears the shell's own arrival state and THEN calls
+   * the prop -- a strict improvement the guard could not tell from a deletion.
+   *
+   * Rewritten rather than deleted: the thing worth pinning is that both lenses
+   * are told, and that what they are told still reaches the prop. Matching the
+   * prop name on the left and anything on the right survives a rename; the
+   * `onFocusConsumed?.()` assertion is what keeps the chain unbroken.
+   */
   it('passes the callback through the shell to the lenses', () => {
     const shell = src('components/dashboard/DashboardShell.tsx')
     expect(shell).toContain('onFocusConsumed?: () => void')
-    expect(shell.match(/onFocusConsumed=\{onFocusConsumed\}/g)).toHaveLength(2)
+    expect(shell.match(/onFocusConsumed=\{[A-Za-z?.()\s]+\}/g)).toHaveLength(2)
+    expect(shell).toContain('onFocusConsumed?.()')
   })
 })
 

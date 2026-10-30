@@ -11,13 +11,14 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 import type { DecisionRecord } from '../../lib/desktop-decisions'
 import { NO_OUTCOME_FACTS, type OutcomeFacts } from '../../lib/desktop-decisions/classes'
 import type { BatchPnl } from '../../lib/outcomes/batch-groups'
 import { subscribeToOpenIdea } from '../../lib/desktop-ideas/navigate'
+import { OPEN_IDEA_EVENTS } from '../../lib/navigation/open-idea'
 
 const DAY = 86_400_000
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
@@ -2204,25 +2205,54 @@ describe('navigating and routing', () => {
   })
 
   /*
-   * "Open the idea" opened a SECOND Dashboard tab, and that is what the
-   * reader reported: "it opens another tab that shows the same workspace
-   * screen."
+   * "Open the idea" has had three destinations, and the first two were wrong.
    *
-   * This case used to assert the tab descriptor unconditionally, because that
-   * is what the button did unconditionally. Ideas and Decisions are two
-   * lenses of ONE shell, so crossing between them is a move inside the
-   * surface the reader is already looking at, not a new application. The two
-   * cases below split the old one along that line: in place when there is a
-   * lens to receive it, a tab only when there is not.
+   * It first fired an `ideas-v2` tab descriptor unconditionally, which opened
+   * a SECOND Dashboard tab showing the same shell -- the reader's report, word
+   * for word: "it opens another tab that shows the same workspace screen."
+   *
+   * It then moved the Ideas LENS in place, and two cases here asserted that:
+   * "moves to the idea in place when a lens is mounted to receive it" and
+   * "falls back to a tab, on the exact idea, when nothing is mounted". They
+   * are rewritten rather than deleted because the behaviour they pinned was
+   * real and deliberate; it was simply the wrong destination. The Ideas lens
+   * is a gallery for FINDING work, and a reader pressing "Open the idea" has
+   * already found it.
+   *
+   * The destination now is the Idea Pipeline with the idea's own detail modal
+   * open, which is where an idea is actually worked. That is a top-level tab,
+   * and correctly so: the Pipeline is a different screen, not a lens of the
+   * one the reader is on.
    */
-  it('moves to the idea in place when a lens is mounted to receive it', async () => {
+  it('sends the reader to the Idea Pipeline with that idea open', async () => {
+    const user = userEvent.setup()
+    decisions = [decision({ id: 'x', ideaId: 'tq-9' })]
+    const seen: Array<{ type: string; detail: Record<string, unknown> }> = []
+    const record = (e: Event) => seen.push({ type: e.type, detail: (e as CustomEvent).detail })
+    window.addEventListener(OPEN_IDEA_EVENTS.tab, record)
+    window.addEventListener(OPEN_IDEA_EVENTS.modal, record)
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    await user.click(screen.getByRole('button', { name: 'Open the idea' }))
+
+    // The modal event is deliberately a frame late, so the Pipeline has
+    // mounted its listener before it arrives. Waiting is the point.
+    await waitFor(() => expect(seen).toHaveLength(2))
+    window.removeEventListener(OPEN_IDEA_EVENTS.tab, record)
+    window.removeEventListener(OPEN_IDEA_EVENTS.modal, record)
+
+    expect(seen.map(e => e.type)).toEqual([OPEN_IDEA_EVENTS.tab, OPEN_IDEA_EVENTS.modal])
+    expect(seen[0].detail.selectedTradeId).toBe('tq-9')
+    expect(seen[0].detail.openIdeaDetail).toBe(true)
+    expect(seen[1].detail.tradeId).toBe('tq-9')
+  })
+
+  it('asks for no Ideas lens and no second Dashboard tab', async () => {
     const user = userEvent.setup()
     decisions = [decision({ id: 'x', ideaId: 'tq-9' })]
     /*
-     * Subscribed through the real seam, which is what makes this case
-     * non-vacuous: the suite's own `window.addEventListener` probes are raw
-     * listeners that never claim, so they could not tell the two paths apart.
-     * `subscribeToOpenIdea` is exactly what `DashboardShell` uses.
+     * Subscribed through the real seam, not a raw listener: `openIdea` only
+     * reports itself taken when a genuine subscriber claims it, so this is
+     * the probe that would catch the lens route coming back.
      */
     const claimed: string[] = []
     const off = subscribeToOpenIdea(r => claimed.push(r.ideaId))
@@ -2230,21 +2260,8 @@ describe('navigating and routing', () => {
     await user.click(screen.getByRole('button', { name: 'Open the idea' }))
     off()
 
-    expect(claimed).toEqual(['tq-9'])
+    expect(claimed).toEqual([])
     expect(tabEvents.some(e => e.detail?.id === 'ideas-v2')).toBe(false)
-  })
-
-  it('falls back to a tab, on the exact idea, when nothing is mounted', async () => {
-    const user = userEvent.setup()
-    decisions = [decision({ id: 'x', ideaId: 'tq-9' })]
-    render(<DecisionsWorkspace selectedDecisionId="x" />)
-    await user.click(screen.getByRole('button', { name: 'Open the idea' }))
-    // The genuine hand-off: no Dashboard on screen, so a tab is the only
-    // place to put the reader -- and it still lands on the idea itself,
-    // never the legacy pipeline.
-    expect(tabEvents.at(-1)!.detail.id).toBe('ideas-v2')
-    expect(tabEvents.at(-1)!.detail.data.selectedIdeaId).toBe('tq-9')
-    expect(tabEvents.some(e => e.detail?.type === 'trade-queue')).toBe(false)
   })
 
   it('binds Ask AI to the decision, its book and its outcome', async () => {
