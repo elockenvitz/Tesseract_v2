@@ -395,8 +395,8 @@ export function InvestmentSnapshot({
       })
     : null
   const staleTitle = caseAgeDays == null ? undefined : (
-    `Nothing has been added to the investment case since ${caseWrittenOn}`
-    + ` — ${caseAgeDays} days. A case is treated as stale after ${STALE_CASE_DAYS} days,`
+    `Nothing has been added to the investment case since ${caseWrittenOn},`
+    + ` ${caseAgeDays} days ago. A case is treated as stale after ${STALE_CASE_DAYS} days,`
     + ' which is one quarter plus a reporting lag.'
   )
 
@@ -558,7 +558,7 @@ export function InvestmentSnapshot({
                     line cannot already carry it for the whole block. */}
                 {written && !soleAuthor && row?.authorName && (
                   <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
-                    — {row.authorName}
+                    {row.authorName}
                     {row.updatedAt && `, ${new Date(row.updatedAt).toLocaleDateString()}`}
                   </span>
                 )}
@@ -610,7 +610,7 @@ export function InvestmentSnapshot({
             {ourViewExcerpt(variantRow.content ?? '', 420)}
             {!soleAuthor && variantRow.authorName && (
               <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
-                — {variantRow.authorName}
+                {variantRow.authorName}
               </span>
             )}
           </p>
@@ -880,7 +880,7 @@ export function InvestmentSnapshot({
             tone={i.stage === 'ready_to_recommend' ? 'recommended' : 'neutral'}
             /* `stage` is a raw enum; a reader should not be shown a column name. */
             status={i.stage ? i.stage.replace(/_/g, ' ') : (i.action ?? 'idea')}
-            title={i.rationale ?? `${i.action ?? 'Idea'} — no rationale recorded`}
+            title={i.rationale ?? `${i.action ?? 'Idea'}, no rationale recorded`}
             meta={i.portfolioName ?? undefined}
             onClick={() => onOpenSubPage('decisions')}
           />
@@ -1094,7 +1094,7 @@ export function InvestmentSnapshot({
             </div>
           )}
       <QuietLine className="mt-2">
-        Whether each supports or challenges the thesis is not recorded — that is the review.
+        Whether each supports or challenges the thesis is not recorded. That is the review.
       </QuietLine>
     </SnapBlock>
   )

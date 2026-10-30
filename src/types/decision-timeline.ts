@@ -242,6 +242,62 @@ export const EXECUTION_PROOF_LABELS: Record<ExecutionProof, string> = {
  */
 export const OBSERVED_PROOFS: readonly ExecutionProof[] = ['verified']
 
+/**
+ * The events that ARE the decision record: the idea pipeline, the
+ * recommendations, the rulings, and the trading.
+ *
+ * The full timeline is deliberately wider than this — it also carries the
+ * research verb (`thesis_changed`) and the scoring of a forecast
+ * (`outcome_evaluated`, from `price_target_outcomes`). Both are real events
+ * and both belong on the History page. Neither is a decision.
+ *
+ * Rendering them in a box called "Decision history" had two costs, and the
+ * second is the serious one:
+ *
+ *  - A price target expiring is not something anybody decided. It arrived at
+ *    the top of the record, three times over on one name, and pushed the
+ *    actual trades off the bottom.
+ *  - `summariseDecisionMemory` counts `outcome_evaluated` as REVIEWED, so a
+ *    name with three scored targets and two fills reported "3 Reviewed · 2
+ *    Executed" — more reviews than there were decisions to review, which
+ *    reads as an arithmetic fault and is really a category one.
+ *
+ * `review_recorded` stays: a `decision_reviews` row is a judgment ON a
+ * decision, which is the last state of the recommended → decided → executed
+ * → reviewed model this surface is built around.
+ */
+export const DECISION_RECORD_TYPES: readonly TimelineEventType[] = [
+  'idea_created',
+  'idea_escalated',
+  'proposal_submitted',
+  'decision_accepted',
+  'decision_rejected',
+  'decision_deferred',
+  'decision_withdrawn',
+  'trade_committed',
+  'execution_pending',
+  'trade_executed',
+  'review_recorded',
+]
+
+/**
+ * How an execution's proof grade is said to a reader who does not work on
+ * this system.
+ *
+ * `EXECUTION_PROOF_LABELS` is the engineering vocabulary — "Backfilled",
+ * "Unattributed" — and it was being printed on the Overview, where it meant
+ * nothing to anybody. These say the same thing in the words a reader already
+ * has. `verified` maps to null because an observed fill is the expectation,
+ * and labelling the normal case is how every row ends up carrying a badge.
+ */
+export const EXECUTION_PROOF_PLAIN: Record<ExecutionProof, string | null> = {
+  verified: null,
+  attested: 'trader-reported',
+  assumed: 'not confirmed',
+  backfilled: 'imported record',
+  unattributed: 'source unknown',
+}
+
 /** The `decision_requests.status` values that mean a PM actually ruled. */
 export const TERMINAL_DECISION_STATUSES: readonly string[] = [
   'accepted',

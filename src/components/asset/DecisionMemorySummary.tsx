@@ -22,7 +22,10 @@ import { clsx } from 'clsx'
 import { CheckCircle2, Clock, FileText, Scale, AlertTriangle } from 'lucide-react'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
 import { parseTimelineDate } from '../../lib/asset-decisions/timeline'
-import { OBSERVED_PROOFS, EXECUTION_PROOF_LABELS } from '../../types/decision-timeline'
+import {
+  OBSERVED_PROOFS, EXECUTION_PROOF_LABELS, EXECUTION_PROOF_PLAIN,
+  DECISION_RECORD_TYPES,
+} from '../../types/decision-timeline'
 import type { DecisionTimelineEvent } from '../../types/decision-timeline'
 
 export interface DecisionMemoryStats {
@@ -77,24 +80,51 @@ export function summariseDecisionMemory(events: DecisionTimelineEvent[]): Decisi
   return s
 }
 
-/** One line of plain English for the state of play. Null when there is none. */
+/**
+ * One line for the state of play, in words a reader already has.
+ *
+ * ── Why these are not the old strings ────────────────────────────────────
+ *
+ * They read as instrument panel, not as English. "2 executed · 1 observed, 1
+ * not" packs three numbers and a distinction the reader has never been taught
+ * into seven words with a middle dot in them, and the first thing it is
+ * counting — executions — is not even named as trades. "Early work only" and
+ * "1 decided, none executed" have the same problem in smaller doses.
+ *
+ * What the old wording was protecting still holds and is kept: an execution
+ * nobody observed must never be summed into a plain "2 trades executed". It
+ * is said as a clause instead of as a ratio.
+ */
 export function decisionMemoryHeadline(s: DecisionMemoryStats): string | null {
   if (s.total === 0) return null
   if (s.unfilled > 0) {
-    return `${s.unfilled} ${s.unfilled === 1 ? 'trade' : 'trades'} committed and not yet executed`
+    return s.unfilled === 1
+      ? '1 trade approved and not yet executed'
+      : `${s.unfilled} trades approved and not yet executed`
   }
   if (s.executed > 0) {
     const unobserved = s.executed - s.executedObserved
+    const traded = `${s.executed} ${s.executed === 1 ? 'trade' : 'trades'} executed`
     if (unobserved > 0) {
-      // The honest version. Saying "3 executed" when only 1 was observed
-      // asserts two fills nobody watched.
-      return `${s.executed} executed · ${s.executedObserved} observed, ${unobserved} not`
+      // The honest version. Saying "3 trades executed" when only 1 fill was
+      // observed asserts two fills nobody watched.
+      return unobserved === s.executed
+        ? `${traded}, with no record of the ${s.executed === 1 ? 'fill' : 'fills'}`
+        : `${traded}, ${unobserved} with no record of the fill`
     }
-    return `${s.executed} executed, all observed`
+    return traded
   }
-  if (s.decided > 0) return `${s.decided} decided, none executed`
-  if (s.recommended > 0) return `${s.recommended} recommended, awaiting a decision`
-  return 'Early work only'
+  if (s.decided > 0) {
+    return s.decided === 1
+      ? '1 decision made, no trade yet'
+      : `${s.decided} decisions made, no trade yet`
+  }
+  if (s.recommended > 0) {
+    return s.recommended === 1
+      ? '1 recommendation waiting on a decision'
+      : `${s.recommended} recommendations waiting on a decision`
+  }
+  return 'Ideas raised, nothing recommended yet'
 }
 
 interface Props {
@@ -135,7 +165,19 @@ export function DecisionMemorySummary({
   assetId, portfolioId = null, symbol, heldBookIds, compact, showRecent,
   onOpenTimeline, className,
 }: Props) {
-  const { allEvents, isLoading, isError } = useAssetDecisionTimeline({ assetId, portfolioId })
+  const { allEvents: everything, isLoading, isError } = useAssetDecisionTimeline({ assetId, portfolioId })
+  /*
+   * Decision memory is the decision record, not the whole timeline.
+   *
+   * The filter is applied ONCE, here, before anything counts or renders —
+   * counts and rows drawn from different sets is how a block comes to
+   * disagree with itself. `DECISION_RECORD_TYPES` is the vocabulary and it
+   * lives beside the event types, not here.
+   *
+   * The History page still shows everything. Nothing is hidden; it is shown
+   * where it belongs.
+   */
+  const allEvents = everything.filter(e => DECISION_RECORD_TYPES.includes(e.type))
   const s = summariseDecisionMemory(allEvents)
   const headline = decisionMemoryHeadline(s)
 
@@ -154,7 +196,7 @@ export function DecisionMemorySummary({
         data-testid="decision-memory-summary-error"
       >
         Decision history could not be loaded. This is not a statement that there
-        is none — try again.
+        is none. Try again.
       </p>
     )
   }
@@ -253,12 +295,18 @@ export function DecisionMemorySummary({
               <li key={e.id} className="flex items-baseline gap-2 py-1.5">
                 <span className="min-w-0 flex-1 text-[12px] text-gray-800 dark:text-gray-200">
                   {e.title}
-                  {e.executionProof && (
-                    <span className={clsx(
-                      'ml-1.5 text-[10px] font-semibold uppercase tracking-wide',
-                      unseen ? 'text-amber-700 dark:text-amber-400' : 'text-gray-400 dark:text-gray-500',
-                    )}>
-                      {EXECUTION_PROOF_LABELS[e.executionProof]}
+                  {/* Plain words, and only when there is something to say.
+                      A verified fill is the expectation, so it is silent —
+                      labelling the normal case puts a badge on every row. */}
+                  {e.executionProof && EXECUTION_PROOF_PLAIN[e.executionProof] && (
+                    <span
+                      title={`Evidence for this fill: ${EXECUTION_PROOF_LABELS[e.executionProof]}`}
+                      className={clsx(
+                        'ml-1.5 cursor-help text-[11px]',
+                        unseen ? 'text-amber-700 dark:text-amber-400' : 'text-gray-400 dark:text-gray-500',
+                      )}
+                    >
+                      ({EXECUTION_PROOF_PLAIN[e.executionProof]})
                     </span>
                   )}
                   {/* Which book, when the reader can see more than one. */}
@@ -282,14 +330,22 @@ export function DecisionMemorySummary({
         * execution count that silently mixes observed fills with assumed ones
         * is the specific overstatement this whole increment exists to avoid.
         */}
-      {/* With rows on screen, an unobserved execution already carries its
-          grade in amber on its own row. The paragraph is then a second copy
-          of the same warning, so it only survives for executions that did
-          NOT make the cut. */}
-      {unobserved > 0 && !(showRecent && allEvents.slice(0, RECENT_ROWS).filter(
-        e => e.type === 'trade_executed' && e.executionProof
-          && !OBSERVED_PROOFS.includes(e.executionProof),
-      ).length === unobserved) && (
+      {/*
+        * Gone from the rows view entirely.
+        *
+        * "1 of 2 execution is not evidenced by an observed fill
+        * (backfilled)." is a sentence written for whoever built the
+        * execution-proof model, printed on an investor's landing surface. It
+        * is also broken English on the singular, and it is the THIRD
+        * statement of one fact: the headline's clause says it, the row says
+        * it in amber beside the trade it concerns, and then this said it
+        * again in the grammar of the data model.
+        *
+        * The fact is not lost — the headline carries the count and the row
+        * carries the grade. The paragraph stays for the no-rows callers,
+        * which have no row to put it on.
+        */}
+      {unobserved > 0 && !showRecent && (
         <p
           className="flex items-start gap-1 text-[11px] text-amber-800 dark:text-amber-300"
           data-testid="decision-memory-unobserved-caveat"
@@ -328,6 +384,16 @@ export function DecisionMemorySummary({
         * This says so WITHOUT fabricating the missing rows or naming books
         * the reader cannot see. It is computed from data already in hand — no
         * extra query — and only shown when the gap actually exists.
+        *
+        * ── Why it is now four words ─────────────────────────────────────
+        *
+        * It read "Held in 2 books; this history covers the 1 you have
+        * decision access to." — a sentence about permissions, in a box about
+        * trades, explaining a model the reader does not have. But it cannot
+        * simply go: without it the block shows a short record and lets the
+        * reader believe it is the whole one, which is the one thing this
+        * surface must not do. So it says the scope and nothing else, and the
+        * explanation moves to the tooltip for the reader who wants it.
         */}
       {(() => {
         if (!heldBookIds || heldBookIds.length === 0) return null
@@ -337,14 +403,19 @@ export function DecisionMemorySummary({
         )
         const uncovered = heldBookIds.filter(id => !covered.has(id)).length
         if (uncovered === 0) return null
+        const seen = heldBookIds.length - uncovered
         return (
           <p
-            className="text-[11px] text-gray-500 dark:text-gray-400"
+            className="cursor-help text-[11px] text-gray-400 dark:text-gray-500"
             data-testid="decision-memory-coverage-note"
+            title={
+              `This name is held in ${heldBookIds.length} books. Decisions and trades `
+              + 'are visible only to the teams on each book, so '
+              + `${uncovered === 1 ? 'one of them is' : `${uncovered} of them are`} not shown here. `
+              + 'That is a limit on what you can see, not a sign that nothing happened in them.'
+            }
           >
-            Held in {heldBookIds.length} {heldBookIds.length === 1 ? 'book' : 'books'};
-            this history covers the {heldBookIds.length - uncovered} you have decision
-            access to.
+            {seen} of {heldBookIds.length} books
           </p>
         )
       })()}

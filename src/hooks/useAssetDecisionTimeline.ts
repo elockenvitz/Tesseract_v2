@@ -262,7 +262,7 @@ async function fetchTimeline(
       type: 'proposal_submitted',
       phase: 'formal',
       timestamp: rec.created_at,
-      title: `Recommendation submitted${sizingLabel ? ` — ${sizingLabel}` : ''}`,
+      title: `Recommendation submitted${sizingLabel ? `: ${sizingLabel}` : ''}`,
       subtitle: rec.notes || null,
       actor: rec.user
         ? {
@@ -328,7 +328,7 @@ async function fetchTimeline(
        * visibly undated rather than silently misdated.
        */
       timestamp: rec.reviewed_at || rec.created_at,
-      title: `${actionLabel} — ${
+      title: `${actionLabel}: ${
         type === 'decision_accepted'
           ? modified ? 'Accepted (modified)' : 'Accepted'
           : type === 'decision_rejected' ? 'Rejected' : `Deferred${deferredTo}`
@@ -375,7 +375,7 @@ async function fetchTimeline(
       type: 'decision_withdrawn',
       phase: 'formal',
       timestamp: rec.reviewed_at || rec.created_at,
-      title: `${ACTION_LABELS[rec.action ?? ''] ?? 'Trade'} — Withdrawn`,
+      title: `${ACTION_LABELS[rec.action ?? ''] ?? 'Trade'}: Withdrawn`,
       subtitle: rec.decision_note || 'Withdrawn before a decision was made',
       actor: null,
       portfolio: rec.portfolio,
@@ -414,7 +414,7 @@ async function fetchTimeline(
       const sign = t.delta_shares > 0 ? '+' : ''
       sizeBits.push(`${sign}${t.delta_shares.toLocaleString()} shs`)
     }
-    const sizeLabel = sizeBits.length ? ` — ${sizeBits.join(', ')}` : ''
+    const sizeLabel = sizeBits.length ? `: ${sizeBits.join(', ')}` : ''
 
     events.push({
       id: `${executed ? 'trade_committed' : 'execution_pending'}:${t.id}`,
@@ -492,7 +492,7 @@ async function fetchTimeline(
       type: 'trade_executed',
       phase: 'execution',
       timestamp: te.event_date,
-      title: `${actionLabel}${sizingParts.length > 0 ? ` — ${sizingParts.join(', ')}` : ''}`,
+      title: `${actionLabel}${sizingParts.length > 0 ? `: ${sizingParts.join(', ')}` : ''}`,
       /*
        * No subtitle. It was `te.portfolio_name`, which this event already
        * carries in `portfolio` below — and both surfaces render the meta line
@@ -554,7 +554,7 @@ async function fetchTimeline(
       type: 'outcome_evaluated',
       phase: 'review',
       timestamp: outcome.evaluated_at || outcome.updated_at,
-      title: `Price target ${outcome.status}${priceInfo ? ` — ${priceInfo}` : ''}`,
+      title: `Price target ${outcome.status}${priceInfo ? `: ${priceInfo}` : ''}`,
       subtitle: outcome.accuracy_pct != null
         ? `${outcome.accuracy_pct.toFixed(0)}% accuracy`
         : null,
@@ -582,7 +582,7 @@ async function fetchTimeline(
       phase: 'review',
       timestamp: r.created_at,
       title: r.decision_quality
-        ? `Decision reviewed — ${r.decision_quality}`
+        ? `Decision reviewed: ${r.decision_quality}`
         : 'Decision reviewed',
       subtitle: r.process_note || null,
       actor: r.reviewer
@@ -611,7 +611,7 @@ async function fetchTimeline(
       type: 'thesis_changed',
       phase: 'exploratory',
       timestamp: m.occurred_at,
-      title: m.event_type ? `Thesis — ${m.event_type.replace(/_/g, ' ')}` : 'Thesis changed',
+      title: m.event_type ? `Thesis: ${m.event_type.replace(/_/g, ' ')}` : 'Thesis changed',
       subtitle: m.source_field || null,
       actor: m.actor
         ? {

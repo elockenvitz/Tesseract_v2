@@ -72,6 +72,8 @@ vi.mock('../../portfolio-v2/PortfolioVisual', async importOriginal => {
 })
 
 import { InvestmentSnapshot } from '../InvestmentSnapshot'
+/* Rendered directly in one case, to stand in for the no-rows callers. */
+import { DecisionMemorySummary } from '../DecisionMemorySummary'
 
 const ASSET = { id: 'a-1', symbol: 'AAPL', company_name: 'Apple Inc.' }
 
@@ -251,39 +253,118 @@ describe('Decision Memory invents nothing', () => {
     ]
     renderSnapshot()
     /*
-     * This used to assert the caveat PARAGRAPH. The subject — the Snapshot
+     * This used to assert the caveat PARAGRAPH. The subject — the Overview
      * never lets an unobserved execution read as an observed one — is
-     * unchanged; WHERE the qualification is stated moved. The Overview now
-     * draws the recent events as rows, and an execution carries its proof
-     * grade in amber on its own row, which is the qualification sitting on
-     * the claim rather than in a sentence underneath it. The paragraph
-     * survives only for unobserved executions that are NOT on screen, so on
-     * a one-event fixture it is correctly absent.
+     * unchanged; WHERE and HOW the qualification is stated moved twice.
+     *
+     * The paragraph read "1 of 2 execution is not evidenced by an observed
+     * fill (backfilled)." — written in the grammar of the execution-proof
+     * model, broken English on the singular, and the third statement of one
+     * fact. It is gone from the rows view. The headline now carries the
+     * count as a clause and the row carries the grade in plain words beside
+     * the trade it concerns.
      */
     const block = screen.getByTestId('snapshot-decision-history')
-    expect(block).toHaveTextContent('Assumed')
+    expect(block).toHaveTextContent('no record of the fill')
+    expect(block).toHaveTextContent('not confirmed')
     expect(block.textContent ?? '').not.toMatch(/all observed/)
+    // And not in the engineering vocabulary.
+    expect(block.textContent ?? '').not.toMatch(/evidenced by an observed fill/)
   })
 
-  it('still states the caveat for an unobserved execution the rows do not reach', () => {
-    // Four events, three rows: the oldest unobserved fill is off screen, and
-    // the paragraph is the only thing that can speak for it.
-    const exec = (id: string, ts: string, proof: string) => ({
-      id, type: 'trade_executed', phase: 'execution', timestamp: ts,
-      title: 'Add', subtitle: null, actor: null, portfolio: null, sizing: null,
-      rationale: null, sourceRef: { type: 'trade_event', id },
-      executionProof: proof, provenance: { table: 'e', rowId: id },
-      disposition: 'positive',
-    })
+  it('keeps the paragraph for the callers that have no row to put it on', () => {
+    // The phone's Snapshot band draws counts without rows; the caveat is
+    // the only place the grade can be stated there.
     timelineEvents = [
-      exec('x4', '2026-06-05', 'verified'),
-      exec('x3', '2026-06-04', 'verified'),
-      exec('x2', '2026-06-03', 'verified'),
-      exec('x1', '2026-06-02', 'assumed'),
+      { id: 'x1', type: 'trade_executed', phase: 'execution', timestamp: '2026-06-02',
+        title: 'Add', subtitle: null, actor: null, portfolio: null, sizing: null,
+        rationale: null, sourceRef: { type: 'trade_event', id: 'x1' },
+        executionProof: 'assumed', provenance: { table: 'e', rowId: 'x1' },
+        disposition: 'positive' },
     ] as never
-    renderSnapshot()
+    render(<DecisionMemorySummary assetId="a-1" symbol="AMZN" />)
     expect(screen.getByTestId('decision-memory-unobserved-caveat').textContent)
       .toMatch(/not\s+evidenced by an observed fill/)
+  })
+})
+
+/**
+ * Decision history carries the decision record, and only that.
+ *
+ * A price target expiring is not something anybody decided. On the demo AMZN
+ * three of them arrived at the top of the block and pushed every actual
+ * trade off the bottom — and because `summariseDecisionMemory` counts them
+ * as REVIEWED, the chip row read "3 Reviewed · 2 Executed", more reviews
+ * than there were decisions to review.
+ *
+ * They are still on the History page. The vocabulary lives in
+ * `DECISION_RECORD_TYPES`, beside the event types.
+ */
+describe('Decision history holds only the decision record', () => {
+  beforeEach(() => { timelineEvents = []; timelineError = false })
+
+  const anyEvent = (id: string, type: string, phase: string, ts: string, title: string) => ({
+    id, type, phase, timestamp: ts, title, subtitle: null, actor: null,
+    portfolio: null, sizing: null, rationale: null,
+    sourceRef: { type: 'trade_event', id }, executionProof: null,
+    provenance: { table: 't', rowId: id }, disposition: 'neutral',
+  })
+
+  it('leaves a scored price target to the History page', () => {
+    timelineEvents = [
+      anyEvent('o1', 'outcome_evaluated', 'review', '2026-08-31', 'Price target expired — $180.00'),
+      anyEvent('t1', 'trade_executed', 'execution', '2026-03-02', 'Opened position'),
+    ] as never
+    renderSnapshot()
+    const block = screen.getByTestId('snapshot-decision-history')
+    expect(block).not.toHaveTextContent('Price target expired')
+    // And the trade it was burying is on screen.
+    expect(block).toHaveTextContent('Opened position')
+  })
+
+  it('does not count a scored target as a decision review', () => {
+    // The chips are off under `showRecent`, so this asserts the count that
+    // survives: a name with ONLY scored targets has no decision record.
+    timelineEvents = [
+      anyEvent('o1', 'outcome_evaluated', 'review', '2026-08-31', 'Price target hit — $180.00'),
+      anyEvent('o2', 'outcome_evaluated', 'review', '2026-07-31', 'Price target missed — $120.00'),
+    ] as never
+    renderSnapshot()
+    expect(screen.getByTestId('decision-memory-summary-empty')).toBeInTheDocument()
+  })
+
+  it('leaves a thesis change to Research', () => {
+    timelineEvents = [
+      anyEvent('m1', 'thesis_changed', 'review', '2026-08-31', 'Thesis changed'),
+      anyEvent('t1', 'trade_executed', 'execution', '2026-03-02', 'Opened position'),
+    ] as never
+    renderSnapshot()
+    expect(screen.getByTestId('snapshot-decision-history')).not.toHaveTextContent('Thesis changed')
+  })
+
+  it('says nothing about evidence when the fill was actually observed', () => {
+    /*
+     * An observed fill is the expectation. Labelling it puts a badge on
+     * every row, and a page where every row carries a badge has taught the
+     * reader to stop reading them — which is precisely how the one row that
+     * SHOULD be flagged gets missed.
+     */
+    timelineEvents = [
+      { ...anyEvent('t1', 'trade_executed', 'execution', '2026-03-02', 'Opened position'),
+        executionProof: 'verified' },
+    ] as never
+    renderSnapshot()
+    const row = within(screen.getByTestId('decision-memory-recent')).getAllByRole('listitem')[0]
+    expect(row).toHaveTextContent('Opened position')
+    expect(row.textContent ?? '').not.toMatch(/\(/)
+  })
+
+  it('keeps a decision review, which is a judgment on a decision', () => {
+    timelineEvents = [
+      anyEvent('r1', 'review_recorded', 'review', '2026-08-31', 'Decision reviewed'),
+    ] as never
+    renderSnapshot()
+    expect(screen.getByTestId('snapshot-decision-history')).toHaveTextContent('Decision reviewed')
   })
 })
 

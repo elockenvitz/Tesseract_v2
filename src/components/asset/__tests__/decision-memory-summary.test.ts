@@ -98,6 +98,19 @@ describe('summariseDecisionMemory', () => {
   })
 })
 
+/*
+ * ── The wording changed; every subject here did not ──────────────────────
+ *
+ * These asserted the exact strings "2 executed · 1 observed, 1 not",
+ * "2 executed, all observed" and "1 decided, none executed". Read aloud,
+ * those are instrument-panel readings rather than English: three numbers and
+ * an observed/not distinction the reader has never been taught, packed into
+ * seven words with a middle dot in them, and not even naming what is being
+ * counted as trades.
+ *
+ * Each case below keeps the thing it was protecting and asserts it against
+ * the new wording. Nothing was deleted.
+ */
 describe('decisionMemoryHeadline', () => {
   it('says nothing when there is nothing', () => {
     expect(decisionMemoryHeadline(summariseDecisionMemory([]))).toBeNull()
@@ -108,7 +121,7 @@ describe('decisionMemoryHeadline', () => {
       ev('execution_pending', { phase: 'execution' }),
       ev('trade_executed', { phase: 'execution', executionProof: 'verified' }),
     ]))
-    expect(h).toMatch(/committed and not yet executed/)
+    expect(h).toMatch(/not yet executed/)
   })
 
   it('NEVER claims all observed when some are not', () => {
@@ -116,21 +129,50 @@ describe('decisionMemoryHeadline', () => {
       ev('trade_executed', { phase: 'execution', executionProof: 'verified' }),
       ev('trade_executed', { phase: 'execution', executionProof: 'assumed' }),
     ]))
-    expect(h).toBe('2 executed · 1 observed, 1 not')
+    // The unobserved one is still qualified — as a clause, not as a ratio.
+    expect(h).toBe('2 trades executed, 1 with no record of the fill')
     expect(h).not.toMatch(/all observed/)
   })
 
-  it('says all observed only when they all are', () => {
+  it('qualifies every execution when none of them was observed', () => {
+    const h = decisionMemoryHeadline(summariseDecisionMemory([
+      ev('trade_executed', { phase: 'execution', executionProof: 'backfilled' }),
+      ev('trade_executed', { phase: 'execution', executionProof: 'assumed' }),
+    ]))
+    expect(h).toBe('2 trades executed, with no record of the fills')
+  })
+
+  it('adds no qualification when they all were observed', () => {
+    /*
+     * This asserted the words "all observed". That phrase was the problem:
+     * it answers a question the reader did not ask, in a vocabulary only
+     * this system uses. An observed fill is the expectation, so the plain
+     * sentence IS the all-observed case, and the guard is that no
+     * qualifying clause appears.
+     */
     const h = decisionMemoryHeadline(summariseDecisionMemory([
       ev('trade_executed', { phase: 'execution', executionProof: 'verified' }),
       ev('trade_executed', { phase: 'execution', executionProof: 'verified' }),
     ]))
-    expect(h).toBe('2 executed, all observed')
+    expect(h).toBe('2 trades executed')
+    expect(h).not.toMatch(/no record/)
   })
 
   it('does not imply execution when only decisions exist', () => {
     const h = decisionMemoryHeadline(summariseDecisionMemory([ev('decision_accepted')]))
-    expect(h).toBe('1 decided, none executed')
+    expect(h).toBe('1 decision made, no trade yet')
+    expect(h).not.toMatch(/executed/)
+  })
+
+  it('counts in trades and decisions, never in bare verbs', () => {
+    // The old strings counted "2 executed" and "1 decided" — a number and a
+    // past participle, with the noun left for the reader to supply.
+    const heads = [
+      decisionMemoryHeadline(summariseDecisionMemory([ev('trade_executed', { executionProof: 'verified' })])),
+      decisionMemoryHeadline(summariseDecisionMemory([ev('decision_accepted')])),
+      decisionMemoryHeadline(summariseDecisionMemory([ev('proposal_submitted')])),
+    ]
+    for (const h of heads) expect(h).toMatch(/trade|decision|recommendation/)
   })
 })
 
@@ -175,7 +217,16 @@ describe('the authorization gap is disclosed, not hidden', () => {
   it('the summary takes the held books so it can detect the gap', () => {
     expect(SUMMARY).toContain('heldBookIds')
     expect(SUMMARY).toContain('decision-memory-coverage-note')
-    expect(SUMMARY).toContain('you have decision')
+    /*
+     * This asserted the visible string 'you have decision'. The note is now
+     * four words on screen — "1 of 2 books" — with the explanation in its
+     * tooltip, because a sentence about team permissions printed inside a
+     * box about trades was being read as noise and skipped. The SUBJECT is
+     * unchanged and is what this now asserts: the reader is told the record
+     * is partial, and told why if they ask.
+     */
+    expect(SUMMARY).toContain('visible only to the teams on each book')
+    expect(SUMMARY).toContain('not a sign that nothing happened in them')
   })
 
   it('both snapshots supply them', () => {
