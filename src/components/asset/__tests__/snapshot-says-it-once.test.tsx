@@ -1,0 +1,253 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import type { AssetWorkspaceData } from '../../../hooks/useAssetWorkspace'
+
+/**
+ * The Overview says each thing once, and only when there is something to say.
+ *
+ * ── What was wrong ───────────────────────────────────────────────────────
+ *
+ * Measured on AMZN at 1920 — 899px of Overview across five bands, roughly a
+ * third of it restating either the header strip directly above it or the
+ * block directly above it:
+ *
+ *  - THE CASE TWICE. "Our view" (250px) printed the three core sections with
+ *    their prose. "Research perspectives" (224px) immediately below printed
+ *    the same three section names again, "1 entry" each, by the same single
+ *    contributor — a table of contents for the block above it.
+ *  - FRESHNESS FIVE TIMES. The strip ("11 mo old", "no new research since"),
+ *    the header chip ("Stale"), "Our view" ("written 11 months ago"), "What
+ *    changed" (its meta AND its body), and the perspectives block ("newest
+ *    update 11mo ago — may be stale").
+ *  - A BAND TO SAY NOTHING HAPPENED. "What changed" always rendered; on a
+ *    quiet name its whole content was "No research has been filed since the
+ *    case was last written", which the strip states permanently in three
+ *    words.
+ *  - THE RATING AND THE TARGET TWICE. Each is in the strip; the rail beside
+ *    "Our view" printed the firm rating again and the foot of "Exposure"
+ *    printed the target and its upside again.
+ *
+ * ── The rule these cases hold ────────────────────────────────────────────
+ *
+ * The strip is sticky and always on screen. A block whose entire content is
+ * a restatement of it is not informing the reader, it is occupying the place
+ * where something might have. So the Overview carries what the strip CANNOT:
+ * the prose, the spread around the target, the full position, the record —
+ * and each conditional block earns its space or is absent.
+ */
+
+const BASE: AssetWorkspaceData = {
+  sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
+  history: [], spot: null, ladder: null, target: null,
+  positions: [], liveIdeas: [], decisions: [],
+}
+
+let data: AssetWorkspaceData = BASE
+let ratings: { id: string }[] = []
+let consensus: { value: string; count: number; percentage: number }[] = []
+let myRating: { rating_value: string } | undefined
+
+vi.mock('../../../hooks/useAssetWorkspace', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../../hooks/useAssetWorkspace')>()
+  return { ...actual, useAssetWorkspace: () => ({ data, isLoading: false, error: null }) }
+})
+vi.mock('../../../hooks/useAssetDecisionTimeline', () => ({
+  useAssetDecisionTimeline: () => ({
+    events: [], allEvents: [],
+    phaseCounts: { all: 0, exploratory: 0, formal: 0, execution: 0, review: 0 },
+    isLoading: false, isError: false,
+  }),
+}))
+vi.mock('../../../hooks/useAnalystRatings', () => ({
+  useAnalystRatings: () => ({ ratings, consensus, myRating, isLoading: false }),
+}))
+vi.mock('../../../hooks/useDesktopPortfolio', () => ({
+  usePortfolioList: () => ({ portfolios: [], isLoading: false }),
+}))
+vi.mock('../../coverage/CoverageDisplay', () => ({
+  CoverageDisplay: () => <div data-testid="coverage" />,
+}))
+vi.mock('../../portfolio-v2/PortfolioVisual', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../portfolio-v2/PortfolioVisual')>()
+  return { ...actual, FrameworkScale: () => <div data-testid="ladder" /> }
+})
+
+import { InvestmentSnapshot } from '../InvestmentSnapshot'
+
+const ASSET = { id: 'a-1', symbol: 'AMZN', company_name: 'Amazon.com, Inc.' }
+const WRITTEN = '2025-11-20T00:00:00Z'
+
+const contrib = (section: string, created_by: string) => ({
+  id: `${section}-${created_by}`,
+  section,
+  content: 'We think this name is mispriced.',
+  created_by,
+  is_archived: false,
+}) as never
+
+const FIELDS = [{ field_id: 'thesis', label: 'Investment Thesis' }] as never[]
+
+function renderSnapshot(props: Partial<React.ComponentProps<typeof InvestmentSnapshot>> = {}) {
+  return render(
+    <InvestmentSnapshot
+      asset={ASSET}
+      coverage={[]}
+      currentQuote={{ price: 243.79, timestamp: '2026-10-29T20:00:00Z' }}
+      onOpenSubPage={() => {}}
+      {...props}
+    />,
+  )
+}
+
+/** A written case by one author — the shape most names actually have. */
+function oneAuthorCase() {
+  data = {
+    ...BASE,
+    caseWrittenAt: WRITTEN,
+    coreSections: ['thesis', 'risks_to_thesis'],
+    sections: [
+      { section: 'thesis', content: 'Jeff Bezos has a sick yacht.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
+      { section: 'risks_to_thesis', content: 'Lots of risks.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
+    ],
+  }
+}
+
+/** A target WITH a bear/bull ladder, so the footer band actually renders. */
+function withLadder() {
+  const rung = (name: string, price: number) => ({
+    scenarioId: null, name, price, probability: null, timeframe: null,
+    reasoning: null, id: `r-${name}`, userId: null,
+  })
+  data = {
+    ...BASE, target: 180, spot: 243.79,
+    ladder: {
+      assetId: 'a-1', symbol: 'AMZN', companyName: null, updatedAt: WRITTEN,
+      valid: true, reason: '',
+      /* Bull is deliberately NOT the target: otherwise "$180.00" appears
+         legitimately as a rung and an assertion against the restated target
+         could never tell the two apart. */
+      cases: [rung('Bear', 90), rung('Base', 120), rung('Bull', 400)],
+    },
+  }
+}
+
+beforeEach(() => {
+  data = { ...BASE }
+  ratings = []; consensus = []; myRating = undefined
+})
+
+describe('the case is told once', () => {
+  it('draws no contributor roster when there is only one contributor', () => {
+    oneAuthorCase()
+    renderSnapshot({
+      currentUserId: 'me',
+      contributions: [contrib('thesis', 'me'), contrib('risks_to_thesis', 'me')],
+      contributionFields: FIELDS,
+    })
+    expect(screen.queryByTestId('snapshot-perspectives')).toBeNull()
+    // The fact itself is not lost — it moves onto the block it describes.
+    expect(screen.getByTestId('snapshot-our-view')).toHaveTextContent('1 contributor')
+  })
+
+  it('draws the roster as soon as a second person has written', () => {
+    // Who disagrees with whom is the one thing the prose excerpt cannot show.
+    oneAuthorCase()
+    renderSnapshot({
+      currentUserId: 'me',
+      contributions: [contrib('thesis', 'me'), contrib('thesis', 'other')],
+      contributionFields: FIELDS,
+    })
+    expect(screen.getByTestId('snapshot-perspectives')).toBeTruthy()
+    expect(screen.getByTestId('snapshot-our-view')).toHaveTextContent('2 contributors')
+  })
+
+  it('still offers the way into Research with the roster gone', () => {
+    // The roster carried the only "Open Research →" on that half of the page.
+    oneAuthorCase()
+    renderSnapshot({
+      currentUserId: 'me',
+      contributions: [contrib('thesis', 'me')],
+      contributionFields: FIELDS,
+    })
+    expect(screen.getByTestId('snapshot-our-view')).toHaveTextContent('Open Research')
+  })
+})
+
+describe('a section with nothing to report is absent, not empty', () => {
+  it('draws no "What changed" when no research postdates the case', () => {
+    oneAuthorCase()
+    renderSnapshot({ currentUserId: 'me' })
+    expect(screen.queryByTestId('snapshot-what-changed')).toBeNull()
+    expect(screen.queryByText(/No research has been filed/)).toBeNull()
+  })
+
+  it('draws it the moment something does', () => {
+    oneAuthorCase()
+    data = {
+      ...data,
+      evidence: [{
+        id: 'e1', title: 'Q3 teardown', content: null, createdAt: '2026-06-01T00:00:00Z',
+        authorName: 'Eric', isShared: true, isNewSinceReview: true,
+      }] as never,
+    }
+    renderSnapshot({ currentUserId: 'me' })
+    expect(screen.getByTestId('snapshot-what-changed')).toHaveTextContent('1 research item')
+  })
+})
+
+describe('nothing the strip already states is restated', () => {
+  it('does not print the firm rating', () => {
+    // The strip states consensus and its n, permanently, a couple of hundred
+    // pixels above. On a name with no rating this was a labelled blank.
+    ratings = [{ id: 'r1' }, { id: 'r2' }]
+    consensus = [{ value: 'Buy', count: 2, percentage: 100 }]
+    oneAuthorCase()
+    renderSnapshot({ currentUserId: 'me' })
+    const view = screen.getByTestId('snapshot-our-view')
+    expect(view).not.toHaveTextContent('Firm Buy')
+    expect(view).not.toHaveTextContent('No firm rating')
+  })
+
+  it('does not print the target or its upside again, even with the band open', () => {
+    /*
+     * This must be asserted WITH a ladder present. Without one the footer is
+     * hidden outright, so a target assertion against that state passes
+     * whatever the code does — the first version of this case did exactly
+     * that, and a restatement injected straight back in did not fail it.
+     */
+    withLadder()
+    renderSnapshot({ currentUserId: 'me' })
+    const exposure = screen.getByTestId('snapshot-exposure')
+    expect(exposure).toHaveTextContent(/bear/)   // the band IS open
+    expect(exposure).not.toHaveTextContent('Target')
+    expect(exposure).not.toHaveTextContent('$180.00')
+    expect(exposure.textContent).not.toMatch(/-26\./)
+  })
+
+  it('keeps the spread, which the strip cannot say', () => {
+    /*
+     * One target number says what we think it is worth; the bear/bull pair
+     * says how sure we are. That is the part worth the room, and removing
+     * the point estimate must not take it with it.
+     */
+    withLadder()
+    renderSnapshot({ currentUserId: 'me' })
+    expect(screen.getByTestId('snapshot-exposure')).toHaveTextContent(/bear .*bull/)
+  })
+
+  it('leaves no empty rule across the block when there is no spread at all', () => {
+    // A target with no bear/bull and no drawable ladder: the whole footer
+    // would be a horizontal line and 12px of padding.
+    data = { ...BASE, target: 180, spot: null, ladder: null, positions: [] }
+    renderSnapshot({ currentUserId: 'me' })
+    const exposure = screen.getByTestId('snapshot-exposure')
+    expect(exposure.textContent).not.toMatch(/bear|bull|skew/)
+    expect(exposure.querySelectorAll('.border-t').length).toBe(0)
+  })
+
+  it('still names a missing target, because that is not in the strip as a gap', () => {
+    data = { ...BASE, target: null, positions: [] }
+    renderSnapshot({ currentUserId: 'me' })
+    expect(screen.getByTestId('snapshot-exposure')).toHaveTextContent('No price target set')
+  })
+})

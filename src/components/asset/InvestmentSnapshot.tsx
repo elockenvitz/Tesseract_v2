@@ -299,8 +299,14 @@ export function InvestmentSnapshot({
     }
     const yours = currentUserId ? coreKeys.filter(k => bySection.get(k)?.has(currentUserId)) : []
     const divergent = coreKeys.filter(k => (bySection.get(k)?.size ?? 0) >= 2)
+    /* Distinct people who have written any core section, which is what
+       decides whether a roster of contributors tells a reader anything the
+       case above it has not already. */
+    const authors = new Set<string>()
+    for (const set of bySection.values()) for (const id of set) authors.add(id)
     return {
       bySection,
+      authorCount: authors.size,
       coreCount: coreKeys.length,
       writtenCount: coreKeys.filter(k => (bySection.get(k)?.size ?? 0) > 0).length,
       yourCount: yours.length,
@@ -348,7 +354,8 @@ export function InvestmentSnapshot({
     .filter(s => s !== 'where_different')
     .map(s => ({ key: s, row: core.find(c => c.section === s) }))
 
-  const firmRatingTotal = ratings?.length ?? (dominant?.count ?? 0)
+  /* `firmRatingTotal` went with the rail's rating line — the header strip
+     states "N of M" and this page no longer repeats it. */
   const yourRatingDiffers = !!myRating && (!dominant || myRating.rating_value !== dominant.value)
 
   /* Bear/bull arithmetic, inline — no longer a 130px card that says "Not set". */
@@ -385,8 +392,34 @@ export function InvestmentSnapshot({
       testId="snapshot-our-view"
       rail="primary"
       title="Our view"
-      meta={caseAgeLabel && (
-        <span className={caseStale ? 'text-amber-700 dark:text-amber-400' : undefined}>{caseAgeLabel}</span>
+      /*
+        Age and authorship on one line, because they are one question: how
+        current is this, and whose is it. The contributor count used to be the
+        heading of a whole separate block below ("Research perspectives · the
+        firm, by contributor"), which on a single-author name listed the same
+        three section names as the prose directly above it.
+      */
+      meta={(caseAgeLabel || firmVsYou.authorCount > 0) && (
+        <>
+          {caseAgeLabel && (
+            <span className={caseStale ? 'text-amber-700 dark:text-amber-400' : undefined}>{caseAgeLabel}</span>
+          )}
+          {caseAgeLabel && firmVsYou.authorCount > 0 && <span> · </span>}
+          {firmVsYou.authorCount > 0 && (
+            <span>
+              {firmVsYou.authorCount} contributor{firmVsYou.authorCount === 1 ? '' : 's'}
+            </span>
+          )}
+        </>
+      )}
+      action={(
+        <button
+          type="button"
+          onClick={() => onOpenSubPage('research')}
+          className="text-sm text-primary-600 hover:underline dark:text-primary-400"
+        >
+          Open Research →
+        </button>
       )}
     >
       {/*
@@ -490,19 +523,26 @@ export function InvestmentSnapshot({
       )}
         </div>
 
-        {/* The rail: firm-vs-you and what the case still lacks. */}
+        {/*
+          The rail: firm-vs-you and what the case still lacks.
+
+          The firm RATING is no longer repeated here. The header strip states
+          it a couple of hundred pixels above and never scrolls away, so this
+          was the same fact twice in one eyeful — and when the name has no
+          rating, which is the common case, it was a labelled blank taking the
+          top of the rail. What survives is the part the strip cannot say:
+          whether YOU have recorded a view, and where the firm disagrees with
+          itself.
+        */}
         <aside className="flex shrink-0 flex-col gap-4 border-t border-gray-200/70 pt-4 dark:border-white/[0.07] xl:w-56 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
-          <div>
-            <div className="text-xs text-gray-500">Rating</div>
-            {dominant ? (
-              <div className="mt-0.5 text-sm text-gray-800 dark:text-gray-200">Firm {dominant.value} · {dominant.count} of {firmRatingTotal}</div>
-            ) : (
-              <div className="mt-0.5 text-sm text-gray-400">No firm rating</div>
-            )}
-            {yourRatingDiffers && (
+          {yourRatingDiffers && (
+            <div>
+              <div className="text-xs text-gray-500">Your rating</div>
+              {/* Kept, because this is precisely what the strip does NOT
+                  show once the two differ: the strip states the consensus. */}
               <div className="mt-1"><StatusChip tone="recommended">You {myRating!.rating_value}</StatusChip></div>
-            )}
-          </div>
+            </div>
+          )}
 
           {firmVsYou.hasContext && (
             <div>
@@ -609,6 +649,13 @@ export function InvestmentSnapshot({
    * answer the same question (where do we stand against what we think it is
    * worth), so they share a block and each absence compresses to one line.
    */
+  /* A bear/bull pair, or a drawable ladder: either is something the strip's
+     single target number cannot express. Neither means the whole band is
+     just a rule across an empty strip. */
+  const spreadWorthShowing =
+    (figures.bear != null && figures.bull != null)
+    || (data.ladder?.valid === true && data.spot != null)
+
   const exposureValuation = (
     <SnapBlock
       key="exposure"
@@ -620,32 +667,36 @@ export function InvestmentSnapshot({
       meta={position?.asOf ? `position as of ${new Date(position.asOf).toLocaleDateString()}` : undefined}
     >
       {positionBody}
-      <div className="mt-4 border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
-        {data.target != null ? (
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-sm text-gray-700 dark:text-gray-300">
-              Target{' '}
-              <span className="font-mono font-semibold text-gray-900 dark:text-gray-100">{money(data.target)}</span>
-            </span>
-            {figures.upside != null && (
-              <span className={`font-mono text-sm font-semibold tabular-nums ${figures.upside >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                {pct(figures.upside)}
-              </span>
-            )}
-            {figures.bear != null && figures.bull != null && (
-              <span className="text-xs text-gray-500">
-                bear {money(figures.bear)} · bull {money(figures.bull)}
-                {figures.skew != null ? ` · skew ${figures.skew.toFixed(1)}:1` : ''}
-              </span>
-            )}
-          </div>
-        ) : (
-          <GapChip label="No price target set" onClick={() => onOpenSubPage('research')} />
-        )}
-        {data.ladder?.valid && data.spot != null && (
-          <div className="mt-3"><FrameworkScale ladder={data.ladder} spot={data.spot} /></div>
-        )}
-      </div>
+      {/*
+        ── The target itself is not restated here ─────────────────────────
+
+        The header strip states the firm target and the implied upside, in
+        exactly those words, and it never scrolls away. This block used to
+        print "Target $180.00 · −26.17%" again at its foot, two hundred pixels
+        below — the same two numbers, read from the same field.
+
+        What is NOT in the strip, and is worth the room, is the SPREAD: where
+        the bear and bull cases sit around that one number, and how the spot
+        falls against the ladder. A single target says what we think it is
+        worth; the spread says how sure we are. So the spread stays and the
+        point estimate goes.
+      */}
+      {(spreadWorthShowing || data.target == null) && (
+        <div className="mt-4 border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
+          {data.target == null && (
+            <GapChip label="No price target set" onClick={() => onOpenSubPage('research')} />
+          )}
+          {figures.bear != null && figures.bull != null && (
+            <div className="text-xs text-gray-500">
+              bear {money(figures.bear)} · bull {money(figures.bull)}
+              {figures.skew != null ? ` · skew ${figures.skew.toFixed(1)}:1` : ''}
+            </div>
+          )}
+          {data.ladder?.valid && data.spot != null && (
+            <div className="mt-3"><FrameworkScale ladder={data.ladder} spot={data.spot} /></div>
+          )}
+        </div>
+      )}
     </SnapBlock>
   )
 
@@ -796,12 +847,27 @@ export function InvestmentSnapshot({
    * Rendered only when the tab wired it; a caller that passes nothing gets
    * nothing rather than an empty panel.
    */
-  const perspectives = contributions && contributionFields && contributionFields.length > 0 ? (
+  /*
+   * ── Only when there is more than one voice ─────────────────────────────
+   *
+   * This block always rendered. On a single-author name it listed the same
+   * three section names as the prose directly above it — Investment Thesis,
+   * Where Our Thesis Differs, Risks to Thesis — with "1 entry" beside each,
+   * attributed to the one person whose words were already on screen. Measured
+   * on AMZN: 224px to restate the 250px block above it as a table of
+   * contents.
+   *
+   * A roster earns its space when there is a roster. With one contributor the
+   * fact is now a line on "Our view" ("11 mo old · 1 contributor") and the
+   * link into Research moved there with it.
+   */
+  const perspectives = contributions && contributionFields && contributionFields.length > 0
+    && firmVsYou.authorCount >= 2 ? (
     <SnapBlock
       key="contributors"
       testId="snapshot-perspectives"
       title="Research perspectives"
-      meta="the firm, by contributor"
+      meta={`${firmVsYou.authorCount} contributors`}
       action={(
         <button
           type="button"
@@ -846,13 +912,26 @@ export function InvestmentSnapshot({
     null,
   )
 
-  const whatChanged = (
+  /*
+   * ── Absent when nothing changed ────────────────────────────────────────
+   *
+   * It always rendered, and on a quiet name it spent a whole band — 87px
+   * measured on AMZN — to say "No research has been filed since the case was
+   * last written." The header strip already says that, permanently, in three
+   * words: "no new research since". A section whose entire content is a
+   * restatement of the strip is not telling the reader anything; it is
+   * occupying the place where something might have.
+   *
+   * So this is now the answer to a question only worth asking when it has
+   * one. The quiet case is carried by the strip and by "Our view"'s own age.
+   */
+  const whatChanged = newEvidence.length === 0 ? null : (
     <SnapBlock
       key="changed"
       testId="snapshot-what-changed"
       title="What changed"
       meta={caseAgeLabel ? `since the case was ${caseAgeLabel}` : undefined}
-      action={newEvidence.length > 0 ? (
+      action={(
         <button
           type="button"
           onClick={() => onOpenSubPage('research')}
@@ -860,17 +939,17 @@ export function InvestmentSnapshot({
         >
           Open Research →
         </button>
-      ) : undefined}
+      )}
     >
-      {newEvidence.length > 0 ? (
-        <>
-          <p className="text-sm text-gray-800 dark:text-gray-200">
-            <span className="font-semibold">
-              {newEvidence.length} research item{newEvidence.length === 1 ? '' : 's'}
-            </span>{' '}
-            dated after the case was last written
-            {newestEvidenceAt ? `, newest ${new Date(newestEvidenceAt).toLocaleDateString()}` : ''}.
-          </p>
+      {/* The empty branch is gone with the empty block: this only renders
+          when `newEvidence` has something in it. */}
+      <p className="text-sm text-gray-800 dark:text-gray-200">
+        <span className="font-semibold">
+          {newEvidence.length} research item{newEvidence.length === 1 ? '' : 's'}
+        </span>{' '}
+        dated after the case was last written
+        {newestEvidenceAt ? `, newest ${new Date(newestEvidenceAt).toLocaleDateString()}` : ''}.
+      </p>
           {/*
             Name them only when they can be OPENED. `onOpenEvidence` is
             AssetTab's own note navigation; without it this stays a count,
@@ -907,17 +986,9 @@ export function InvestmentSnapshot({
               )}
             </div>
           )}
-          <QuietLine className="mt-2">
-            Whether each supports or challenges the thesis is not recorded — that is the review.
-          </QuietLine>
-        </>
-      ) : (
-        <QuietLine>
-          {data.caseWrittenAt
-            ? 'No research has been filed since the case was last written.'
-            : 'No case and no research on record yet.'}
-        </QuietLine>
-      )}
+      <QuietLine className="mt-2">
+        Whether each supports or challenges the thesis is not recorded — that is the review.
+      </QuietLine>
     </SnapBlock>
   )
 
@@ -1031,16 +1102,34 @@ export function InvestmentSnapshot({
           {needsDecision}
         </div>
       ) : ourView}
-      <div className="grid grid-cols-1 gap-x-8 gap-y-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
-        <div className="flex min-w-0 flex-col gap-5">
-          {whatChanged}
-          {perspectives}
+      {/*
+        Both left-column blocks are now conditional — "What changed" only when
+        something did, the contributor roster only when there is more than one
+        contributor — and on a quiet single-author name that is the common
+        case. A fixed two-column grid would hold 62% of the row open for
+        nothing, so the position and the record take the full width when there
+        is no left column to sit beside.
+      */}
+      {whatChanged || perspectives ? (
+        <div className="grid grid-cols-1 gap-x-8 gap-y-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
+          <div className="flex min-w-0 flex-col gap-5">
+            {whatChanged}
+            {perspectives}
+          </div>
+          <div className="flex min-w-0 flex-col gap-5">
+            {exposureValuation}
+            {decisionHistory}
+          </div>
         </div>
-        <div className="flex min-w-0 flex-col gap-5">
+      ) : (
+        /* Side by side rather than stacked: each is a compact block of
+           figures, and two of them in a page-wide column is a lot of white
+           to the right of a weight bar. */
+        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
           {exposureValuation}
           {decisionHistory}
         </div>
-      </div>
+      )}
     </div>
   )
 }

@@ -460,13 +460,39 @@ describe('personal vs firm distinction (Phase 3)', () => {
     is_archived: false,
   }) as any
 
-  it('states the firm rating and the viewer\'s own when they differ — never merged', () => {
+  it('shows the viewer\'s own rating when it differs, and leaves the firm\'s to the strip', () => {
+    /*
+     * Was `expect(getByText(/Firm Buy · 2 of 3/))` beside the "You Hold"
+     * chip. The subject — firm and personal are never merged into one figure
+     * — is unchanged; WHERE the firm half is stated is what moved.
+     *
+     * The header context strip states the consensus and its n, permanently
+     * and a couple of hundred pixels above this, so printing it again here
+     * was the same fact twice in one eyeful — and on a name with no rating,
+     * which is most of them, it was a labelled blank holding the top of the
+     * rail. `asset-context-strip.test.tsx` guards the non-merging up there.
+     *
+     * What this page must still do is show the reader's OWN view when it
+     * diverges, because that is precisely the thing the strip does not say.
+     */
     ratings = [{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }]
     consensus = [{ value: 'Buy', count: 2, percentage: 66 }]
     myRating = { rating_value: 'Hold' }
     renderSnapshot({ contributions: [], currentUserId: 'me' })
-    expect(screen.getByText(/Firm Buy · 2 of 3/)).toBeInTheDocument()
     expect(screen.getByText(/You Hold/)).toBeInTheDocument()
+    expect(screen.queryByText(/Firm Buy/)).toBeNull()
+    expect(screen.queryByText(/2 of 3$/)).toBeNull()
+  })
+
+  it('says nothing at all about rating when the reader agrees with the firm', () => {
+    // No divergence, nothing the strip has not already said: no rail entry,
+    // not an empty one.
+    ratings = [{ id: 'r1' }, { id: 'r2' }]
+    consensus = [{ value: 'Buy', count: 2, percentage: 100 }]
+    myRating = { rating_value: 'Buy' }
+    renderSnapshot({ contributions: [], currentUserId: 'me' })
+    expect(screen.queryByText('Your rating')).toBeNull()
+    expect(screen.queryByText(/No firm rating/)).toBeNull()
   })
 
   it('counts the viewer\'s own case sections and flags where analysts differ', () => {
