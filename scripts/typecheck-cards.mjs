@@ -230,7 +230,7 @@ const MAX_ERRORS = 0
 // c.user_id)` reads with one annotated memo. The `coverage` query selects an
 // embed the generated row type does not describe, so its rows infer as `never`
 // and each inline read carried its own error. Measured, not arithmetic.
-const MAX_REPO_ERRORS = 8622
+const MAX_REPO_ERRORS = 8621
 
 /**
  * A floor on real source files, now that they are counted as source files.
