@@ -408,6 +408,75 @@ describe('Our view reads as prose', () => {
   })
 })
 
+/**
+ * "Our view" is one column, and it leads with where the firm lands.
+ *
+ * It was two columns: the argument at a 72ch measure, and a rail holding
+ * "Your rating", "Your research: 3 of 3 case sections" and a gap chip. On a
+ * 1920 screen that left roughly 850px of white between the prose and the
+ * card's right edge, and what filled the rail was a progress bar on your own
+ * filing, printed next to the filing.
+ *
+ * And it opened straight into section prose. A reader who wanted to know
+ * what this organisation thinks of the name had to read three paragraphs and
+ * infer it, and where the analysts disagree they could read all three and
+ * still be wrong, because the prose is one person's.
+ */
+describe('Our view is one column, and states the position first', () => {
+  it('draws no rail beside the argument', () => {
+    oneAuthorCase()
+    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    const block = screen.getByTestId('snapshot-our-view')
+    expect(block.querySelector('aside')).toBeNull()
+    const text = block.textContent ?? ''
+    expect(text).not.toMatch(/case sections/)
+    expect(text).not.toMatch(/Not yet recorded/)
+  })
+
+  it('puts the position above the prose, not after it', () => {
+    oneAuthorCase()
+    ratings = [{ id: 'r1', rating_value: 'Buy', conviction: 'high' }] as never
+    consensus = [{ value: 'Buy', count: 1, percentage: 100 }]
+    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    const block = screen.getByTestId('snapshot-our-view')
+    const line = screen.getByTestId('snapshot-position-line')
+    const thesis = within(block).getByText(/Jeff Bezos has a sick yacht/)
+    // DOCUMENT_POSITION_FOLLOWING: the prose comes after the position.
+    expect(line.compareDocumentPosition(thesis) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy()
+    /*
+     * And nothing reorders it visually behind the DOM's back. jsdom computes
+     * no layout, so a Tailwind `order-*` utility on this block would move it
+     * below the prose on screen while every assertion above still passed.
+     * This is the only part of "the position comes first" that a render test
+     * cannot see, so it is checked on the class list directly.
+     */
+    expect(line.className).not.toMatch(/\border-(first|last|none|\d+)\b/)
+  })
+
+  it('names an unwritten "where we differ" in the prose, like its siblings', () => {
+    /*
+     * `where_different` used to be filtered out of the prose loop and drawn
+     * below it, so an ABSENT one was named nowhere and had to be a gap chip
+     * in the rail instead. One fact, two renderings, chosen by which section
+     * happened to be missing.
+     */
+    data = {
+      ...BASE,
+      caseWrittenAt: WRITTEN,
+      coreSections: ['thesis', 'where_different', 'risks_to_thesis'],
+      sections: [
+        { section: 'thesis', content: 'Jeff Bezos has a sick yacht.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
+      ],
+    }
+    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    const block = screen.getByTestId('snapshot-our-view')
+    expect(block).toHaveTextContent('Where our thesis differs.')
+    // Two unwritten sections, both named the same way.
+    expect(within(block).getAllByText('Not written.')).toHaveLength(2)
+  })
+})
+
 describe('the stale case states its rule', () => {
   it('draws a chip carrying the exact date and the threshold', () => {
     oneAuthorCase() // written 2025-11-20, far past the 120-day threshold

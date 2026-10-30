@@ -345,13 +345,19 @@ export function InvestmentSnapshot({
    * uses. Nothing on this page paraphrases an analyst.
    */
   /*
-   * `where_different` is omitted HERE because the conclusion band above owns
-   * it, verbatim and attributed. Rendering it in both places printed the same
-   * paragraph twice in one screen — and a reader cannot tell whether two
-   * identical quotes are one record or two.
+   * All three core sections, in the template's own order.
+   *
+   * `where_different` used to be filtered out and rendered below the loop in
+   * its own bordered block. That dated from when a separate conclusion band
+   * owned it; the band went, and what was left was one of the three sections
+   * drawn differently from the other two for no reason the reader could see
+   * -- and, when it was ABSENT, named nowhere, because the loop that prints
+   * "Not written." never reached it. It was instead a gap chip in the rail,
+   * so the same fact had two renderings depending on which section it was.
+   *
+   * Now it is a paragraph like its siblings, present or not.
    */
   const caseSections = (CORE_SECTIONS as readonly string[])
-    .filter(s => s !== 'where_different')
     .map(s => ({ key: s, row: core.find(c => c.section === s) }))
 
   /* `firmRatingTotal` went with the rail's rating line — the header strip
@@ -401,16 +407,18 @@ export function InvestmentSnapshot({
   )
 
   /*
-   * Each absence is one quiet chip, named ONCE, where it can be filled.
+   * ── The gap chips are gone with the rail ───────────────────────────────
    *
-   * Only gaps in the written CASE belong here. `risks_to_thesis` is excluded
-   * because it already renders inline as "Not written", and the valuation gaps
-   * (no target, no bear/bull range) are excluded because Exposure & valuation
-   * states them — a sparse name was otherwise carrying the same "no price
-   * target" message in two blocks with two calls to action.
+   * There was exactly one of them: "Where we differ not recorded". Its whole
+   * reason for existing was that `where_different` was filtered out of the
+   * prose loop, so an unwritten one was named nowhere else. It is in the
+   * loop now and prints "Not written." like its two siblings, which is one
+   * rendering of one fact instead of two renderings depending on which
+   * section happened to be missing.
+   *
+   * `GapChip` itself stays in use: Exposure & valuation still states the
+   * missing price target, which is a valuation gap and not a case gap.
    */
-  const caseGaps: string[] = []
-  if (!variantRow) caseGaps.push('Where we differ not recorded')
 
   /*
    * ── One byline, or per-section attribution ─────────────────────────────
@@ -449,6 +457,43 @@ export function InvestmentSnapshot({
       const authors = firmVsYou.bySection.get(r.section)
       return !!authors && authors.size === 1 && authors.has(currentUserId)
     })
+
+  /*
+   * ── Where the firm lands, before the argument for it ───────────────────
+   *
+   * The block opened straight into section prose. A reader who wants to know
+   * what this organisation thinks of the name had to read three paragraphs
+   * and infer it, and on a name where the analysts disagree they could read
+   * all three and still be wrong, because the prose is one person's.
+   *
+   * ── Why this is not the header strip's rating said twice ───────────────
+   *
+   * The strip states the consensus VALUE and the n behind it, and it is
+   * sticky, so an earlier pass in this lane removed the rating from this
+   * block for exactly that reason. The line below is deliberately the part
+   * the strip cannot carry:
+   *
+   *   - the CONVICTION behind the rating, which is a separate column and a
+   *     different question from the rating itself;
+   *   - whether the firm is of one mind, which is the fact that decides how
+   *     much the rating is worth;
+   *   - the reader's own position when it is not the firm's.
+   *
+   * ── What it will not do ────────────────────────────────────────────────
+   *
+   * It states conviction only when every analyst holding the dominant rating
+   * recorded the SAME one. A modal conviction across disagreeing analysts is
+   * a number nobody holds, and this surface does not invent consensus it was
+   * not given. Same rule as the rating itself: the n is always stated.
+   */
+  const dominantHolders = dominant
+    ? ratings.filter(r => r.rating_value === dominant.value)
+    : []
+  const sharedConviction = (() => {
+    const held = new Set(dominantHolders.map(r => r.conviction).filter(Boolean))
+    return held.size === 1 ? [...held][0]! : null
+  })()
+  const dissenters = dominant ? ratings.length - dominant.count : 0
 
   const metaParts: ReactNode[] = []
   if (soleAuthor) {
@@ -516,17 +561,82 @@ export function InvestmentSnapshot({
       )}
     >
       {/*
-        Two columns: the argument at a reading measure, and a narrow rail that
-        uses the space beside it.
+        ── One column ─────────────────────────────────────────────────────
 
-        The card spans the page, but prose must not: at full width a thesis ran
-        to ~160 characters a line while the right half of a tall card stayed
-        empty. The rail is not new information — it is the firm-vs-you summary
-        and the case gaps, moved out of the reading column to where the blank
-        was. Nothing in it is repeated anywhere else on the page.
+        This was two: the argument at a 72ch measure, and a narrow rail
+        holding "Your rating", "Your research: 3 of 3 case sections" and the
+        gap chips. The rail was removed on the reading that it answered
+        nobody's question. "3 of 3 case sections" is a progress bar on your
+        own filing, next to the filing; your rating is a fact about you in a
+        block about the name; and it left roughly 850px of white between the
+        prose and the card's right edge, which read as a layout fault rather
+        than as breathing room.
+
+        What was worth keeping moved rather than died. Your rating, when it
+        is not the firm's, is now part of the position line, where it is a
+        disagreement rather than a status field. The one gap chip that
+        existed -- "Where we differ not recorded" -- became a "Not written."
+        line in the prose, beside the other two, which is where an unwritten
+        section was already being named.
       */}
-      <div className="flex flex-col gap-5 xl:flex-row xl:gap-8">
-        <div className="min-w-0 flex-1">
+      <div className="max-w-[78ch]">
+
+      {/*
+        ── The position, then the argument ───────────────────────────────
+      */}
+      <div
+        data-testid="snapshot-position-line"
+        className="mb-3 border-b border-gray-200/70 pb-3 dark:border-white/[0.07]"
+      >
+        {dominant ? (
+          <>
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-[15px] font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+                {dominant.value}
+              </span>
+              {sharedConviction && (
+                <span className="text-[13px] text-gray-500 dark:text-gray-400">
+                  {sharedConviction} conviction
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 text-[12px] text-gray-500 dark:text-gray-400">
+              {/* The n is never suppressed: one analyst holding a view is not
+                  the firm's rating, and the reader discounts it themselves. */}
+              {dominant.count} of {ratings.length}{' '}
+              {ratings.length === 1 ? 'analyst' : 'analysts'}
+              {dissenters > 0 ? (
+                <>
+                  {' '}agree.{' '}
+                  <button
+                    type="button"
+                    onClick={() => onOpenSubPage('research')}
+                    className="text-amber-700 hover:underline dark:text-amber-400"
+                  >
+                    {dissenters} {dissenters === 1 ? 'does' : 'do'} not →
+                  </button>
+                </>
+              ) : ratings.length > 1 ? ' agree.' : ' has rated it.'}
+              {yourRatingDiffers && (
+                <span className="text-gray-700 dark:text-gray-300">
+                  {' '}You rate it {myRating!.rating_value}.
+                </span>
+              )}
+            </p>
+          </>
+        ) : (
+          /* No rating is a real state and the commonest one. It is said
+             plainly with the way to fix it, not drawn as a hero blank. */
+          <button
+            type="button"
+            onClick={() => onOpenSubPage('research')}
+            className="text-[13px] text-primary-600 hover:underline dark:text-primary-400"
+          >
+            Nobody has rated {symbol ?? 'this name'} yet. Record a rating →
+          </button>
+        )}
+      </div>
+
       {data.caseWrittenAt ? (
         /*
           Prose, not fields.
@@ -598,84 +708,6 @@ export function InvestmentSnapshot({
         </div>
       )}
 
-      {/* "Where we differ" renders HERE, once. The conclusion card that used to
-          own it is gone, and printing it in two places made one record look
-          like two. */}
-      {variantRow && (
-        <div className="mt-4 max-w-[72ch] border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
-          <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-            <span className="font-semibold text-gray-900 dark:text-gray-100">
-              Where our thesis differs.
-            </span>{' '}
-            {ourViewExcerpt(variantRow.content ?? '', 420)}
-            {!soleAuthor && variantRow.authorName && (
-              <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
-                {variantRow.authorName}
-              </span>
-            )}
-          </p>
-        </div>
-      )}
-        </div>
-
-        {/*
-          The rail: firm-vs-you and what the case still lacks.
-
-          The firm RATING is no longer repeated here. The header strip states
-          it a couple of hundred pixels above and never scrolls away, so this
-          was the same fact twice in one eyeful — and when the name has no
-          rating, which is the common case, it was a labelled blank taking the
-          top of the rail. What survives is the part the strip cannot say:
-          whether YOU have recorded a view, and where the firm disagrees with
-          itself.
-        */}
-        <aside className="flex shrink-0 flex-col gap-4 border-t border-gray-200/70 pt-4 dark:border-white/[0.07] xl:w-56 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
-          {yourRatingDiffers && (
-            <div>
-              <div className="text-xs text-gray-500">Your rating</div>
-              {/* Kept, because this is precisely what the strip does NOT
-                  show once the two differ: the strip states the consensus. */}
-              <div className="mt-1"><StatusChip tone="recommended">You {myRating!.rating_value}</StatusChip></div>
-            </div>
-          )}
-
-          {firmVsYou.hasContext && (
-            <div>
-              <div className="text-xs text-gray-500">Your research</div>
-              {firmVsYou.yourCount > 0 ? (
-                <div className="mt-0.5 text-sm text-gray-800 dark:text-gray-200">
-                  {firmVsYou.yourCount} of {firmVsYou.coreCount} case sections
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onOpenSubPage('research')}
-                  className="mt-0.5 text-left text-sm text-primary-600 hover:underline dark:text-primary-400"
-                >
-                  You haven't recorded your own view →
-                </button>
-              )}
-              {firmVsYou.divergentCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => onOpenSubPage('research')}
-                  className="mt-1 block text-left text-sm text-amber-700 hover:underline dark:text-amber-400"
-                >
-                  {firmVsYou.divergentCount} section{firmVsYou.divergentCount === 1 ? '' : 's'} with differing views →
-                </button>
-              )}
-            </div>
-          )}
-
-          {caseGaps.length > 0 && (
-            <div>
-              <div className="text-xs text-gray-500">Not yet recorded</div>
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {caseGaps.map(g => <GapChip key={g} label={g} onClick={() => onOpenSubPage('research')} />)}
-              </div>
-            </div>
-          )}
-        </aside>
       </div>
     </SnapBlock>
   )

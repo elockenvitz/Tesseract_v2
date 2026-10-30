@@ -320,8 +320,23 @@ describe('handoffs land where they used to', () => {
 
 describe('the Overview distinguishes Work from History', () => {
   it('sends the decision timeline to History, not to Work', () => {
-    expect(SNAP).toMatch(/onOpenTimeline=\{\(\) => onOpenSubPage\('history'\)\}/)
-    expect(SNAP).toMatch(/'history'/)
+    /*
+     * This anchored on `onOpenTimeline={() => onOpenSubPage('history')}`,
+     * the prop that drew a "See the full history →" link at the FOOT of the
+     * decision-memory panel. That link moved to the block's own header
+     * action, where every other block on the Overview keeps its action, and
+     * the prop is no longer passed: two links to History inside one card
+     * was what the block had.
+     *
+     * The subject is unchanged and is what this now anchors on: the way
+     * through from the decision block goes to History, and `decisions`
+     * (Work) is not where a timeline link may point.
+     */
+    const at = SNAP.indexOf("testId=\"snapshot-decision-history\"")
+    expect(at).toBeGreaterThan(-1)
+    const block = SNAP.slice(at, at + 1200)
+    expect(block).toMatch(/onClick=\{\(\) => onOpenSubPage\('history'\)\}/)
+    expect(block).not.toMatch(/onOpenSubPage\('decisions'\)/)
   })
 
   it('still sends the open decisions and ideas to Work', () => {

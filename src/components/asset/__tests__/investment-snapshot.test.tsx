@@ -206,15 +206,61 @@ describe('absent data says it is absent', () => {
     expect(screen.queryByText(/Live quote/)).toBeNull()
   })
 
-  it('no longer repeats the rating the persistent header strip now owns', () => {
-    // UX1b de-dup: rating (with its analyst count) and target moved to the
-    // header strip. The Overview must not restate them. The "n behind a rating"
-    // guarantee now lives in asset-context-strip.test.tsx.
-    ratings = [{ id: 'r-1' }]
-    consensus = [{ value: 'UW', count: 1, percentage: 100 }]
+  it('states the position with what the strip cannot carry, not a copy of it', () => {
+    /*
+     * ── A reversal, recorded ───────────────────────────────────────────
+     *
+     * This case asserted the OPPOSITE: that the Overview never restates the
+     * rating, because the header strip owns it and is sticky. That was a
+     * de-dup made in this same lane, and it was overruled on the product
+     * call that "Our view" must open by saying where the firm lands rather
+     * than dropping the reader into one analyst's prose.
+     *
+     * The de-dup argument is answered rather than abandoned. What this line
+     * adds is what the strip has no room for: the CONVICTION behind the
+     * rating, and whether the firm is of one mind, which is the fact that
+     * decides what the rating is worth. The n is still never suppressed.
+     *
+     * The target is still not restated here, and "Our rating" as a labelled
+     * field is still gone. Those halves of the original subject stand.
+     */
+    ratings = [
+      { id: 'r-1', rating_value: 'UW', conviction: 'high' },
+      { id: 'r-2', rating_value: 'Buy', conviction: 'low' },
+    ] as never
+    consensus = [{ value: 'UW', count: 1, percentage: 50 }]
     renderSnapshot()
-    expect(screen.queryByText(/of 1 analyst/)).not.toBeInTheDocument()
+    const line = screen.getByTestId('snapshot-position-line')
+    expect(line).toHaveTextContent('UW')
+    expect(line).toHaveTextContent('high conviction')
+    expect(line).toHaveTextContent('1 of 2 analysts')
+    expect(line).toHaveTextContent(/1 does not/)
     expect(screen.queryByText('Our rating')).not.toBeInTheDocument()
+  })
+
+  it('claims no conviction when the analysts holding the rating disagree on it', () => {
+    /*
+     * A modal conviction across analysts who recorded different ones is a
+     * number nobody holds. The surface states it only when it is unanimous
+     * among the holders of the dominant rating.
+     */
+    ratings = [
+      { id: 'r-1', rating_value: 'Buy', conviction: 'high' },
+      { id: 'r-2', rating_value: 'Buy', conviction: 'low' },
+    ] as never
+    consensus = [{ value: 'Buy', count: 2, percentage: 100 }]
+    renderSnapshot()
+    const line = screen.getByTestId('snapshot-position-line')
+    expect(line).toHaveTextContent('Buy')
+    expect(line.textContent ?? '').not.toMatch(/conviction/)
+  })
+
+  it('says plainly when nobody has rated it, with the way to fix that', () => {
+    ratings = []
+    consensus = []
+    renderSnapshot()
+    expect(screen.getByTestId('snapshot-position-line'))
+      .toHaveTextContent(/Nobody has rated .* yet/)
   })
 })
 
@@ -686,9 +732,16 @@ describe('personal vs firm distinction (Phase 3)', () => {
     consensus = [{ value: 'Buy', count: 2, percentage: 66 }]
     myRating = { rating_value: 'Hold' }
     renderSnapshot({ contributions: [], currentUserId: 'me' })
-    expect(screen.getByText(/You Hold/)).toBeInTheDocument()
-    expect(screen.queryByText(/Firm Buy/)).toBeNull()
-    expect(screen.queryByText(/2 of 3$/)).toBeNull()
+    /*
+     * This was a "You Hold" chip in the right rail. The rail is gone; the
+     * fact moved into the position line, where a divergence reads as a
+     * disagreement with the firm rather than as a status field about you.
+     * The subject is unchanged: the two are never merged into one figure.
+     */
+    const line = screen.getByTestId('snapshot-position-line')
+    expect(line).toHaveTextContent('You rate it Hold')
+    expect(line).toHaveTextContent('Buy')
+    expect(line.textContent ?? '').not.toMatch(/Firm Buy/)
   })
 
   it('says nothing at all about rating when the reader agrees with the firm', () => {
@@ -717,8 +770,18 @@ describe('personal vs firm distinction (Phase 3)', () => {
         contrib({ section: 'risks_to_thesis', created_by: 'me' }),
       ],
     })
-    expect(screen.getByText(/2 of 3 case sections/)).toBeInTheDocument()
-    expect(screen.getByText(/1 section with differing views/)).toBeInTheDocument()
+    /*
+     * Two of the four assertions here were the right rail: "2 of 3 case
+     * sections" and "1 section with differing views". The rail is gone, on
+     * the call that a progress bar over your own filing, printed next to
+     * the filing, answers nobody's question.
+     *
+     * The two that survive are the ones ON the prose, and they carry the
+     * whole subject of this case: the reader can see which section is
+     * theirs, and which section more than one analyst has written. The
+     * divergence is now stated where it happened rather than counted in a
+     * sidebar.
+     */
     expect(screen.getByText('You')).toBeInTheDocument()
     expect(screen.getByText(/2 views/)).toBeInTheDocument()
   })
@@ -734,13 +797,32 @@ describe('personal vs firm distinction (Phase 3)', () => {
       currentUserId: 'me',
       contributions: [contrib({ section: 'thesis', created_by: 'me' })],
     })
-    expect(screen.getByText(/1 of 3 case sections/)).toBeInTheDocument()
+    // The rail's "1 of 3 case sections" went with the rail. The subject of
+    // this case was never the count: it is that one author is not a
+    // consensus, and that nothing on the page claims a divergence that does
+    // not exist. Both negatives stand unchanged.
     expect(screen.queryByText(/differing views/)).toBeNull()
     expect(screen.queryByText(/2 views/)).toBeNull()
+    expect(screen.getByTestId('snapshot-our-view')).toHaveTextContent('We think LLY wins')
   })
 
-  it('invites a view when the viewer has written nothing, without faking one', () => {
+  it('invites a view when nothing is written, without faking one', () => {
+    /*
+     * This asserted the rail's "You haven't recorded your own view →".
+     * That prompt went with the rail, and it is a real loss on one narrow
+     * case: a name where the firm HAS a written case and the reader has
+     * not contributed to it now gets no personal nudge. Flagged rather than
+     * smuggled back in, because a one-line rail for one prompt is the thing
+     * that was just removed.
+     *
+     * What the case was protecting is intact and is what it asserts now:
+     * an empty case states its own emptiness and offers the way to fill it,
+     * and the page never fabricates a view on the reader's behalf.
+     */
     renderSnapshot({ contributions: [], currentUserId: 'me' })
-    expect(screen.getByText(/You haven't recorded your own view/)).toBeInTheDocument()
+    const block = screen.getByTestId('snapshot-our-view')
+    expect(block).toHaveTextContent(/No core investment case has been written/)
+    expect(within(block).getByRole('button', { name: /Write the investment case/ }))
+      .toBeInTheDocument()
   })
 })
