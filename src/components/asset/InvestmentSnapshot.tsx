@@ -905,22 +905,37 @@ export function InvestmentSnapshot({
    * The summary counts the states and flags executions that are not evidenced
    * by an observed fill.
    */
-  /* The panel already carries its own "See the full history →"; the extra
-     "Open in full · Decisions" footer was a second link to the same place. */
+  /* One way through to the full record, and it is the block's own header
+     control — where every other block on this page keeps its action —
+     rather than a link trailing the panel's last caveat. */
   const decisionHistory = (
     <SnapBlock
       key="memory"
       testId="snapshot-decision-history"
       title="Decision history"
-      meta="recommended → decided → executed → reviewed"
+      /* The meta used to read "recommended → decided → executed → reviewed":
+         a legend for the vocabulary, printed on every asset whether or not
+         any of those states had been reached. It is a key to a chip row that
+         no longer renders here, and it never said anything about THIS name. */
+      action={(
+        <button
+          type="button"
+          onClick={() => onOpenSubPage('history')}
+          className="text-sm text-primary-600 hover:underline dark:text-primary-400"
+        >
+          Full history →
+        </button>
+      )}
     >
       <DecisionMemorySummary
         assetId={asset.id}
         portfolioId={portfolioId}
         symbol={symbol}
         heldBookIds={data.positions.map(p => p.portfolioId)}
-        /* The timeline is History's content, not Work's. */
-        onOpenTimeline={() => onOpenSubPage('history')}
+        /* The record itself, not only counts about it. */
+        showRecent
+        /* No `onOpenTimeline`: the way through is the header action above,
+           and two links to History inside one card is what this block had. */
       />
     </SnapBlock>
   )

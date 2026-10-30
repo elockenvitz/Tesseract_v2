@@ -16,7 +16,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 // No userEvent here any more: the only interaction this suite ever drove was
 // the book/org selector, and there is no longer a control to drive.
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import type { AssetWorkspaceData } from '../../../hooks/useAssetWorkspace'
 
 const BASE: AssetWorkspaceData = {
@@ -250,8 +250,124 @@ describe('Decision Memory invents nothing', () => {
         disposition: 'positive' },
     ]
     renderSnapshot()
+    /*
+     * This used to assert the caveat PARAGRAPH. The subject — the Snapshot
+     * never lets an unobserved execution read as an observed one — is
+     * unchanged; WHERE the qualification is stated moved. The Overview now
+     * draws the recent events as rows, and an execution carries its proof
+     * grade in amber on its own row, which is the qualification sitting on
+     * the claim rather than in a sentence underneath it. The paragraph
+     * survives only for unobserved executions that are NOT on screen, so on
+     * a one-event fixture it is correctly absent.
+     */
+    const block = screen.getByTestId('snapshot-decision-history')
+    expect(block).toHaveTextContent('Assumed')
+    expect(block.textContent ?? '').not.toMatch(/all observed/)
+  })
+
+  it('still states the caveat for an unobserved execution the rows do not reach', () => {
+    // Four events, three rows: the oldest unobserved fill is off screen, and
+    // the paragraph is the only thing that can speak for it.
+    const exec = (id: string, ts: string, proof: string) => ({
+      id, type: 'trade_executed', phase: 'execution', timestamp: ts,
+      title: 'Add', subtitle: null, actor: null, portfolio: null, sizing: null,
+      rationale: null, sourceRef: { type: 'trade_event', id },
+      executionProof: proof, provenance: { table: 'e', rowId: id },
+      disposition: 'positive',
+    })
+    timelineEvents = [
+      exec('x4', '2026-06-05', 'verified'),
+      exec('x3', '2026-06-04', 'verified'),
+      exec('x2', '2026-06-03', 'verified'),
+      exec('x1', '2026-06-02', 'assumed'),
+    ] as never
+    renderSnapshot()
     expect(screen.getByTestId('decision-memory-unobserved-caveat').textContent)
       .toMatch(/not\s+evidenced by an observed fill/)
+  })
+})
+
+/**
+ * "Decision history" shows the history.
+ *
+ * Measured on AMZN before this: the block ran a headline, a four-chip count
+ * row, an unobserved-fill caveat, an access caveat, a "Latest:" line and a
+ * link — six lines ABOUT a record and one line OF it, in a card whose title
+ * promises the record.
+ *
+ * The headline stays and still leads, because the argument in
+ * `DecisionMemorySummary`'s header holds: four executions in a row say
+ * nothing about what is waiting. What changed is that the counts stop being
+ * the whole content.
+ */
+describe('Decision history draws the record', () => {
+  beforeEach(() => { timelineEvents = []; timelineError = false })
+
+  const ev = (id: string, ts: string, title: string, extra: Record<string, unknown> = {}) => ({
+    id, type: 'trade_executed', phase: 'execution', timestamp: ts,
+    title, subtitle: null, actor: null, portfolio: null, sizing: null,
+    rationale: null, sourceRef: { type: 'trade_event', id },
+    executionProof: 'verified', provenance: { table: 'e', rowId: id },
+    disposition: 'positive', ...extra,
+  })
+
+  it('lists the recent events, newest first, with their dates', () => {
+    timelineEvents = [
+      ev('e3', '2026-06-05', 'Trimmed to 2%'),
+      ev('e2', '2026-05-01', 'Added 1.5%'),
+      ev('e1', '2026-03-02', 'Opened position'),
+    ] as never
+    renderSnapshot()
+    const rows = within(screen.getByTestId('decision-memory-recent')).getAllByRole('listitem')
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toHaveTextContent('Trimmed to 2%')
+    expect(rows[2]).toHaveTextContent('Opened position')
+    // A dated record, not a list of titles.
+    expect(rows[0].textContent ?? '').toMatch(/2026/)
+  })
+
+  it('stops at three and leaves the rest to the full history', () => {
+    timelineEvents = [
+      ev('e4', '2026-06-06', 'Fourth'), ev('e3', '2026-06-05', 'Third'),
+      ev('e2', '2026-06-04', 'Second'), ev('e1', '2026-06-03', 'First'),
+    ] as never
+    renderSnapshot()
+    expect(within(screen.getByTestId('decision-memory-recent')).getAllByRole('listitem'))
+      .toHaveLength(3)
+    expect(screen.getByTestId('snapshot-decision-history')).not.toHaveTextContent('First')
+  })
+
+  it('drops the count chips, which the rows now carry as dated facts', () => {
+    timelineEvents = [ev('e1', '2026-06-05', 'Opened position')] as never
+    renderSnapshot()
+    expect(screen.queryByTestId('memory-chip-executed')).toBeNull()
+    // The state of play survives — it is the one count that is not a tally.
+    expect(screen.getByTestId('snapshot-decision-history')).toHaveTextContent(/executed/i)
+  })
+
+  it('offers one way through to the full record, not two', () => {
+    timelineEvents = [ev('e1', '2026-06-05', 'Opened position')] as never
+    renderSnapshot()
+    const block = screen.getByTestId('snapshot-decision-history')
+    const through = within(block).getAllByRole('button', { name: /history/i })
+    expect(through).toHaveLength(1)
+    expect(screen.queryByTestId('decision-memory-open-timeline')).toBeNull()
+  })
+
+  it('does not label the furthest-by-phase event as the latest one', () => {
+    /*
+     * `furthest` is by PHASE and the line calling it "Latest:" was naming a
+     * different fact. Under the rows it is suppressed outright, and the rows
+     * above ARE in date order, so nothing on this block claims to be the
+     * latest while being chosen some other way.
+     */
+    timelineEvents = [
+      ev('e2', '2026-06-05', 'Recommendation filed', { type: 'proposal_submitted', phase: 'exploratory', executionProof: null }),
+      ev('e1', '2026-03-02', 'Opened position'),
+    ] as never
+    renderSnapshot()
+    expect(screen.getByTestId('snapshot-decision-history').textContent ?? '')
+      .not.toMatch(/Latest:/)
   })
 })
 

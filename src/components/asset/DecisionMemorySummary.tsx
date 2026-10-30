@@ -110,12 +110,30 @@ interface Props {
   heldBookIds?: string[]
   /** Rendered denser on a phone. */
   compact?: boolean
+  /**
+   * Draw the most recent events as rows, under the headline.
+   *
+   * Opt-in, because the two phone callers differ: `MobileDecisionMemory`
+   * already renders the full event list directly beneath this component, and
+   * turning rows on there would print the same three events twice.
+   *
+   * It is NOT a return to "a timeline, truncated". The argument at the top of
+   * this file still holds — four executions in a row say nothing about what
+   * is waiting — which is why the headline above them stays and leads. The
+   * rows are what a section called "Decision history" owes the reader after
+   * the state of play: what actually happened, and when.
+   */
+  showRecent?: boolean
   onOpenTimeline?: () => void
   className?: string
 }
 
+/** How many events a `showRecent` caller draws before deferring to the link. */
+const RECENT_ROWS = 3
+
 export function DecisionMemorySummary({
-  assetId, portfolioId = null, symbol, heldBookIds, compact, onOpenTimeline, className,
+  assetId, portfolioId = null, symbol, heldBookIds, compact, showRecent,
+  onOpenTimeline, className,
 }: Props) {
   const { allEvents, isLoading, isError } = useAssetDecisionTimeline({ assetId, portfolioId })
   const s = summariseDecisionMemory(allEvents)
@@ -182,32 +200,96 @@ export function DecisionMemorySummary({
         </p>
       )}
 
-      <div className="flex flex-wrap gap-1">
-        {chips.map(c => {
-          const Icon = c.icon
-          return (
-            <span
-              key={c.key}
-              data-testid={`memory-chip-${c.key}`}
-              className={clsx(
-                'inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-semibold',
-                compact ? 'text-[11px]' : 'text-[10px]',
-                c.tone,
-              )}
-            >
-              <Icon className={compact ? 'h-3.5 w-3.5' : 'h-3 w-3'} />
-              {c.n} {c.label}
-            </span>
-          )
-        })}
-      </div>
+      {/*
+        * The chips are the counts, and they are what the ROWS replace.
+        *
+        * Beside three real events they were a second, worse account of the
+        * same thing: "1 Recommended · 1 Decided · 2 Executed · 3 Reviewed" is
+        * four numbers in a vocabulary the reader has to be taught, and on a
+        * name with more reviews than executions it reads as an arithmetic
+        * mistake. The headline keeps the one count that is a state of play;
+        * the rows carry the rest as facts with dates on them.
+        */}
+      {!showRecent && (
+        <div className="flex flex-wrap gap-1">
+          {chips.map(c => {
+            const Icon = c.icon
+            return (
+              <span
+                key={c.key}
+                data-testid={`memory-chip-${c.key}`}
+                className={clsx(
+                  'inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-semibold',
+                  compact ? 'text-[11px]' : 'text-[10px]',
+                  c.tone,
+                )}
+              >
+                <Icon className={compact ? 'h-3.5 w-3.5' : 'h-3 w-3'} />
+                {c.n} {c.label}
+              </span>
+            )
+          })}
+        </div>
+      )}
+
+      {/*
+        * What actually happened, newest first.
+        *
+        * This section is called "Decision history" and, before this, drew no
+        * history: a headline, a chip row, two caveats and one event in 11px
+        * grey at the bottom — six lines ABOUT a record, and one line OF it.
+        *
+        * An execution carries its proof grade on the row, in amber when the
+        * fill was never observed, so the qualification sits on the claim it
+        * qualifies instead of being a sentence underneath. The separate
+        * caveat below survives for the executions that are NOT on screen.
+        */}
+      {showRecent && (
+        <ul className="divide-y divide-gray-100 dark:divide-white/[0.06]" data-testid="decision-memory-recent">
+          {allEvents.slice(0, RECENT_ROWS).map(e => {
+            const unseen = e.type === 'trade_executed' && e.executionProof
+              && !OBSERVED_PROOFS.includes(e.executionProof)
+            return (
+              <li key={e.id} className="flex items-baseline gap-2 py-1.5">
+                <span className="min-w-0 flex-1 text-[12px] text-gray-800 dark:text-gray-200">
+                  {e.title}
+                  {e.executionProof && (
+                    <span className={clsx(
+                      'ml-1.5 text-[10px] font-semibold uppercase tracking-wide',
+                      unseen ? 'text-amber-700 dark:text-amber-400' : 'text-gray-400 dark:text-gray-500',
+                    )}>
+                      {EXECUTION_PROOF_LABELS[e.executionProof]}
+                    </span>
+                  )}
+                  {/* Which book, when the reader can see more than one. */}
+                  {!portfolioId && e.portfolio?.name && (
+                    <span className="ml-1.5 text-[11px] text-gray-400 dark:text-gray-500">
+                      {e.portfolio.name}
+                    </span>
+                  )}
+                </span>
+                <span className="shrink-0 text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+                  {parseTimelineDate(e.timestamp).toLocaleDateString()}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
 
       {/*
         * The caveat, where it belongs: beside the number it qualifies. An
         * execution count that silently mixes observed fills with assumed ones
         * is the specific overstatement this whole increment exists to avoid.
         */}
-      {unobserved > 0 && (
+      {/* With rows on screen, an unobserved execution already carries its
+          grade in amber on its own row. The paragraph is then a second copy
+          of the same warning, so it only survives for executions that did
+          NOT make the cut. */}
+      {unobserved > 0 && !(showRecent && allEvents.slice(0, RECENT_ROWS).filter(
+        e => e.type === 'trade_executed' && e.executionProof
+          && !OBSERVED_PROOFS.includes(e.executionProof),
+      ).length === unobserved) && (
         <p
           className="flex items-start gap-1 text-[11px] text-amber-800 dark:text-amber-300"
           data-testid="decision-memory-unobserved-caveat"
@@ -267,9 +349,21 @@ export function DecisionMemorySummary({
         )
       })()}
 
-      {s.furthest && (
+      {/*
+        * `furthest` is by PHASE, not by date — that is deliberate and
+        * documented in `summariseDecisionMemory`. The label said "Latest:",
+        * which is a different fact, and on a name where a recommendation was
+        * filed after a trade executed the two are different events. A label
+        * that names the wrong fact is worse than no label, so it now says
+        * what the value is.
+        *
+        * Suppressed entirely under `showRecent`: the rows above are the
+        * dated record, and this line beside them invited exactly the
+        * latest-versus-furthest confusion it was already causing alone.
+        */}
+      {s.furthest && !showRecent && (
         <p className="text-[11px] text-gray-500 dark:text-gray-400">
-          Latest: {s.furthest.title}
+          Furthest reached: {s.furthest.title}
           {' · '}
           {parseTimelineDate(s.furthest.timestamp).toLocaleDateString()}
         </p>
