@@ -17,6 +17,7 @@ import {
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
 import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
 import { useAuth } from '../../hooks/useAuth'
+import { initialResearchView } from '../../lib/desktop-asset/research-view'
 import {
   fetchOneAssetResearch,
   fetchThesisReferences,
@@ -497,32 +498,36 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * default full-length research document for everyone. An analyst opening a
    * name they cover landed on a combined pane rather than their own work.
    *
-   * The right default is "my own detailed view, if I have one" — but
-   * `researchAnalysts` is derived from `coverage` and `thesisContributions`,
-   * both async, so it is EMPTY on first render. Defaulting at initialisation
-   * is therefore impossible; the choice has to be made once that data lands.
+   * The right default is "my own view". For a SIGNED-IN reader that is known
+   * on the first render and `initialResearchView` settles it there and then:
+   * `ProtectedRoute` renders this tree only once `user` is non-null. The
+   * earlier version deferred to the resolver below regardless, so every asset
+   * open painted the Organization case and swapped it for My Research ~70ms
+   * later — the page visibly flipping between two different cases.
    *
-   * UNRESOLVED is that "not yet decided" state. It renders as Our View (the
-   * safe, attributable fallback) and is replaced exactly once, by the effect
-   * below, and never over a choice the reader or a navigation already made.
+   * UNRESOLVED survives for the case that genuinely needs it: no reader at
+   * all, where the standin has to come from `coverage` / `thesisContributions`
+   * and is therefore async. It renders as Our View (the safe, attributable
+   * fallback) and is replaced exactly once, by the effect below, and never
+   * over a choice the reader or a navigation already made.
+   *
+   * A persisted perspective is deliberately NOT restored: a stale "Firm"
+   * preference must never strand the reader on a read-only view. Within a
+   * mounted session the choice persists in React state (sub-tab switches do
+   * not remount), so a deliberate Organization switch is kept while
+   * navigating.
+   *
+   * The seed is taken once, at mount — hence the ref. The rules themselves
+   * live in src/lib/desktop-asset/research-view.ts, where they are testable
+   * without mounting five thousand lines of asset page.
    */
-  const [researchViewFilter, setResearchViewFilter] = useState<'aggregated' | string>(() => {
-    /*
-     * UX2 Phase 1 — My Research is the default on a fresh Asset Page visit,
-     * even when no personal case exists. A persisted perspective is deliberately
-     * NOT restored: a stale "Firm" preference must never strand the reader on a
-     * read-only view. Only an arriving navigation intent (asset.data) wins here;
-     * otherwise the resolver below settles it on the reader's own view. Within a
-     * mounted session the choice persists in React state (sub-tab switches do
-     * not remount), so a deliberate Organization switch is kept while navigating.
-     *
-     * The sentinel starts at 'aggregated' because fifteen downstream consumers
-     * treat any non-'aggregated' value as a user id; the "not yet decided" fact
-     * lives in `researchDefaultDecided` instead.
-     */
-    if (asset.data?.researchViewFilter) return asset.data.researchViewFilter
-    return 'aggregated'
-  })
+  const researchSeed = useRef(initialResearchView({
+    arriving: asset.data?.researchViewFilter ?? null,
+    userId: user?.id ?? null,
+  })).current
+
+  const [researchViewFilter, setResearchViewFilter] =
+    useState<'aggregated' | string>(researchSeed.filter)
 
   /**
    * Whether the research view was CHOSEN, as opposed to merely defaulted.
@@ -532,15 +537,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * conflating them is what made the firm summary everyone's default
    * full-length research document.
    *
-   * Seeded true when a saved or arriving choice exists, so the resolver below
-   * leaves those alone.
+   * Seeded true whenever the seed above is a real answer, so the resolver
+   * below leaves it alone.
    */
-  const [researchDefaultDecided, setResearchDefaultDecided] = useState<boolean>(() => {
-    // UX2 Phase 1: only an arriving navigation intent pre-decides the view; a
-    // persisted perspective no longer seeds this, so the resolver runs on a
-    // fresh visit and lands on My Research.
-    return !!asset.data?.researchViewFilter
-  })
+  const [researchDefaultDecided, setResearchDefaultDecided] =
+    useState<boolean>(researchSeed.decided)
 
   /**
    * Whether the current view was CHOSEN, rather than resolved by default.
@@ -549,12 +550,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * another analyst's view must not be saved as if the reader picked it --
    * that would keep sending them there even after they write their own
    * research, which is the exact outcome the new default exists to produce.
+   *
+   * Note this is NOT `researchSeed.decided`: landing a signed-in reader on
+   * their own view is decided but not chosen.
    */
-  const [researchViewChosen, setResearchViewChosen] = useState<boolean>(() => {
-    // UX2 Phase 1: a persisted perspective is not treated as a fresh-visit
-    // choice; only an arriving intent is.
-    return !!asset.data?.researchViewFilter
-  })
+  const [researchViewChosen, setResearchViewChosen] =
+    useState<boolean>(researchSeed.chosen)
 
   /**
    * Any explicit pick — by the reader or by a navigation — settles it. Guarded
@@ -1880,6 +1881,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     // own view then shows the "Add your view" prompts). Edit is therefore always
     // reachable on arrival. Only with no user at all do we fall back to a
     // covering analyst's view, and finally to the firm (aggregated) summary.
+    //
+    // In the app this branch no longer fires: the initialiser decides for a
+    // signed-in reader synchronously, so `researchDefaultDecided` is already
+    // true and we return above. It remains for a reader who arrives LATE —
+    // a harness that mounts this tree without `ProtectedRoute`, where `user`
+    // starts null and fills in — so the fallback below cannot strand them on
+    // somebody else's view.
     if (user?.id) {
       setResearchViewFilter(user.id)
       return
