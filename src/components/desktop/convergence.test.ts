@@ -2405,3 +2405,42 @@ describe('the book’s P&L states itself or states why not', () => {
     }
   })
 })
+
+/*
+ * ── A control that answers a click with nothing ──────────────────────────
+ *
+ * Four lens panes each carried an identical `MoreHorizontal` button with no
+ * onClick, no menu state and no popover. It hovered, it focused, assistive
+ * technology announced it as "More actions", and pressing it did nothing.
+ * ResearchDetail had the same one, had it removed, and recorded why; the
+ * other four kept theirs for six passes because the guard that caught it was
+ * written against Research by name rather than against the family.
+ *
+ * So this iterates. Adding a fifth pane with a dead overflow icon fails here
+ * without anybody remembering to extend a list -- which is the lesson the
+ * DesktopColumns case at the top of this file already paid for once.
+ */
+describe('no lens pane offers an overflow control with nothing behind it', () => {
+  /* DETAILS plus the asset workspace, which is the same header grammar in a
+     different lens and carried the same button. */
+  const PANES = [...DETAILS, 'components/asset-v2/AssetWorkspace.tsx']
+
+  it.each(PANES)('%s draws no dead More-actions button', file => {
+    const body = src(file)
+    /*
+     * Matched on the ATTRIBUTE, not on the phrase. Every one of these files
+     * now explains the removal in a comment that quotes "More actions", so a
+     * bare `not.toContain` would fail on the explanation -- the recurring
+     * shape of a guard its own commentary can break.
+     */
+    expect(body).not.toMatch(/aria-label="More actions"/)
+    expect(body).not.toMatch(/<MoreHorizontal\b/)
+  })
+
+  /* Non-vacuity: a pane with no controls at all would satisfy the above.
+     Each one must still carry wired controls. */
+  it.each(PANES)('%s still carries controls that do something', file => {
+    const body = src(file)
+    expect(body.match(/onClick=\{/g)?.length ?? 0).toBeGreaterThan(2)
+  })
+})

@@ -25,7 +25,7 @@
 
 import { DesktopModule, DesktopSection, DesktopColumns, DeepLinks, DeepLink } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
-import { ArrowUpRight, MoreHorizontal } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openAsset } from '../../lib/desktop-asset'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
@@ -170,10 +170,19 @@ export function DecisionDetailPane({
               </button>
             </>
           )}
-          <button type="button" aria-label="More actions"
-                  className="ml-auto grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]">
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+          {/*
+            No overflow control, for the reason ResearchDetail records at
+            length: the `MoreHorizontal` button that sat here had no onClick,
+            no menu state and no popover. It hovered, it focused, assistive
+            tech announced it as "More actions", and clicking it did nothing.
+            It was never wired, so there is no regression in removing it.
+
+            Removed rather than filled because nothing was waiting to go in
+            it. Every action this header offers already has a labelled control
+            beside it, and the deep links sit at the foot of the pane. An
+            overflow menu is for actions that exist and do not fit; there were
+            none of either.
+          */}
         </div>
       </div>
 

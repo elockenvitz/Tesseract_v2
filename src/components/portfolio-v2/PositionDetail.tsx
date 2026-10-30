@@ -28,7 +28,7 @@ import {
 } from '../desktop/DesktopModule'
 import { openAsset } from '../../lib/desktop-asset'
 import { clsx } from 'clsx'
-import { ArrowUpRight, MoreHorizontal } from 'lucide-react'
+import { ArrowUpRight } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openResearch, researchTabFor, type ResearchFocus } from '../../lib/desktop-research'
 import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
@@ -204,10 +204,13 @@ export function PositionDetailPane({
               </button>
             </>
           )}
-          <button type="button" aria-label="More actions"
-                  className="ml-auto grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]">
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+          {/*
+            No overflow control. Same dead button as the other lens panes had:
+            no onClick, no menu state, no popover, announced to assistive tech
+            as "More actions" and doing nothing when pressed. ResearchDetail
+            carries the full reasoning; it is removed rather than filled
+            because there was no action waiting to go in it.
+          */}
         </div>
       </div>
 
