@@ -573,7 +573,22 @@ export function TodayTile({
             asks to go there.
           */
           <div
-            className="flex min-w-0 flex-col justify-center"
+            /*
+              Anchored to the foot of the tile, not floated in the middle.
+
+              `justify-center` centred the chart and its portal row inside
+              whatever height the tile happened to take, which is set by the
+              taller column, not by this one. Measured at 1920: 85-160px of
+              dead space above the chart and 13-41px below it, with "SEE THE
+              FULL CHART" stranded short of the edge on every tile and at a
+              different distance on each.
+
+              `justify-end` puts the portal on the bottom edge and collects
+              the slack in one place, above the chart, where the claim and the
+              figures can use it — instead of splitting it into two gaps that
+              serve nothing.
+            */
+            className="mt-auto flex min-w-0 flex-col justify-end"
             data-no-portal
             onPointerEnter={() => setEngageIntent(visualIntent)}
           >

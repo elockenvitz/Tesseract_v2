@@ -43,7 +43,7 @@ import { ArrowRight } from 'lucide-react'
 import { useWidth } from '../../lib/charts/use-width'
 import { indexAtClientX } from '../../lib/charts/scrub'
 import { moveTone } from '../../lib/charts/tone'
-import { VISUAL_SLOT, type TodayVisual as Visual } from '../../lib/today'
+import { VISUAL_SLOT, visualPlotHeight, type TodayVisual as Visual } from '../../lib/today'
 
 export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boolean }) {
   // No visual is better than an apology. The user should never read
@@ -345,7 +345,18 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
    * the right order of billing for a surface whose whole claim is what the
    * price has done since you last looked.
    */
-  const h = compact ? 118 : 166
+  /*
+   * Derived from the slot, including the note.
+   *
+   * This was `compact ? 118 : 166`, worked out by hand in the comment above
+   * against a slot that has a note row the arithmetic never subtracted. On a
+   * window that does not reach its anchor the note renders below this plot
+   * inside the same fixed box, the plot does not give the room back, and the
+   * read-out line — the percentage this chart exists to state — was pushed
+   * onto the words. `visualPlotHeight` owns the subtraction now, so the
+   * drawing code cannot hold a height the slot does not have.
+   */
+  const h = visualPlotHeight({ compact, hasNote: !!v.note })
 
   /*
    * ── Why this plot looked cheap, and the one line that caused it ─────────

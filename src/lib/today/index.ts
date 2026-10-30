@@ -12,7 +12,7 @@ export type {
   TodayVisual,
   TodayItem,
 } from './types'
-export { TIER_NAMES, VISUAL_SLOT } from './types'
+export { TIER_NAMES, VISUAL_SLOT, VISUAL_CHROME, visualPlotHeight } from './types'
 
 export {
   tierFor,

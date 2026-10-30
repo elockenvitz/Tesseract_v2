@@ -157,3 +157,51 @@ export interface TodayItem {
  * placeholder read the same number instead of two that can drift apart.
  */
 export const VISUAL_SLOT = { compact: 172, featured: 224 } as const
+
+/**
+ * The fixed rows inside the visual slot, above and below the plot.
+ *
+ * Measured from the rendered panel, not guessed: `pt-2`/`pt-3` of padding, a
+ * caption row, the plot's own read-out line, and — where the window is not
+ * anchored — a note explaining why.
+ */
+export const VISUAL_CHROME = {
+  padding: { compact: 8, featured: 12 },
+  caption: 20,
+  readout: 24,
+  /** `mt-1.5` (6) + one line of `text-[10px] leading-snug` (14). */
+  note: 20,
+} as const
+
+/**
+ * How tall the plot may be drawn inside the slot.
+ *
+ * ── Why this is a function and not two constants ─────────────────────────
+ *
+ * It was `compact ? 118 : 166`, derived once by hand in a comment that read:
+ *
+ *     compact   172 - 8 padding - 20 caption - 24 read-out = 120
+ *     featured  224 - 12        - 20         - 24          = 168
+ *
+ * The arithmetic is right and the note is missing from it. A window that does
+ * not reach its anchor renders one — "History does not reach the date it was
+ * recorded…" — as a sibling BELOW the plot, inside the same fixed slot. The
+ * plot does not shrink to make room, so its read-out line was pushed 23px
+ * past the box it was given and painted directly on top of that note.
+ *
+ * Measured on the live feed at 1920 wide: 5 of 13 tiles, the overlap 50px
+ * across and the full 14px height of the note — i.e. the percentage change
+ * sat entirely on the words. Exactly the tiles carrying a note, which is what
+ * identifies the cause rather than merely correlating with it.
+ *
+ * Deriving it here means the drawing code cannot hold a number the slot does
+ * not actually have.
+ */
+export function visualPlotHeight(opts: { compact?: boolean; hasNote?: boolean }): number {
+  const key = opts.compact ? 'compact' : 'featured'
+  return VISUAL_SLOT[key]
+    - VISUAL_CHROME.padding[key]
+    - VISUAL_CHROME.caption
+    - VISUAL_CHROME.readout
+    - (opts.hasNote ? VISUAL_CHROME.note : 0)
+}
