@@ -774,9 +774,16 @@ describe('a Dashboard action stays in the Dashboard', () => {
     const deck = src('components/dashboard/WorkDeck.tsx')
     expect(deck.indexOf('data-testid="work-rail"'))
       .toBeLessThan(deck.indexOf('data-testid="work-surface"'))
-    // Core to the interaction, not decoration: it narrows rather than hides.
-    expect(deck).toContain('lg:block')
-    expect(deck).not.toContain('2xl:block')
+    /*
+     * Core to the interaction, not decoration: it narrows rather than hides.
+     *
+     * Was `toContain('lg:block')` — the display utility, not the breakpoint,
+     * so it broke when the rail became a flex column to pin its back
+     * control. The breakpoint is the subject; how the column is laid out is
+     * not.
+     */
+    expect(deck).toMatch(/\blg:(block|flex|grid)\b/)
+    expect(deck).not.toMatch(/\b2xl:(block|flex|grid)\b/)
   })
 
   it('never shows the expanded card as a peer, and lets the last one back', () => {

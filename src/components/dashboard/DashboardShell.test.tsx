@@ -574,11 +574,19 @@ describe('the rail is a deck, not a sidebar', () => {
   })
 
   it('keeps its column at laptop width', () => {
-    // The rail is core to the interaction, not decoration: hiding it below
-    // 2xl would remove the deck on the viewport most readers actually use.
+    /*
+     * The rail is core to the interaction, not decoration: hiding it below
+     * 2xl would remove the deck on the viewport most readers actually use.
+     *
+     * Was `toContain('lg:block')`. That named the display utility rather
+     * than the breakpoint, so it failed the day the rail became a flex
+     * column to pin its back control — a change that does not touch what
+     * this case is about. Rewritten to assert the breakpoint the rail
+     * appears at, whatever it is laid out as.
+     */
     const rail = readFileSync(join(process.cwd(), 'src/components/dashboard/WorkDeck.tsx'), 'utf8')
-    expect(rail).toContain('lg:block')
-    expect(rail).not.toContain('2xl:block')
+    expect(rail).toMatch(/\blg:(block|flex|grid)\b/)
+    expect(rail).not.toMatch(/\b2xl:(block|flex|grid)\b/)
   })
 
   it('carries a reason and a figure, not four text rows', async () => {
