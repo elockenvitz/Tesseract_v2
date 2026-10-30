@@ -223,9 +223,63 @@ export function useRecordThesisReview(assetId: string | null | undefined) {
       }
       return outcome
     },
+    /*
+     * ── The answer goes on the record the moment it is pressed ────────────
+     *
+     * Not cosmetics: without this the bar jumped TWICE per press. The button
+     * read its selection from the fetched conclusions, so the press lit up
+     * only while the insert was in flight -- and the instant the insert
+     * resolved, that in-flight answer went away while the refetch it kicked
+     * off was still travelling. For the length of that round trip the bar
+     * showed the PREVIOUS verdict again, then snapped to the new one when the
+     * data landed. Lighting the in-flight answer alone fixed the first jump
+     * and left the second, which is the flicker between two buttons.
+     *
+     * Writing the conclusion into the cache removes the gap instead of
+     * covering it: there is one source of truth, the surfaces read it, and it
+     * is correct from the press until the server confirms the same thing.
+     *
+     * `id` is marked optimistic so a reader of these rows can tell a
+     * provisional conclusion from a recorded one; the refetch replaces it
+     * with the real row, and `onError` puts the previous list back.
+     */
+    onMutate: async (outcome: ThesisReviewOutcome) => {
+      const key = [...THESIS_REVIEWS_KEY, 'conclusions', currentOrgId]
+      // Stop a refetch already in flight from landing on top of this.
+      await queryClient.cancelQueries({ queryKey: key })
+      const previous = queryClient.getQueryData(key)
+      if (assetId && currentOrgId && user?.id) {
+        queryClient.setQueryData(key, (old: typeof EMPTY_CONCERNS | undefined) => [
+          {
+            id: `optimistic:${assetId}:${outcome}`,
+            subject_id: assetId,
+            occurred_at: new Date().toISOString(),
+            outcome,
+            organization_id: currentOrgId,
+            actor_id: user.id,
+          },
+          ...(old ?? []),
+        ])
+      }
+      return { previous, key }
+    },
+    onError: (_err, _outcome, context) => {
+      // The write failed, so the record never said this. Put back exactly
+      // what was there rather than refetching into a surface that is still
+      // showing a conclusion nobody recorded.
+      if (context?.previous !== undefined) queryClient.setQueryData(context.key, context.previous)
+    },
     onSuccess: () => {
       // A new submit is a new intent, so it gets its own id.
       setRequestId(crypto.randomUUID())
+    },
+    onSettled: () => {
+      /*
+       * Invalidate on SETTLED, not on success. On success alone a failed
+       * write left the optimistic row in place on every other consumer of
+       * this key -- the staleness clock among them -- until something else
+       * happened to refetch.
+       */
       queryClient.invalidateQueries({ queryKey: THESIS_REVIEWS_KEY })
     },
   })
@@ -243,18 +297,18 @@ export function useRecordThesisReview(assetId: string | null | undefined) {
     isDone: mutation.isSuccess,
     error: mutation.error,
     /*
-     * The answer currently in flight, so the button can light up on the press
-     * rather than on the round trip.
+     * The answer currently in flight.
      *
-     * Without it the bar sat on the PREVIOUS verdict until the insert landed
-     * and the conclusions query refetched -- so for the length of a network
-     * round trip the reader's click appeared to have selected nothing, or
-     * worse, to have left the old answer standing. Then it snapped. A verdict
-     * is a click on a local decision; it should not look like it failed while
-     * the server agrees with it.
+     * `onMutate` above now puts the conclusion into the cache on the press,
+     * so the surfaces are already correct from this value and this is
+     * agreement rather than a second opinion. It is kept because it is the
+     * one signal that does not depend on a cache write having succeeded --
+     * an optimistic write is skipped when the org or user is missing, and a
+     * bar that showed nothing selected in that case would be the original
+     * defect in a narrower window.
      *
-     * `variables` is the outcome passed to this submit and is only read while
-     * pending, so a settled mutation never speaks over the record.
+     * Only read while pending, so a settled mutation never speaks over the
+     * record.
      */
     pendingOutcome: mutation.isPending ? (mutation.variables ?? null) : null,
   }
