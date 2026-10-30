@@ -93,7 +93,7 @@ describe('the three merged destinations are all still reachable', () => {
     expect(TAB).not.toMatch(/id=\{WORK_SECTION_ID\.decisions\}/)
   })
 
-  it('does not leave a work anchor pending when its section never mounts', () => {
+  it('does not leave a scroll anchor pending when its section never mounts', () => {
     /*
      * `WORK_SECTION_ID.decisions` is null now, but this is about the
      * mechanism rather than that one value.
@@ -107,13 +107,28 @@ describe('the three merged destinations are all still reachable', () => {
      *
      * Two rules: it retries across frames, and it stops — the anchor is
      * cleared whether or not the scroll ever landed.
+     *
+     * ── Why this no longer looks for one `DEADLINE` ──────────────────────
+     *
+     * It was anchored on `TAB.indexOf('const DEADLINE = Date.now() + 1000')`,
+     * which was unique when Work was the only surface with an anchor. The
+     * Overview has one now — the header strip's Exposure cell scrolls to the
+     * position — so `indexOf` found whichever effect happened to be written
+     * first and the other went unchecked. A guard that names one subject
+     * stops catching the next. It now checks EVERY anchor effect, found by
+     * its own state, so a third inherits the rule for free.
      */
-    const at = TAB.indexOf('const DEADLINE = Date.now() + 1000')
-    expect(at).toBeGreaterThan(-1)
-    const body = TAB.slice(at, at + 400)
-    expect(body).toMatch(/requestAnimationFrame\(attempt\)/)
-    expect(body).toMatch(/scrollToSection\(workAnchor\.id\) \|\| Date\.now\(\) > DEADLINE/)
-    expect(body).toMatch(/setWorkAnchor\(null\)/)
+    const ANCHORS = ['workAnchor', 'overviewAnchor'] as const
+    for (const name of ANCHORS) {
+      const setter = `set${name[0].toUpperCase()}${name.slice(1)}(null)`
+      const at = TAB.indexOf(`if (!${name} ||`)
+      expect(at, `${name} has no effect`).toBeGreaterThan(-1)
+      const body = TAB.slice(at, at + 500)
+      expect(body, name).toContain('const DEADLINE = Date.now() + 1000')
+      expect(body, name).toMatch(/requestAnimationFrame\(attempt\)/)
+      expect(body, name).toContain(`scrollToSection(${name}.id) || Date.now() > DEADLINE`)
+      expect(body, name).toContain(setter)
+    }
   })
 
   it('nests the process inside the one Work shell', () => {

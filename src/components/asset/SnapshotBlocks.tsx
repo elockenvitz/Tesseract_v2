@@ -49,7 +49,7 @@ const RAIL: Record<Rail, string> = {
  * flat at rest. One heading at a readable size — not an eyebrow.
  */
 export function SnapBlock({
-  title, meta, rail, action, children, className, testId,
+  title, meta, rail, action, children, className, testId, anchorId,
 }: {
   title: string
   /** A qualifier beside the heading: a date, a count, a scope. */
@@ -60,11 +60,22 @@ export function SnapBlock({
   children: React.ReactNode
   className?: string
   testId?: string
+  /**
+   * A DOM id, so something off this surface can scroll here.
+   *
+   * Separate from `testId` on purpose: a test hook is not a navigation
+   * target, and giving a section an id it is never scrolled to is how the
+   * page accumulated anchors nothing resolves.
+   */
+  anchorId?: string
 }) {
   return (
     <section
+      id={anchorId}
       data-testid={testId}
       className={clsx(
+        /* `scroll-mt` so the landing is not flush under the sticky band. */
+        anchorId && 'scroll-mt-4',
         'rounded-xl border border-gray-200/80 bg-white dark:border-white/[0.08] dark:bg-[#141a25]',
         rail && RAIL[rail],
         className,

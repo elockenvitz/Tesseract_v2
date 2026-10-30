@@ -81,6 +81,7 @@ import {
   type AssetMode, type AssetSubPage,
 } from '../../lib/asset-workspace/modes'
 import { scrollToSection } from '../../lib/asset-workspace/scroll-to-section'
+import { stripTarget, type StripCell } from '../../lib/asset-workspace/strip-targets'
 import { focusIntentKey, shouldApplyFocus } from '../../lib/asset-workspace/arrival-focus'
 import { useAssetListMemberships } from '../../hooks/lists/useAssetListMemberships'
 import { useAssetConversations } from '../../hooks/ai/useAssetConversations'
@@ -451,6 +452,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * effect. Two clicks on "go to the process", one scroll.
    */
   const [workAnchor, setWorkAnchor] = useState<{ id: string; nonce: number } | null>(null)
+  /* The same, for the Overview — set only by a context-strip cell that names
+     a section of it. Nonce for the same reason. */
+  const [overviewAnchor, setOverviewAnchor] = useState<{ id: string; nonce: number } | null>(null)
   const focusWorkSection = useCallback((id: string | null) => {
     setWorkAnchor(id ? { id, nonce: Date.now() } : null)
   }, [])
@@ -1085,6 +1089,67 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       setWorkItemKey(null)
     }
   }, [researchViewFilter, user?.id])
+
+  /*
+   * ── The header strip jumps to the fact, not to the page ────────────────
+   *
+   * Each cell of the context strip now names the FACT it states, and this
+   * turns that into a destination (`lib/asset-workspace/strip-targets`).
+   *
+   * Before, the strip handed over a sub-page and stopped. Measured on AMZN at
+   * 1920: pressing "Firm rating" switched to Research and left the Rating
+   * card at y=701 — 420px down the content area, partly past the fold — with
+   * the scroller at 328 of 1939, which was simply where Research had been
+   * left. Nothing scrolled, because nothing asked it to.
+   *
+   * Three cells resolve to a research anchor, and go through
+   * `attentionAnchor` rather than a fresh scroll of their own: that effect
+   * already knows the rating and the targets only EXIST in the DOM once the
+   * "All" view is forced and the Forecasts section is expanded, and it polls
+   * until the template query has rendered them. A second implementation would
+   * have had to learn all of that again, and would have drifted.
+   */
+  const handleStripJump = useCallback((cell: StripCell) => {
+    const t = stripTarget(cell)
+    if (t.anchor) {
+      /* Per-section prose only renders in an individual research view. On the
+         firm (aggregated) view there is no section to land on, so switch to
+         the reader's own research first — the same move `handleAttentionFocus`
+         makes, and for the same reason. */
+      if (researchViewFilter === 'aggregated' && user?.id) setResearchViewFilter(user.id)
+      setAttentionAnchor({ anchor: t.anchor, nonce: Date.now() })
+      return
+    }
+    goToSubPage(t.subPage)
+    /* No `sectionId` is the honest answer for Active work: arriving at Work
+       already shows the ideas, and `WORK_SECTION_ID.decisions` is null for
+       exactly that reason. */
+    setOverviewAnchor(t.sectionId ? { id: t.sectionId, nonce: Date.now() } : null)
+  }, [researchViewFilter, user?.id, goToSubPage])
+
+  /*
+   * The Overview's own scroll anchor.
+   *
+   * Same shape and same discipline as `workAnchor`: a nonce so pressing the
+   * same cell twice re-fires, `scrollToSection` rather than `scrollIntoView`
+   * because the sub-page body is a nested scroller under a sticky band, the
+   * clear INSIDE the frame so it cannot cancel its own scroll, and a deadline
+   * so an id this build does not have is abandoned rather than left pending.
+   */
+  useEffect(() => {
+    if (!overviewAnchor || activeMode !== 'overview') return
+    const DEADLINE = Date.now() + 1000
+    let raf = 0
+    const attempt = () => {
+      if (scrollToSection(overviewAnchor.id) || Date.now() > DEADLINE) {
+        setOverviewAnchor(null)
+        return
+      }
+      raf = requestAnimationFrame(attempt)
+    }
+    raf = requestAnimationFrame(attempt)
+    return () => cancelAnimationFrame(raf)
+  }, [overviewAnchor, activeMode])
 
   // Save tab state whenever relevant state changes (but only after initialization)
   useEffect(() => {
@@ -3986,7 +4051,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         coveringUserIds={(coverage || []).map((c: any) => c.user_id).filter(Boolean)}
         onFocus={handleAttentionFocus}
         onNavigate={onNavigate}
-        onOpenSubPage={(sub) => goToSubPage(sub)}
+        onJumpTo={handleStripJump}
         onOpenList={(focus) => {
           /* Lists is a section of Work now; `listsFocus` still does the
              within-section scroll, so no Work anchor is needed here. The

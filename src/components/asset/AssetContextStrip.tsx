@@ -2,6 +2,7 @@ import React from 'react'
 import { clsx } from 'clsx'
 import { useAssetWorkspace, primaryPosition } from '../../hooks/useAssetWorkspace'
 import { useAnalystRatings } from '../../hooks/useAnalystRatings'
+import type { StripCell } from '../../lib/asset-workspace/strip-targets'
 
 /**
  * UX1a — the persistent investment-context strip.
@@ -25,15 +26,20 @@ import { useAnalystRatings } from '../../hooks/useAnalystRatings'
  *    with "No … yet", not a header full of "Not set".
  */
 
-type Sub = 'snapshot' | 'research' | 'workflow' | 'decisions' | 'lists'
-
 interface Props {
   assetId: string
   symbol: string | null
   /** Live quote price (from the header's StockQuote), preferred over the cached close for upside. */
   spot: number | null
-  /** Reuses the page's existing sub-page navigation; no new routing. */
-  onOpen?: (sub: Sub) => void
+  /**
+   * Pressing a cell asks for THAT FACT, not for a page.
+   *
+   * It used to hand over a sub-page, which is how the three Research cells
+   * came to land wherever Research was last scrolled to: the strip was
+   * choosing a destination it has no way to know. It names the fact; the page
+   * owns where that fact is written (`lib/asset-workspace/strip-targets`).
+   */
+  onJump?: (cell: StripCell) => void
   /** UX2 Phase 1: 'band' renders navy cells + light text for the dark identity
    *  band. Presentation only — the data, hooks and query keys are identical. */
   variant?: 'default' | 'band'
@@ -108,7 +114,10 @@ function Cell({
   return <div className={`${sizing} ${base}`}>{inner}</div>
 }
 
-export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'default', className }: Props) {
+export function AssetContextStrip({ assetId, symbol, spot, onJump, variant = 'default', className }: Props) {
+  /* One helper so no cell can forget to be a button, or name a cell the
+     target table does not have — `StripCell` is checked at every call. */
+  const jump = (cell: StripCell) => (onJump ? () => onJump(cell) : undefined)
   const { data, isLoading } = useAssetWorkspace(assetId, symbol, 'overview')
   const { consensus, ratings, myRating } = useAnalystRatings({ assetId })
 
@@ -191,7 +200,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
       className={`${wrapC} ${className ?? ''}`}
     >
       {/* Firm rating */}
-      <Cell label="Firm rating" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm consensus rating" band={band} eyebrow={EYEBROW_C}>
+      <Cell label="Firm rating" onClick={jump('rating')} title="Go to the rating" band={band} eyebrow={EYEBROW_C}>
         {topRating ? (
           <>
             <div className={VALUE_C + ' truncate'}>{topRating.value}</div>
@@ -210,7 +219,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
       </Cell>
 
       {/* Price target + upside */}
-      <Cell label="Price target" onClick={onOpen ? () => onOpen('research') : undefined} title="Firm price target" band={band} eyebrow={EYEBROW_C}>
+      <Cell label="Price target" onClick={jump('target')} title="Go to the price targets" band={band} eyebrow={EYEBROW_C}>
         {target != null ? (
           <>
             <div className={VALUE_C + ' tabular-nums flex items-baseline gap-1.5'}>
@@ -232,7 +241,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
       </Cell>
 
       {/* Exposure, attributed to a book */}
-      <Cell label="Exposure" onClick={onOpen ? () => onOpen('decisions') : undefined} title="Our position" band={band} eyebrow={EYEBROW_C}>
+      <Cell label="Exposure" onClick={jump('exposure')} title="Go to exposure and valuation" band={band} eyebrow={EYEBROW_C}>
         {primary && primary.weightPct != null ? (
           <>
             <div className={VALUE_C + ' tabular-nums'}>{primary.weightPct.toFixed(1)}%</div>
@@ -252,7 +261,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
       </Cell>
 
       {/* Open work */}
-      <Cell label="Active work" onClick={onOpen ? () => onOpen('decisions') : undefined} title="Open ideas and decisions" band={band} eyebrow={EYEBROW_C}>
+      <Cell label="Active work" onClick={jump('work')} title="Go to the open work" band={band} eyebrow={EYEBROW_C}>
         {openWork > 0 ? (
           <>
             <div className={VALUE_C}>{openWork} open</div>
@@ -269,7 +278,7 @@ export function AssetContextStrip({ assetId, symbol, spot, onOpen, variant = 'de
       </Cell>
 
       {/* Case freshness */}
-      <Cell label="Case freshness" onClick={onOpen ? () => onOpen('research') : undefined} title="How current the investment case is" band={band} eyebrow={EYEBROW_C}>
+      <Cell label="Case freshness" onClick={jump('case')} title="Go to the investment case" band={band} eyebrow={EYEBROW_C}>
         {age != null ? (
           <>
             <div className={VALUE_C + (stale ? ' text-amber-700 dark:text-amber-400' : '')}>

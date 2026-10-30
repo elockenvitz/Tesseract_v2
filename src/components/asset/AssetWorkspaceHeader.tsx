@@ -3,6 +3,7 @@ import { clsx } from 'clsx'
 import { ChevronDown, ChevronUp, ExternalLink, Briefcase, List, Tag, FolderKanban, Sparkles } from 'lucide-react'
 import { CoverageDisplay } from '../coverage/CoverageDisplay'
 import { AssetContextStrip } from './AssetContextStrip'
+import type { StripCell } from '../../lib/asset-workspace/strip-targets'
 import { AssetAttentionBand } from './AssetAttentionBand'
 import { useAssetHeaderContext } from '../../hooks/useAssetHeaderContext'
 import { askAI, type EngagementTarget } from '../../lib/engagement'
@@ -19,7 +20,6 @@ interface AssetLike {
   origin?: string | null
 }
 
-type Sub = 'snapshot' | 'research' | 'workflow' | 'decisions' | 'lists'
 type ListFocus = 'portfoliosContent' | 'listsContent' | 'themesContent' | 'projectsContent'
 
 interface Props {
@@ -33,7 +33,15 @@ interface Props {
   coveringUserIds: string[]
   onFocus: (destination: WorkspaceDestination, focus?: SignalFocus) => void
   onNavigate?: (tab: { id: string; title: string; type: string; data?: unknown }) => void
-  onOpenSubPage: (sub: Sub) => void
+  /**
+   * A context-strip cell was pressed.
+   *
+   * Was `onOpenSubPage(sub)`. The strip was naming a PAGE, which is why its
+   * three Research cells landed wherever Research was last scrolled to — the
+   * strip cannot know where the rating or the targets are drawn. It now names
+   * the fact and the page resolves it.
+   */
+  onJumpTo: (cell: StripCell) => void
   onOpenList: (focus: ListFocus) => void
   /** When collapsed, the context strip is hidden but identity, price, attention,
    *  Ask AI and (below, in the page) the tabs stay — a compact working bar. */
@@ -56,7 +64,7 @@ const money = (n: number) => '$' + n.toLocaleString('en-US', { minimumFractionDi
  */
 export function AssetWorkspaceHeader({
   asset, sector, quote, spot, headerContext, coverage, thesisStatuses,
-  coveringUserIds, onFocus, onNavigate, onOpenSubPage, onOpenList, collapsed, onToggleCollapse,
+  coveringUserIds, onFocus, onNavigate, onJumpTo, onOpenList, collapsed, onToggleCollapse,
 }: Props) {
   const [showTickerDropdown, setShowTickerDropdown] = useState(false)
 
@@ -215,7 +223,7 @@ export function AssetWorkspaceHeader({
           assetId={asset.id}
           symbol={asset.symbol ?? null}
           spot={spot}
-          onOpen={onOpenSubPage}
+          onJump={onJumpTo}
           variant="band"
           className="mt-3"
         />

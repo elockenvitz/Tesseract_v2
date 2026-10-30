@@ -79,6 +79,7 @@ import {
   CoverageDisplay, type CoverageRecord, type ThesisStatus,
 } from '../coverage/CoverageDisplay'
 import { BookFilter, type BookOption } from '../shared/BookFilter'
+import { EXPOSURE_ANCHOR_ID } from '../../lib/asset-workspace/strip-targets'
 /* The bear/bull arithmetic only — the big conclusion CARD is gone; its figures
    now sit inline in Our view, and its absences are gap chips rather than a
    130px empty hero. The helper stays exported for the phone shell. */
@@ -612,6 +613,9 @@ export function InvestmentSnapshot({
     <SnapBlock
       key="exposure"
       testId="snapshot-exposure"
+      /* The header strip's Exposure cell lands here — this is where the
+         position is actually drawn. See `lib/asset-workspace/strip-targets`. */
+      anchorId={EXPOSURE_ANCHOR_ID}
       title="Exposure & valuation"
       meta={position?.asOf ? `position as of ${new Date(position.asOf).toLocaleDateString()}` : undefined}
     >
