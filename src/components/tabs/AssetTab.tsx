@@ -4406,12 +4406,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               which sections exist.
             */
             contributions={allAssetContributions}
-            contributionFields={ourViewFields}
-            coveringAnalystIds={coveringAnalystIds}
-            onOpenAnalyst={(userId) => {
-              chooseResearchView(userId)
-              setActiveSubPage('research')
-            }}
+            /* `contributionFields`, `coveringAnalystIds` and `onOpenAnalyst`
+               went with the Overview's "Research perspectives" roster. Our
+               view now shows every contributor's words inline, so a roster
+               beneath it was a table of contents for the block above. The
+               Research pane still receives all three. */
             /* Through `goToSubPage`, so an Overview link into Work both
                lands in Work and scrolls to the section it named. */
             onOpenSubPage={goToSubPage}

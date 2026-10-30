@@ -85,7 +85,9 @@ const contrib = (section: string, created_by: string) => ({
   is_archived: false,
 }) as never
 
-const FIELDS = [{ field_id: 'thesis', label: 'Investment Thesis' }] as never[]
+/* `FIELDS` is gone with the `contributionFields` prop: it only ever existed
+   to switch the "Research perspectives" roster on, and the roster is now in
+   Research, where a contributor list without the prose belongs. */
 
 function renderSnapshot(props: Partial<React.ComponentProps<typeof InvestmentSnapshot>> = {}) {
   return render(
@@ -142,7 +144,6 @@ describe('the case is told once', () => {
     renderSnapshot({
       currentUserId: 'me',
       contributions: [contrib('thesis', 'me'), contrib('risks_to_thesis', 'me')],
-      contributionFields: FIELDS,
     })
     expect(screen.queryByTestId('snapshot-perspectives')).toBeNull()
     // The fact itself is not lost — it moves onto the block it describes.
@@ -154,16 +155,46 @@ describe('the case is told once', () => {
     expect(screen.getByTestId('snapshot-our-view')).toHaveTextContent('by Eric')
   })
 
-  it('draws the roster as soon as a second person has written', () => {
-    // Who disagrees with whom is the one thing the prose excerpt cannot show.
-    oneAuthorCase()
+  it('shows both views when two people wrote the same section, instead of a roster', () => {
+    /*
+     * This asserted a `snapshot-perspectives` roster: a counted list of who
+     * had written, drawn beside prose that showed only ONE of them. The
+     * roster existed because the block rendered `core.find(...)` — the FIRST
+     * matching row — so a section two analysts had written showed one view at
+     * arbitrary query order, and naming the others in a sidebar was the only
+     * way the reader learned they existed.
+     *
+     * The block now renders every row. "Who disagrees with whom" is answered
+     * by showing both arguments, each attributed, under a heading that says
+     * how many there are. A roster counting the same people next to it would
+     * be the third statement of one fact.
+     */
+    data = {
+      ...BASE,
+      caseWrittenAt: WRITTEN,
+      coreSections: ['thesis'],
+      sections: [
+        { section: 'thesis', content: 'Jeff Bezos has a sick yacht.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
+        { section: 'thesis', content: 'The yacht is a liability.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Dana' },
+      ],
+    }
     renderSnapshot({
       currentUserId: 'me',
       contributions: [contrib('thesis', 'me'), contrib('thesis', 'other')],
-      contributionFields: FIELDS,
     })
-    expect(screen.getByTestId('snapshot-perspectives')).toBeTruthy()
-    expect(screen.getByTestId('snapshot-our-view')).toHaveTextContent('2 contributors')
+    expect(screen.queryByTestId('snapshot-perspectives')).toBeNull()
+
+    const block = screen.getByTestId('snapshot-our-view')
+    expect(block).toHaveTextContent('2 contributors')
+    // Both arguments, in full, each with its author beside it.
+    const thesis = within(screen.getByTestId('our-view-section-thesis'))
+    expect(thesis.getByText(/sick yacht/)).toBeTruthy()
+    expect(thesis.getByText(/liability/)).toBeTruthy()
+    expect(thesis.getByText(/Eric/)).toBeTruthy()
+    expect(thesis.getByText(/Dana/)).toBeTruthy()
+    // And the heading says there is more than one, so a reader scanning the
+    // headings knows the section is contested before reading it.
+    expect(thesis.getByRole('button', { name: /2 views/ })).toBeTruthy()
   })
 
   it('still offers the way into Research with the roster gone', () => {
@@ -172,7 +203,6 @@ describe('the case is told once', () => {
     renderSnapshot({
       currentUserId: 'me',
       contributions: [contrib('thesis', 'me')],
-      contributionFields: FIELDS,
     })
     // The label depends on freshness — a stale case is offered as the job
     // ("Update the case") rather than as a destination — so this asserts the
@@ -356,24 +386,41 @@ describe('Our view reads as prose', () => {
     renderSnapshot({
       currentUserId: 'me',
       contributions: [contrib('thesis', 'me'), contrib('risks_to_thesis', 'me')],
-      contributionFields: FIELDS,
     })
     const text = screen.getByTestId('snapshot-our-view').textContent ?? ''
     // Two written sections, one author: the name appears exactly once.
     expect(text.match(/Eric/g)?.length).toBe(1)
   })
 
-  it('runs the section name into the sentence rather than heading it', () => {
+  it('heads each section rather than running its name into the sentence', () => {
+    /*
+     * A REVERSAL, RECORDED. This asserted the opposite: the label ran into
+     * the claim as one sentence ("Investment thesis. Jeff Bezos has..."),
+     * which read better than a heading when there was exactly one paragraph
+     * per section.
+     *
+     * It stops working once the block shows every written view. A run-in lead
+     * repeats the section name once per view, so a section three analysts had
+     * written opened three paragraphs with the same four words. A heading
+     * states it once and the views sit under it. The reason the run-in won
+     * last time — that a heading above a single short paragraph is chrome —
+     * was answered by the sections becoming scannable columns, where the
+     * headings are how a reader finds the part they want.
+     */
     oneAuthorCase()
-    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
-    // The claim and its label are ONE paragraph, in reading order.
-    const para = within(screen.getByTestId('snapshot-our-view'))
-      .getByText(/Jeff Bezos has a sick yacht/)
-      .closest('p')
+    renderSnapshot({ currentUserId: 'me' })
+    const section = screen.getByTestId('our-view-section-thesis')
+
+    // The paragraph is the analyst's words and nothing else.
+    const para = within(section).getByText(/Jeff Bezos has a sick yacht/).closest('p')
     expect(para).toBeTruthy()
-    expect(para!.textContent?.replace(/\s+/g, ' ')).toMatch(
-      /^Investment thesis\. Jeff Bezos has a sick yacht\./,
-    )
+    expect(para!.textContent?.replace(/\s+/g, ' ').trim())
+      .toBe('Jeff Bezos has a sick yacht.')
+
+    // The label is a real heading, and it comes first.
+    const heading = within(section).getByRole('heading', { name: /The thesis/i })
+    expect(heading.compareDocumentPosition(para!) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy()
   })
 
   it('puts attribution back on each section when two people wrote', () => {
@@ -383,7 +430,6 @@ describe('Our view reads as prose', () => {
     renderSnapshot({
       currentUserId: 'me',
       contributions: [contrib('thesis', 'me'), contrib('risks_to_thesis', 'other')],
-      contributionFields: FIELDS,
     })
     const block = screen.getByTestId('snapshot-our-view')
     expect(block).toHaveTextContent('2 contributors')
@@ -400,7 +446,6 @@ describe('Our view reads as prose', () => {
     renderSnapshot({
       currentUserId: 'me',
       contributions: [contrib('thesis', 'me'), contrib('thesis', 'other')],
-      contributionFields: FIELDS,
     })
     const text = screen.getByTestId('snapshot-our-view').textContent ?? ''
     expect(text).not.toMatch(/by Eric/)
@@ -425,7 +470,7 @@ describe('Our view reads as prose', () => {
 describe('Our view is one column, and states the position first', () => {
   it('draws no rail beside the argument', () => {
     oneAuthorCase()
-    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    renderSnapshot({ currentUserId: 'me' })
     const block = screen.getByTestId('snapshot-our-view')
     expect(block.querySelector('aside')).toBeNull()
     const text = block.textContent ?? ''
@@ -437,7 +482,7 @@ describe('Our view is one column, and states the position first', () => {
     oneAuthorCase()
     ratings = [{ id: 'r1', rating_value: 'Buy', conviction: 'high' }] as never
     consensus = [{ value: 'Buy', count: 1, percentage: 100 }]
-    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    renderSnapshot({ currentUserId: 'me' })
     const block = screen.getByTestId('snapshot-our-view')
     const line = screen.getByTestId('snapshot-position-line')
     const thesis = within(block).getByText(/Jeff Bezos has a sick yacht/)
@@ -469,18 +514,147 @@ describe('Our view is one column, and states the position first', () => {
         { section: 'thesis', content: 'Jeff Bezos has a sick yacht.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
       ],
     }
-    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    renderSnapshot({ currentUserId: 'me' })
     const block = screen.getByTestId('snapshot-our-view')
-    expect(block).toHaveTextContent('Where our thesis differs.')
-    // Two unwritten sections, both named the same way.
+    // The label is plainer now that it heads a column rather than opening a
+    // sentence: "Where we differ from the market", not "Where our thesis
+    // differs." The subject is unchanged.
+    expect(block).toHaveTextContent('Where we differ from the market')
+    expect(screen.getByTestId('our-view-section-where_different'))
+      .toHaveTextContent('Not written.')
+    // Two unwritten core sections, both named the same way.
     expect(within(block).getAllByText('Not written.')).toHaveLength(2)
+  })
+})
+
+/**
+ * Our view is a summary of the views the reader can actually read.
+ *
+ * Three defects, all of them silent, all of them making the block look like
+ * the data was thin rather than like the block was dropping it:
+ *
+ *  1. IT LOOPED OVER `CORE_SECTIONS`. That constant answers a different
+ *     question — which sections make a case REVIEWABLE, which is what drives
+ *     the staleness clock. `business_model` and `key_catalysts` are written,
+ *     populated, part of the org template, and were rendered NOWHERE on the
+ *     Overview. On a name whose team had written what the company does, the
+ *     block opened on "the thesis" and the reader had no idea what the
+ *     company was.
+ *
+ *  2. IT USED `core.find(...)`. One row per section — the FIRST the query
+ *     happened to return. Every other analyst on that section was discarded
+ *     silently, at arbitrary order. TSLA has three authors on
+ *     `business_model` and two on `thesis`, in one org; the block showed one
+ *     of each and no indication the others existed.
+ *
+ *  3. THE COUNT AND THE NAMES DISAGREED. The "N contributors" line counted
+ *     `CORE_SECTIONS` authors while the block rendered five sections, so TSLA
+ *     read "2 contributors" directly above three names.
+ */
+describe('Our view summarises every view the reader can read', () => {
+  it('renders what the company does, the section it used to skip entirely', () => {
+    /*
+     * `business_model` is not in CORE_SECTIONS, which is why it never
+     * rendered. It leads the block now: a reader who does not know the name
+     * cannot evaluate a word of the argument without it.
+     */
+    data = {
+      ...BASE,
+      caseWrittenAt: WRITTEN,
+      coreSections: ['thesis'],
+      sections: [
+        { section: 'business_model', content: 'Retail, plus a cloud business that earns the margin.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
+        { section: 'thesis', content: 'Jeff Bezos has a sick yacht.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
+        { section: 'key_catalysts', content: 'AWS reacceleration.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
+      ],
+    }
+    renderSnapshot({ currentUserId: 'me', contributions: [contrib('thesis', 'me')] })
+
+    const business = screen.getByTestId('our-view-business')
+    expect(business).toHaveTextContent('What the company does')
+    expect(business).toHaveTextContent(/cloud business that earns the margin/)
+
+    // `key_catalysts` is the other section the core-only loop dropped.
+    expect(screen.getByTestId('our-view-section-key_catalysts'))
+      .toHaveTextContent('AWS reacceleration')
+
+    // And it comes first, because the argument is meaningless without it.
+    const thesis = screen.getByTestId('our-view-section-thesis')
+    expect(business.compareDocumentPosition(thesis) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy()
+  })
+
+  it('renders every author on a section, not the first row the query returned', () => {
+    // Three analysts, one section. All three arguments, each attributed.
+    data = {
+      ...BASE,
+      caseWrittenAt: WRITTEN,
+      coreSections: ['thesis'],
+      sections: [
+        { section: 'business_model', content: 'Vertically integrated manufacturing.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
+        { section: 'business_model', content: 'A software company that ships cars.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Dana' },
+        { section: 'business_model', content: 'An energy business nobody prices.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Sam' },
+      ],
+    }
+    renderSnapshot({
+      currentUserId: 'me',
+      contributions: [
+        contrib('business_model', 'me'),
+        contrib('business_model', 'other'),
+        contrib('business_model', 'third'),
+      ],
+    })
+    const business = within(screen.getByTestId('our-view-business'))
+    for (const words of [/Vertically integrated/, /ships cars/, /nobody prices/]) {
+      expect(business.getByText(words)).toBeTruthy()
+    }
+    for (const who of [/Eric/, /Dana/, /Sam/]) {
+      expect(business.getByText(who)).toBeTruthy()
+    }
+    expect(business.getByRole('button', { name: /3 views/ })).toBeTruthy()
+  })
+
+  it('counts contributors over every section it shows, so the count matches the names', () => {
+    /*
+     * The trap this pins: the count came off CORE_SECTIONS and the render
+     * came off the full template, so an analyst whose only contribution was
+     * `business_model` or `key_catalysts` was NAMED on screen and left out of
+     * the number above them. A count that contradicts the page beside it is
+     * worse than no count.
+     */
+    data = {
+      ...BASE,
+      caseWrittenAt: WRITTEN,
+      coreSections: ['thesis'],
+      sections: [
+        { section: 'thesis', content: 'Jeff Bezos has a sick yacht.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
+        { section: 'business_model', content: 'Retail plus cloud.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Dana' },
+        { section: 'key_catalysts', content: 'AWS reacceleration.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Sam' },
+      ],
+    }
+    renderSnapshot({
+      currentUserId: 'me',
+      contributions: [
+        contrib('thesis', 'me'),
+        // Neither of these sections is a CORE_SECTION, so neither author was
+        // counted before, and both are on screen.
+        contrib('business_model', 'other'),
+        contrib('key_catalysts', 'third'),
+      ],
+    })
+    const block = screen.getByTestId('snapshot-our-view')
+    expect(block).toHaveTextContent('3 contributors')
+
+    // The names the count claims to cover are the names rendered.
+    const names = ['Eric', 'Dana', 'Sam'].filter(n => (block.textContent ?? '').includes(n))
+    expect(names).toHaveLength(3)
   })
 })
 
 describe('the stale case states its rule', () => {
   it('draws a chip carrying the exact date and the threshold', () => {
     oneAuthorCase() // written 2025-11-20, far past the 120-day threshold
-    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    renderSnapshot({ currentUserId: 'me' })
     const chip = screen.getByTestId('snapshot-stale-chip')
     expect(chip).toHaveTextContent('Stale')
     // The rounded age is readable; the exact date is what you act on.
@@ -492,7 +666,7 @@ describe('the stale case states its rule', () => {
 
   it('offers the stale case as the job, not as a destination', () => {
     oneAuthorCase()
-    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    renderSnapshot({ currentUserId: 'me' })
     expect(
       within(screen.getByTestId('snapshot-our-view'))
         .getByRole('button', { name: /Update the case/ }),
@@ -502,7 +676,7 @@ describe('the stale case states its rule', () => {
   it('says nothing about staleness on a case written today', () => {
     oneAuthorCase()
     data = { ...data, caseWrittenAt: new Date().toISOString() }
-    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    renderSnapshot({ currentUserId: 'me' })
     expect(screen.queryByTestId('snapshot-stale-chip')).toBeNull()
     expect(
       within(screen.getByTestId('snapshot-our-view'))

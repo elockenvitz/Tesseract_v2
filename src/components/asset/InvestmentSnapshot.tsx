@@ -61,7 +61,7 @@ import { OBSERVED_PROOFS, isAwaitingDecision } from '../../types/decision-timeli
  * returns `consensus` sorted by count, so the dominant rating is `[0]`.
  */
 import { useAnalystRatings } from '../../hooks/useAnalystRatings'
-import { CORE_SECTIONS } from '../../lib/desktop-research/model'
+import { CORE_SECTIONS, ALL_SECTIONS } from '../../lib/desktop-research/model'
 /*
  * Snapshot-local blocks, NOT the shared `DesktopModule` grammar.
  *
@@ -100,7 +100,7 @@ import {
  * clippers would eventually disagree about where a sentence ends, and one of
  * them would start paraphrasing.
  */
-import { ourViewExcerpt, hasLiveProse, OurViewSummary, type OurViewField } from './OurViewSummary'
+import { ourViewExcerpt, hasLiveProse } from './OurViewSummary'
 import type { Contribution } from '../../hooks/useContributions'
 
 /* 'decisions' lands in Work (the open items); 'history' lands in History (the
@@ -137,10 +137,14 @@ export interface InvestmentSnapshotProps {
    * callers that have not wired it.
    */
   contributions?: Contribution[]
-  contributionFields?: OurViewField[]
-  coveringAnalystIds?: Set<string>
-  /** Open one analyst's full research document. */
-  onOpenAnalyst?: (userId: string) => void
+  /*
+   * `contributionFields`, `coveringAnalystIds` and `onOpenAnalyst` are gone
+   * with the "Research perspectives" roster, which was their only consumer.
+   * They are removed rather than left declared-and-ignored: a prop a caller
+   * passes in good faith, which the component silently drops, is worse than
+   * no prop. `contributions` stays, because the per-section author sets are
+   * still read from it.
+   */
   /** The viewer, so the Snapshot can distinguish THEIR view from the firm's
    *  (research authorship + rating) without a second query. */
   currentUserId?: string
@@ -167,18 +171,83 @@ const shares = (n: number) => n.toLocaleString(undefined, { maximumFractionDigit
  * vanishing.
  */
 const SECTION_LABEL: Record<string, string> = {
-  thesis: 'Investment thesis',
-  where_different: 'Where our thesis differs',
-  risks_to_thesis: 'Risks to the thesis',
+  thesis: 'The thesis',
+  business_model: 'What the company does',
+  where_different: 'Where we differ from the market',
+  risks_to_thesis: 'What would break it',
+  key_catalysts: 'What to watch',
   bull_case: 'Bull case',
   bear_case: 'Bear case',
   base_case: 'Base case',
 }
 
 
+/**
+ * One section's heading inside "Our view".
+ *
+ * It says how many people answered, because that is the fact a reader of a
+ * firm's view most needs and the one a single excerpt cannot show. "2 views"
+ * is not decoration: on TSLA three analysts give three different answers to
+ * what the company even does.
+ *
+ * The count is silent at one. Printing "1 view" on every section of every
+ * single-author name is how a label stops being read.
+ */
+function SectionHeading({
+  label, n, mine, onOpen,
+}: { label: string; n: number; mine?: boolean; onOpen: () => void }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2">
+      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+        {label}
+      </h4>
+      {n > 1 && (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="text-[11px] font-medium text-amber-700 hover:underline dark:text-amber-400"
+        >
+          {n} views
+        </button>
+      )}
+      {mine && <StatusChip tone="recommended">You</StatusChip>}
+    </div>
+  )
+}
+
+/**
+ * One person's written view, verbatim and attributed.
+ *
+ * `ourViewExcerpt` clips on a sentence boundary and strips the rich-text
+ * markup. Nothing here paraphrases an analyst: where several people have
+ * written, they are shown SEPARATELY rather than merged into a sentence
+ * nobody wrote.
+ */
+function ViewParagraph({
+  row, budget, showAuthor,
+}: {
+  row: { content: string | null; authorName: string | null; updatedAt: string }
+  budget: number
+  showAuthor: boolean
+}) {
+  return (
+    <div>
+      <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+        {ourViewExcerpt(row.content, budget)}
+      </p>
+      {showAuthor && row.authorName && (
+        <p className="mt-0.5 text-[11px] text-gray-400 dark:text-gray-500">
+          {row.authorName}
+          {row.updatedAt && `, ${new Date(row.updatedAt).toLocaleDateString()}`}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function InvestmentSnapshot({
   asset, coverage, currentQuote, onOpenSubPage,
-  contributions, contributionFields, coveringAnalystIds, onOpenAnalyst, currentUserId,
+  contributions, currentUserId,
   onOpenEvidence,
 }: InvestmentSnapshotProps) {
   const symbol = asset.symbol ?? null
@@ -281,7 +350,22 @@ export function InvestmentSnapshot({
    * prose is shown in the conclusion band, not re-quoted here.
    */
   const firmVsYou = useMemo(() => {
-    const coreKeys = CORE_SECTIONS as readonly string[]
+    /*
+     * ── Every section the block SHOWS, not just the reviewable ones ──────
+     *
+     * This counted authors of CORE_SECTIONS only. That was right when the
+     * block rendered only those three; it is wrong now that it renders the
+     * business model and the catalysts too, and it was wrong ON SCREEN:
+     * TSLA's heading read "2 contributors" directly above three different
+     * names, because the third analyst had written only the business model.
+     * A block that contradicts itself in one eyeful is worse than one that
+     * says less.
+     *
+     * CORE_SECTIONS remains the definition of a REVIEWABLE case, and still
+     * drives `caseWrittenAt` and the staleness clock. It is simply not the
+     * definition of whose words are on this card.
+     */
+    const coreKeys = ALL_SECTIONS as readonly string[]
     const live = (contributions ?? []).filter(
       c => !c.is_archived && hasLiveProse(c) && coreKeys.includes(c.section),
     )
@@ -345,20 +429,48 @@ export function InvestmentSnapshot({
    * uses. Nothing on this page paraphrases an analyst.
    */
   /*
-   * All three core sections, in the template's own order.
+   * ── Every written view the reader can see, grouped by section ──────────
    *
-   * `where_different` used to be filtered out and rendered below the loop in
-   * its own bordered block. That dated from when a separate conclusion band
-   * owned it; the band went, and what was left was one of the three sections
-   * drawn differently from the other two for no reason the reader could see
-   * -- and, when it was ABSENT, named nowhere, because the loop that prints
-   * "Not written." never reached it. It was instead a gap chip in the rail,
-   * so the same fact had two renderings depending on which section it was.
+   * Two faults, both of which made this block a worse account of the firm
+   * than the data it was given.
    *
-   * Now it is a paragraph like its siblings, present or not.
+   * IT SHOWED ONE PERSON PER SECTION. `core.find(...)` returns the FIRST
+   * matching row, so on a name several analysts had written the page picked
+   * one at arbitrary query order and silently discarded the rest. Measured
+   * in production: TSLA has three different answers to "what does this
+   * company do" from three analysts, AAPL has two theses, and the Overview
+   * printed one of each and nothing to say the others existed. The whole
+   * point of the surface is what the organisation thinks, and it was showing
+   * what one row thought.
+   *
+   * IT NEVER SHOWED WHAT THE COMPANY DOES. The loop ran over CORE_SECTIONS,
+   * which is the three sections that make a case REVIEWABLE: thesis, where
+   * we differ, risks. `business_model` and `key_catalysts` are in the
+   * template, are written, and were rendered nowhere on this page. AAPL's
+   * business model is a 320-character paragraph by two analysts; it has been
+   * invisible on the Overview the whole time.
+   *
+   * `CORE_SECTIONS` is still the right definition of a reviewable case, so
+   * `caseWrittenAt`, the staleness clock and `coreSections` are untouched.
+   * It is just not the right definition of what to SHOW.
    */
-  const caseSections = (CORE_SECTIONS as readonly string[])
-    .map(s => ({ key: s, row: core.find(c => c.section === s) }))
+  const viewsBySection = (ALL_SECTIONS as readonly string[]).map(section => ({
+    key: section,
+    rows: data.sections.filter(
+      s => s.section === section && (s.content ?? '').trim().length > 0,
+    ),
+  }))
+  /* "What the company does" leads and is its own column: it is the only
+     section that describes the SUBJECT rather than arguing about it. */
+  const businessRows = viewsBySection.find(v => v.key === 'business_model')?.rows ?? []
+  /* The argument, in template order, minus the business model. A core
+     section with nothing written still appears, because an unwritten thesis
+     is the most important thing this block can tell you; a supporting
+     section with nothing written does not, because it was never promised. */
+  const argumentSections = viewsBySection.filter(v =>
+    v.key !== 'business_model'
+    && (v.rows.length > 0 || (CORE_SECTIONS as readonly string[]).includes(v.key)),
+  )
 
   /* `firmRatingTotal` went with the rail's rating line — the header strip
      states "N of M" and this page no longer repeats it. */
@@ -366,10 +478,8 @@ export function InvestmentSnapshot({
 
   /* Bear/bull arithmetic, inline — no longer a 130px card that says "Not set". */
   const figures = conclusionFigures({ target: data.target, spot: quotePrice ?? data.spot, ladder: data.ladder })
-  const sectionRow = (k: string) => core.find(c => c.section === k && (c.content ?? '').trim().length > 0)
-  /* `thesis` and `risks_to_thesis` render inline in the case (including their
-     own "Not written"), so only the variant is pulled out here. */
-  const variantRow = sectionRow('where_different')
+  /* `variantRow` went with the single-row-per-section model. Every section
+     now renders every view it has, so nothing is pulled out by hand. */
 
   const caseAgeDays = data.caseWrittenAt
     ? Math.floor((Date.now() - new Date(data.caseWrittenAt).getTime()) / 86_400_000)
@@ -435,17 +545,16 @@ export function InvestmentSnapshot({
    * attribution goes back per section — because then WHO said it is part of
    * what was said — but inline after the sentence rather than above it.
    */
-  const writtenRows = [...caseSections.map(c => c.row), variantRow]
-    .filter((r): r is NonNullable<typeof r> => !!r && (r.content ?? '').trim().length > 0)
+  const writtenRows = viewsBySection.flatMap(v => v.rows)
   const namedAuthors = new Set(writtenRows.map(r => r.authorName).filter(Boolean))
   /*
-   * `authorCount` is the gate, not `namedAuthors`, and the first draft got
-   * this wrong in a way a render test caught: `caseSections` holds ONE row
-   * per section (`core.find`), so when two analysts write the same section
-   * only one of them appears in `writtenRows`. Keying off that set alone
-   * named a sole author on a name two people had written — the single worst
-   * thing this block could claim. `firmVsYou.authorCount` counts distinct
-   * authors across every contribution, which is the actual question.
+   * `authorCount` is kept as a second gate even now that `writtenRows` holds
+   * EVERY row rather than one per section, because the two count different
+   * things: this set counts distinct names on the written case, and
+   * `authorCount` counts distinct authors across every contribution the
+   * reader can see, archived-but-visible drafts included. A sole byline
+   * claimed on a name two people have written is the single worst thing
+   * this block can say, so it is claimed only when both agree.
    */
   const soleAuthor = firmVsYou.authorCount === 1 && writtenRows.length > 0 && namedAuthors.size === 1
     ? [...namedAuthors][0]!
@@ -499,7 +608,16 @@ export function InvestmentSnapshot({
   if (soleAuthor) {
     metaParts.push(<span key="by">by {soleAuthor}{soleAuthorIsYou ? ' (you)' : ''}</span>)
   } else if (firmVsYou.authorCount > 0) {
-    metaParts.push(<span key="n">{firmVsYou.authorCount} contributors</span>)
+    metaParts.push(
+      <span key="n">
+        {firmVsYou.authorCount} contributors
+        {/* A row whose author could not be resolved is still a view on the
+            card, and the count cannot name it. The marker says "at least". */}
+        {writtenRows.some(r => !r.authorName) && (
+          <span title="One or more views could not be attributed to a named author.">+</span>
+        )}
+      </span>,
+    )
   }
   /* The rounded age is dropped once the chip is showing: "written 11 months
      ago · Stale · last written Nov 20, 2025" states the same date twice, and
@@ -579,7 +697,16 @@ export function InvestmentSnapshot({
         line in the prose, beside the other two, which is where an unwritten
         section was already being named.
       */}
-      <div className="max-w-[78ch]">
+      {/*
+        No reading-measure cap on this wrapper.
+
+        It was `max-w-[78ch]` from when the block was one column of prose.
+        The case is now two columns, each of which caps its own measure by
+        being a column, and the cap was applying to the GRID: it squeezed
+        both tracks into 590px between them, so on AAPL the business model
+        wrapped every five words in a 229px ribbon.
+      */}
+      <div>
 
       {/*
         ── The position, then the argument ───────────────────────────────
@@ -647,46 +774,82 @@ export function InvestmentSnapshot({
           where analysts here put the actual claim.
           The text is still verbatim and still clipped on a sentence boundary
           by `ourViewExcerpt`. Nothing on this page paraphrases an analyst.
+
+          ── One track per section, up to three ───────────────────────────
+
+          A two-track split put the whole argument in one 1025px column,
+          which is about 140 characters a line: too wide to read, and the
+          reason the first draft had capped the measure at 78ch and left the
+          other 1229px of the card empty.
+
+          Flat auto-placement instead. Each section is its own grid item, so
+          the tracks stay at a readable measure AND the card is used: one
+          column on a phone, two from `md`, three from `xl` (about 590px a
+          track at 1920, roughly 80 characters).
+
+          Reading order is unchanged and it is the point: what the company
+          does comes first, because a reader who does not know the name
+          needs it before any of the argument means anything.
         */
-        <div className="flex max-w-[72ch] flex-col gap-3">
-          {caseSections.map(({ key, row }) => {
-            const written = (row?.content ?? '').trim().length > 0
-            const authors = firmVsYou.bySection.get(key)
-            const n = authors?.size ?? 0
-            const mine = !!currentUserId && !!authors?.has(currentUserId)
-            return (
-              <p key={key} className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-                <span className="font-semibold text-gray-900 dark:text-gray-100">
-                  {SECTION_LABEL[key] ?? key.replace(/_/g, ' ')}.
-                </span>{' '}
-                {written ? ourViewExcerpt(row!.content, 420) : (
+        <div className="grid grid-cols-1 items-start gap-x-10 gap-y-6 md:grid-cols-2 xl:grid-cols-3">
+
+          <section data-testid="our-view-business">
+            <SectionHeading
+              label={SECTION_LABEL.business_model}
+              n={businessRows.length}
+              onOpen={() => onOpenSubPage('research')}
+            />
+            {businessRows.length > 0 ? (
+              <div className="mt-1.5 flex flex-col gap-2.5">
+                {businessRows.map((row, i) => (
+                  <ViewParagraph
+                    key={`${row.authorName ?? 'anon'}-${i}`}
+                    row={row}
+                    budget={businessRows.length > 1 ? 320 : 460}
+                    showAuthor={!soleAuthor || businessRows.length > 1}
+                  />
+                ))}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onOpenSubPage('research')}
+                className="mt-1.5 text-left text-sm text-primary-600 hover:underline dark:text-primary-400"
+              >
+                Nobody has written what this company does →
+              </button>
+            )}
+          </section>
+
+          {/* Direct grid children, not a nested column: a wrapper here would
+              put the whole argument back into one track. */}
+          {argumentSections.map(({ key, rows }) => (
+              <section key={key} data-testid={`our-view-section-${key}`}>
+                <SectionHeading
+                  label={SECTION_LABEL[key] ?? key.replace(/_/g, ' ')}
+                  n={rows.length}
+                  mine={!soleAuthorIsYou && !!currentUserId
+                    && !!firmVsYou.bySection.get(key)?.has(currentUserId)}
+                  onOpen={() => onOpenSubPage('research')}
+                />
+                {rows.length > 0 ? (
+                  <div className="mt-1.5 flex flex-col gap-2.5">
+                    {rows.map((row, i) => (
+                      <ViewParagraph
+                        key={`${row.authorName ?? 'anon'}-${i}`}
+                        row={row}
+                        budget={rows.length > 1 ? 320 : 460}
+                        showAuthor={!soleAuthor || rows.length > 1}
+                      />
+                    ))}
+                  </div>
+                ) : (
                   /* An unwritten section is a hole in the case, and naming it
-                     is more useful than hiding it — it is the next job. */
-                  <span className="text-gray-400 dark:text-gray-500">Not written.</span>
+                     is more useful than hiding it: it is the next job. */
+                  <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">Not written.</p>
                 )}
-                {/* Attribution trails the sentence, and only when the meta
-                    line cannot already carry it for the whole block. */}
-                {written && !soleAuthor && row?.authorName && (
-                  <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
-                    {row.authorName}
-                    {row.updatedAt && `, ${new Date(row.updatedAt).toLocaleDateString()}`}
-                  </span>
-                )}
-                {written && !soleAuthorIsYou && mine && (
-                  <span className="ml-1.5 align-middle"><StatusChip tone="recommended">You</StatusChip></span>
-                )}
-                {written && n >= 2 && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenSubPage('research')}
-                    className="ml-1.5 text-xs text-amber-700 hover:underline dark:text-amber-400"
-                  >
-                    {n} views →
-                  </button>
-                )}
-              </p>
-            )
-          })}
+              </section>
+            ))}
         </div>
       ) : (
         /* A compact, actionable absence — one line and the way to fix it, not a
@@ -1000,35 +1163,25 @@ export function InvestmentSnapshot({
    * fact is now a line on "Our view" ("11 mo old · 1 contributor") and the
    * link into Research moved there with it.
    */
-  const perspectives = contributions && contributionFields && contributionFields.length > 0
-    && firmVsYou.authorCount >= 2 ? (
-    <SnapBlock
-      key="contributors"
-      testId="snapshot-perspectives"
-      title="Research perspectives"
-      meta={`${firmVsYou.authorCount} contributors`}
-      action={(
-        <button
-          type="button"
-          onClick={() => onOpenSubPage('research')}
-          className="text-sm text-primary-600 hover:underline dark:text-primary-400"
-        >
-          Open Research →
-        </button>
-      )}
-    >
-      <OurViewSummary
-        contributions={contributions}
-        fields={contributionFields}
-        coveringAnalystIds={coveringAnalystIds}
-        onOpenAnalyst={onOpenAnalyst}
-        currentUserId={currentUserId}
-        symbol={symbol}
-        mode="roster"
-        bare
-      />
-    </SnapBlock>
-  ) : null
+  /*
+   * ── And now it is gone entirely ────────────────────────────────────────
+   *
+   * The gate above kept it for the multi-author case, on the argument that
+   * who disagrees with whom is the one thing a prose excerpt cannot show.
+   * That argument was true of a block that showed ONE excerpt per section.
+   * "Our view" now shows every view the reader can see, each attributed,
+   * under a heading that says how many there are.
+   *
+   * Measured on TSLA: the roster read "3 contributors across 5 sections" in
+   * a block directly beneath the three contributors' actual words, with
+   * their names on them, in those five sections. It was a table of contents
+   * for the thing above it, which is exactly the fault the Overview has
+   * been audited for twice.
+   *
+   * `OurViewSummary`'s roster mode is untouched and still rendered by
+   * Research, which is where a roster without the prose belongs.
+   */
+  const perspectives = null
 
   /* ---------------------------------------------------------- what changed */
 

@@ -229,28 +229,38 @@ describe('the aggregated document was replaced, not duplicated', () => {
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
     .replace(/^[ \t]*\/\/.*$/gm, '')
 
-  it('renders the contributor summary on the Snapshot and in Firm Research, over one shared data source', () => {
+  it('renders the contributor summary in Firm Research, over the shared org-scoped data', () => {
     /*
-     * Updated for A2 (commit bb0e619a). The roster lives on the Snapshot ("who
-     * has written"), and A2 brought the SAME attributed summary into Research's
-     * aggregated FIRM view — the same component (OurViewSummary) over the same
-     * org-scoped contributions, not a second data model. It is NOT shown in the
-     * individual analyst view, which is one analyst's own document. The exact
-     * Research placement is pinned in firm-research-attribution.test.ts.
+     * Updated for A2 (commit bb0e619a), then again when the Overview's "Our
+     * view" became a summary of the written views themselves.
+     *
+     * A2 brought the attributed summary into Research's aggregated FIRM view
+     * over the same org-scoped contributions, not a second data model. That
+     * half is unchanged and is what this case now pins; the exact Research
+     * placement is in firm-research-attribution.test.ts.
+     *
+     * THE SNAPSHOT HALF IS DELIBERATELY GONE. `OurViewSummary` renders a
+     * CONTRIBUTOR ROSTER: who has written, counted. The Overview no longer
+     * shows one, because it now renders every written view in full, attributed
+     * inline, which states the same authorship as prose instead of as a count
+     * next to it. So the Snapshot does not import the component and there is
+     * no `contributionFields` prop left to hand it. The subject that survives
+     * — the Snapshot and Research must not grow two different models of who
+     * wrote what — is carried by `snapshot-says-it-once.test.tsx`, which
+     * asserts the Snapshot's authorship comes off the same org-scoped rows.
      */
-    // A2: present in AssetTab's Firm Research view, fed the shared org-scoped data.
     expect(TAB_CODE).toContain('<OurViewSummary')
     expect(TAB_CODE).toContain('fields={ourViewFields}')
     expect(TAB_CODE).toContain('contributions={allAssetContributions}')
-    // The same field list is handed to the Snapshot, so the two surfaces agree.
-    expect(TAB_CODE).toContain('contributionFields={ourViewFields}')
 
     const SNAP = fs.readFileSync(
       path.resolve(__dirname, '../InvestmentSnapshot.tsx'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
-    expect(SNAP).toContain('<OurViewSummary')
-    expect(SNAP).toContain('fields={contributionFields}')
+    // It still shares the EXCERPT helper, so the two surfaces clip and strip
+    // an analyst's words identically. Only the roster went.
+    expect(SNAP).toContain('ourViewExcerpt')
+    expect(SNAP).not.toContain('<OurViewSummary')
   })
 
   it('leaves Research a route to the contributors it no longer shows', () => {

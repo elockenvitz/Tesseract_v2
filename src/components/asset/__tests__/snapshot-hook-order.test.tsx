@@ -238,9 +238,10 @@ describe('the Snapshot survives context changes after loading', () => {
           created_by: 'u1', is_archived: false, updated_at: '2026-10-01T00:00:00Z',
           user: { id: 'u1', first_name: 'Ana', last_name: 'Bell' },
         }] as never}
-        contributionFields={[{ slug: 'thesis', label: 'Investment Thesis', sectionKeys: ['thesis'] }]}
-        coveringAnalystIds={new Set(['u1'])}
-        onOpenAnalyst={() => {}}
+        /* `contributionFields`, `coveringAnalystIds` and `onOpenAnalyst`
+           went with the "Research perspectives" roster they fed. This case
+           is about hook ORDER across renders, so what it needs is a caller
+           that supplies the props the component still has. */
       />,
     )
 

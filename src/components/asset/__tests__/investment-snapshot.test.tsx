@@ -760,7 +760,12 @@ describe('personal vs firm distinction (Phase 3)', () => {
       ...BASE,
       caseWrittenAt: '2026-01-01T00:00:00Z',
       coreSections: ['thesis', 'risks_to_thesis'],
-      sections: [{ section: 'thesis', content: 'We think LLY wins.', supportingDetail: null, updatedAt: '2026-01-01T00:00:00Z', authorName: 'Me' }],
+      sections: [
+        { section: 'thesis', content: 'We think LLY wins.', supportingDetail: null, updatedAt: '2026-01-01T00:00:00Z', authorName: 'Me' },
+        /* The second analyst's row. It is what "2 views" counts now: see
+           below. */
+        { section: 'thesis', content: 'The pipeline is thinner than that.', supportingDetail: null, updatedAt: '2026-01-01T00:00:00Z', authorName: 'Other' },
+      ],
     }
     renderSnapshot({
       currentUserId: 'me',
@@ -781,9 +786,22 @@ describe('personal vs firm distinction (Phase 3)', () => {
      * theirs, and which section more than one analyst has written. The
      * divergence is now stated where it happened rather than counted in a
      * sidebar.
+     *
+     * WHAT CHANGED UNDER THEM. "2 views" used to be counted off the
+     * `contributions` prop, because the block rendered only the first
+     * workspace row per section and so could not count its own content. It
+     * now renders EVERY row, and the count is the number of views actually
+     * drawn. That is the honest number: a contribution the org scope
+     * excludes is not a view the reader can read. So the fixture grows the
+     * second thesis row that the real query returns, rather than claiming
+     * two views and showing one.
+     *
+     * "You" is still contributions-derived, because WHOSE a view is comes
+     * from the author id, which the workspace rows do not carry. Both
+     * sections the reader wrote are marked, so this counts them.
      */
-    expect(screen.getByText('You')).toBeInTheDocument()
-    expect(screen.getByText(/2 views/)).toBeInTheDocument()
+    expect(screen.getAllByText('You')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: /2 views/ })).toBeInTheDocument()
   })
 
   it('never invents a unanimous firm thesis — a single author shows no divergence', () => {
