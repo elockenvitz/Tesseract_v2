@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import type { AssetWorkspaceData } from '../../../hooks/useAssetWorkspace'
 
 /**
@@ -146,7 +146,12 @@ describe('the case is told once', () => {
     })
     expect(screen.queryByTestId('snapshot-perspectives')).toBeNull()
     // The fact itself is not lost — it moves onto the block it describes.
-    expect(screen.getByTestId('snapshot-our-view')).toHaveTextContent('1 contributor')
+    // It used to read "1 contributor"; with one author the block now NAMES
+    // them instead of counting them, which is strictly more information and
+    // is what lets the sections drop their per-section bylines. The subject
+    // of this case — the roster is gone and authorship still stated once —
+    // is unchanged.
+    expect(screen.getByTestId('snapshot-our-view')).toHaveTextContent('by Eric')
   })
 
   it('draws the roster as soon as a second person has written', () => {
@@ -169,7 +174,13 @@ describe('the case is told once', () => {
       contributions: [contrib('thesis', 'me')],
       contributionFields: FIELDS,
     })
-    expect(screen.getByTestId('snapshot-our-view')).toHaveTextContent('Open Research')
+    // The label depends on freshness — a stale case is offered as the job
+    // ("Update the case") rather than as a destination — so this asserts the
+    // CONTROL exists, not which of its two wordings is showing.
+    expect(
+      within(screen.getByTestId('snapshot-our-view'))
+        .getByRole('button', { name: /Open Research|Update the case/ }),
+    ).toBeTruthy()
   })
 })
 
@@ -310,5 +321,123 @@ describe('every book is stated the same way', () => {
     const exposure = screen.getByTestId('snapshot-exposure')
     expect(exposure).toHaveTextContent(/position as of .*2026/)
     expect(exposure).not.toHaveTextContent(/position as of .*2025/)
+  })
+})
+
+/**
+ * "Our view" reads as prose, and staleness is a state rather than a tint.
+ *
+ * The block used to give every written section a heading ROW — section name,
+ * author, date, a YOU chip, sometimes a "2 views" link — above a two-line
+ * paragraph. On the common name, which is one analyst writing in one sitting,
+ * that printed the same name and the same date three times and the block read
+ * as a form with the answers filled in rather than as an argument.
+ *
+ * And staleness was the age label tinted amber. Tinted text is not a state:
+ * nothing on screen said what the colour meant, so a reader who had not been
+ * told the rule could not learn it from the page.
+ */
+describe('Our view reads as prose', () => {
+  /** A case written by two different people, in two different sections. */
+  function twoAuthorCase() {
+    data = {
+      ...BASE,
+      caseWrittenAt: WRITTEN,
+      coreSections: ['thesis', 'risks_to_thesis'],
+      sections: [
+        { section: 'thesis', content: 'Jeff Bezos has a sick yacht.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Eric' },
+        { section: 'risks_to_thesis', content: 'Lots of risks.', supportingDetail: null, updatedAt: WRITTEN, authorName: 'Dana' },
+      ],
+    }
+  }
+
+  it('names the one author once, not above every section', () => {
+    oneAuthorCase()
+    renderSnapshot({
+      currentUserId: 'me',
+      contributions: [contrib('thesis', 'me'), contrib('risks_to_thesis', 'me')],
+      contributionFields: FIELDS,
+    })
+    const text = screen.getByTestId('snapshot-our-view').textContent ?? ''
+    // Two written sections, one author: the name appears exactly once.
+    expect(text.match(/Eric/g)?.length).toBe(1)
+  })
+
+  it('runs the section name into the sentence rather than heading it', () => {
+    oneAuthorCase()
+    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    // The claim and its label are ONE paragraph, in reading order.
+    const para = within(screen.getByTestId('snapshot-our-view'))
+      .getByText(/Jeff Bezos has a sick yacht/)
+      .closest('p')
+    expect(para).toBeTruthy()
+    expect(para!.textContent?.replace(/\s+/g, ' ')).toMatch(
+      /^Investment thesis\. Jeff Bezos has a sick yacht\./,
+    )
+  })
+
+  it('puts attribution back on each section when two people wrote', () => {
+    // With one author the meta line can carry it; with two, WHO said it is
+    // part of what was said, so it returns — trailing the sentence.
+    twoAuthorCase()
+    renderSnapshot({
+      currentUserId: 'me',
+      contributions: [contrib('thesis', 'me'), contrib('risks_to_thesis', 'other')],
+      contributionFields: FIELDS,
+    })
+    const block = screen.getByTestId('snapshot-our-view')
+    expect(block).toHaveTextContent('2 contributors')
+    expect(block).toHaveTextContent('Eric')
+    expect(block).toHaveTextContent('Dana')
+    expect(block.textContent ?? '').not.toMatch(/by Eric/)
+  })
+
+  it('never claims a sole author when two people wrote the same section', () => {
+    // The trap: `caseSections` holds one row per section, so two analysts on
+    // one section leaves only one authorName in the written rows. The byline
+    // must come off the contribution count, not off that set.
+    oneAuthorCase()
+    renderSnapshot({
+      currentUserId: 'me',
+      contributions: [contrib('thesis', 'me'), contrib('thesis', 'other')],
+      contributionFields: FIELDS,
+    })
+    const text = screen.getByTestId('snapshot-our-view').textContent ?? ''
+    expect(text).not.toMatch(/by Eric/)
+    expect(text).toMatch(/2 contributors/)
+  })
+})
+
+describe('the stale case states its rule', () => {
+  it('draws a chip carrying the exact date and the threshold', () => {
+    oneAuthorCase() // written 2025-11-20, far past the 120-day threshold
+    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    const chip = screen.getByTestId('snapshot-stale-chip')
+    expect(chip).toHaveTextContent('Stale')
+    // The rounded age is readable; the exact date is what you act on.
+    expect(chip).toHaveTextContent(/last written .*2025/)
+    const why = chip.getAttribute('title') ?? ''
+    expect(why).toMatch(/120 days/)
+    expect(why).toMatch(/one quarter plus a reporting lag/)
+  })
+
+  it('offers the stale case as the job, not as a destination', () => {
+    oneAuthorCase()
+    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    expect(
+      within(screen.getByTestId('snapshot-our-view'))
+        .getByRole('button', { name: /Update the case/ }),
+    ).toBeTruthy()
+  })
+
+  it('says nothing about staleness on a case written today', () => {
+    oneAuthorCase()
+    data = { ...data, caseWrittenAt: new Date().toISOString() }
+    renderSnapshot({ currentUserId: 'me', contributionFields: FIELDS })
+    expect(screen.queryByTestId('snapshot-stale-chip')).toBeNull()
+    expect(
+      within(screen.getByTestId('snapshot-our-view'))
+        .getByRole('button', { name: /Open Research/ }),
+    ).toBeTruthy()
   })
 })

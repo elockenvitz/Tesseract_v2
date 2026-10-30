@@ -42,7 +42,8 @@
  * executions are portfolio-team scoped, so a reader can legitimately see a
  * name held in three books and a history covering fewer.
  */
-import { useMemo } from 'react'
+import { useMemo, type ReactNode } from 'react'
+import { clsx } from 'clsx'
 import { useAssetWorkspace } from '../../hooks/useAssetWorkspace'
 import { DecisionMemorySummary } from './DecisionMemorySummary'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
@@ -90,7 +91,7 @@ import { conclusionFigures } from './InvestmentConclusion'
  * claim.
  */
 import {
-  resolveWorkspaceState, type WorkspaceFacts,
+  resolveWorkspaceState, STALE_CASE_DAYS, type WorkspaceFacts,
 } from '../../lib/asset-workspace/context'
 /*
  * The excerpt helper, shared with Our View rather than reimplemented.
@@ -367,11 +368,37 @@ export function InvestmentSnapshot({
   const caseAgeDays = data.caseWrittenAt
     ? Math.floor((Date.now() - new Date(data.caseWrittenAt).getTime()) / 86_400_000)
     : null
-  /* 120 days is the resolver's STALE_CASE_DAYS; the same clock, not a new one. */
-  const caseStale = caseAgeDays != null && caseAgeDays >= 120
+  /* The resolver's own threshold, imported rather than retyped as `120`.
+     A literal here is how two surfaces end up disagreeing about staleness. */
+  const caseStale = caseAgeDays != null && caseAgeDays >= STALE_CASE_DAYS
   const caseAgeLabel = caseAgeDays == null
     ? undefined
     : caseAgeDays < 31 ? 'written this month' : `written ${Math.floor(caseAgeDays / 30)} months ago`
+
+  /*
+   * ── The stale treatment ────────────────────────────────────────────────
+   *
+   * This used to be the age label tinted amber. Tinted text is not a state:
+   * at a glance "written 11 months ago" in amber and the same words in grey
+   * are the same sentence, and nothing on screen said what the colour meant
+   * or what the reader was supposed to do about it. A reader who had never
+   * been told the rule could not learn it from the page.
+   *
+   * So the state gets its own chip in the one "act now" colour the Snapshot
+   * uses, the chip carries the exact last-written date rather than the
+   * rounded age, and hovering it states the rule in words. The rounded age
+   * stays beside it, untinted, because that is the readable version.
+   */
+  const caseWrittenOn = data.caseWrittenAt
+    ? new Date(data.caseWrittenAt).toLocaleDateString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric',
+      })
+    : null
+  const staleTitle = caseAgeDays == null ? undefined : (
+    `Nothing has been added to the investment case since ${caseWrittenOn}`
+    + ` — ${caseAgeDays} days. A case is treated as stale after ${STALE_CASE_DAYS} days,`
+    + ' which is one quarter plus a reporting lag.'
+  )
 
   /*
    * Each absence is one quiet chip, named ONCE, where it can be filled.
@@ -384,6 +411,78 @@ export function InvestmentSnapshot({
    */
   const caseGaps: string[] = []
   if (!variantRow) caseGaps.push('Where we differ not recorded')
+
+  /*
+   * ── One byline, or per-section attribution ─────────────────────────────
+   *
+   * Every written section used to carry a heading ROW: the section name, the
+   * author, the date, a YOU chip, and sometimes a "2 views" link — five
+   * pieces of chrome stacked above a two-line paragraph, three times over.
+   * On the common name, which is one analyst writing in one sitting, that
+   * printed the same name and the same date three times and the block read
+   * as a form with the answers filled in.
+   *
+   * When one person wrote all of it, they are named once, in the meta line,
+   * and the sections become prose. When more than one person wrote, the
+   * attribution goes back per section — because then WHO said it is part of
+   * what was said — but inline after the sentence rather than above it.
+   */
+  const writtenRows = [...caseSections.map(c => c.row), variantRow]
+    .filter((r): r is NonNullable<typeof r> => !!r && (r.content ?? '').trim().length > 0)
+  const namedAuthors = new Set(writtenRows.map(r => r.authorName).filter(Boolean))
+  /*
+   * `authorCount` is the gate, not `namedAuthors`, and the first draft got
+   * this wrong in a way a render test caught: `caseSections` holds ONE row
+   * per section (`core.find`), so when two analysts write the same section
+   * only one of them appears in `writtenRows`. Keying off that set alone
+   * named a sole author on a name two people had written — the single worst
+   * thing this block could claim. `firmVsYou.authorCount` counts distinct
+   * authors across every contribution, which is the actual question.
+   */
+  const soleAuthor = firmVsYou.authorCount === 1 && writtenRows.length > 0 && namedAuthors.size === 1
+    ? [...namedAuthors][0]!
+    : null
+  /* Whether that one author is the reader — so the per-section YOU chips can
+     go without the page losing the fact that this is the reader's own work. */
+  const soleAuthorIsYou = !!soleAuthor && !!currentUserId
+    && writtenRows.every(r => {
+      const authors = firmVsYou.bySection.get(r.section)
+      return !!authors && authors.size === 1 && authors.has(currentUserId)
+    })
+
+  const metaParts: ReactNode[] = []
+  if (soleAuthor) {
+    metaParts.push(<span key="by">by {soleAuthor}{soleAuthorIsYou ? ' (you)' : ''}</span>)
+  } else if (firmVsYou.authorCount > 0) {
+    metaParts.push(<span key="n">{firmVsYou.authorCount} contributors</span>)
+  }
+  /* The rounded age is dropped once the chip is showing: "written 11 months
+     ago · Stale · last written Nov 20, 2025" states the same date twice, and
+     the exact one is the one you act on. */
+  if (caseAgeLabel && !caseStale) metaParts.push(<span key="age">{caseAgeLabel}</span>)
+
+  const ourViewMeta = (metaParts.length > 0 || caseStale) ? (
+    <span className="inline-flex flex-wrap items-center gap-x-1.5">
+      {metaParts.map((part, i) => (
+        <span key={i}>
+          {i > 0 && <span className="px-1 opacity-60">·</span>}
+          {part}
+        </span>
+      ))}
+      {caseStale && (
+        <span
+          title={staleTitle}
+          data-testid="snapshot-stale-chip"
+          className="inline-flex cursor-help items-center gap-1 rounded bg-amber-50 px-1.5 py-px text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+        >
+          Stale
+          <span className="font-normal normal-case tracking-normal opacity-80">
+            · last written {caseWrittenOn}
+          </span>
+        </span>
+      )}
+    </span>
+  ) : undefined
 
   const ourView = (
     <SnapBlock
@@ -398,26 +497,21 @@ export function InvestmentSnapshot({
         firm, by contributor"), which on a single-author name listed the same
         three section names as the prose directly above it.
       */
-      meta={(caseAgeLabel || firmVsYou.authorCount > 0) && (
-        <>
-          {caseAgeLabel && (
-            <span className={caseStale ? 'text-amber-700 dark:text-amber-400' : undefined}>{caseAgeLabel}</span>
-          )}
-          {caseAgeLabel && firmVsYou.authorCount > 0 && <span> · </span>}
-          {firmVsYou.authorCount > 0 && (
-            <span>
-              {firmVsYou.authorCount} contributor{firmVsYou.authorCount === 1 ? '' : 's'}
-            </span>
-          )}
-        </>
-      )}
+      meta={ourViewMeta}
+      /* When the case is stale the way in is named as the job, not as a
+         destination: the chip states the problem, this states the fix. */
       action={(
         <button
           type="button"
           onClick={() => onOpenSubPage('research')}
-          className="text-sm text-primary-600 hover:underline dark:text-primary-400"
+          className={clsx(
+            'text-sm hover:underline',
+            caseStale
+              ? 'font-medium text-amber-700 dark:text-amber-400'
+              : 'text-primary-600 dark:text-primary-400',
+          )}
         >
-          Open Research →
+          {caseStale ? 'Update the case →' : 'Open Research →'}
         </button>
       )}
     >
@@ -434,53 +528,53 @@ export function InvestmentSnapshot({
       <div className="flex flex-col gap-5 xl:flex-row xl:gap-8">
         <div className="min-w-0 flex-1">
       {data.caseWrittenAt ? (
-        <div className="flex flex-col gap-3">
+        /*
+          Prose, not fields.
+          Each section is one paragraph with its name as a run-in lead, so the
+          block reads as an argument rather than as a filled-in form. The
+          excerpt budget went 280 -> 420 characters for the same reason: at
+          280 a thesis was routinely cut inside its second sentence, which is
+          where analysts here put the actual claim.
+          The text is still verbatim and still clipped on a sentence boundary
+          by `ourViewExcerpt`. Nothing on this page paraphrases an analyst.
+        */
+        <div className="flex max-w-[72ch] flex-col gap-3">
           {caseSections.map(({ key, row }) => {
             const written = (row?.content ?? '').trim().length > 0
+            const authors = firmVsYou.bySection.get(key)
+            const n = authors?.size ?? 0
+            const mine = !!currentUserId && !!authors?.has(currentUserId)
             return (
-              <div key={key} className="max-w-[72ch]">
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-                    {SECTION_LABEL[key] ?? key.replace(/_/g, ' ')}
-                  </span>
-                  {written && row?.authorName && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">{row.authorName}</span>
-                  )}
-                  {written && row?.updatedAt && (
-                    <span className="text-xs text-gray-400">
-                      {new Date(row.updatedAt).toLocaleDateString()}
-                    </span>
-                  )}
-                  {written && (() => {
-                    const authors = firmVsYou.bySection.get(key)
-                    const n = authors?.size ?? 0
-                    const mine = !!currentUserId && !!authors?.has(currentUserId)
-                    return (
-                      <>
-                        {mine && <StatusChip tone="recommended">You</StatusChip>}
-                        {n >= 2 && (
-                          <button
-                            type="button"
-                            onClick={() => onOpenSubPage('research')}
-                            className="text-xs text-amber-700 hover:underline dark:text-amber-400"
-                          >
-                            {n} views →
-                          </button>
-                        )}
-                      </>
-                    )
-                  })()}
-                </div>
-                {written ? (
-                  <p className="mt-1 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-                    {ourViewExcerpt(row!.content, 280)}
-                  </p>
-                ) : (
+              <p key={key} className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                <span className="font-semibold text-gray-900 dark:text-gray-100">
+                  {SECTION_LABEL[key] ?? key.replace(/_/g, ' ')}.
+                </span>{' '}
+                {written ? ourViewExcerpt(row!.content, 420) : (
                   /* An unwritten section is a hole in the case, and naming it
                      is more useful than hiding it — it is the next job. */
-                  <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">Not written.</p>
+                  <span className="text-gray-400 dark:text-gray-500">Not written.</span>
                 )}
-              </div>
+                {/* Attribution trails the sentence, and only when the meta
+                    line cannot already carry it for the whole block. */}
+                {written && !soleAuthor && row?.authorName && (
+                  <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
+                    — {row.authorName}
+                    {row.updatedAt && `, ${new Date(row.updatedAt).toLocaleDateString()}`}
+                  </span>
+                )}
+                {written && !soleAuthorIsYou && mine && (
+                  <span className="ml-1.5 align-middle"><StatusChip tone="recommended">You</StatusChip></span>
+                )}
+                {written && n >= 2 && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenSubPage('research')}
+                    className="ml-1.5 text-xs text-amber-700 hover:underline dark:text-amber-400"
+                  >
+                    {n} views →
+                  </button>
+                )}
+              </p>
             )
           })}
         </div>
@@ -509,14 +603,16 @@ export function InvestmentSnapshot({
           like two. */}
       {variantRow && (
         <div className="mt-4 max-w-[72ch] border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
-          <div className="flex flex-wrap items-baseline gap-2">
-            <span className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-              Where our thesis differs
-            </span>
-            {variantRow.authorName && <span className="text-xs text-gray-500">{variantRow.authorName}</span>}
-          </div>
-          <p className="mt-1 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
-            {ourViewExcerpt(variantRow.content ?? '', 280)}
+          <p className="text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+            <span className="font-semibold text-gray-900 dark:text-gray-100">
+              Where our thesis differs.
+            </span>{' '}
+            {ourViewExcerpt(variantRow.content ?? '', 420)}
+            {!soleAuthor && variantRow.authorName && (
+              <span className="ml-1.5 text-xs text-gray-400 dark:text-gray-500">
+                — {variantRow.authorName}
+              </span>
+            )}
           </p>
         </div>
       )}
