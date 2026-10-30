@@ -584,3 +584,46 @@ export function visualRestatesContext(v: ExploreVisual, context: string | undefi
   const caption = norm(`${v.weightPct.toFixed(1)}% of ${v.portfolioName ?? 'the book'}`)
   return clause === caption
 }
+
+/* ------------------------------------------- scenario_range label collisions */
+
+/**
+ * Width of one character in the scenario label row, in CSS pixels.
+ *
+ * Measured off the live render, not guessed: the row is `text-[9px] font-bold
+ * uppercase tracking-wide tabular-nums`, and across twenty labels the widest
+ * came in at 5.40px a character ("$244", 21.6px over 4). 5.6 is deliberately
+ * generous, because being wrong in this direction costs one unnecessary merge
+ * and being wrong in the other costs an overlap.
+ */
+export const SCENARIO_LABEL_CHAR_PX = 5.6
+
+/**
+ * Do two labels in the scenario row touch?
+ *
+ * Each is centred on its own price (`-translate-x-1/2` over `left: pos%`), so
+ * two prices a few dollars apart put two whole labels in almost the same
+ * place. Nothing checked for that: the row drew them on top of each other.
+ *
+ * Measured on the Ideas lens at 1920, before: 2 of the 5 visible framework
+ * cards overlapping — "Bear $180" under "$179" by 21.6px, and "Bull $400"
+ * under "$403" by 19.8px, both across the labels' full 9px height. The 52-week
+ * row below already avoids this against the cases, and its comment says why:
+ * "a 52-week low and a bear case are often within a few dollars". The last
+ * price is in exactly the same relationship to a case and was never given the
+ * same treatment.
+ *
+ * Percent in, percent out, so this is independent of the row's width except
+ * through `rowPx` — the same label pair collides on a 340px phone that clears
+ * easily on an 889px card.
+ */
+export function scenarioLabelsCollide(
+  a: { centrePct: number; chars: number },
+  b: { centrePct: number; chars: number },
+  rowPx: number,
+): boolean {
+  if (!(rowPx > 0)) return false
+  const halfPct = (chars: number) =>
+    ((chars * SCENARIO_LABEL_CHAR_PX) / 2 / rowPx) * 100
+  return Math.abs(a.centrePct - b.centrePct) < halfPct(a.chars) + halfPct(b.chars)
+}

@@ -4,6 +4,8 @@ import { Quote, HelpCircle } from 'lucide-react'
 
 import type { ExploreVisual as Visual } from '../../lib/mobile/explore-visual'
 import { fitsTheLabel, type YearRange } from '../../lib/market-data/daily-closes'
+import { scenarioLabelsCollide } from '../../lib/mobile/explore-visual'
+import { useWidth } from '../../lib/charts/use-width'
 
 /**
  * The Explore card's picture, one small component per archetype.
@@ -399,6 +401,42 @@ function ScenarioRange({ v, s, grow, interactive, year }: {
     }
     : {}
 
+  /**
+   * The last price, folded into a case label when the two would collide.
+   *
+   * Every label in the row is centred on its own price, so a market trading a
+   * few dollars from a modelled case puts two whole labels in the same place.
+   * Measured on the Ideas lens at 1920: 2 of the 5 visible framework cards
+   * had the last price lying across a case — "$179" over "Bear $180" by
+   * 21.6px and "$403" over "Bull $400" by 19.8px, the labels' full height.
+   *
+   * The 52-week row underneath already dodges this by living on its own line,
+   * and its comment gives the reason: a year low and a bear case are often
+   * within a few dollars. The last price stands in exactly that relationship
+   * to a case and never got the same care.
+   *
+   * Resolved by NAMING THEM TOGETHER rather than by moving either one. A
+   * label that slides off its tick stops pointing at anything — the lesson
+   * `ScenarioLadder` records from its own version of this, where drift of up
+   * to 32px detached a label from the end it named — and a third row would
+   * cost height the chart needs. One object, both facts, each still in its
+   * own ink, sitting on the tick they share.
+   */
+  const [rowRef, rowPx] = useWidth<HTMLDivElement>(0)
+  const labelChars = (m: { label: string; price: number; current: boolean }) =>
+    (m.current ? mark$(m.price) : `${m.label} ${mark$(m.price)}`).length
+  const currentMark = marks.find(m => m.current)!
+  // Nearest, not first: a last price can sit inside two cases' labels at once,
+  // and it belongs to the one it is actually next to.
+  const mergedCase = marks
+    .filter(m => !m.current && scenarioLabelsCollide(
+      { centrePct: clamp(pos(m.price)), chars: labelChars(m) },
+      { centrePct: clamp(pos(currentMark.price)), chars: labelChars(currentMark) },
+      rowPx,
+    ))
+    .sort((a, b) =>
+      Math.abs(a.price - currentMark.price) - Math.abs(b.price - currentMark.price))[0] ?? null
+
   return (
     <div
       data-explore-visual="scenario_range"
@@ -694,11 +732,16 @@ function ScenarioRange({ v, s, grow, interactive, year }: {
         would collide and a collision reads worse than a corner.
       */}
       {grow && cases.length > 0 ? (
-        <div className={clsx('relative mt-1 w-full', usable ? 'h-[23px]' : 'h-3.5')}>
-          {marks.map(m => (
+        <div ref={rowRef} className={clsx('relative mt-1 w-full', usable ? 'h-[23px]' : 'h-3.5')}>
+          {marks.map(m => {
+            // Folded into the case it collides with, and drawn there instead.
+            if (m.current && mergedCase) return null
+            const merged = !m.current && mergedCase?.id === m.id ? currentMark : null
+            return (
             <span
               key={m.id}
               data-scenario-label={m.current ? 'current' : m.label}
+              data-scenario-merged={merged ? 'current' : undefined}
               className={clsx(
                 'absolute top-0 -translate-x-1/2 whitespace-nowrap text-[9px] font-bold uppercase leading-none tracking-wide tabular-nums',
                 /* A label takes its mark's colour, so the row reads as the
@@ -714,8 +757,16 @@ function ScenarioRange({ v, s, grow, interactive, year }: {
               style={{ left: `${clamp(pos(m.price))}%` }}
             >
               {m.current ? mark$(m.price) : `${m.label} ${mark$(m.price)}`}
+              {/* The last price keeps its own ink, so the pair still reads as
+                  two facts rather than one longer case name. */}
+              {merged && (
+                <span className="ml-1 text-gray-700 dark:text-gray-200">
+                  · {mark$(merged.price)}
+                </span>
+              )}
             </span>
-          ))}
+            )
+          })}
           {/* The year's two ends, on their own line in the lightest ink on
               the card -- they are the frame, and a frame that competes with
               the claim inside it has stopped being one. A second row rather
