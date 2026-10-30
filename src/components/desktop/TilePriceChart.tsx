@@ -400,12 +400,25 @@ export function TilePriceChart({
         shell treats an unhandled click as "open this", and a control inside it
         has to say it is a control. Buttons, not a segmented div, because they
         are reached by keyboard like everything else on the shelf.
+
+        ── Why they sit right ───────────────────────────────────────────────
+
+        They were flush left, which is where the card's subject is: the
+        ticker, the claim and the state all start at the left edge, and the
+        chips started there too, reading as another line of what the card
+        says rather than as a control over the picture under them. On the
+        right they are plainly the chart's own knob -- the position
+        `PriceContext` already puts its identical row in (`ml-auto`), and the
+        one the rest of the block uses, since the caption and the percentage
+        read bottom-right under the plot. `justify-end` rather than a margin
+        so a narrow card that wraps the chips keeps every row aligned to the
+        same edge.
       */}
       <div
         data-testid="price-ranges"
         data-range={active}
         data-no-portal
-        className="mb-1 flex flex-wrap gap-1"
+        className="mb-1 flex flex-wrap justify-end gap-1"
       >
         {canSince && (
           <RangeChip
