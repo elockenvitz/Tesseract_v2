@@ -271,7 +271,7 @@ describe('the families are opt-in', () => {
      * the feed has just started carding and would open the asset cold
      * instead.
      */
-    expect(next).toContain('const INCLUDE: AttentionInclude = { research: true }')
+    expect(next).toContain('const INCLUDE: AttentionInclude = { research: true, decisions: true }')
     expect(next.match(/include[:=]\{?\s*INCLUDE/g)).toHaveLength(2)
   })
 
@@ -295,26 +295,23 @@ describe('the families are opt-in', () => {
     expect(hook).toContain('if (include?.research) {')
   })
 
-  it('does not ship the decision family against a dead status vocabulary', () => {
+  it('asks for the decision family too, now that it has a live producer', () => {
     /*
-     * ── Measured, not assumed ───────────────────────────────────────────
+     * This case previously asserted the OPPOSITE, and the reason is worth
+     * keeping rather than deleting. The decision family was held back in the
+     * change before this one because its producer,
+     * `useRecommendationCards`, filters `trade_queue_items.status` on three
+     * values production never writes — so wiring it would have shipped a
+     * flag, a family and a card type that silently produce nothing and read
+     * as finished.
      *
-     * "A decision waiting on you" was the fourth condition this change set
-     * out to deliver, and it is deliberately absent. `useRecommendationCards`
-     * filters `trade_queue_items.status` on `pending` / `proposed` /
-     * `awaiting_review`, and production holds none of those values in that
-     * column in any organisation — the workflow writes `idea`, `deciding`,
-     * `approved`, `executed` and so on, while `pending` belongs to
-     * `decision_requests` (30 rows, 14 in the reviewing org).
-     *
-     * So wiring it would have shipped a flag, a family and a card type that
-     * silently produce nothing, which reads as done and is not. This case
-     * fails if somebody wires it back without first moving the producer onto
-     * the table that holds the rows.
+     * It now has a producer that reads `decision_requests`, where the rows
+     * actually are. The guard that replaces this one lives beside that
+     * adapter, in `signals/__tests__/decision-recommendation`, and still
+     * fails if the feed is pointed back at the dead vocabulary.
      */
-    const hook = src('hooks/useDesktopAttentionFeed.ts')
-    expect(hook).not.toMatch(/\buseRecommendationCards\s*\(/)
-    expect(src('components/dashboard-next/DashboardNext.tsx')).not.toContain('decisions: true')
+    expect(src('components/dashboard-next/DashboardNext.tsx')).toContain('decisions: true')
+    expect(src('hooks/useDesktopAttentionFeed.ts')).toContain('if (include?.decisions) {')
   })
 
   it('reuses the pool for research rather than opening a second scan', () => {

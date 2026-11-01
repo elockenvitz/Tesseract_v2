@@ -21,6 +21,9 @@ import { isEligible, factsForTile, factKeyFor } from '../lib/memory/ready-to-rev
 import { renderableFacts } from '../lib/memory/what-changed'
 import { buildInsightCard } from '../lib/signals/builders'
 import type { DerivedInsight } from './mobile/useDerivedInsights'
+import { buildRecommendationCard } from '../lib/signals/builders'
+import { recommendationInputFrom } from '../lib/signals/decision-recommendation'
+import { useDecisionScan } from './useDesktopDecisions'
 import { researchBaseFor } from '../lib/research/case-state'
 import { unwrittenPositionCapital } from '../lib/signals/portfolio-issues'
 
@@ -72,6 +75,13 @@ export interface AttentionEntry {
      * which of the five framings it is. Opt-in; see `include`.
      */
     | 'research'
+    /**
+     * A proposed trade nobody has answered. Opt-in; see `include`.
+     *
+     * One entry per DECISION REQUEST, never per idea: the same idea reaching
+     * two books is two requests, answered separately.
+     */
+    | 'recommendation'
   /**
    * This candidate's own strength within its signal type, where the type
    * covers meaningfully different findings.
@@ -279,36 +289,21 @@ export interface AttentionInclude {
    * the reader is already reading.
    */
   research?: boolean
+  /**
+   * Proposed trades nobody has answered.
+   *
+   * Sourced from `decision_requests` through `useDecisionScan`, NOT from
+   * `useRecommendationCards` -- that producer filters
+   * `trade_queue_items.status` on three values the workflow never writes, so
+   * it has returned nothing for every reader since it was written. See
+   * `lib/signals/decision-recommendation` for the measurement.
+   *
+   * This one IS a query: the decision scan is not in the candidate pool. It
+   * is gated with `enabled`, and its first result is waited for below so a
+   * cold load does not paint and then reorder.
+   */
+  decisions?: boolean
 }
-
-/**
- * ── The fourth condition, and why it is not here ──────────────────────────
- *
- * "A decision waiting on you" was meant to arrive beside the research family,
- * through `useRecommendationCards` and `buildRecommendationCard`, which the
- * phone already has. It is not wired, because wiring it would have produced
- * nothing at all and looked finished.
- *
- * `useRecommendationCards` filters `trade_queue_items.status` on `pending`,
- * `proposed` and `awaiting_review`. Measured against production: those three
- * values do not occur in that column anywhere, in any organisation. The
- * statuses the workflow actually writes are `idea`, `deciding`, `discussing`,
- * `approved`, `executed`, `deleted`, `simulating`, `archived`, `cancelled` and
- * `rejected`. `pending` is a `decision_requests` status, which is a different
- * table -- and `decision_requests` holds 30 pending rows, 14 of them in the
- * reviewing organisation.
- *
- * So the producer reads the right concept out of the wrong table's vocabulary,
- * and has returned an empty array for every reader since it was written. That
- * is a defect in a shared mobile hook, it predates this change, and correcting
- * it means adapting `DecisionRecord` (which `useDecisionScan` already returns,
- * classified by `classifyDecision` as `reason: 'decide'`) onto
- * `RecommendationInput` -- plus deciding what the card's inline Approve and
- * Decline actions do on the desktop feed, which is a decision surface in its
- * own right.
- *
- * Left out rather than shipped dark.
- */
 
 export function useDesktopAttentionFeed(
   lens: IdeaLens,
@@ -319,6 +314,14 @@ export function useDesktopAttentionFeed(
   const include = opts.include
   // One query set for every parked-work card on the page, not one per card.
   const revisit = useReadyToRevisit()
+
+  /*
+   * Every book the reader can see, because an unanswered request is work
+   * wherever it sits. `useDecisionScan(null)` is the Decisions lens's own
+   * "all books" call, so this shares its cache entry rather than opening a
+   * second read of the same table under a different key.
+   */
+  const decisions = useDecisionScan(null, { enabled: !!include?.decisions })
 
 
   const needsIndex = facets.sectors.length > 0 || facets.countries.length > 0 || facets.exchanges.length > 0
@@ -436,10 +439,28 @@ export function useDesktopAttentionFeed(
       }
     }
 
+    /*
+     * A proposed trade nobody has answered. Opt-in.
+     *
+     * `recommendationInputFrom` decides BOTH halves of this and neither is
+     * decided here: whether the request is still waiting (`workOf`, the same
+     * predicate the Decisions lens uses, so a request cannot be open on one
+     * surface and settled on the other) and how its row maps onto the card's
+     * input. Rows it declines return null; rows the builder then suppresses --
+     * no readable rationale, a weight outside 0-100, a buy proposing a cut --
+     * are obeyed exactly like every other family's suppressions.
+     */
+    if (include?.decisions) {
+      for (const d of decisions.decisions) {
+        const input = recommendationInputFrom(d)
+        if (input) add(buildRecommendationCard(input), 'recommendation')
+      }
+    }
+
     return out
   }, [
     pool.feedItems, pool.lenses, pool.scenarioCards, pool.insights, revisit,
-    include?.research,
+    include?.research, include?.decisions, decisions.decisions,
   ])
 
   /* Narrowed by the reader's question, then ordered by the product's answer.
@@ -468,7 +489,25 @@ export function useDesktopAttentionFeed(
      * Client navigation never hit it because both were already resolved,
      * which is exactly why it reproduced only on a cold load.
      */
-    isLoading: pool.isLoading || !pool.isContextReady,
+    /*
+     * And, where it was asked for, the one producer that is not in the pool.
+     *
+     * The pool's own latch already covers the research family -- it waits for
+     * `useDerivedInsights` on boot -- but nothing waits for the decision scan,
+     * so a cold load would paint the feed and then reorder it when the
+     * decisions landed. That is the reshuffle `useDesktopCandidates` documents
+     * at length.
+     *
+     * `isFetched` rather than `!isLoading`: it turns true after the first
+     * success OR error and stays true, so a failing scan cannot hold the feed
+     * shut and a later refetch cannot put it back into loading. The same
+     * property the pool's latch provides, without needing one.
+     *
+     * Vacuous when `include.decisions` is absent, so the Ideas tab's loading
+     * behaviour is untouched.
+     */
+    isLoading: pool.isLoading || !pool.isContextReady
+      || (!!include?.decisions && !decisions.isFetched),
     isError: pool.isError,
     retry: pool.retry,
     hasNextPage: pool.hasNextPage,

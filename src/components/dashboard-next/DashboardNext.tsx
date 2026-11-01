@@ -46,32 +46,21 @@ import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
  * ranker and a second card contract, which is the duplication this whole
  * direction exists to end.
  *
- * ── The families that let Today and Research retire ───────────────────────
+ * ── The families that let the other lenses retire ─────────────────────────
  *
- * Research is in the feed now, through `INCLUDE` below, and with it the three
- * conditions those two lenses exist to raise: a position with no case on file,
- * a case nobody has revisited, and research a colleague filed since the case
- * was written. Two more arrive with them because they are the same family —
+ * All four conditions are in the feed now, through `INCLUDE` below: a position
+ * with no case on file, a case nobody has revisited, research a colleague
+ * filed since the case was written, and a proposed trade nobody has answered.
+ * Two more arrive with the research family because they are the same object —
  * a case the price has outrun, and a case only partly written.
  *
- * None of it is new product. Every one was already a declared signal type with
- * its own builder, its own tier and its own producer, which the phone's feed
- * has been showing all along. What was missing was desktop asking for it.
+ * Almost none of it is new product. Every one was already a declared signal
+ * type with its own builder, its own tier and its own producer. What was
+ * missing was desktop asking for them — and, for the decision family, a
+ * producer that read the table the rows are actually in.
  *
- * Opt-in rather than simply on, because asking for it changes what the Ideas
+ * Opt-in rather than simply on, because asking for them changes what the Ideas
  * TAB means too, and this tab is where that gets tried first.
- *
- * ── What is NOT here yet ──────────────────────────────────────────────────
- *
- * A DECISION WAITING ON YOU, the fourth condition, is not in the feed. Its
- * producer reads the right concept out of the wrong table and has returned
- * nothing for every reader since it was written; the measurement and the fix
- * path are recorded on `AttentionInclude`. Until it lands, Decisions still
- * holds material this surface does not.
- *
- * Explore still draws preview tiles rather than the lens tile. Its own header
- * argues for that ("a preview is a preview"), so changing it is a decision
- * about Explore and gets its own change.
  */
 
 type NextLens = 'feed' | 'explore'
@@ -85,7 +74,7 @@ type NextLens = 'feed' | 'explore'
  * would fall back to opening the asset cold. It costs no query either way:
  * the pool has been fetching the research scan all along.
  */
-const INCLUDE: AttentionInclude = { research: true }
+const INCLUDE: AttentionInclude = { research: true, decisions: true }
 
 const LENSES: { key: NextLens; label: string; hint: string; icon: typeof Lightbulb }[] = [
   { key: 'feed', label: 'Ideas', hint: 'What deserves attention', icon: Lightbulb },

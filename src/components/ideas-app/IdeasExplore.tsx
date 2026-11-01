@@ -544,6 +544,29 @@ export function IdeasExplore({
                  * its actions silently inert.
                  */
                 onAction={() => onSelect?.(entry)}
+                /*
+                 * A commitment verb must not name a navigation.
+                 *
+                 * Every action on this surface opens the work pane, which is
+                 * right for "Review cases" or "Capture": those name the work,
+                 * and the click takes you to where the work happens. It is
+                 * NOT right for `Approve`. A reader who presses Approve and
+                 * lands on a pane either believes they have approved
+                 * something they have not, or presses it again. The phone's
+                 * card can afford that label because the phone approves
+                 * inline; this column cannot.
+                 *
+                 * So the label is substituted and the action id is kept, which
+                 * is exactly what `primaryOverride` is for -- routing and
+                 * analytics are unchanged, and the builder keeps owning what
+                 * the card's real primary is.
+                 *
+                 * Only this family. Null leaves every other card's footer
+                 * precisely as it was.
+                 */
+                primaryOverride={entry.family === 'recommendation'
+                  ? { id: entry.card.actions.primary.id, label: 'Open the decision' }
+                  : null}
               />
               {/*
                 The analytical object. Beside the narrative once the TILE is

@@ -126,6 +126,13 @@ const FOCUS_FOR_FAMILY: Record<string, AssetFocus> = {
    * is the price against a written one with no model behind it.
    */
   research: 'research',
+  /*
+   * A proposed trade waiting on an answer opens at the decisions surface, not
+   * at the case. The reader is not being asked what they think of the name in
+   * general; they are being asked to answer a specific person's specific
+   * proposal, and that request lives with the decisions.
+   */
+  recommendation: 'decisions',
 }
 
 export function assetFocusFor(family: IdeasSelection['family']): AssetFocus {
