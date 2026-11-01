@@ -13,7 +13,7 @@ import { ideaRowFromFeedItem } from '../../lib/desktop-ideas/from-feed'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import { usePriceHistory } from '../../hooks/mobile/usePriceHistory'
 import type { SignalCard } from '../../lib/signals/contract'
-import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
+import { useDesktopAttentionFeed, type AttentionEntry, type AttentionInclude } from '../../hooks/useDesktopAttentionFeed'
 import { IDEA_LENSES, lensSpec, lensShowsInvestmentFilters, type IdeaLens } from '../../lib/desktop-ideas/lens'
 import { MATURITY_LABEL, maturityOf, type IdeaDirection, type IdeaMaturity } from '../../lib/desktop-ideas'
 import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
@@ -83,8 +83,17 @@ const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
 const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready']
 
 export function IdeasExplore({
-  onSelect, selectedKey = null, onSelectionInvalid, onProgress, lead,
+  onSelect, selectedKey = null, onSelectionInvalid, onProgress, lead, include,
 }: {
+  /**
+   * Candidate families beyond the ones the Ideas tab asks for.
+   *
+   * Forwarded to the feed and nothing else: this component does not decide
+   * what a family is, when it fires or what its card says. Absent by default
+   * and `IdeasApp` passes nothing, so the Ideas application's candidate pool
+   * and ranking are exactly what they were. See `AttentionInclude`.
+   */
+  include?: AttentionInclude
   /**
    * Anything the host wants ABOVE the cards and inside the scroll area.
    *
@@ -126,7 +135,7 @@ export function IdeasExplore({
   const [curateOpen, setCurateOpen] = useState(false)
   const facetCount = filterCount(facets)
 
-  const feed = useDesktopAttentionFeed(lens, { facets })
+  const feed = useDesktopAttentionFeed(lens, { facets, include })
   const { markIdeasViewed } = usePilotOnboarding()
   const listRef = useRef<HTMLDivElement | null>(null)
 

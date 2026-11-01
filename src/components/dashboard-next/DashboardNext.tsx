@@ -6,7 +6,7 @@ import { IdeasExploreBrowse } from '../ideas-app/IdeasExploreBrowse'
 import { IdeasWorkPane } from '../ideas-app/IdeasWorkPane'
 import { StartHereBand } from './StartHereBand'
 import { ArticleReader } from '../mobile/ArticleReader'
-import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
+import { useDesktopAttentionFeed, type AttentionEntry, type AttentionInclude } from '../../hooks/useDesktopAttentionFeed'
 import { selectionFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
 import { exploreOpen, type ExploreOpen } from '../../lib/desktop-ideas/explore-open'
 import { openAsset } from '../../lib/desktop-asset/navigate'
@@ -46,22 +46,46 @@ import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
  * ranker and a second card contract, which is the duplication this whole
  * direction exists to end.
  *
+ * ── The families that let Today and Research retire ───────────────────────
+ *
+ * Research is in the feed now, through `INCLUDE` below, and with it the three
+ * conditions those two lenses exist to raise: a position with no case on file,
+ * a case nobody has revisited, and research a colleague filed since the case
+ * was written. Two more arrive with them because they are the same family —
+ * a case the price has outrun, and a case only partly written.
+ *
+ * None of it is new product. Every one was already a declared signal type with
+ * its own builder, its own tier and its own producer, which the phone's feed
+ * has been showing all along. What was missing was desktop asking for it.
+ *
+ * Opt-in rather than simply on, because asking for it changes what the Ideas
+ * TAB means too, and this tab is where that gets tried first.
+ *
  * ── What is NOT here yet ──────────────────────────────────────────────────
  *
- * The four card types that let Today, Research and Decisions retire — a
- * decision waiting on you, a case gone stale, a position with no case on file,
- * research a colleague filed — are not in the feed, because they are new
- * candidate FAMILIES, not new chrome. They belong beside `stale_target` and
- * `crowding` in the feed's own producer. Until they exist this surface shows
- * what the Ideas feed shows, so the other lenses still hold material it does
- * not, and nothing here claims otherwise.
+ * A DECISION WAITING ON YOU, the fourth condition, is not in the feed. Its
+ * producer reads the right concept out of the wrong table and has returned
+ * nothing for every reader since it was written; the measurement and the fix
+ * path are recorded on `AttentionInclude`. Until it lands, Decisions still
+ * holds material this surface does not.
  *
- * Explore also still draws preview tiles rather than the lens tile. Its own
- * header argues for that ("a preview is a preview"), so changing it is a
- * decision about Explore and gets its own change.
+ * Explore still draws preview tiles rather than the lens tile. Its own header
+ * argues for that ("a preview is a preview"), so changing it is a decision
+ * about Explore and gets its own change.
  */
 
 type NextLens = 'feed' | 'explore'
+
+/**
+ * One constant, read by the feed and by the Explore resolver.
+ *
+ * Two call sites, because `exploreOpen` matches a preview against the ranked
+ * candidates to decide what it opens. Asked with a narrower set, Explore would
+ * fail to resolve exactly the previews this tab has just started carding and
+ * would fall back to opening the asset cold. It costs no query either way:
+ * the pool has been fetching the research scan all along.
+ */
+const INCLUDE: AttentionInclude = { research: true }
 
 const LENSES: { key: NextLens; label: string; hint: string; icon: typeof Lightbulb }[] = [
   { key: 'feed', label: 'Ideas', hint: 'What deserves attention', icon: Lightbulb },
@@ -91,7 +115,7 @@ export function DashboardNext() {
 
   /* Resolving an Explore preview, never for drawing. A memo over the shared
      candidate pool, so this fetches nothing. */
-  const resolver = useDesktopAttentionFeed('all')
+  const resolver = useDesktopAttentionFeed('all', { include: INCLUDE })
 
   /* The same thing a card click does, so Start here and the card it was
      derived from cannot land in different places. */
@@ -177,6 +201,7 @@ export function DashboardNext() {
             <div className={clsx('h-full', lens === 'explore' && 'hidden')}>
               <IdeasExplore
                 selectedKey={selected?.selection.key ?? null}
+                include={INCLUDE}
                 /* The band is handed the entries this feed is drawing, so the
                    instructions and the cards are one list in one order. */
                 lead={entries => <StartHereBand entries={entries} onOpen={openEntry} />}

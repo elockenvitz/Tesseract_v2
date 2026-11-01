@@ -116,6 +116,16 @@ const FOCUS_FOR_FAMILY: Record<string, AssetFocus> = {
    * the idea directly is a follow-up that needs a route by idea id.
    */
   ready_to_revisit: 'research',
+  /*
+   * The written record IS research, so the finding and the surface are the
+   * same object. True of all five framings: a case nobody has written, one
+   * nobody has revisited, one the price has outrun and evidence filed after
+   * the case was written all land where the case lives. The alternative for
+   * the price-move framing would be `framework`, which is where `scenario_gap`
+   * goes -- but that finding is the price against a MODELLED CASE, and this one
+   * is the price against a written one with no model behind it.
+   */
+  research: 'research',
 }
 
 export function assetFocusFor(family: IdeasSelection['family']): AssetFocus {
