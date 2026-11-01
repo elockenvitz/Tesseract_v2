@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Plus, Shield, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Plus, Shield, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun, LayoutDashboard } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -568,6 +568,22 @@ export function Header({
                     {[
                       { id: 'today', title: 'Dashboard', type: 'today', icon: Sun, color: 'text-blue-600', bg: 'bg-blue-50' },
                       { id: 'ideas', title: 'Ideas', type: 'ideas', icon: Lightbulb, color: 'text-purple-600', bg: 'bg-purple-50' },
+                      /*
+                        A THIRD ENTRY, AND NOT A CONTRADICTION OF THE NOTE
+                        ABOVE. That note removed three entries that opened the
+                        same component with the same props as a lens button.
+                        This one opens `DashboardNext`, which nothing else in
+                        the app mounts, so it is a surface with no second door
+                        rather than a second door onto a surface.
+
+                        It is here on purpose and temporarily: the Dashboard
+                        rebuilt as the feed is being decided, and a reader
+                        cannot decide without being able to open both and go
+                        back. When it is decided this entry disappears, either
+                        because the trial lost or because "Dashboard" above
+                        starts opening it.
+                      */
+                      { id: 'dashboard-next', title: 'Dashboard (new)', type: 'dashboard-next', icon: LayoutDashboard, color: 'text-blue-600', bg: 'bg-blue-50' },
                     ].map(item => (
                       <button
                         key={item.id}

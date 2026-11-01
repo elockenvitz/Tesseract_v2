@@ -11,6 +11,7 @@ import { AssetTab } from '../components/tabs/AssetTab'
 import { UnsavedEditsPrompt } from '../components/contributions/UnsavedEditsPrompt'
 import { requestUnsavedNavigation } from '../lib/contributions/unsaved-edits-guard'
 import { IdeasApp } from '../components/ideas-app/IdeasApp'
+import { DashboardNext } from '../components/dashboard-next/DashboardNext'
 import { DashboardShell } from '../components/dashboard/DashboardShell'
 import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
 import { MobilePipeline } from '../components/mobile/MobilePipeline'
@@ -1454,6 +1455,20 @@ export function DashboardPage() {
       case 'idea-generator':
       case 'ideas':
         return isMobile ? renderDashboardContent() : <IdeasApp selectedIdeaId={activeTab.data?.selectedIdeaId ?? null} />
+      /*
+       * The Dashboard rebuilt as the feed, under trial in its own tab.
+       *
+       * Deliberately a separate type rather than a flag on `today`: a reader
+       * trying it must be able to go back to the Dashboard they know in the
+       * same session, and a flag would have replaced it. Nothing else routes
+       * here, so reverting is deleting this arm.
+       *
+       * On a phone this resolves to the phone's own feed, like `today` and
+       * `ideas` do, because the phone already IS this design and mounting a
+       * desktop shell at 390px would be the worse of the two.
+       */
+      case 'dashboard-next':
+        return isMobile ? renderDashboardContent() : <DashboardNext />
       /*
        * `ideas-v2` is a COMPATIBILITY tab type now, not an application. Its
        * launcher entry is gone, but saved sessions and deep links still carry

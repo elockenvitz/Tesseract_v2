@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { clsx } from 'clsx'
 import { Loader2, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import { CuratePanel } from './CuratePanel'
@@ -83,8 +83,21 @@ const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
 const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready']
 
 export function IdeasExplore({
-  onSelect, selectedKey = null, onSelectionInvalid, onProgress,
+  onSelect, selectedKey = null, onSelectionInvalid, onProgress, lead,
 }: {
+  /**
+   * Anything the host wants ABOVE the cards and inside the scroll area.
+   *
+   * A render prop rather than a node, because the only thing worth putting
+   * there is derived from the ranked entries, which live here. The host gets
+   * the list this feed is actually drawing, in the order it is drawing it, so
+   * a band above the cards cannot state a different order than the cards
+   * below it.
+   *
+   * Absent by default, and `IdeasApp` passes nothing: the Ideas application
+   * renders exactly what it rendered before this prop existed.
+   */
+  lead?: (entries: AttentionEntry[]) => ReactNode
   /** The one next step this candidate can take. See `progressionFor`. */
   onProgress?: (entry: AttentionEntry, progression: Progression) => void
   /** The tile the reader picked. The app owns what happens next. */
@@ -397,6 +410,12 @@ export function IdeasExplore({
             )}
           </div>
         )}
+
+        {/* Inside the scroll area and above the cards, so it scrolls away
+            rather than holding permanent height over a feed the reader is
+            working down. Hidden while booting for the same reason the list
+            is: it is drawn from the same entries. */}
+        {!booting && lead?.(entries)}
 
         <div className={clsx('space-y-4 pt-4', booting && 'hidden')}>
           {entries.map(entry => {
