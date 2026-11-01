@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Plus, Shield, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun, Microscope, Scale, Landmark } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Plus, Shield, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
@@ -533,6 +533,34 @@ export function Header({
                       event contracts are untouched -- only the labels the user
                       reads change, which is the smallest safe way to retire
                       "Ideas V2" and "Book". */}
+                  {/*
+                    RESEARCH, PORTFOLIO AND DECISIONS ARE NOT LISTED HERE.
+
+                    They were, and each one opened `DashboardShell` on its own
+                    lens -- the SAME component with the same props the lens bar
+                    inside Dashboard already mounts. Clicking "Research" here
+                    and clicking Dashboard -> Research produced an identical
+                    screen, except this one spent a second tab on it. There was
+                    no answer to "why would I go to one rather than the other",
+                    because there was no difference.
+
+                    So the lens bar is the only way in, and these three are
+                    reachable in one click from Dashboard. The `research-v2` /
+                    `portfolio-v2` / `decisions-v2` tab types still exist and
+                    still render: saved sessions and deep links carry them, and
+                    `DashboardPage` mounts each on its lens exactly as before.
+                    This removes a duplicate DOOR, not a surface.
+
+                    Global search never offered these three (`useObjectSearch`
+                    lists Dashboard, Ideas and Today only), so this menu was
+                    the single duplicate door and there is no second one left
+                    behind.
+
+                    The grid stays `grid-cols-3` with two entries. The "More"
+                    group below is also three across, and shared column edges
+                    with one empty cell reads better than two icon grids on
+                    different tracks in one menu.
+                  */}
                   <div className="px-4 pb-2">
                     <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Decision OS</span>
                   </div>
@@ -540,9 +568,6 @@ export function Header({
                     {[
                       { id: 'today', title: 'Dashboard', type: 'today', icon: Sun, color: 'text-blue-600', bg: 'bg-blue-50' },
                       { id: 'ideas', title: 'Ideas', type: 'ideas', icon: Lightbulb, color: 'text-purple-600', bg: 'bg-purple-50' },
-                      { id: 'research-v2', title: 'Research', type: 'research-v2', icon: Microscope, color: 'text-sky-600', bg: 'bg-sky-50' },
-                      { id: 'portfolio-v2', title: 'Portfolio', type: 'portfolio-v2', icon: Scale, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                      { id: 'decisions-v2', title: 'Decisions', type: 'decisions-v2', icon: Landmark, color: 'text-slate-600', bg: 'bg-slate-100' },
                     ].map(item => (
                       <button
                         key={item.id}

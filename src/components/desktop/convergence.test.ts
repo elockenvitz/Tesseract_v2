@@ -812,6 +812,37 @@ describe('one Dashboard, five lenses', () => {
     }
   })
 
+  it('gives a lens no second door in the app menu', () => {
+    /*
+     * The app menu used to list Research, Portfolio and Decisions beside
+     * Dashboard, and each opened `DashboardShell` on its own lens -- the same
+     * component with the same props the lens bar already mounts, in a second
+     * tab. A reader had two controls for one screen and no way to tell them
+     * apart.
+     *
+     * Asserted on the launcher array rather than on the whole file: the three
+     * tab types legitimately appear elsewhere in the app (saved sessions, tab
+     * icons, deep links) and must keep working. What must not come back is a
+     * MENU ENTRY that mounts a lens the lens bar already offers.
+     */
+    const header = src('components/layout/Header.tsx')
+    /*
+     * Anchored on the "Decision OS" heading, not on the first Dashboard
+     * entry: the pilot menu above calls `onSearchResult({ id: 'today', title:
+     * 'Dashboard', ... })` directly, so that anchor matched the wrong menu and
+     * sliced to a `]` before this array even began.
+     */
+    const group = header.slice(header.indexOf('>Decision OS<'))
+    const launcher = group.slice(0, group.indexOf(']'))
+    for (const t of ['research-v2', 'portfolio-v2', 'decisions-v2', 'ideas-v2']) {
+      expect(launcher).not.toContain(`type: '${t}'`)
+    }
+    // And the two that remain are two genuinely different surfaces: the
+    // Dashboard shell, and the standalone Ideas application.
+    expect(launcher).toContain("type: 'today'")
+    expect(launcher).toContain("type: 'ideas'")
+  })
+
   it('keeps saved v2 sessions renderable, without migrating them', () => {
     // A session saved last week still holds `ideas-v2` etc. Each mounts the
     // same shell on its own lens, so nothing is rewritten on load and the
@@ -993,13 +1024,24 @@ describe('one module primitive', () => {
 describe('the launcher names the product, not the build', () => {
   const header = src('components/layout/Header.tsx')
 
-  it('shows the five canonical names', () => {
-    for (const label of [
-      "title: 'Dashboard'", "title: 'Ideas'", "title: 'Research'",
-      "title: 'Portfolio'", "title: 'Decisions'",
-    ]) {
-      expect(header).toContain(label)
-    }
+  /*
+   * SUPERSEDED, REWRITTEN, NOT DELETED.
+   *
+   * This asserted all five canonical names in the launcher, and it was right
+   * at the time: the point was that the menu reads as the product rather than
+   * as build stages ("Ideas V2", "Book"). Research, Portfolio and Decisions
+   * have since left the menu, because each entry mounted `DashboardShell` on
+   * a lens the lens bar inside Dashboard already offers -- a duplicate door,
+   * not a surface. Their lenses are named in `DashboardShell` and guarded by
+   * "offers all five lenses from one shell"; the duplicate's absence is
+   * guarded by "gives a lens no second door in the app menu".
+   *
+   * What survives of the original intent is the part about naming: whatever
+   * the menu does list, it lists under the product's name.
+   */
+  it('names what it lists after the product', () => {
+    expect(header).toContain("title: 'Dashboard'")
+    expect(header).toContain("title: 'Ideas'")
   })
 
   it('no longer shows build-stage labels', () => {
