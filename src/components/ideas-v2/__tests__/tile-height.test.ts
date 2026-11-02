@@ -116,13 +116,19 @@ describe('a wide tile spends less of its height on the picture', () => {
  * category with no archetype of its own. After: 0 cut.
  */
 describe('a chart is given room for the height it actually draws', () => {
+  /** The whole `minHeight` expression, which now spans several lines. */
+  const floorExpr = (grid: string) => {
+    const at = grid.indexOf('style={{\n              minHeight:')
+    expect(at, 'the minHeight style block').toBeGreaterThan(-1)
+    return grid.slice(at, grid.indexOf('}}', at))
+  }
+
   it('floors the box on the chart being present, not on the panel count', () => {
     const grid = read(GRID)
-    const line = grid.match(/style=\{\{ minHeight: [^\n]+/)?.[0]
-    expect(line).toBeTruthy()
-    expect(line).toMatch(/panels\.some\(p => p\.key === 'price'\)/)
+    const expr = floorExpr(grid)
+    expect(expr).toMatch(/panels\.some\(p => p\.key === 'price'\)/)
     // The condition that left a chart-only tile unfloored.
-    expect(line).not.toMatch(/panels\.length > 1/)
+    expect(expr).not.toMatch(/panels\.length > 1/)
   })
 
   /**
@@ -134,11 +140,47 @@ describe('a chart is given room for the height it actually draws', () => {
   it('still floors it at the panel box, so paging cannot resize the card', () => {
     const grid = read(GRID)
     expect(grid).toMatch(/const panelBox = chartHeight \+ 22/)
-    const line = grid.match(/style=\{\{ minHeight: [^\n]+/)?.[0]
-    expect(line).toContain('? panelBox :')
-    // And a tile with no chart still gets none: an archetype is `fill` and
-    // has no fixed height to protect.
-    expect(line).toContain(': undefined')
+    expect(floorExpr(grid)).toContain('? panelBox')
+  })
+
+  /**
+   * SUPERSEDED, and the reason recorded rather than the case deleted.
+   *
+   * This block used to assert `: undefined` on the third arm, on the stated
+   * reasoning that "an archetype is `fill` and has no fixed height to
+   * protect". The premise is true. The conclusion was wrong, and the way it
+   * was wrong is the lesson: a `flex-1` box with no floor is not sized by its
+   * contents, it is sized by whatever the ROW leaves over -- and the row's
+   * height comes from a DIFFERENT tile's content under `items-stretch`. So an
+   * archetype's height was decided by its neighbour.
+   *
+   * Measured live at 1920x889: the CEG decisions card, a `large` tile at
+   * 915x230 drawing `scenario_range`, got a picture box of 881x46. Three
+   * labelled cases and a marker in 46 pixels, on the widest tile in the field
+   * -- which `exploreCardSize` had promoted to a full row specifically so
+   * that ladder could be read. It was reported as looking "smushed".
+   *
+   * What the old case was protecting is kept and made explicit below: the
+   * archetype floor must stay BELOW every chart floor, so this change can
+   * never make a card taller than a chart card of the same rank, which is the
+   * "cards are too tall" complaint this file already answered once.
+   */
+  it('floors an archetype too, below the chart floor so nothing grows past it', () => {
+    const grid = read(GRID)
+    const expr = floorExpr(grid)
+    expect(expr).toContain('panels.length > 0 ? archetypeBox : undefined')
+
+    const box = Number(grid.match(/const archetypeBox = (\d+)/)?.[1])
+    expect(box, 'archetypeBox').toBeGreaterThan(46)   // the measured collapse
+    // `chartHeight` bottoms out at 92 and `panelBox` adds 22.
+    expect(box, 'archetypeBox must stay under the smallest chart floor')
+      .toBeLessThan(92 + 22)
+  })
+
+  it('still gives a tile with no picture at all no floor', () => {
+    // A tile with nothing to draw must not be padded to look like one that
+    // has something. That half of the old rule was right.
+    expect(floorExpr(read(GRID))).toContain(': undefined')
   })
 })
 

@@ -423,8 +423,29 @@ describe('a stretched tile has somewhere to put the height', () => {
      * as "the chart is present" rather than "there are two panels", so the
      * assertion matches the floor rather than the condition in front of it.
      */
-    expect(field).toMatch(/minHeight: [^\n]*\? panelBox : undefined/)
+    /*
+     * ── The THIRD arm arrived; the subject of this case still did not ────
+     *
+     * The expression was `<chart?> ? panelBox : undefined`, and the
+     * `undefined` arm was itself a defect for the same shape of reason as the
+     * gate above. An archetype has no intrinsic height, so with no floor its
+     * `flex-1` box took whatever the ROW left over -- and under
+     * `items-stretch` the row is sized by a DIFFERENT tile's content.
+     * Measured at 1920x889: the CEG `scenario_range` card, the widest tile in
+     * the field at 915px, drew its three-case ladder in a 46px box.
+     *
+     * So there are three arms now: the chart's floor, the archetype's, and
+     * `undefined` for a tile with no picture at all. What this case is FOR is
+     * unchanged -- `minHeight` and not `height`, floored at `panelBox` for
+     * the chart, on a `flex-1` box -- and the regression it guards is still
+     * the one it was written for.
+     */
     expect(field).toMatch(/minHeight: panels\.some\(p => p\.key === 'price'\)/)
+    expect(field).toMatch(/\?\s*panelBox/)
+    expect(field).toMatch(/panels\.length > 0 \? archetypeBox : undefined/)
+    // Still a floor, never an exact height: an exact height cannot grow, and
+    // the stretch would land under the picture instead of in it.
+    expect(field).not.toMatch(/style=\{\{ height: panelBox/)
     // The exact height that cannot grow, in either spelling of the gate.
     expect(field).not.toMatch(/[^n]height: panels\.(length > 1|some)[^\n]*\? panelBox/)
     expect(field).toMatch(/className="relative flex min-h-0 min-w-0 flex-1 flex-col"/)

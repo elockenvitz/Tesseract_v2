@@ -49,6 +49,7 @@ import {
 import { useDesktopExplore } from '../../hooks/useDesktopExplore'
 import type { RailCard } from '../../lib/dashboard/focus'
 import { coverageExplorePrompts } from '../../lib/desktop-ideas/coverage-prompts'
+import { tileSubject } from '../../lib/desktop-ideas/tile-subject'
 import type { CoverageResearchCandidate } from '../../lib/research/coverage-research-gaps'
 import {
   opportunitiesFrom, opportunitySize, withFeatureBudget, targetForOpportunity,
@@ -522,6 +523,35 @@ export function OpportunityTile({
      ladder, the plot and the caption are what `height` covers, plus the
      ~22px the horizon chips sit in above the plot. */
   const panelBox = chartHeight + 22
+  /**
+   * The floor for a tile whose picture is an archetype and not a chart.
+   *
+   * ── What "archetypes are `fill`, so they need no floor" missed ──────────
+   *
+   * An archetype has no intrinsic height by design: it measures the box it is
+   * given. The conclusion drawn from that was that it needs no floor. But a
+   * box with no floor on a `flex-1` child is whatever the ROW leaves over, and
+   * the row's height is set by a DIFFERENT tile's content -- so an archetype's
+   * size was being decided by its neighbour.
+   *
+   * Measured live at 1920x889. The CEG decisions card, a `large` tile at
+   * 915x230 drawing `scenario_range`, got a picture box of 881x46. A ladder
+   * with three labelled cases and a marker outside it, in 46 pixels. It was
+   * reported as looking "smushed", and it was the WIDEST tile on the page with
+   * the SHORTEST picture -- 19:1 -- because `exploreCardSize` had promoted it
+   * to a full row precisely so its visual could be read.
+   *
+   * ── Why not `panelBox` ──────────────────────────────────────────────────
+   *
+   * Because that is the chart's floor, and a chart is genuinely taller: it
+   * carries a plot, a caption and the horizon chips. Giving an archetype the
+   * chart's box would add height to every card that has no chart, which is the
+   * "cards are too tall" complaint this file already answered once. 84 is
+   * below every chart floor (92 + 22), so an archetype tile can never be
+   * taller than a chart tile of the same rank, and it is enough for a bar with
+   * a row of labels beneath it.
+   */
+  const archetypeBox = 84
 
   /*
    * ── Not saying the same thing twice ──────────────────────────────────────
@@ -657,6 +687,10 @@ export function OpportunityTile({
         symbol={item.symbol ?? null}
         name={item.companyName ?? null}
         size={scale}
+        /* What the card is about when it is about no name. See `tileSubject`:
+           this slot used to draw a bare em dash, which is the most prominent
+           line on the tile spent saying nothing. */
+        subject={tileSubject(item)}
       />
 
       {/* The adapter's own sentence. Never re-derived here: the producer knows
@@ -758,10 +792,22 @@ export function OpportunityTile({
              * panel list is at most an archetype plus a chart, so a length
              * above one already implies the chart is in it. The only case
              * that changes is the chart-only tile, which is the broken one.
-             * A tile with an archetype and no chart still gets no floor,
-             * correctly -- archetypes are `fill` and have no fixed height.
+             *
+             * ── And the archetype-only tile needs one too ────────────────
+             *
+             * That used to read "correctly -- archetypes are `fill` and have
+             * no fixed height". The premise is true and the conclusion was
+             * not: with no floor, a `flex-1` box is whatever the ROW leaves
+             * over, and the row is sized by a different tile's content. So an
+             * archetype's height was being set by its neighbour. Measured:
+             * the CEG `scenario_range` card, the widest tile on the field at
+             * 915px, drew its ladder in 46 pixels. See `archetypeBox`.
              */
-            style={{ minHeight: panels.some(p => p.key === 'price') ? panelBox : undefined }}
+            style={{
+              minHeight: panels.some(p => p.key === 'price')
+                ? panelBox
+                : panels.length > 0 ? archetypeBox : undefined,
+            }}
             data-testid="opportunity-visual"
             data-panel={panels[shown].key}
           >

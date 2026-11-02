@@ -1171,9 +1171,13 @@ async function collectNeglectedCoverage(userId: string, orgId: string): Promise<
       attention_type: 'action_required',
       reason_code: 'coverage_neglected',
       reason_text: lastUpdate
-        ? `No research update in ${daysSince} days — thesis may be stale`
+        ? `No research update in ${daysSince} days, so the thesis may be stale`
         : `Covering ${asset?.symbol} but no thesis or research on file`,
-      title: `${asset?.symbol} — Research stale`,
+      // Was "<SYM> — Research stale". The em dash is not this product's
+      // punctuation in user-visible copy, and on a compact tile the symbol
+      // already leads the card in its own type, so repeating it after a dash
+      // in the subtitle read as a second, decorative identity row.
+      title: `${asset?.symbol}: Research stale`,
       subtitle: asset?.company_name,
       tags: ['coverage', 'stale'],
       icon_key: 'TrendingUp',

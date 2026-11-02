@@ -1054,14 +1054,51 @@ const TILE_BESIDE: Record<TileSize, string> = {
 }
 
 export function TileIdentity({
-  symbol, name, size = 'compact',
-}: { symbol: string | null; name?: string | null; size?: TileSize }) {
+  symbol, name, size = 'compact', subject = null,
+}: {
+  symbol: string | null
+  name?: string | null
+  size?: TileSize
+  /**
+   * What the card is about when it is about no ticker.
+   *
+   * ── The dash ────────────────────────────────────────────────────────────
+   *
+   * This slot used to render `symbol ?? '—'`, so a card with no ticker drew a
+   * bare em dash at the tile's largest type, in black, where a name goes.
+   * Measured live: every one of the six Ideas prompts on the field led with it
+   * -- a 20px dash above "What are the biggest risks to your portfolio right
+   * now?" -- and it was reported as the cards "showing as dashed".
+   *
+   * A placeholder in the most prominent position on a card is worse than an
+   * empty position: it occupies the line a reader scans first and says
+   * nothing. It is also an em dash in a user-visible string, which this
+   * product does not use anywhere.
+   *
+   * ── What goes there instead ─────────────────────────────────────────────
+   *
+   * Whatever the card IS about, supplied by the caller because only the
+   * caller knows -- a book's name for a portfolio card, the kind of post for a
+   * prompt or a thought. Nothing is invented here: with no symbol and no
+   * subject the row does not render at all, and the card's own headline
+   * becomes its lead, which is what it should have been all along.
+   */
+  subject?: string | null
+}) {
+  const lead = symbol ?? subject
+  // No lead, no row. See `subject`: an empty position beats a placeholder.
+  if (!lead && !name) return null
   return (
     <div className="flex min-w-0 items-baseline gap-2">
-      <span className={clsx(
-        'font-black leading-none tracking-[-0.03em]',
-        TILE_DISPLAY[size],
-      )}>{symbol ?? '—'}</span>
+      {lead && (
+        <span className={clsx(
+          'font-black leading-none tracking-[-0.03em]',
+          // A subject is words, not a ticker: it wraps and it is not shouted
+          // at a ticker's weight. `truncate` keeps a long book name on a line.
+          symbol ? null : 'min-w-0 truncate font-semibold',
+          TILE_DISPLAY[size],
+        )}>{lead}</span>
+      )}
       {name && (
         <span className={clsx(
           'min-w-0 truncate font-medium text-gray-500',
