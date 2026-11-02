@@ -37,7 +37,7 @@
  * verbs are real, accessible buttons when the reader reaches for them.
  */
 
-import { useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import type { SemanticTone } from '../../lib/semantic-tone'
 import {
@@ -197,6 +197,42 @@ const SPAN: Record<TileFlow, Record<TileSize, string>> = {
  * scroll host, which is also the one element that is never remounted, so the
  * grid re-flows in place and the reader's scroll does not move.
  */
+/**
+ * The width at which the region stops being one column.
+ *
+ * The same 34rem the container query in `.gallery-region` uses, stated once
+ * here and read by both -- a second number would drift from it and the tiles
+ * would change scale at a width where the track count did not.
+ */
+export const GALLERY_TWO_TRACK_PX = 34 * 16
+
+/**
+ * ── One column means one scale ───────────────────────────────────────────
+ *
+ * `sizeByRank` grades the field: hero, large, medium, compact. That grading
+ * is about EMPHASIS in a wide mosaic, where a hero is half a row and a
+ * compact is a quarter of one, and it is how a reader sees which few findings
+ * lead.
+ *
+ * Below 34rem the region is a single track, so every tile is the same width
+ * whatever its rank -- and the grading stops meaning emphasis and starts
+ * meaning nothing but extra height. MEASURED in the Dashboard's browse column
+ * at 1920, 114 tiles at 376px wide: the tallest was a 356px hero, nearly
+ * square, with a 30px ticker and a 112px plot that were both chosen for a
+ * 915px card. The reader's words for it were that the cards are still too
+ * large.
+ *
+ * So a tile asks whether it is in a one-column region and draws at the
+ * compact scale if it is. The RANK is untouched -- order still carries the
+ * emphasis, which is the half of the grading that still works in a list.
+ */
+const GalleryNarrowContext = createContext(false)
+
+/** True inside a region currently resolving to one column. */
+export function useGalleryNarrow(): boolean {
+  return useContext(GalleryNarrowContext)
+}
+
 export function DesktopGallery({
   title, action, note, flow = 'ranked', region = false, children,
 }: {
@@ -219,8 +255,35 @@ export function DesktopGallery({
   flow?: TileFlow
   children: React.ReactNode
 }) {
+  /*
+   * Measured on the grid itself, and only in region mode.
+   *
+   * A window media query cannot answer this -- the same 1920px window shows
+   * this field at full width and at ~26rem beside an open workspace, which is
+   * the reason the track count is a container query in the first place. CSS
+   * answers it for the tracks; the tiles' own scale is a JavaScript number
+   * (`chartHeight`), so it needs the measurement too, taken ONCE for the field
+   * rather than per tile.
+   *
+   * Outside region mode the grid is sized off the window by Tailwind and is
+   * never one narrow column, so there is nothing to ask and no observer.
+   */
+  const gridRef = useRef<HTMLDivElement | null>(null)
+  const [narrow, setNarrow] = useState(false)
+  useEffect(() => {
+    const el = gridRef.current
+    if (!region || !el || typeof ResizeObserver === 'undefined') return
+    const read = (w: number) => setNarrow(w > 0 && w < GALLERY_TWO_TRACK_PX)
+    read(el.getBoundingClientRect().width)
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) read(e.contentRect.width)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [region])
+
   return (
-    <div data-testid="desktop-gallery" data-flow={flow} className="px-6 pb-10 pt-5">
+    <div data-testid="desktop-gallery" data-flow={flow} data-narrow={narrow ? 'true' : undefined} className="px-6 pb-10 pt-5">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>
         {/*
@@ -285,6 +348,7 @@ export function DesktopGallery({
         which ADAPTS to the row.
       */}
       <div
+        ref={gridRef}
         className={clsx(
           'mt-4 grid items-stretch gap-3',
           region
@@ -312,7 +376,9 @@ export function DesktopGallery({
           gridAutoFlow: flow === 'packed' ? 'row dense' : 'row',
         }}
       >
-        {children}
+        <GalleryNarrowContext.Provider value={narrow}>
+          {children}
+        </GalleryNarrowContext.Provider>
       </div>
     </div>
   )
@@ -534,9 +600,19 @@ export function sizeByRecency(index: number): TileSize {
  * duplicate-verb problem this model exists to avoid.
  */
 export function DesktopTile({
-  onOpen, eyebrow, tone = 'neutral', size = 'compact', flow = 'ranked',
+  onOpen, eyebrow, tone = 'neutral', size = 'compact', scale, flow = 'ranked',
   testId, dataAttrs, context, actions, inert = false, selected = false, children,
 }: {
+  /**
+   * How large to DRAW, where that differs from how many tracks to span.
+   *
+   * They are the same thing in a wide mosaic and defaults to `size` for every
+   * caller that has not thought about it. They come apart in a one-column
+   * region, where every cell is the same width whatever its rank, and a
+   * hero's padding, shelf and display type are all sized for a card twice as
+   * wide as the one it is in. See `useGalleryNarrow`.
+   */
+  scale?: TileSize
   onOpen: () => void
   /**
    * This tile has nothing to open, and must not look as though it does.
@@ -617,6 +693,9 @@ export function DesktopTile({
     if (window.getSelection()?.toString()) return
     onOpen()
   }
+
+  /* Span by rank, draw by width. Identical unless a caller says otherwise. */
+  const drawAt = scale ?? size
 
   return (
     <div
@@ -720,16 +799,21 @@ export function DesktopTile({
          * Only the hero moves. `large`, `medium` and `compact` were already
          * at `p-4`/`p-3` and are not what the reader was looking at.
          */
-        size === 'hero' ? 'gap-3 p-4' : size === 'large' ? 'gap-3 p-4'
-          : size === 'medium' ? 'gap-2 p-4' : 'gap-1.5 p-3',
+        /*
+         * `drawAt`, not `size`: in a one-column region the rank still picks
+         * the span but every cell is the same width, so a hero's frame there
+         * is a hero's frame around a compact card. See `scale` above.
+         */
+        drawAt === 'hero' ? 'gap-3 p-4' : drawAt === 'large' ? 'gap-3 p-4'
+          : drawAt === 'medium' ? 'gap-2 p-4' : 'gap-1.5 p-3',
       )}>
         <div className="flex flex-wrap items-center gap-1.5">
           {eyebrow}
         </div>
         {children}
-        {context && <TileShelf size={size} context={context} />}
+        {context && <TileShelf size={drawAt} context={context} />}
       </div>
-      {actions && <TileActions size={size}>{actions}</TileActions>}
+      {actions && <TileActions size={drawAt}>{actions}</TileActions>}
     </div>
   )
 }

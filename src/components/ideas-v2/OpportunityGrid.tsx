@@ -34,7 +34,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
   DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
-  TileAction, GallerySkeleton, type TileSize,
+  TileAction, GallerySkeleton, useGalleryNarrow, type TileSize,
 } from '../desktop/DesktopTile'
 import { TilePriceChart } from '../desktop/TilePriceChart'
 import {
@@ -398,7 +398,28 @@ export function OpportunityTile({
   year?: YearRange | null
 }) {
   const item = o.item
-  const big = size === 'hero' || size === 'large'
+  /*
+   * ── Rank decides the span; WIDTH decides the scale ──────────────────────
+   *
+   * `size` is the tile's rank in the field, and it governs two different
+   * things that used to be one: how many tracks the cell spans, and how
+   * large the tile draws itself inside that cell.
+   *
+   * The span is right. The scale was not, in a one-column region: every tile
+   * there is the same width whatever its rank, so a hero drew a 30px ticker
+   * and a 112px plot -- both chosen for a 915px card -- inside a 376px one.
+   * MEASURED in the Dashboard's browse column at 1920, 114 tiles: the tallest
+   * was 356px and nearly square, which is the "left hand pane cards are still
+   * too large" the reader reported with the AMZN Decisions card as the
+   * example.
+   *
+   * So `scale` collapses to compact when the region is one column, and `size`
+   * is still what goes out as `data-size`. Rank keeps the emphasis it can
+   * still carry in a list, which is the order.
+   */
+  const narrow = useGalleryNarrow()
+  const scale: TileSize = narrow ? 'compact' : size
+  const big = scale === 'hero' || scale === 'large'
 
   /*
    * The three verbs the authored field had, restored on the shared shelf.
@@ -495,7 +516,7 @@ export function OpportunityTile({
      own box in `fill` mode, so a shorter plot is a shorter plot and not a
      cropped one. 150 -> 112 and 120 -> 98 keep both above the ~92px a narrow
      tile has always drawn legibly. */
-  const chartHeight = size === 'hero' ? 112 : big ? 98 : 92
+  const chartHeight = scale === 'hero' ? 112 : big ? 98 : 92
   /* The carousel's box, sized to the taller panel. The chart is it: the
      archetypes are a bar and two labels and none of them reaches 120px. The
      ladder, the plot and the caption are what `height` covers, plus the
@@ -603,6 +624,7 @@ export function OpportunityTile({
       dataAttrs={{ 'data-kind': o.kind, 'data-subtype': item.subtype }}
       tone={toneFor(o)}
       size={size}
+      scale={scale}
       onOpen={onOpen}
       inert={inert}
       selected={selected}
@@ -634,7 +656,7 @@ export function OpportunityTile({
       <TileIdentity
         symbol={item.symbol ?? null}
         name={item.companyName ?? null}
-        size={size}
+        size={scale}
       />
 
       {/* The adapter's own sentence. Never re-derived here: the producer knows
