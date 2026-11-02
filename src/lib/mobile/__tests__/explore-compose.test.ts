@@ -245,6 +245,62 @@ describe('aggregates', () => {
       expect(a.destination.kind).toBe('filter')
     }
   })
+
+  /**
+   * ── The names behind the count ──────────────────────────────────────────
+   *
+   * MEASURED live at 1920x889: the Ideas aggregate rendered at `large` --
+   * 418px, no picture, one line of text, one button. An aggregate carried a
+   * title and a count and nothing else, so `exploreVisualFor` correctly
+   * resolved `none` and the tile had a sentence to fill a card the size of a
+   * chart.
+   *
+   * A count is the least informative form of what an aggregate knows. It
+   * stands for real rows, those rows have names, and the names let a reader
+   * see whether any of them is theirs before deciding to open the filter.
+   */
+  const recent = (category: string, symbols: (string | null)[]) =>
+    symbols.map((symbol, n) => ({
+      id: `x${n}`, dedupeKey: `x${n}`, category, subtype: 'signal',
+      title: `t${n}`, symbol, occurredAt: new Date(NOW - 86_400_000).toISOString(),
+      destination: { kind: 'action', action: 'open_asset' }, importance: 0.5,
+    })) as never
+
+  it('names the assets it stands for', () => {
+    const [agg] = aggregatesFor(recent('ideas', ['AAPL', 'MSFT', 'NVDA']), NOW)
+    expect(agg.context).toBe('AAPL, MSFT and NVDA')
+  })
+
+  /** Deduped: one asset can contribute several rows, and "AAPL and AAPL" is a bug. */
+  it('names each asset once', () => {
+    const [agg] = aggregatesFor(recent('ideas', ['AAPL', 'AAPL', 'MSFT', 'AAPL']), NOW)
+    expect(agg.context).toBe('AAPL and MSFT')
+  })
+
+  /** Capped, with the remainder COUNTED rather than dropped: a partial line says so. */
+  it('counts the names it did not print', () => {
+    const [agg] = aggregatesFor(recent('ideas', ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN']), NOW)
+    expect(agg.context).toBe('AAPL, MSFT and NVDA, and 2 more')
+  })
+
+  /** A row with no symbol contributes nothing rather than a gap in the list. */
+  it('skips a member with no symbol', () => {
+    const [agg] = aggregatesFor(recent('ideas', ['AAPL', null, 'MSFT']), NOW)
+    expect(agg.context).toBe('AAPL and MSFT')
+  })
+
+  /** And says nothing at all rather than an empty sentence. */
+  it('says nothing when no member has a symbol', () => {
+    const [agg] = aggregatesFor(recent('ideas', [null, null, null]), NOW)
+    expect(agg.context).toBeUndefined()
+    // The tile is still produced: the count is real whether or not it can name.
+    expect(agg.count).toBe(3)
+  })
+
+  it('carries the count as a metric too', () => {
+    const [agg] = aggregatesFor(recent('ideas', ['AAPL', 'MSFT', 'NVDA']), NOW)
+    expect(agg.metric).toEqual({ value: '3', label: 'ideas', direction: 'neutral' })
+  })
 })
 
 describe('sparkline symbols', () => {

@@ -709,6 +709,34 @@ export function shortNextAction(next: unknown): string | undefined {
  */
 const MIN_AGGREGATE = 3
 const AGGREGATE_WINDOW_DAYS = 7
+/** How many names an aggregate prints before it counts the rest. */
+const AGGREGATE_NAMES = 3
+
+/**
+ * The names an aggregate stands for, as a sentence.
+ *
+ * Deduped because one asset can contribute several rows to the same window and
+ * "AAPL, AAPL and MSFT" reads as a bug. Capped so a window of twenty does not
+ * print twenty tickers, and the remainder is COUNTED rather than dropped: the
+ * reader needs to know the line is partial. A member with no symbol is skipped
+ * rather than rendered as a gap, and an aggregate whose members are all
+ * symbolless says nothing at all instead of an empty sentence.
+ */
+function namesBehind(members: ExploreItem[]): string | undefined {
+  const seen = new Set<string>()
+  for (const m of members) {
+    const s = upper(m.symbol)
+    if (s) seen.add(s)
+  }
+  const names = [...seen]
+  if (!names.length) return undefined
+  const shown = names.slice(0, AGGREGATE_NAMES)
+  const rest = names.length - shown.length
+  const list = shown.length > 1
+    ? `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`
+    : shown[0]
+  return rest > 0 ? `${list}, and ${rest} more` : list
+}
 
 export function aggregatesFor(items: ExploreItem[], now: number): ExploreItem[] {
   const recent = items.filter(i => {
@@ -724,7 +752,8 @@ export function aggregatesFor(items: ExploreItem[], now: number): ExploreItem[] 
   ]
 
   for (const g of groups) {
-    const n = recent.filter(i => i.category === g.category).length
+    const members = recent.filter(i => i.category === g.category)
+    const n = members.length
     if (n < MIN_AGGREGATE) continue
     out.push({
       id: `agg-${g.category}`,
@@ -734,6 +763,32 @@ export function aggregatesFor(items: ExploreItem[], now: number): ExploreItem[] 
       category: g.category,
       subtype: 'aggregate',
       title: g.label(n),
+      /**
+       * The names behind the count.
+       *
+       * ── The defect ──────────────────────────────────────────────────────
+       *
+       * MEASURED live at 1920x889: the Ideas aggregate rendered at `large` --
+       * 418px tall, no picture, one line of text and one button. An aggregate
+       * carries a title and a count and nothing else, so `exploreVisualFor`
+       * correctly resolves `none`, and the tile had a sentence to fill a card
+       * the size of a chart.
+       *
+       * The count is the one thing an aggregate says, and a count is the least
+       * informative form of what it knows. It stands for real rows; those rows
+       * have names; and "AAPL, MSFT and NVDA" is the same fact told in a way a
+       * reader can act on -- they can see whether any of the three is theirs
+       * before deciding to open the filter.
+       *
+       * Not fabricated and not padded: the symbols are the members' own, in
+       * the order they were composed, deduped, and capped so the line stays a
+       * line. A member with no symbol contributes nothing rather than a blank.
+       */
+      context: namesBehind(members),
+      /* The count, as the metric it always was. Printing it in the figure slot
+         as well as the sentence is the one place a tile may repeat itself:
+         `visualRestatesMetric` has no picture here to defer to. */
+      metric: { value: String(n), label: g.category === 'ideas' ? 'ideas' : 'updates', direction: 'neutral' },
       count: n,
       // The newest member's timestamp, so an aggregate of stale things does not
       // present itself as fresh.

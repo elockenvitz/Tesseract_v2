@@ -467,6 +467,36 @@ export function withFeatureBudget(
 export function withRunRhythm(
   sizes: readonly OpportunitySize[],
   maxRun = 7,
+  /**
+   * Which cells have something to fill a taller card with.
+   *
+   * ── Why a veto is not the gaming this rule forbids ──────────────────────
+   *
+   * The rhythm is POSITIONAL on purpose: it counts cells, never content, so a
+   * tile cannot grow because it happens to carry a chart. That property is
+   * what keeps `opportunitySize` ungameable, and it is kept exactly.
+   *
+   * What it could not see is the other direction. MEASURED live at 1920x889:
+   * the Ideas aggregate rendered at `large` -- 418px, no picture, one line of
+   * text. The rhythm had promoted it to break a run, by position, and there
+   * was nothing in it to occupy the height it was given.
+   *
+   * Growing on content and REFUSING to grow on the absence of content are not
+   * the same permission. The first lets a tile argue for itself; the second
+   * only stops size being forced onto emptiness. So this is a veto, never a
+   * promotion: a vetoed cell is SKIPPED and the rhythm looks to the next one.
+   *
+   * Precisely what that grants, because the first draft of this comment
+   * overclaimed and a test caught it: skipping a break leaves the run alive,
+   * so the NEXT break lands on a later cell -- one the unfiltered rule had
+   * passed over. The floor therefore MOVES emphasis. What it cannot do is
+   * manufacture any: no vetoed cell is ever promoted, and the total number of
+   * promotions never exceeds what the positional rule alone would make. Both
+   * are asserted in `rhythm-floor.test`.
+   *
+   * Omitted by default, so every existing caller keeps the behaviour it had.
+   */
+  canFill?: (index: number) => boolean,
 ): OpportunitySize[] {
   const out = [...sizes]
   let run = 0
@@ -474,6 +504,10 @@ export function withRunRhythm(
     if (out[i] !== out[i - 1]) { run = 1; continue }
     run += 1
     if (run <= maxRun) continue
+    /* The run is NOT reset on a veto. The wall is still a wall, so the rule
+       keeps looking for a cell that can break it rather than giving up on
+       this stretch because one tile in it was empty. */
+    if (canFill && !canFill(i)) continue
     /* One step up, never two: a `medium` becomes `large`, a `compact` becomes
        `medium`. Jumping a run of compacts straight to `large` would put a
        feature in the middle of the quietest part of the field. */

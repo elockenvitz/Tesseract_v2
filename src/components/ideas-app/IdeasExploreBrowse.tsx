@@ -171,6 +171,12 @@ export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
     () => withRunRhythm(
       withFeatureBudget(shown.map(opportunitySize), MAX_FEATURES, FEATURE_WINDOW),
       MAX_RUN,
+      /* A tile the resolver drew no picture for has nothing to put in the
+         extra height, so the rhythm skips it and breaks the run on the next
+         cell instead. The resolver's OWN answer decides this -- not a guess
+         about the item -- so a producer that starts supplying a picture
+         becomes promotable with no change here. */
+      i => exploreVisualFor(shown[i].item as never)?.kind !== 'none',
     ),
     [shown],
   )
