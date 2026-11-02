@@ -105,10 +105,27 @@ const ladder = (bear: number, bull: number) => ({
   updatedAt: daysAgo(20), valid: true, reason: '',
 } as any)
 
+/**
+ * jsdom implements no scrolling, so `scrollIntoView` does not exist on an
+ * element -- not as a no-op, as an absent property. The header's primary
+ * action calls it, so without this every case that presses that button fails
+ * with a TypeError that says nothing about the behaviour under test.
+ *
+ * Installed here rather than inside one case so it is clearly the harness
+ * standing in for the browser, and the ids it records are available to any
+ * case that wants to assert where a control actually points.
+ */
+const scrolledTo: string[] = []
+Object.defineProperty(Element.prototype, 'scrollIntoView', {
+  configurable: true, writable: true,
+  value: function (this: Element) { scrolledTo.push(this.id) },
+})
+
 beforeEach(() => {
   data = { ...BASE }
   readFor.length = 0
   editorFor.length = 0
+  scrolledTo.length = 0
   openEngagement.mockClear()
 })
 
@@ -481,5 +498,199 @@ describe('the decision band turns understanding into a decision', () => {
     const fired = spy.mock.calls.some(([e]: any) => e?.type === 'decision-engine-action')
     expect(fired).toBe(true)
     spy.mockRestore()
+  })
+})
+
+/* ------------------------------------------------------ one vertical read */
+
+/**
+ * The page reads top to bottom, the way an answer is read.
+ *
+ * ── What it was ───────────────────────────────────────────────────────────
+ *
+ * `DesktopColumns` -- a 1.62fr lead beside a 300px-minimum context gutter.
+ * MEASURED live at a 1440px pane: the grid resolved to `831px 513px`, and the
+ * sections split across it so The case and Framework sat at x=472 while
+ * Price, Research status, Evidence on record and Largest position sat at
+ * x=1336. Reading the page meant going down one column and back up the
+ * other, and nothing said which order the halves were in.
+ *
+ * ── Why this reverses a recorded decision ─────────────────────────────────
+ *
+ * The pass that introduced two columns had a reason, quoted in
+ * `convergence.test.ts`: half-width modules auto-placed into a grid "stack
+ * down the left and leave the right empty whenever the data is sparse, which
+ * is what left these pages using a quarter of the canvas". That reason is
+ * about CANVAS USE. This is a different question, and the trade is
+ * deliberate: an asset workspace is read at a fixed measure, and spending
+ * canvas to get that is the choice. The four lens detail panes are unchanged
+ * and still iterate through `DETAILS` in that guard, which is why this file
+ * is not in it.
+ *
+ * jsdom performs no layout, so the geometry is in the commit message and
+ * these cases assert the STRUCTURE that produces it: one stack, every
+ * section a direct child of it, in the order the focus rule chose.
+ */
+describe('the workspace is one column, not a mosaic', () => {
+  const populated = () => ({
+    ...BASE,
+    sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(30),
+    spot: 162, target: 200, ladder: ladder(120, 260),
+    positions: [position()],
+    evidence: [{ id: 'e1', title: 'A note', createdAt: daysAgo(40), authorName: 'A', isShared: true }],
+    liveIdeas: [{ id: 'i1', action: 'add', stage: 'deciding', rationale: null, portfolioName: 'Large Cap Core' }],
+    history: [{ date: dateAgo(3), close: 160 }, { date: dateAgo(1), close: 162 }],
+  } as AssetWorkspaceData)
+
+  const panels = (root: HTMLElement) => [
+    ...root.querySelectorAll('[data-testid="desktop-section"],[data-testid="desktop-module"]'),
+  ]
+
+  /** THE case: one parent for every panel on the page. */
+  it('hangs every section off a single stack', () => {
+    data = populated()
+    render(<AssetWorkspacePane asset={asset} />)
+    const found = panels(screen.getByTestId('asset-workspace'))
+    expect(found.length).toBeGreaterThan(3)
+    const parents = new Set(found.map(p => p.parentElement))
+    expect(parents.size).toBe(1)
+  })
+
+  it('caps the measure instead of filling the canvas', () => {
+    data = populated()
+    render(<AssetWorkspacePane asset={asset} />)
+    const stack = panels(screen.getByTestId('asset-workspace'))[0].parentElement!
+    // The two halves of "reads like an answer": a measure cap, and centred
+    // in whatever width it is given.
+    expect(stack.className).toMatch(/max-w-\[100ch\]/)
+    expect(stack.className).toMatch(/\bmx-auto\b/)
+    expect(stack.className).toMatch(/flex-col/)
+    // The grid it replaced must not come back on this surface.
+    expect(stack.className).not.toMatch(/\bgrid\b/)
+  })
+
+  /**
+   * The focus rule is unchanged, and this is what proves it survived: it
+   * produced a lead list and a context list, and concatenating them has to
+   * leave what led still leading.
+   */
+  it('keeps the focus order, lead first', () => {
+    data = populated()
+    render(<AssetWorkspacePane asset={asset} focus="research" />)
+    const ids = panels(screen.getByTestId('asset-workspace'))
+      .map(p => p.id || p.getAttribute('data-module'))
+    // Research leads with the case; price and the position are context.
+    expect(ids.indexOf('the-case')).toBe(0)
+    expect(ids.indexOf('the-case')).toBeLessThan(ids.indexOf('evidence'))
+  })
+
+  it('reorders for a position focus without hiding anything', () => {
+    data = populated()
+    render(<AssetWorkspacePane asset={asset} focus="position" portfolioId="p1" />)
+    const ids = panels(screen.getByTestId('asset-workspace'))
+      .map(p => p.id || p.getAttribute('data-module'))
+    // The framework leads here, because it is the only thing that can say the
+    // position is wrong. The case still follows it rather than disappearing.
+    expect(ids[0]).toBe('framework')
+    expect(ids).toContain('the-case')
+  })
+})
+
+/* --------------------------------------------------- the one thing to do */
+
+/**
+ * The action row has a shape.
+ *
+ * `IdeaDetail`, `ResearchDetail` and `PositionDetail` each open with one solid
+ * primary and then go quiet. This row opened with "Ask AI" -- amber, quiet --
+ * then Team, then Full asset page: three quiet controls and no answer to
+ * "what am I meant to do with this", on a surface the reader reached FROM a
+ * finding.
+ *
+ * The verb is `primaryActionFor`, the research vocabulary `ResearchDetail`
+ * already calls, so the two cannot drift into two verb lists.
+ */
+describe('the action row leads with the one thing to do', () => {
+  const firstAction = () => {
+    const row = screen.getByText('Ask AI').closest('div')!
+    return row.querySelector('button')!
+  }
+
+  it('offers a solid primary before anything quiet', () => {
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
+    render(<AssetWorkspacePane asset={asset} />)
+    const first = firstAction()
+    // A case written 400 days ago is stale, and the desk's verb for that is
+    // Review thesis. Taken from the shared model, not spelled here.
+    expect(first).toHaveTextContent('Review thesis')
+    expect(first.className).toMatch(/bg-blue-700/)
+    // Ask AI is still there, and still after it.
+    expect(first).not.toHaveTextContent('Ask AI')
+  })
+
+  it('says Write the case when there is none', () => {
+    // `stateOf` reaches `no-thesis` only where research EXISTS and no thesis
+    // was written from it. With nothing at all the state is `thin`, and the
+    // desk's verb for that is Add evidence -- the shared model's answer, not
+    // this surface's, which is the point of taking the verb from it.
+    data = { ...BASE, evidence: [{ id: 'e1', title: 'A note', createdAt: daysAgo(10), authorName: 'A', isShared: true }] } as AssetWorkspaceData
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(firstAction()).toHaveTextContent('Write the case')
+  })
+
+  it('says Add evidence when the record is empty', () => {
+    data = { ...BASE }
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(firstAction()).toHaveTextContent('Add evidence')
+  })
+
+  /**
+   * THE case against a dead control. The two non-case targets are both
+   * conditional -- `new-since-review` renders only when evidence arrived
+   * after the case, `evidence` only when any is on record -- so the verb and
+   * the thing it scrolls to can disagree. A button that scrolls to nothing is
+   * the failure the panes' overflow icons were removed for.
+   */
+  it('never points at a section that did not render', async () => {
+    // Thin: the verb is Add evidence, and there is no evidence section.
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(2), evidence: [] }
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(firstAction()).toHaveTextContent('Add evidence')
+    await userEvent.click(firstAction())
+    expect(scrolledTo).toHaveLength(1)
+    // Whatever it pointed at has to be ON the page.
+    expect(document.getElementById(scrolledTo[0])).not.toBeNull()
+    // And here specifically, the fallback is what kept it alive.
+    expect(scrolledTo[0]).toBe('the-case')
+  })
+
+  /** The counter-check: the fallback must not swallow a target that DID render. */
+  it('points at the arrival section when that is what the verb names', async () => {
+    data = {
+      ...BASE,
+      sections: [section({ updatedAt: daysAgo(60) })], coreSections: ['thesis'],
+      caseWrittenAt: daysAgo(60),
+      // `isNewSinceReview` is the hook's own flag, not a date comparison the
+      // pane makes -- which is why the fixture has to set it rather than
+      // relying on the createdAt being later than the written date.
+      evidence: [{ id: 'e1', title: 'Arrived after', createdAt: daysAgo(5), authorName: 'A', isShared: true, isNewSinceReview: true }],
+    } as AssetWorkspaceData
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(firstAction()).toHaveTextContent('Review new evidence')
+    await userEvent.click(firstAction())
+    expect(scrolledTo).toEqual(['new-since-review'])
+  })
+
+  it('opens the editor itself where the verb is to write', async () => {
+    // Research on record, no thesis written from it: `no-thesis`, the one
+    // state where this surface can answer its own verb.
+    data = { ...BASE, evidence: [{ id: 'e1', title: 'A note', createdAt: daysAgo(10), authorName: 'A', isShared: true }] } as AssetWorkspaceData
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(screen.queryByTestId('real-thesis-editor')).toBeNull()
+    await userEvent.click(firstAction())
+    // This surface CAN author, which `ResearchDetail` cannot -- its own
+    // comment says authoring "happens on the Asset page". So the primary does
+    // the thing rather than handing off to it.
+    expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
   })
 })

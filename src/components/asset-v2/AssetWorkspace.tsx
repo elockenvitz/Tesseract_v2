@@ -43,7 +43,7 @@
 
 import { useMemo } from 'react'
 import { clsx } from 'clsx'
-import { ArrowUpRight, PencilLine, X } from 'lucide-react'
+import { ArrowDown, ArrowUpRight, PencilLine, X } from 'lucide-react'
 import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
 import {
   useAssetWorkspace, primaryPosition, otherPositions,
@@ -54,13 +54,13 @@ import {
 } from '../../lib/desktop-asset'
 import { ideasTabFor } from '../../lib/desktop-ideas'
 import {
-  CORE_SECTIONS, SECTION_LABEL, STATE_LABEL, stateOf,
+  CORE_SECTIONS, SECTION_LABEL, STATE_LABEL, stateOf, primaryActionFor,
   type ResearchSubject,
 } from '../../lib/desktop-research'
 import { toneForGap, GAP_LABEL, type GapState } from '../../lib/desktop-portfolio/model'
 import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 import {
-  DesktopModule, DesktopSection, DesktopColumns, DesktopStat, EYEBROW,
+  DesktopModule, DesktopSection, DesktopStat, EYEBROW,
 } from '../desktop/DesktopModule'
 import { FrameworkScale, WeightBar, money, bigMoney } from '../portfolio-v2/PortfolioVisual'
 import { anchoredWindow, PriceSinceReview } from '../research-v2/ResearchVisual'
@@ -256,8 +256,11 @@ export function AssetWorkspacePane({
     </DesktopSection>
   )
 
+  /* `id` on this one and on `price`: they were the only panels on the page
+     with no handle at all -- no `id`, no `moduleKey` -- so nothing could
+     scroll to them and nothing could name them. Every sibling had one. */
   const framework = data.ladder?.valid && data.spot != null ? (
-    <DesktopModule key="framework" title="Framework" meta="the ladder, against today">
+    <DesktopModule key="framework" id="framework" title="Framework" meta="the ladder, against today">
       <FrameworkScale ladder={data.ladder} spot={data.spot} />
     </DesktopModule>
   ) : null
@@ -280,7 +283,7 @@ export function AssetWorkspacePane({
   ) : null
 
   const priceSince = window ? (
-    <DesktopModule key="price" title="Price">
+    <DesktopModule key="price" id="price" title="Price">
       <PriceSinceReview w={window} since="written" />
     </DesktopModule>
   ) : null
@@ -422,6 +425,31 @@ export function AssetWorkspacePane({
 
   /* ------------------------------------------------------- composition */
 
+  /**
+   * The one thing to do next, and the section that answers it.
+   *
+   * Where the verb is to WRITE, this surface can do it -- the case section
+   * edits inline -- so the primary turns editing on rather than handing off.
+   * `ResearchDetail` cannot, and its own comment says why: "An authoring
+   * state's next step is authoring, which happens on the Asset page."
+   *
+   * The target falls back to the case whenever the section the verb names did
+   * not render. A button that scrolls to nothing is the dead-control failure
+   * the panes' overflow icons were removed for, and the two candidate
+   * targets here are both conditional: `new-since-review` exists only when
+   * evidence has arrived, `evidence` only when any is on record.
+   */
+  const authoring = state === 'no-thesis' || state === 'incomplete-thesis'
+  const primaryTarget =
+    state === 'evidence-since-review' && arrival ? 'new-since-review'
+    : state === 'thin' && evidenceOnRecord ? 'evidence'
+    : 'the-case'
+  const runPrimary = () => {
+    if (authoring) setEditing(true)
+    document.getElementById(primaryTarget)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   // Focus reorders one page. It never hides a section behind a tab.
   const lead: React.ReactNode[] = []
   const context: React.ReactNode[] = []
@@ -483,10 +511,40 @@ export function AssetWorkspacePane({
         target={target}
         teamable={teamable}
         onOpenLegacy={onOpenLegacy}
+        primary={{ label: primaryActionFor(subject), run: runPrimary }}
       />
-      <div className="px-6 pb-12 pt-5">
-        <DecisionBand data={data} position={position} symbol={symbol} onOpenLegacy={onOpenLegacy} />
-        <DesktopColumns lead={<>{lead}</>} context={context.length ? <>{context}</> : undefined} />
+      {/*
+        ── One vertical read, not a mosaic ────────────────────────────────────
+
+        This was `DesktopColumns` -- a 1.62fr lead beside a 300px-minimum
+        context gutter. MEASURED live at a 1440px pane: the grid resolved to
+        `831px 513px`, and the six sections split across it so that The case
+        and Framework sat at x=472 while Price, Research status, Evidence on
+        record and Largest position sat at x=1336. Reading the page meant
+        going down one column and back up the other, and nothing on the page
+        said which order the two halves were in.
+
+        The previous pass went TO two columns for a recorded reason, quoted in
+        `convergence.test.ts`: half-width modules auto-placed into a grid
+        "stack down the left and leave the right empty whenever the data is
+        sparse, which is what left these pages using a quarter of the canvas".
+        That reason is about CANVAS USE. This is a different question, and the
+        trade is deliberate: an asset workspace is read the way an answer is
+        read, top to bottom at a fixed measure, and spending canvas to get
+        that is the choice being made. The four lens detail panes are
+        unchanged and stay on two columns, which is why that guard still
+        iterates `DETAILS` and this file is not in it.
+
+        The focus ordering above is untouched. It produced a lead list and a
+        context list; here they concatenate, so what led still leads and what
+        was context still follows it.
+      */}
+      <div className="px-6 pb-12 pt-5" data-asset-body>
+        <div className="mx-auto flex w-full max-w-[100ch] flex-col gap-6">
+          <DecisionBand data={data} position={position} symbol={symbol} onOpenLegacy={onOpenLegacy} />
+          {lead}
+          {context}
+        </div>
       </div>
     </div>
   )
@@ -592,7 +650,7 @@ export function DecisionBand({
  */
 function AssetHeader({
   symbol, companyName, spot, position, showBook, state, gap, daysSinceWritten,
-  issue, origin, target, teamable, onOpenLegacy,
+  issue, origin, target, teamable, onOpenLegacy, primary,
 }: {
   symbol: string | null
   companyName: string | null
@@ -607,6 +665,26 @@ function AssetHeader({
   target: EngagementTarget
   teamable: boolean
   onOpenLegacy?: () => void
+  /**
+   * The one thing to do next, in the lens panes' own grammar.
+   *
+   * ── What this header had instead ────────────────────────────────────────
+   *
+   * Nothing. `IdeaDetail`, `ResearchDetail` and `PositionDetail` each open
+   * their action row with a solid primary -- the same blue button, the same
+   * trailing chevron -- and this row opened with "Ask AI", an amber quiet
+   * control, followed by Team and Full asset page. Three quiet controls and
+   * no answer to "what am I meant to do with this". A reader arrives here
+   * FROM a finding, and the surface named the finding in its caption and
+   * then offered nothing that acts on it.
+   *
+   * The verb comes from `primaryActionFor`, which is the desk's existing
+   * research vocabulary and the same function `ResearchDetail` calls, so the
+   * two surfaces cannot drift into two verb lists. Passed in rather than
+   * derived here because running it needs the pane's own editing state and
+   * its knowledge of which sections actually rendered.
+   */
+  primary: { label: string; run: () => void }
 }) {
   const title = issueTitle(issue)
   const detail = issueDetail(issue)
@@ -663,6 +741,17 @@ function AssetHeader({
       )}
 
       <div className="mt-3 flex flex-wrap items-center gap-1 pb-3">
+        {/* The same primary the other three lens panes lead with: one solid
+            control, left of everything quiet, so the row has a shape rather
+            than being a run of equal-weight text buttons. */}
+        <button
+          type="button"
+          onClick={primary.run}
+          className="mr-1 inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
+        >
+          {primary.label}
+          <ArrowDown className="h-3.5 w-3.5 opacity-70" />
+        </button>
         {/* The D1 seam, which the legacy Asset page never had: the pane is
             mounted once in Layout and binds to whatever object is passed. */}
         <button
