@@ -144,10 +144,35 @@ export function AnchoredPriceChart({
             the moment this chart landed there: the caption read "Price over
             available history" -- the honest refusal -- and this line, two
             inches left of it, read "from decided". The axis already made the
-            distinction; the readout was asserting what the caption denied. */}
-        <span className="truncate text-[11px] text-gray-500">
-          {w.reachesAnchor ? `from ${anchorTick}` : 'over the window shown'}
+            distinction; the readout was asserting what the caption denied.
+
+            While the reader is scrubbing it names the DAY instead, because a
+            price that moves under the pointer with no date attached is a
+            number the reader cannot place. The date is the one off
+            `w.dates`, never derived from the index: these are trading days
+            and the spacing is uneven. */}
+        <span data-chart-readout-when className="truncate text-[11px] text-gray-500">
+          {picked != null && w.dates[picked]
+            ? day(w.dates[picked])
+            : w.reachesAnchor ? `from ${anchorTick}` : 'over the window shown'}
         </span>
+        {/* The affordance, which the chart had none of.
+            Reported in exactly these terms: "im seeing some charts that are
+            not interactive like in a research tile". It WAS interactive --
+            it has scrubbed on hover since it landed -- but the only sign was
+            a crosshair cursor, which a reader sees after they are already
+            over the line and never when deciding whether to try. The rail's
+            charts carry a visible `5D 1M 3M ALL` and so read as controls.
+
+            A range selector would be the wrong answer here: this window is
+            anchored at a review and changing it would destroy the claim the
+            chart is making. So the hint says what this chart actually does,
+            and it goes quiet once the reader is doing it. */}
+        {picked == null && (
+          <span data-chart-scrub-hint className="ml-auto shrink-0 text-[10px] text-gray-400 dark:text-gray-500">
+            Hover for any day
+          </span>
+        )}
       </div>
 
       <div className="relative flex items-start gap-2">

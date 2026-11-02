@@ -20,6 +20,22 @@
 
 export interface AnchoredWindow {
   series: number[]
+  /**
+   * The date of each close in `series`, same length and same order.
+   *
+   * ── Why the ends were not enough ────────────────────────────────────────
+   *
+   * `from` and `to` label the axis, and a chart that scrubs needs to name the
+   * point under the pointer. `AnchoredPriceChart` moves a real readout as the
+   * reader sweeps the line and could say only the price, because nothing here
+   * carried the day it belonged to.
+   *
+   * Interpolating one between `from` and `to` is not available: these are
+   * TRADING days, unevenly spaced across weekends and holidays, so a date
+   * derived from an index would be a figure with no source. The dates were
+   * already in hand at the slice and were being thrown away.
+   */
+  dates: string[]
   changePct: number
   /**
    * The window genuinely begins AT the anchor -- the series covers it, and
@@ -77,6 +93,8 @@ export function anchoredWindow(
 
   return {
     series: slice.map(p => p.close),
+    // The same slice, so an index into one is an index into the other.
+    dates: slice.map(p => p.date),
     changePct: ((slice[slice.length - 1].close - slice[0].close) / slice[0].close) * 100,
     reachesAnchor: anchored,
     days: Math.round(
