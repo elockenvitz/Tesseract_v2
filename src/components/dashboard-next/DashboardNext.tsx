@@ -8,7 +8,7 @@ import { IdeasWorkPane } from '../ideas-app/IdeasWorkPane'
 import { StartHereBand } from './StartHereBand'
 import { ArticleReader } from '../mobile/ArticleReader'
 import { useDesktopAttentionFeed, type AttentionEntry, type AttentionInclude } from '../../hooks/useDesktopAttentionFeed'
-import { selectionFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
+import { selectionFor, selectionForPosition, type IdeasSelection } from '../../lib/desktop-ideas/selection'
 import { exploreOpen, type ExploreOpen } from '../../lib/desktop-ideas/explore-open'
 import { openAsset } from '../../lib/desktop-asset/navigate'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
@@ -210,38 +210,50 @@ export function DashboardNext() {
       </header>
 
       <div className="min-h-0 flex-1">
-        {/*
-          The book report.
-
-          Full width and with no work pane beside it: a book IS the subject
-          here, not a finding you open something else from, and
-          `PortfolioWorkspace` already carries its own header, book picker and
-          position detail. Mounting the existing lens rather than writing a
-          second one is the same decision the feed made about `IdeasExplore` --
-          a second portfolio surface would be a second answer to "what does
-          this book weigh", which is the duplication this direction exists to
-          end.
-
-          Mounted on first use and kept mounted after: it runs several queries,
-          so a reader who never opens it pays nothing, and a reader who does
-          keeps their chosen book when they go back to the feed and return.
-        */}
-        {portfolioSeen && (
-          <div className={clsx('h-full', lens !== 'portfolio' && 'hidden')}>
-            <PortfolioWorkspace />
-          </div>
-        )}
-
-        {/* Both browse surfaces stay mounted and are hidden by class, so
+        {/* All three browse surfaces stay mounted and are hidden by class, so
             switching lens keeps each one's scroll, filters and loaded pages.
-            See `IdeasApp` for why that is not state worth restoring. */}
-        <div className={clsx('flex h-full', lens === 'portfolio' && 'hidden')}>
+            See `IdeasApp` for why that is not state worth restoring.
+
+            One split row holds all three, rather than Portfolio sitting
+            outside it at full width as it did. The book was the one lens a
+            reader could not open a name from, and it is the lens where the
+            question "what is going on in this holding" comes up most. Putting
+            it in the same row means the workspace, the way back out of it and
+            the feed's own geometry are one mechanism for every lens instead
+            of two. */}
+        <div className="flex h-full">
           <div
             className={clsx(
               'min-w-0 border-r border-gray-200 dark:border-gray-700',
               splitOpen ? 'w-[42%] min-w-[30rem] max-w-[40rem]' : 'w-full border-r-0 px-2',
             )}
           >
+            {/*
+              The book report.
+
+              Mounting the existing lens rather than writing a second one is
+              the same decision the feed made about `IdeasExplore` -- a second
+              portfolio surface would be a second answer to "what does this
+              book weigh", which is the duplication this direction exists to
+              end.
+
+              Mounted on first use and kept mounted after: it runs several
+              queries, so a reader who never opens it pays nothing, and a
+              reader who does keeps their chosen book when they go back to the
+              feed and return.
+
+              `onOpenPosition` is what makes a holding open HERE. Without it
+              the lens dispatches a window event that only the old Dashboard
+              deck listens for, so in this shell a click on a position did
+              nothing at all.
+            */}
+            {portfolioSeen && (
+              <div className={clsx('h-full', lens !== 'portfolio' && 'hidden')}>
+                <PortfolioWorkspace
+                  onOpenPosition={target => openWorkspace(selectionForPosition(target), null, null)}
+                />
+              </div>
+            )}
             <div className={clsx('h-full', lens !== 'explore' && 'hidden')}>
               <IdeasExploreBrowse
                 selectedKey={selected?.selection.key ?? null}
@@ -260,7 +272,11 @@ export function DashboardNext() {
                 }}
               />
             </div>
-            <div className={clsx('h-full', lens === 'explore' && 'hidden')}>
+            {/* `!== 'feed'`, not `=== 'explore'`. With Portfolio outside this
+                column the two spellings meant the same thing; now that there
+                are three lenses in it, the old one would draw the feed
+                underneath the book. */}
+            <div className={clsx('h-full', lens !== 'feed' && 'hidden')}>
               <IdeasExplore
                 selectedKey={selected?.selection.key ?? null}
                 include={INCLUDE}

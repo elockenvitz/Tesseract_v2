@@ -62,7 +62,7 @@ import { TilePriceChart } from '../desktop/TilePriceChart'
 import { useTileCloses, useGalleryCloses, type TileClose } from '../../hooks/useTileCloses'
 import { PositionDetailPane } from './PositionDetail'
 import {
-  openDashboardFocus, type RailCard,
+  openDashboardFocus, type RailCard, type DashboardFocusTarget,
 } from '../../lib/dashboard/focus'
 import { bigMoney } from './PortfolioVisual'
 
@@ -72,10 +72,31 @@ export interface PortfolioWorkspaceProps {
   selectedAssetId?: string | null
   /** Set by the Dashboard deck when this lens is the expanded workspace. */
   focusObjectId?: string | null
+  /**
+   * Where a holding opens, when the host has somewhere of its own to put it.
+   *
+   * ── Why a prop and not the window event ──────────────────────────────────
+   *
+   * Opening a position has always dispatched `openDashboardFocus`, and the
+   * deck that listens for it expands the card in place. That seam is global:
+   * every shell mounted at the time hears it. With two Dashboard shells in
+   * the product, a click in one would open a workspace in the other, which
+   * nobody would see and nobody could explain.
+   *
+   * So a host that wants the click says so. Given, the event is NOT
+   * dispatched at all -- two destinations for one press is the defect, not
+   * the fallback -- and the lens keeps drawing the book, because the host is
+   * putting the workspace beside it rather than over it.
+   *
+   * The payload is the descriptor the lens already built for the deck. A
+   * second shape for the same click would be a second vocabulary for one
+   * fact.
+   */
+  onOpenPosition?: (target: DashboardFocusTarget) => void
 }
 
 export function PortfolioWorkspace({
-  selectedPortfolioId, selectedAssetId, focusObjectId,
+  selectedPortfolioId, selectedAssetId, focusObjectId, onOpenPosition,
 }: PortfolioWorkspaceProps = {}) {
   const { portfolios, isLoading: listLoading } = usePortfolioList()
   const [portfolioId, setPortfolioId] = useState<string | null>(selectedPortfolioId ?? null)
@@ -152,8 +173,8 @@ export function PortfolioWorkspace({
   // carrying the asset across would show one book's line under another's name.
   const selectBook = (id: string) => { setPortfolioId(id); setAssetId(null) }
 
-  const open = (position: Position, frame: PositionFrame) => openDashboardFocus({
-    target: {
+  const open = (position: Position, frame: PositionFrame) => {
+    const target: DashboardFocusTarget = {
       originLens: 'portfolio',
       workspaceLens: 'portfolio',
       objectType: 'position',
@@ -164,11 +185,17 @@ export function PortfolioWorkspace({
       portfolioName: portfolio?.name ?? null,
       issue: GAP_LABEL[gapOf(position, frame)],
       origin: 'portfolio',
-    },
-    // Named for the book, because that is where the reader returns.
-    backLabel: portfolio?.name ?? 'Portfolio',
-    rail: rows.map(toRailCard),
-  })
+    }
+    /* The host took it. No dispatch: see `onOpenPosition` for why one press
+       must not reach two destinations. */
+    if (onOpenPosition) { onOpenPosition(target); return }
+    openDashboardFocus({
+      target,
+      // Named for the book, because that is where the reader returns.
+      backLabel: portfolio?.name ?? 'Portfolio',
+      rail: rows.map(toRailCard),
+    })
+  }
 
   /*
    * One placeholder for the whole load, not three.

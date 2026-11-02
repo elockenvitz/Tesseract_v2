@@ -1,5 +1,6 @@
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import type { AssetFocus } from '../desktop-asset/navigate'
+import type { DashboardFocusTarget } from '../dashboard/focus'
 import type { ScoredFeedItem } from '../../hooks/ideas/types'
 
 /**
@@ -34,7 +35,15 @@ export interface IdeasSelection {
    * `assetFocusFor`. It is a family the router can route and NOT a second
    * selection type, which is the thing Explore must not grow.
    */
-  family: AttentionEntry['family'] | 'explore'
+  /**
+   * `'portfolio'` is the second value no producer emits: a holding opened
+   * from the book. It is not a finding at all -- nothing surfaced it, the
+   * reader pointed at it -- so it carries no card and no feed row, and it
+   * opens the asset at `position`, which is the part of the asset a book is
+   * about. Like `'explore'` it is a family the router can route, NOT a second
+   * selection type.
+   */
+  family: AttentionEntry['family'] | 'explore' | 'portfolio'
   /**
    * Which surface the reader was on when they selected this.
    *
@@ -45,7 +54,7 @@ export interface IdeasSelection {
    * never asked the Ideas feed for it, so the Ideas feed's context has no
    * standing to take it away.
    */
-  origin: 'ideas' | 'explore'
+  origin: 'ideas' | 'explore' | 'portfolio'
   /**
    * The card id. Used ONLY to mark the selected tile, so it must match
    * `AttentionEntry.key` — and must not be used to resolve data, because a
@@ -127,12 +136,25 @@ const FOCUS_FOR_FAMILY: Record<string, AssetFocus> = {
    */
   research: 'research',
   /*
+   * A holding opened from the book lands on the position, because the book is
+   * the question. "What do I own, how much, and against what index" is what
+   * the reader was reading a moment ago, and `overview` -- the fallback for a
+   * family with no mapping -- would answer a different one.
+   */
+  portfolio: 'position',
+  /*
    * A proposed trade waiting on an answer opens at the decisions surface, not
    * at the case. The reader is not being asked what they think of the name in
    * general; they are being asked to answer a specific person's specific
    * proposal, and that request lives with the decisions.
    */
   recommendation: 'decisions',
+  /*
+   * A holding opened from the book lands on the position, because the book is
+   * the question. "What do I own, how much, and against what index" is what
+   * the reader was reading a moment ago, and `overview` -- the fallback for a
+   * family with no mapping -- would answer a different one.
+   */
 }
 
 export function assetFocusFor(family: IdeasSelection['family']): AssetFocus {
@@ -151,6 +173,57 @@ function postTypeOf(item: ScoredFeedItem | null): IdeasSelection['postType'] {
   }
   if (item.type === 'note') return 'thought'
   return null
+}
+
+/**
+ * A holding, as a selection.
+ *
+ * ── Why it lives here and not in the Portfolio lens ───────────────────────
+ *
+ * One file builds every selection. A second builder next to the book would
+ * drift from this one the first time a field is added, and the thing that
+ * drifts is the identity the workspace is keyed on.
+ *
+ * ── Why it takes the descriptor the lens already builds ───────────────────
+ *
+ * `DashboardFocusTarget` is what the Portfolio lens has produced for its
+ * expand-in-place seam all along: asset, ticker, company, book and the gap
+ * the tile is reporting. Inventing a second descriptor for the same click
+ * would be a second vocabulary for one fact.
+ *
+ * ── What it deliberately leaves empty ─────────────────────────────────────
+ *
+ * `item`, `objectId` and `postType` are null and stay null. A holding is not
+ * a post and has no feed row behind it, and filling those with something
+ * plausible is how a router starts taking a branch meant for something else.
+ *
+ * `why.reason` is null for the same reason: NOTHING SURFACED THIS. The reader
+ * pointed at a row in their own book. The headline is the gap the tile is
+ * already showing them, or the company's name when the tile reports no gap --
+ * never a sentence composed here, which would be a second voice describing a
+ * finding that does not exist.
+ */
+export function selectionForPosition(t: DashboardFocusTarget): IdeasSelection {
+  return {
+    family: 'portfolio',
+    origin: 'portfolio',
+    /* Book AND asset. The same name in two books is two selections, because a
+       position IS (asset, portfolio) -- which is the rule the lens already
+       applies when it drops the selection on a book change. */
+    key: `portfolio:${t.portfolioId ?? 'none'}:${t.objectId}`,
+    objectId: null,
+    postType: null,
+    item: null,
+    assetId: t.objectId,
+    symbol: t.symbol ?? null,
+    portfolioId: t.portfolioId ?? null,
+    portfolioName: t.portfolioName ?? null,
+    why: {
+      headline: t.issue ?? t.label ?? t.symbol ?? 'This holding',
+      reason: null,
+      occurredAt: null,
+    },
+  }
 }
 
 export function selectionFor(entry: AttentionEntry): IdeasSelection {

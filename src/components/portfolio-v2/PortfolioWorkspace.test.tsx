@@ -295,6 +295,42 @@ describe('a position expands into the deck, in place', () => {
     expect(req.backLabel).toBe('Large Cap Growth')
   })
 
+  /*
+   * ── One press, one destination ───────────────────────────────────────────
+   *
+   * A host that puts the workspace beside the book passes `onOpenPosition`.
+   * The event seam is GLOBAL -- every shell mounted at the time hears it --
+   * and the product now has two Dashboard shells, so a lens that both called
+   * the host and dispatched would open a holding in the shell the reader is
+   * looking at and expand a card in the one they are not. Nobody would see
+   * the second one, and nobody could explain it from the screen.
+   *
+   * So these two cases are a pair: the handler gets the descriptor, and the
+   * dispatch does not happen. Either on its own passes the broken version.
+   */
+  it('hands the holding to the host that asked for it', async () => {
+    const user = userEvent.setup()
+    const onOpenPosition = vi.fn()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" onOpenPosition={onOpenPosition} />)
+    await user.click(screen.getAllByTestId('position-tile')[0])
+
+    expect(onOpenPosition).toHaveBeenCalledTimes(1)
+    /* The SAME descriptor the deck is given, not a second shape for one
+       fact -- so the two destinations can never disagree about what was
+       opened. */
+    const t = onOpenPosition.mock.calls[0][0]
+    expect(t.objectId).toBe('a-1')
+    expect(t.originLens).toBe('portfolio')
+    expect(t.portfolioId).toBe('p1')
+  })
+
+  it('does not also dispatch to the deck when a host took it', async () => {
+    const user = userEvent.setup()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" onOpenPosition={vi.fn()} />)
+    await user.click(screen.getAllByTestId('position-tile')[0])
+    expect(opened).toHaveLength(0)
+  })
+
   it('hands over the rest of the book as rail cards', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
