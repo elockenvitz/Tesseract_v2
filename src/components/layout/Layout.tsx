@@ -33,8 +33,21 @@ interface LayoutProps {
   hideNewTab?: boolean
 }
 
-// Tab types that should render full-width without padding
-const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'audit', 'lists', 'idea-generator', 'today', 'ideas', 'ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']
+/*
+  Tab types that should render full-width without padding.
+
+  A surface belongs here when it owns its own frame -- its own header band, its
+  own scrollport, its own internal gutters. The wrapper's `px-3 py-4 sm:px-6
+  sm:py-6 lg:px-8` is for a page that is CONTENT inside a chrome, and putting
+  it around a page that is already a chrome draws a second, narrower window
+  inside the first: 32px of white on both sides and 24px top and bottom,
+  measured, around a surface whose own header already starts at `px-6`.
+
+  `dashboard-next` was the one such surface missing from this list, which is
+  why it alone sat inset while `dashboard`, `ideas` and `today` -- the lenses
+  it is a replacement for -- did not.
+*/
+const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'dashboard-next', 'audit', 'lists', 'idea-generator', 'today', 'ideas', 'ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']
 
 export function Layout({
   children,

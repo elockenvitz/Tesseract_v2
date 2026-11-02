@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Lightbulb } from 'lucide-react'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
 import { PromptDetailView } from '../thoughts/PromptDetailView'
@@ -60,6 +61,21 @@ export function IdeasWorkPane({
   entry: AttentionEntry | null
   onClose: () => void
 }) {
+  /*
+   * Declared before the empty-state guard, because a hook cannot sit after a
+   * conditional return.
+   *
+   * Reset on the selection's identity rather than remembered: opening a
+   * second name with the first one's explanation still expanded would put the
+   * band back for every subsequent read, which is the thing being removed.
+   * `key`, not the object -- it is the selection's stable identity, declared
+   * to survive the feed reranking underneath, and the object itself is new on
+   * every rerank for the same subject.
+   */
+  const [whyOpen, setWhyOpen] = useState(false)
+  const selectionKey = selection?.key ?? null
+  useEffect(() => { setWhyOpen(false) }, [selectionKey])
+
   if (!selection) {
     return (
       <div className="flex h-full flex-col">
@@ -85,27 +101,57 @@ export function IdeasWorkPane({
   return (
     <div className="flex h-full flex-col">
       {/*
-        Why you are here, carried from the candidate.
+        Why you are here, behind a question mark.
 
-        Deterministic — the headline and reason the builder already computed.
-        Nothing is regenerated, and no model is asked for a fact the finding
-        knows. This is what makes the surface below feel entered FROM an
-        attention event rather than dropped into cold.
+        ── Why it is no longer a band of its own ─────────────────────────────
+
+        It was three stacked lines -- a ticker, a headline and a reason --
+        with a bottom border, directly above a work surface that draws its
+        OWN header with its own ticker and its own caption. Two banners, one
+        on top of the other, and on the asset workspace the lower one already
+        says "Opened from <lens> · <finding>": the same sentence, twice,
+        eighty pixels apart.
+
+        The information is still worth having -- it is deterministic, carried
+        from the candidate the reader pressed, and it is what makes the
+        surface feel entered FROM an attention event rather than dropped into
+        cold. So it is not deleted; it is collapsed. One 24px row with the
+        ticker and a `?`, and the headline and reason are one press away.
+
+        Collapsed by default, and NOT remembered: the question "why am I
+        here" is asked on arrival, and a reader who wanted it pinned open
+        would be asking for the band back.
       */}
-      <div className="flex shrink-0 items-start gap-3 border-b border-gray-200 px-4 py-2.5 dark:border-gray-700">
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+      <div className="shrink-0 border-b border-gray-200 px-4 py-1 dark:border-gray-700">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
             {selection.symbol ?? entry?.card.surface}
-          </p>
-          <h2 className="truncate text-sm font-semibold text-gray-900 dark:text-white">
-            {selection.why.headline}
-          </h2>
-          {selection.why.reason && (
-            <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">
-              {selection.why.reason}
-            </p>
-          )}
+          </span>
+          <button
+            type="button"
+            onClick={() => setWhyOpen(o => !o)}
+            aria-expanded={whyOpen}
+            data-slot="work-why-toggle"
+            // No em dash, and no "?" alone as the label: a bare glyph is not
+            // a name for assistive tech.
+            aria-label="Why you are here"
+            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 text-[9px] font-bold text-gray-400 hover:border-gray-500 hover:text-gray-600 dark:border-gray-600 dark:hover:border-gray-400"
+          >
+            ?
+          </button>
         </div>
+        {whyOpen && (
+          <div className="pb-1.5 pt-1" data-slot="work-why-body">
+            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+              {selection.why.headline}
+            </h2>
+            {selection.why.reason && (
+              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                {selection.why.reason}
+              </p>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">

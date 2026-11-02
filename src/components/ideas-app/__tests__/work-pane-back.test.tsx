@@ -135,3 +135,66 @@ describe('the work pane draws no exit of its own', () => {
     expect(pane).not.toContain('Close workspace')
   })
 })
+
+/**
+ * One banner, not two stacked ones.
+ *
+ * ── What was above the surface's own header ───────────────────────────────
+ *
+ * Three lines with a bottom border -- a ticker, a headline and a reason --
+ * directly above a work surface that draws its OWN header with its own
+ * ticker and its own caption. On the asset workspace the lower one already
+ * reads "Opened from <lens> · <finding>", so it was the same sentence twice,
+ * eighty pixels apart.
+ *
+ * The explanation is still worth keeping: it is deterministic, carried from
+ * the candidate that was pressed, and it is what makes the surface feel
+ * entered FROM an attention event rather than dropped into cold. So it is
+ * collapsed behind a question mark, not deleted.
+ */
+describe('why you are here is one press away, not a second banner', () => {
+  const pane = () => src('ideas-app/IdeasWorkPane.tsx')
+
+  it('puts the explanation behind a toggle', () => {
+    const p = pane()
+    expect(p).toContain('data-slot="work-why-toggle"')
+    expect(p).toContain('data-slot="work-why-body"')
+    /* Gated on the state, so the body is genuinely hidden and not merely
+       styled smaller. */
+    expect(p).toMatch(/\{whyOpen && \(/)
+  })
+
+  it('starts collapsed and does not remember being opened', () => {
+    const p = pane()
+    expect(p).toContain('useState(false)')
+    /*
+     * Reset on the selection's identity. Without this, opening a second name
+     * with the first one's explanation expanded puts the band back for every
+     * subsequent read, which is the thing being removed.
+     */
+    expect(p).toMatch(/useEffect\(\(\) => \{ setWhyOpen\(false\) \}, \[selectionKey\]\)/)
+    expect(p).toContain('selection?.key')
+  })
+
+  it('no longer draws the headline and the reason unconditionally', () => {
+    const p = pane()
+    /*
+     * THE non-vacuity check for the two above: both of the lines that made
+     * the band a band must sit INSIDE the gate, not beside it. Measured by
+     * position, because a file can contain the gate and still render the
+     * headline above it.
+     */
+    const gate = p.indexOf('{whyOpen && (')
+    const headline = p.indexOf('selection.why.headline')
+    const reason = p.indexOf('selection.why.reason')
+    expect(gate).toBeGreaterThan(-1)
+    expect(headline).toBeGreaterThan(gate)
+    expect(reason).toBeGreaterThan(gate)
+  })
+
+  it('keeps the accessible name a word, not a glyph', () => {
+    /* A bare "?" is not a name for a screen reader. */
+    expect(pane()).toContain('aria-label="Why you are here"')
+    expect(pane()).toContain('aria-expanded={whyOpen}')
+  })
+})

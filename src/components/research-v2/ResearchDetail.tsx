@@ -34,77 +34,17 @@ import { clsx } from 'clsx'
 import { TONE_INK } from '../../lib/semantic-tone'
 import { ArrowDown, ArrowUpRight, MessageSquare, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
-import {
-  useRecordThesisReview, useCurrentThesisConclusion, type ThesisReviewOutcome,
-} from '../../hooks/useThesisReview'
+import { ThesisVerdictBar } from '../desktop/ThesisVerdictBar'
 import { useRecordObjectView } from '../../hooks/useObjectViewCursor'
-import { conclusionWords } from '../../lib/memory/thesis-review'
 import { openAsset } from '../../lib/desktop-asset'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 
-/**
- * The three conclusions, in the order a reader reaches them.
- *
- * Wording matters here: each is a statement about the CASE, not an instruction
- * to the reader. "Needs work" says the document cannot be judged as written --
- * which is a different fact from the case having broken, and the two were
- * previously both unsayable.
+/*
+ * The three conclusions, their colours and the standing-answer styling all
+ * moved to `ThesisVerdictBar` with their reasoning intact, because the asset
+ * workspace needs the same verb and two copies of a vocabulary is how two
+ * vocabularies start.
  */
-const REVIEW_CHOICES: ReadonlyArray<{ outcome: ThesisReviewOutcome; label: string }> = [
-  { outcome: 'holds', label: 'Still holds' },
-  { outcome: 'changed', label: 'Changed' },
-  { outcome: 'needs_work', label: 'Needs work' },
-]
-
-/**
- * Each answer in its own colour, because the row asked to be ignored.
- *
- * Three identical grey text buttons do not read as a choice -- they read as
- * a toolbar, which is how the one verb this surface has went unused. These
- * are the only coloured controls on the bar, and the colours are the
- * product's existing semantics rather than decoration: the case holding is
- * the good outcome, the case having changed is a fact to act on, and a case
- * that cannot be judged as written is the one that needs a person.
- *
- * Outlined, not filled: three filled buttons side by side would each claim
- * to be the recommended answer, and the product must not nudge an analyst
- * toward one conclusion about their own thesis.
- */
-const VERDICT_TONE: Record<ThesisReviewOutcome, string> = {
-  holds:
-    'border-emerald-300 bg-white text-emerald-800 hover:border-emerald-500 hover:bg-emerald-50 '
-    + 'dark:border-emerald-800 dark:bg-transparent dark:text-emerald-300 dark:hover:bg-emerald-950/40',
-  changed:
-    'border-amber-300 bg-white text-amber-800 hover:border-amber-500 hover:bg-amber-50 '
-    + 'dark:border-amber-800 dark:bg-transparent dark:text-amber-300 dark:hover:bg-amber-950/40',
-  needs_work:
-    'border-rose-300 bg-white text-rose-800 hover:border-rose-500 hover:bg-rose-50 '
-    + 'dark:border-rose-900 dark:bg-transparent dark:text-rose-300 dark:hover:bg-rose-950/40',
-}
-
-/**
- * The answer that is already on the record.
- *
- * Filled, where the other two stay outlined. The outlined set exists so that
- * no button looks recommended; a FILLED one is not a recommendation, it is a
- * statement that this is what the record says -- the same distinction the
- * product makes everywhere between an invitation and a fact.
- *
- * `opacity` is deliberately not used to show it is unpressable. The standing
- * verdict is the most informative thing on the bar and dimming it would make
- * the record quieter than the two alternatives to it.
- */
-const VERDICT_SELECTED: Record<ThesisReviewOutcome, string> = {
-  holds:
-    'border-emerald-600 bg-emerald-600 text-white cursor-default '
-    + 'dark:border-emerald-500 dark:bg-emerald-600 dark:text-white',
-  changed:
-    'border-amber-600 bg-amber-600 text-white cursor-default '
-    + 'dark:border-amber-500 dark:bg-amber-600 dark:text-white',
-  needs_work:
-    'border-rose-600 bg-rose-600 text-white cursor-default '
-    + 'dark:border-rose-500 dark:bg-rose-600 dark:text-white',
-}
 
 /*
  * Research -> the idea itself: the Idea Pipeline, with the idea's detail open.
@@ -228,22 +168,8 @@ export function ResearchDetail({
       : intent === 'book' && detail?.portfolioName ? 'book'
       : 'case'
 
-  const {
-    record: recordReview, isPending: reviewPending, pendingOutcome,
-  } = useRecordThesisReview(subject.assetId)
-  /*
-   * `isDone` is deliberately not read any more.
-   *
-   * It used to disable all three buttons for the life of the component, so a
-   * reader who pressed the wrong one had no way back inside the pane that had
-   * just taken their answer -- the one moment they were certain to notice the
-   * mistake. The standing conclusion below is read from the record instead,
-   * which outlives the mount and is what makes a correction possible at all.
-   */
-  const { current: reviewState } = useCurrentThesisConclusion(subject.assetId)
-  /* The answer in flight wins over the record while it is in flight, so the
-     press is acknowledged immediately and never un-acknowledged. */
-  const standingOutcome = pendingOutcome ?? reviewState?.outcome ?? null
+  /* The review hooks, the standing-answer rule and the correction path all
+     live in `ThesisVerdictBar` now. See the note at its call site below. */
 
   /*
    * This is a genuine view: the detail pane is mounted, which only happens
@@ -400,85 +326,18 @@ export function ResearchDetail({
             action on the left and the tools on the right, which is also
             what makes it the thing the eye lands on.
           */}
+          {/*
+            Extracted to `ThesisVerdictBar`, not re-styled.
+
+            The asset workspace needed the same verb -- a reader who arrives
+            at a name from a finding reads the case there and could not say
+            what they concluded. Copying this block would put the wording,
+            the colours, the standing-answer rule and the correction path in
+            two files. All of the reasoning that used to live here moved with
+            it, verbatim.
+          */}
           {subject.thesisUpdatedAt && (
-            <span
-              className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-1.5 dark:border-white/10 dark:bg-white/[0.03]"
-              data-slot="research-thesis-review"
-            >
-              <span className="text-[11px] font-medium text-gray-500">
-                Does the case still hold?
-              </span>
-              <span className="flex items-center gap-1.5">
-                {REVIEW_CHOICES.map(choice => {
-                  const standing = standingOutcome === choice.outcome
-                  return (
-                    <button
-                      key={choice.outcome}
-                      type="button"
-                      data-slot={`research-review-${choice.outcome}`}
-                      // The standing answer is the one thing pressing cannot
-                      // usefully do: it would write a second identical event
-                      // and read as if nothing happened. Every OTHER answer
-                      // stays live, which is the correction path.
-                      aria-pressed={standing}
-                      onClick={() => recordReview(choice.outcome)}
-                      disabled={reviewPending || standing}
-                      className={clsx(
-                        'rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors',
-                        standing
-                          ? VERDICT_SELECTED[choice.outcome]
-                          : clsx(VERDICT_TONE[choice.outcome], 'disabled:opacity-60'),
-                      )}
-                    >
-                      {choice.label}
-                    </button>
-                  )
-                })}
-              </span>
-              {/*
-                What is on the record, and that it can be changed.
-
-                This replaced a transient "Recorded" that lived only as long
-                as the component: by the next page load the bar read as
-                unanswered, so an accidental press was invisible and a
-                deliberate one looked like it had done nothing. The line is
-                read from the event log, so it survives the remount and says
-                who answered -- correcting your own conclusion and overwriting
-                a colleague's are different acts.
-              */}
-              {/*
-                ── One slot, one width, whatever it is saying ───────────────
-
-                This bar is centred between two `flex-1` siblings, so its own
-                width is what positions the three buttons. The status text
-                measured 272px, and it appeared, changed and disappeared under
-                a single click: empty -> "Recording…" -> the sentence. Each
-                step resized the bar and slid the buttons sideways by about
-                half the delta, which is why pressing one felt like chasing
-                it. Measured at 1920: the group moved ~140px across one press.
-
-                So the slot is always present and always the same width. The
-                longest sentence it can hold ("Marked this Needs work · 365d
-                ago · change it above") fits inside it, and the empty state
-                says what the empty state IS rather than reserving a blank.
-              */}
-              <span
-                data-slot="research-review-standing"
-                className="w-[19rem] shrink-0 whitespace-nowrap text-[12px] text-gray-500"
-              >
-                {reviewPending ? 'Recording…' : reviewState ? (
-                  <>
-                    {conclusionWords(
-                      reviewState.outcome, reviewState.occurredAt, reviewState.byMe, new Date(),
-                    )}
-                    {' · '}
-                    <span className="text-gray-400">change it above</span>
-                  </>
-                ) : (
-                  <span className="text-gray-400">Not reviewed yet</span>
-                )}
-              </span>
-            </span>
+            <ThesisVerdictBar assetId={subject.assetId} />
           )}
 
           {/*

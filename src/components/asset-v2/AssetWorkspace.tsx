@@ -62,6 +62,7 @@ import { TONE_PILL, type SemanticTone } from '../../lib/semantic-tone'
 import {
   DesktopModule, DesktopSection, DesktopStat, EYEBROW,
 } from '../desktop/DesktopModule'
+import { ThesisVerdictBar } from '../desktop/ThesisVerdictBar'
 import { FrameworkScale, WeightBar, money, bigMoney } from '../portfolio-v2/PortfolioVisual'
 import { anchoredWindow, PriceSinceReview } from '../research-v2/ResearchVisual'
 /*
@@ -512,6 +513,8 @@ export function AssetWorkspacePane({
         teamable={teamable}
         onOpenLegacy={onOpenLegacy}
         primary={{ label: primaryActionFor(subject), run: runPrimary }}
+        assetId={subject.assetId}
+        caseWrittenAt={data.caseWrittenAt ?? null}
       />
       {/*
         ── One vertical read, not a mosaic ────────────────────────────────────
@@ -539,8 +542,27 @@ export function AssetWorkspacePane({
         context list; here they concatenate, so what led still leads and what
         was context still follows it.
       */}
-      <div className="px-6 pb-12 pt-5" data-asset-body>
-        <div className="mx-auto flex w-full max-w-[100ch] flex-col gap-6">
+      {/*
+        ── The measure, and why it is 140ch rather than 100 ─────────────────
+
+        At 1920 the pane is 1504px wide and a 100ch column is 863px, so 313px
+        of nothing sat on EACH side of the content -- measured. That is not a
+        reading measure, it is a letterbox: more of the pane was margin than
+        the sidebar beside it is wide.
+
+        140ch is still a cap and still centred, so the column stops growing
+        and prose never runs the full width of a 4K display. But it binds only
+        above ~1250px of pane, which means at the window widths this is
+        actually used at the gutters are the 16px below and nothing more.
+
+        The honest cost: on a very wide display a line of prose is now longer
+        than the typographic ideal of 60-80 characters. That is the trade
+        being made deliberately -- the panels, charts and tables in this
+        column outnumber the paragraphs, and they were the things being
+        starved.
+      */}
+      <div className="px-4 pb-12 pt-5" data-asset-body>
+        <div className="mx-auto flex w-full max-w-[140ch] flex-col gap-6">
           <DecisionBand data={data} position={position} symbol={symbol} onOpenLegacy={onOpenLegacy} />
           {lead}
           {context}
@@ -650,10 +672,20 @@ export function DecisionBand({
  */
 function AssetHeader({
   symbol, companyName, spot, position, showBook, state, gap, daysSinceWritten,
-  issue, origin, target, teamable, onOpenLegacy, primary,
+  issue, origin, target, teamable, onOpenLegacy, primary, assetId, caseWrittenAt,
 }: {
   symbol: string | null
   companyName: string | null
+  /** The subject of the verdict. Null on a row with no asset behind it. */
+  assetId: string | null
+  /**
+   * When the case was written, as the gate on the verdict controls.
+   *
+   * The same gate `ResearchDetail` applies, and for the same reason: there is
+   * nothing to conclude about a thesis nobody has written yet. A name with no
+   * case gets the primary action ("Write the case") and no verdict.
+   */
+  caseWrittenAt: string | null
   spot: number | null
   position: AssetPosition | null
   showBook: boolean
@@ -740,54 +772,105 @@ function AssetHeader({
         <p className="mt-2 max-w-[80ch] text-[12px] text-gray-600 dark:text-gray-400">{detail}</p>
       )}
 
-      <div className="mt-3 flex flex-wrap items-center gap-1 pb-3">
-        {/* The same primary the other three lens panes lead with: one solid
-            control, left of everything quiet, so the row has a shape rather
-            than being a run of equal-weight text buttons. */}
-        <button
-          type="button"
-          onClick={primary.run}
-          className="mr-1 inline-flex items-center gap-2 rounded-lg border border-blue-700 bg-blue-700 px-4 py-2.5 text-[13px] font-semibold text-white hover:border-blue-800 hover:bg-blue-800"
-        >
-          {primary.label}
-          <ArrowDown className="h-3.5 w-3.5 opacity-70" />
-        </button>
-        {/* The D1 seam, which the legacy Asset page never had: the pane is
-            mounted once in Layout and binds to whatever object is passed. */}
-        <button
-          type="button"
-          onClick={() => askAI(target)}
-          className="rounded-md px-3 py-2 text-[12px] font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
-        >
-          Ask AI
-        </button>
-        {teamable && (
-          <>
-            <span className="text-[11px] text-gray-300 dark:text-gray-700">·</span>
+      {/*
+        ── Three groups, matching `ResearchDetail` ──────────────────────────
+
+        The step, the verdict, the tools. `flex-1` on the outer two is what
+        actually centres the middle one -- `mx-auto` beside an `ml-auto`
+        sibling does not, and measured on the research pane it left the
+        verdict 170px off centre.
+
+        This row used to be one left-justified run: primary, Ask AI, Team,
+        Full asset page, all packed against the left edge with the stats
+        block floating far away on the right. The other three lens panes do
+        not look like that, and the asset workspace is the surface a reader
+        reaches FROM one of them, so it was the odd one out.
+      */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 pb-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          {/*
+            ── Smaller, and quieter about it ──────────────────────────────
+
+            It was `px-4 py-2.5 text-[13px]` -- a 42px-tall slab of saturated
+            blue, which at the top of a page whose job is to be read looked
+            like a call to action on a marketing site. The row leads with it
+            because a reader arriving from a finding needs to know what to do
+            next; it does not need to be the loudest thing on the screen to
+            say that.
+
+            `py-1.5 text-[12px]`, and a 600-weight rather than 700, puts it
+            at the same height as the verdict buttons beside it, so the three
+            groups read as one row instead of a button with some text next to
+            it.
+          */}
+          <button
+            type="button"
+            onClick={primary.run}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-blue-700 hover:bg-blue-700"
+          >
+            {primary.label}
+            <ArrowDown className="h-3 w-3 opacity-70" />
+          </button>
+        </div>
+
+        {/*
+          The verdict, which this surface had no way to express.
+
+          A reader opens a name from a finding, reads the case here, and
+          until now the only durable trace of a conclusion was an edit -- so
+          "it still holds" and "this is broken" both had to be said by
+          rewriting a document. `ResearchDetail` gained the three answers and
+          this surface did not, which meant the same reader reaching the same
+          case by a different route could or could not record what they
+          thought depending on which door they came through.
+
+          `compact`, because this row shares its width with the stats block
+          above it: the standing sentence is a fixed 19rem slot, and the
+          filled button already says what the record holds.
+
+          Gated on a case existing, the same gate `ResearchDetail` uses.
+          There is nothing to conclude about a thesis nobody has written.
+        */}
+        {caseWrittenAt && assetId && (
+          <ThesisVerdictBar assetId={assetId} compact />
+        )}
+
+        {/* Tools, right-aligned as a set. Ask AI, Team and the legacy page
+            are not steps in the review -- they are what you reach for
+            alongside it -- and interleaving them with the action made one
+            undifferentiated run of controls. */}
+        <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
+          {/* The D1 seam, which the legacy Asset page never had: the pane is
+              mounted once in Layout and binds to whatever object is passed. */}
+          <button
+            type="button"
+            onClick={() => askAI(target)}
+            className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+          >
+            Ask AI
+          </button>
+          {teamable && (
             <button
               type="button"
               onClick={() => discuss(target)}
-              className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+              className="rounded-md px-2.5 py-1.5 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               Team
             </button>
-          </>
-        )}
-        {onOpenLegacy && (
-          <>
-            <span className="text-[11px] text-gray-300 dark:text-gray-700">·</span>
-            {/* Quiet, because it is a fallback and not a destination: workflow,
-                lists, widgets and analyst estimates still live there. */}
+          )}
+          {onOpenLegacy && (
+            /* Quiet, because it is a fallback and not a destination: workflow,
+               lists, widgets and analyst estimates still live there. */
             <button
               type="button"
               onClick={onOpenLegacy}
-              className="inline-flex items-center gap-1 rounded-md px-3 py-2 text-[12px] text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
             >
               Full asset page
               <ArrowUpRight className="h-3 w-3 opacity-70" />
             </button>
-          </>
-        )}
+          )}
+        </span>
         {/*
           No overflow control. Same dead button as the other lens panes had:
           no onClick, no menu state, no popover, announced to assistive tech

@@ -163,4 +163,30 @@ describe('the trial tab is isolated', () => {
     expect(launcher).toContain("type: 'today'")
     expect(launcher).toContain("type: 'ideas'")
   })
+
+  /**
+   * The tab gets the window, not a window inside the window.
+   *
+   * `Layout` wraps a non-full-width tab in `px-3 py-4 sm:px-6 sm:py-6
+   * lg:px-8`, which is for a page that is CONTENT inside a chrome. This
+   * surface IS a chrome: its own header starts at `px-6` and it owns its own
+   * scrollport. Measured at 1920 before the fix: 32px of white on each side
+   * and 24px top and bottom, drawing a second frame inside the first.
+   */
+  it('renders full-width, like the lenses it replaces', () => {
+    const layout = src('components/layout/Layout.tsx')
+    const list = layout.slice(
+      layout.indexOf('const FULL_WIDTH_TAB_TYPES'),
+      layout.indexOf(']', layout.indexOf('const FULL_WIDTH_TAB_TYPES')),
+    )
+    expect(list).toContain("'dashboard-next'")
+    /*
+     * Non-vacuity: the surfaces this one is a replacement for are in the same
+     * list, so a check that passed on an empty or renamed constant would fail
+     * here too.
+     */
+    expect(list).toContain("'dashboard'")
+    expect(list).toContain("'ideas'")
+    expect(list).toContain("'today'")
+  })
 })

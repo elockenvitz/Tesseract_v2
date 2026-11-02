@@ -69,8 +69,20 @@ vi.mock('../contributions', () => ({
  * pins that this file keeps reading the canonical map rather than a second
  * calculation of its own.
  */
+/*
+ * The last two are for `ThesisVerdictBar`, which the header now renders.
+ *
+ * The record call is captured rather than stubbed blind, so a case can assert
+ * that pressing an answer reaches the mutation with the right outcome -- the
+ * whole point of putting the verdict on this surface.
+ */
+const recordVerdict = vi.fn()
 vi.mock('../../hooks/useThesisReview', () => ({
   useThesisReviews: () => new Map<string, string>(),
+  useRecordThesisReview: () => ({
+    record: recordVerdict, isPending: false, pendingOutcome: null,
+  }),
+  useCurrentThesisConclusion: () => ({ current: null }),
 }))
 
 const openEngagement = vi.fn()
@@ -556,13 +568,33 @@ describe('the workspace is one column, not a mosaic', () => {
     expect(parents.size).toBe(1)
   })
 
+  /**
+   * ── Rewritten from `100ch`, with the reason ─────────────────────────────
+   *
+   * This case pinned `max-w-[100ch]` one commit ago. At 1920 that resolved to
+   * an 863px column inside a 1504px pane, which left 313px of nothing on EACH
+   * side -- measured. More of the pane was margin than the sidebar beside it
+   * is wide, and that was reported as the pane wasting its space.
+   *
+   * What the case is actually FOR survives unchanged: a cap exists, it is
+   * centred, and the grid does not come back. Only the number moved, so the
+   * assertion is now written against "a cap in the 120-160ch range" rather
+   * than one exact value -- pinning the literal is what made a deliberate
+   * widening look like a regression.
+   */
   it('caps the measure instead of filling the canvas', () => {
     data = populated()
     render(<AssetWorkspacePane asset={asset} />)
     const stack = panels(screen.getByTestId('asset-workspace'))[0].parentElement!
     // The two halves of "reads like an answer": a measure cap, and centred
     // in whatever width it is given.
-    expect(stack.className).toMatch(/max-w-\[100ch\]/)
+    const cap = stack.className.match(/max-w-\[(\d+)ch\]/)
+    expect(cap, stack.className).not.toBeNull()
+    const ch = Number(cap![1])
+    // Wide enough not to letterbox a 1500px pane, and still a cap: an
+    // uncapped column would run prose the full width of a 4K display.
+    expect(ch).toBeGreaterThanOrEqual(120)
+    expect(ch).toBeLessThanOrEqual(160)
     expect(stack.className).toMatch(/\bmx-auto\b/)
     expect(stack.className).toMatch(/flex-col/)
     // The grid it replaced must not come back on this surface.
@@ -692,5 +724,101 @@ describe('the action row leads with the one thing to do', () => {
     // comment says authoring "happens on the Asset page". So the primary does
     // the thing rather than handing off to it.
     expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
+  })
+})
+
+/**
+ * The header reads like the other three lens panes.
+ *
+ * ── What it looked like instead ───────────────────────────────────────────
+ *
+ * One left-justified run: the primary, Ask AI, Team and Full asset page all
+ * packed against the left edge, with the stats block floating far away on the
+ * right. `IdeaDetail`, `ResearchDetail` and `PositionDetail` all use three
+ * groups -- the step, the verdict, the tools -- and this is the surface a
+ * reader reaches FROM one of them, so it was the odd one out.
+ *
+ * And it had no verdict at all, which is the part that mattered: a reader who
+ * opened a name from a finding could read the case and had no way to record
+ * what they concluded about it.
+ */
+describe('the header carries the step, the verdict and the tools', () => {
+  const actionRow = () => screen.getByText('Ask AI').closest('div')!
+
+  /** THE case for the verdict: it exists here at all. */
+  it('offers the three answers when there is a case to judge', () => {
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(screen.getByText('Does the case still hold?')).toBeInTheDocument()
+    for (const outcome of ['holds', 'changed', 'needs_work']) {
+      expect(
+        document.querySelector(`[data-slot="research-review-${outcome}"]`),
+        outcome,
+      ).not.toBeNull()
+    }
+  })
+
+  /** The opposite injection: nothing to conclude about an unwritten thesis. */
+  it('offers no verdict on a name with no case written', () => {
+    data = { ...BASE, evidence: [{ id: 'e1', title: 'A note', createdAt: daysAgo(10), authorName: 'A', isShared: true }] } as AssetWorkspaceData
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(screen.queryByText('Does the case still hold?')).toBeNull()
+    /*
+     * And the primary is still there, so this is a gated verdict and not a
+     * header that failed to render.
+     *
+     * "Write the case" and not "Add evidence": `stateOf` reads research on
+     * record with no thesis as `no-thesis`, and reserves `thin` for a record
+     * that is empty on both counts. Asserted from the shared model's real
+     * answer rather than from what the fixture looks like it should mean.
+     */
+    expect(actionRow().querySelector('button')).toHaveTextContent('Write the case')
+  })
+
+  it('records the answer the reader presses', async () => {
+    recordVerdict.mockClear()
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
+    render(<AssetWorkspacePane asset={asset} />)
+    await userEvent.click(
+      document.querySelector('[data-slot="research-review-changed"]') as HTMLElement,
+    )
+    expect(recordVerdict).toHaveBeenCalledWith('changed')
+  })
+
+  /**
+   * The tools go right, which is what the user could see was wrong: the row
+   * was one left-packed run. `justify-end` inside a `flex-1` sibling is what
+   * pushes the group, and the primary's own `flex-1` is what keeps the
+   * verdict centred between them.
+   */
+  it('pushes the tools to the right rather than packing them left', () => {
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
+    render(<AssetWorkspacePane asset={asset} />)
+    const tools = screen.getByText('Ask AI').parentElement!
+    expect(tools.className).toMatch(/justify-end/)
+    expect(tools.className).toMatch(/flex-1/)
+    // The primary's group takes the opposite half. Both `flex-1` or the
+    // middle group is not centred -- measured 170px off on the research pane
+    // when only one side had it.
+    const primaryGroup = actionRow().querySelector('button')!.parentElement!
+    expect(primaryGroup.className).toMatch(/flex-1/)
+  })
+
+  /**
+   * Smaller, and the reason is that it shares a row with the verdict now: at
+   * `py-2.5 text-[13px]` it was a 42px slab of saturated blue over a page
+   * whose job is to be read.
+   */
+  it('keeps the primary the same height as the controls beside it', () => {
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
+    render(<AssetWorkspacePane asset={asset} />)
+    const primary = actionRow().querySelector('button')!
+    expect(primary.className).toMatch(/py-1\.5/)
+    expect(primary.className).toMatch(/text-\[12px\]/)
+    // The slab it replaced, gone rather than merely overridden.
+    expect(primary.className).not.toMatch(/py-2\.5/)
+    expect(primary.className).not.toMatch(/px-4/)
+    // Still the solid primary, not demoted to a text button.
+    expect(primary.className).toMatch(/bg-blue-600/)
   })
 })
