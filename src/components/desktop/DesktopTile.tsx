@@ -398,7 +398,7 @@ export function GallerySkeleton({
       'h-full overflow-y-auto px-6 pb-10 pt-5',
       GALLERY_GROUND,
       /* The scroll host is the container, here as in the loaded gallery. */
-      region && 'explore-host',
+      region && 'gallery-host',
     )}>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>

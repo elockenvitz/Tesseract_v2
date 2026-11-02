@@ -320,17 +320,39 @@
   .pl-safe { padding-left: env(safe-area-inset-left, 0px); }
   .pr-safe { padding-right: env(safe-area-inset-right, 0px); }
 
-  /* ── Desktop Explore grid: columns from the REGION, not the window ──────
-     Explore keeps its broad arrangement at full width and has to survive the
-     workspace opening beside it, which leaves it ~40rem. A media query cannot
-     tell those apart — the window is 1920px in both — so it would go on
-     packing three columns into a pane where a tile would be 12rem wide. The
+  /* ── A resizable surface: columns and gutters from the REGION ───────────
+     A lens keeps its broad arrangement at full width and has to survive the
+     workspace opening beside it, which leaves it a narrow rail. A media query
+     cannot tell those apart — the window is 1920px in both — so it would go
+     on packing twelve tracks into a pane where a tile would be 3rem wide. The
      region is the container and the region's own width decides.
 
+     Named `gallery-host` rather than `explore-host`: Explore was the first
+     surface to need it and is no longer the only one. The book is in the same
+     rail now, and a Portfolio scroller carrying a class called "explore" is
+     the kind of name that teaches the next reader something false.
+
      Only the class changes when the pane narrows, so the grid re-flows in
-     place: Explore is not remounted, and its scroll does not move. */
-  .explore-host {
+     place: the surface is not remounted, and its scroll does not move. */
+  .gallery-host {
     container-type: inline-size;
+  }
+
+  /* ── The rail gutter ────────────────────────────────────────────────────
+     24px is right against a window edge and wrong in a 26rem rail, where it
+     is 11% of the width spent on nothing twice over. Two classes deep on
+     purpose: Tailwind's utilities layer is emitted after this one, so a
+     single-class rule would lose to the `px-6` it is correcting.
+
+     Keyed on the same 34rem the gallery's track count is, because they are
+     one question — is this surface a page or a rail — and two thresholds
+     would put a 24px gutter on a one-column list. */
+  @container (max-width: 34rem) {
+    .gallery-host [data-testid='desktop-gallery'],
+    .gallery-host .rail-pad {
+      padding-left: 0.75rem;
+      padding-right: 0.75rem;
+    }
   }
 
   /* ── The shared gallery, sized by its region ─────────────────────────────

@@ -63,11 +63,9 @@ vi.mock('../../ideas-app/IdeasExploreBrowse', () => ({
   IdeasExploreBrowse: () => <div data-testid="explore" />,
 }))
 vi.mock('../../ideas-app/IdeasWorkPane', () => ({
-  /* `backTo` is reflected so the shell's choice of label can be asserted
-     without rendering the real pane's header and every surface under it. */
-  IdeasWorkPane: ({ backTo }: { backTo?: string }) => (
-    <div data-testid="work-pane" data-back-to={backTo} />
-  ),
+  /* The pane carries no label of its own any more -- the back control lives
+     over the browse column, and `BackToSection` renders for real here. */
+  IdeasWorkPane: () => <div data-testid="work-pane" />,
 }))
 vi.mock('../../mobile/ArticleReader', () => ({
   ArticleReader: () => null,
@@ -163,13 +161,49 @@ describe('the book sits behind the same bar as the feed', () => {
     expect(screen.getByTestId('portfolio').closest('.hidden')).toBeNull()
   })
 
+  /*
+   * ── Re-pointed, and the reason kept ──────────────────────────────────────
+   *
+   * This read the label off a `data-back-to` the mocked work pane reflected,
+   * because the back control was drawn inside that pane. It is not any more:
+   * pressing it gives this COLUMN its width back, so it belongs over the
+   * column, and the pane no longer receives the label at all. Same claim,
+   * read where the control now is -- and the real `BackToSection` renders
+   * here, so this reads the text a reader would.
+   */
   it('names the way back for the lens the holding was opened from', async () => {
     render(<DashboardNext />)
     await userEvent.click(lens('Portfolio'))
     await userEvent.click(screen.getByTestId('open-holding'))
     /* The shell reads `LENSES`, so this is also what catches a lens label and
        an exit label drifting apart. */
-    expect(screen.getByTestId('work-pane')).toHaveAttribute('data-back-to', 'Portfolio')
+    expect(screen.getByText(/Back to Portfolio/)).toBeInTheDocument()
+  })
+
+  it('offers no way back before a holding is opened', async () => {
+    render(<DashboardNext />)
+    await userEvent.click(lens('Portfolio'))
+    /* The band is keyed on `splitOpen`. Drawn unconditionally it would be a
+       permanent "Back to Portfolio" above a full-width book that is already
+       the thing it goes back to. */
+    expect(screen.queryByText(/Back to/)).toBeNull()
+  })
+
+  it('puts the way back over the book, not over the workspace', async () => {
+    render(<DashboardNext />)
+    await userEvent.click(lens('Portfolio'))
+    await userEvent.click(screen.getByTestId('open-holding'))
+    /*
+     * Document order is the proxy for screen order: the row lays out left to
+     * right with the browse column first. The defect this catches is the
+     * control drifting back inside the pane's subtree, which is where it
+     * started -- and `Node.compareDocumentPosition` reads it directly rather
+     * than inferring it from a class name.
+     */
+    const back = screen.getByText(/Back to Portfolio/)
+    const pane = screen.getByTestId('work-pane')
+    expect(back.compareDocumentPosition(pane) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(pane.contains(back)).toBe(false)
   })
 
   it('does not draw the feed underneath the book', async () => {

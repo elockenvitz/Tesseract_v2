@@ -180,7 +180,7 @@ export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
      * from the same fact: this element is never unmounted or replaced — only
      * its width changes — so the grid re-flows and the scroll does not move.
      */
-    <div className={clsx('explore-host h-full overflow-y-auto', GALLERY_GROUND)}>
+    <div className={clsx('gallery-host h-full overflow-y-auto', GALLERY_GROUND)}>
       <DesktopGallery
         title="Explore"
         region

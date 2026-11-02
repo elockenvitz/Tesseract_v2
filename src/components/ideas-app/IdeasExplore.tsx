@@ -273,10 +273,16 @@ export function IdeasExplore({
      * The measure is applied to both halves so the toolbar stays aligned with
      * the cards under it.
      */
-    <div className="flex h-full flex-col">
+    <div
+      /* `gallery-host`: the feed is drawn at full width and in a ~26rem rail
+         beside an open workspace, and only its own width can say which. The
+         container is here rather than on the scroller because the filter bar
+         above the scroller takes the same gutter. */
+      className="gallery-host flex h-full flex-col"
+    >
       {/* `relative z-20` only so the Curate popover paints above the list; the
           app header is z-30 and above, so nothing is covered that matters. */}
-      <div className={clsx(FEED_MEASURE, 'relative z-20 shrink-0 border-b border-gray-200 bg-white px-6 pt-5 dark:border-gray-700 dark:bg-gray-900')}>
+      <div className={clsx(FEED_MEASURE, 'rail-pad relative z-20 shrink-0 border-b border-gray-200 bg-white px-6 pt-5 dark:border-gray-700 dark:bg-gray-900')}>
         {/* Lens rail. Persistent, because it is the primary control. */}
         <div className="flex items-center gap-1.5 pb-3">
           {IDEA_LENSES.map(l => (
@@ -382,7 +388,7 @@ export function IdeasExplore({
           shell it was mounted in -- the same omission the convergence suite
           found on three lens roots, on the one surface that was not a lens. */}
       <div ref={listRef} className={clsx('min-h-0 flex-1 overflow-y-auto', GALLERY_GROUND)}>
-      <div className={clsx(FEED_MEASURE, 'px-6 pb-5')}>
+      <div className={clsx(FEED_MEASURE, 'rail-pad px-6 pb-5')}>
         {/* While booting the list is hidden, so the spinner must not depend on
             entries being empty — the pool can be settled while history is not,
             and that window would otherwise show a blank column. */}

@@ -203,7 +203,10 @@ describe('one tile, and columns from the pane', () => {
     expect(code).toMatch(/<GallerySkeleton[^>]*\sregion\b/)
     /* The container itself, on the one element that is never remounted -- so
        the grid re-flows in place and the reader's scroll does not move. */
-    expect(code).toContain('explore-host')
+    /* `gallery-host`, renamed from `explore-host` once the book joined the
+       same rail: a Portfolio scroller carrying a class called "explore"
+       teaches the next reader something false. */
+    expect(code).toContain('gallery-host')
     /* And the rule that reads it. A `region` grid that fell through to the
        window breakpoints would pass every assertion above. */
     expect(src('index.css')).toContain('.gallery-region')

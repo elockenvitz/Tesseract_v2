@@ -258,7 +258,16 @@ export function PortfolioWorkspace({
      cards lost their edge. */
   return (
     <div
-      className={clsx('h-full overflow-y-auto pb-10', GALLERY_GROUND)}
+      /*
+       * `gallery-host`: the book is drawn at full width AND in the rail
+       * beside an open workspace, and the window is 1920px in both. Without
+       * the container the gallery below fell through to `2xl:grid-cols-12`
+       * and packed twelve tracks into a 26rem pane, which is why positions
+       * read as slivers there. The container is on the scroller because that
+       * is the one element that is never remounted, so the grid re-flows in
+       * place and the reader's scroll does not move.
+       */
+      className={clsx('gallery-host h-full overflow-y-auto pb-10', GALLERY_GROUND)}
       data-testid="portfolio-lens"
     >
       {/* The book map and its totals describe the WHOLE book, so they belong
@@ -274,7 +283,8 @@ export function PortfolioWorkspace({
           if (r) open(r.position, r.frame)
         }}
       />
-      <DesktopGallery title="Positions" count={rows.length}>
+      {/* `region`: tracks from the scroller above, not from the window. */}
+      <DesktopGallery title="Positions" count={rows.length} region>
         {rows.map((r, i) => (
           <PositionTile
             key={r.position.assetId}

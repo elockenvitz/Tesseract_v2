@@ -4,6 +4,7 @@ import { Compass, Lightbulb } from 'lucide-react'
 import { IdeasExplore } from './IdeasExplore'
 import { IdeasExploreBrowse } from './IdeasExploreBrowse'
 import { IdeasWorkPane } from './IdeasWorkPane'
+import { BackToSection } from '../desktop/BackToSection'
 import { ArticleReader } from '../mobile/ArticleReader'
 import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import { selectionFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
@@ -221,7 +222,7 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
         <div className="flex h-full">
         <div
           className={clsx(
-            'min-w-0 border-r border-gray-200 dark:border-gray-700',
+            'flex min-w-0 flex-col border-r border-gray-200 dark:border-gray-700',
             /*
              * ~42% with a floor and a ceiling, not a bare percentage.
              *
@@ -238,10 +239,25 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
              * Split mode is left exactly as it was — this pane is already the
              * narrower half and has no width to give away.
              */
-            splitOpen ? 'w-[42%] min-w-[30rem] max-w-[40rem]' : 'w-full border-r-0 px-2',
+            /* ~30% between 20rem and 26rem, down from ~42% between 30 and 40.
+               26rem is under the 34rem that `.gallery-region` and the rail
+               gutter are keyed on, so the rail is one column with a 12px
+               gutter at every window width. See `DashboardNext` for the full
+               reasoning; the two shells share this geometry deliberately. */
+            splitOpen ? 'w-[30%] min-w-[20rem] max-w-[26rem]' : 'w-full border-r-0 px-2',
           )}
         >
-        <div className={clsx('h-full', mode !== 'explore' && 'hidden')}>
+        {/* The way back, over the column it widens rather than over the pane
+            it closes. See `BackToSection`. */}
+        {splitOpen && (
+          <div className="flex shrink-0 items-center border-b border-gray-200 px-3 py-1.5 dark:border-gray-700">
+            <BackToSection
+              backTo={MODES.find(m => m.key === mode)?.label ?? 'Ideas'}
+              onBack={() => { setSelected(null); setWorkMode(null); setSplitOpen(false) }}
+            />
+          </div>
+        )}
+        <div className={clsx('min-h-0 flex-1', mode !== 'explore' && 'hidden')}>
           <IdeasExploreBrowse
             selectedKey={selected?.selection.key ?? null}
             /*
@@ -272,7 +288,7 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
             }}
           />
         </div>
-        <div className={clsx('h-full', mode === 'explore' && 'hidden')}>
+        <div className={clsx('min-h-0 flex-1', mode === 'explore' && 'hidden')}>
         <IdeasExplore
           selectedKey={selected?.selection.key ?? null}
           onSelect={entry => {
@@ -336,12 +352,6 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
               selection={selected?.selection ?? null}
               entry={selected?.entry ?? null}
               mode={workMode}
-              /* The mode the reader is standing in, read from the same state
-                 the bar reads, so the way out names the section they will
-                 actually land on rather than whichever one opened the pane
-                 first. From `MODES` rather than spelled again here: the bar's
-                 label and the exit's label are one string. */
-              backTo={MODES.find(m => m.key === mode)?.label ?? 'Ideas'}
               /* The only route back to a single feed. */
               onClose={() => { setSelected(null); setWorkMode(null); setSplitOpen(false) }}
             />

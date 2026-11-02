@@ -5,6 +5,7 @@ import { IdeasExplore } from '../ideas-app/IdeasExplore'
 import { IdeasExploreBrowse } from '../ideas-app/IdeasExploreBrowse'
 import { PortfolioWorkspace } from '../portfolio-v2/PortfolioWorkspace'
 import { IdeasWorkPane } from '../ideas-app/IdeasWorkPane'
+import { BackToSection } from '../desktop/BackToSection'
 import { StartHereBand } from './StartHereBand'
 import { ArticleReader } from '../mobile/ArticleReader'
 import { useDesktopAttentionFeed, type AttentionEntry, type AttentionInclude } from '../../hooks/useDesktopAttentionFeed'
@@ -224,10 +225,48 @@ export function DashboardNext() {
         <div className="flex h-full">
           <div
             className={clsx(
-              'min-w-0 border-r border-gray-200 dark:border-gray-700',
-              splitOpen ? 'w-[42%] min-w-[30rem] max-w-[40rem]' : 'w-full border-r-0 px-2',
+              'flex min-w-0 flex-col border-r border-gray-200 dark:border-gray-700',
+              /*
+               * ~30% between 20rem and 26rem, down from ~42% between 30 and
+               * 40. Two reasons, and the second is the one that matters.
+               *
+               * The obvious one: at 40rem the column was reported as holding
+               * a lot of empty space, and the workspace beside it is where
+               * the reading happens.
+               *
+               * The structural one: 26rem is under the 34rem that
+               * `.gallery-region` and the rail gutter are both keyed on, so
+               * the rail is ONE COLUMN at every window width rather than two
+               * narrow ones, and its gutter drops to 12px. A 40rem cap sat
+               * above that threshold and gave Explore and the book two
+               * columns of slivers in a pane the reader scans as a list.
+               */
+              splitOpen ? 'w-[30%] min-w-[20rem] max-w-[26rem]' : 'w-full border-r-0 px-2',
             )}
           >
+            {/*
+              The way back, over the column it widens.
+
+              It was drawn above the WORK PANE first, which is the wrong half
+              of the screen: pressing it gives this column its full width
+              back, so a control on the other side points away from where the
+              press lands. Above the list, it is over the thing it restores.
+
+              One band for all three lenses rather than one per surface: the
+              press means the same thing on each, and three copies is how a
+              label starts differing from its neighbour.
+            */}
+            {splitOpen && (
+              <div className="flex shrink-0 items-center border-b border-gray-200 px-3 py-1.5 dark:border-gray-700">
+                <BackToSection
+                  /* The lens the reader is standing in, from the same table
+                     the bar's own buttons read, so the two labels are one
+                     string. */
+                  backTo={LENSES.find(m => m.key === lens)?.label ?? 'Dashboard'}
+                  onBack={() => { setSelected(null); setWorkMode(null); setSplitOpen(false) }}
+                />
+              </div>
+            )}
             {/*
               The book report.
 
@@ -248,13 +287,19 @@ export function DashboardNext() {
               nothing at all.
             */}
             {portfolioSeen && (
-              <div className={clsx('h-full', lens !== 'portfolio' && 'hidden')}>
+              <div
+                /* `min-h-0 flex-1`, not `h-full`: the column is a flex column
+                   with a back band above, and `h-full` would measure the whole
+                   column and push the surface's own scroller past the bottom.
+                   All three wrappers below carry the same pair. */
+                className={clsx('min-h-0 flex-1', lens !== 'portfolio' && 'hidden')}
+              >
                 <PortfolioWorkspace
                   onOpenPosition={target => openWorkspace(selectionForPosition(target), null, null)}
                 />
               </div>
             )}
-            <div className={clsx('h-full', lens !== 'explore' && 'hidden')}>
+            <div className={clsx('min-h-0 flex-1', lens !== 'explore' && 'hidden')}>
               <IdeasExploreBrowse
                 selectedKey={selected?.selection.key ?? null}
                 resolve={item => exploreOpen(item, resolver.entries)}
@@ -276,7 +321,7 @@ export function DashboardNext() {
                 column the two spellings meant the same thing; now that there
                 are three lenses in it, the old one would draw the feed
                 underneath the book. */}
-            <div className={clsx('h-full', lens !== 'feed' && 'hidden')}>
+            <div className={clsx('min-h-0 flex-1', lens !== 'feed' && 'hidden')}>
               <IdeasExplore
                 selectedKey={selected?.selection.key ?? null}
                 include={INCLUDE}
@@ -306,12 +351,6 @@ export function DashboardNext() {
                 selection={selected?.selection ?? null}
                 entry={selected?.entry ?? null}
                 mode={workMode}
-                /* The lens the reader is standing in, read from the same state
-                   the bar reads, so the way out names the section they will
-                   actually land on rather than whichever one opened the pane
-                   first. Read from `LENSES` rather than spelled again here:
-                   the bar's label and the exit's label are one string. */
-                backTo={LENSES.find(m => m.key === lens)?.label ?? 'Dashboard'}
                 onClose={() => { setSelected(null); setWorkMode(null); setSplitOpen(false) }}
               />
             </div>
