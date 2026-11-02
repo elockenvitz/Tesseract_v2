@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { Compass, LayoutDashboard, Lightbulb } from 'lucide-react'
+import { Compass, LayoutDashboard, Lightbulb, Scale } from 'lucide-react'
 import { IdeasExplore } from '../ideas-app/IdeasExplore'
 import { IdeasExploreBrowse } from '../ideas-app/IdeasExploreBrowse'
+import { PortfolioWorkspace } from '../portfolio-v2/PortfolioWorkspace'
 import { IdeasWorkPane } from '../ideas-app/IdeasWorkPane'
 import { StartHereBand } from './StartHereBand'
 import { ArticleReader } from '../mobile/ArticleReader'
@@ -61,9 +62,21 @@ import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
  *
  * Opt-in rather than simply on, because asking for them changes what the Ideas
  * TAB means too, and this tab is where that gets tried first.
+ *
+ * ── And the book, which is not a card ─────────────────────────────────────
+ *
+ * Portfolio is the one thing on this screen that does NOT retire into the
+ * feed, and that is the point rather than an omission. "How is this book
+ * doing" is a report about an object, not a finding about a name, and the
+ * answer to it is a table of positions against a benchmark. Turning that into
+ * cards would produce one card per holding, which is the filler the feed
+ * already learned to refuse.
+ *
+ * So the feed answers what deserves attention, and Portfolio answers how the
+ * books are doing, and they are different surfaces behind one bar.
  */
 
-type NextLens = 'feed' | 'explore'
+type NextLens = 'feed' | 'explore' | 'portfolio'
 
 /**
  * One constant, read by the feed and by the Explore resolver.
@@ -76,13 +89,43 @@ type NextLens = 'feed' | 'explore'
  */
 const INCLUDE: AttentionInclude = { research: true, decisions: true }
 
+/**
+ * Two lenses on the feed, and then the book.
+ *
+ * ── Why Portfolio is not a third lens ─────────────────────────────────────
+ *
+ * Ideas and Explore are two questions about one body of material: what
+ * deserves attention, and what is here that might be worth investigating.
+ * Portfolio is not a third question about that material. It is a different
+ * OBJECT — a per-book report — which is what was asked for, and which is
+ * exactly what a "Portfolio filter over the feed" would not have been.
+ *
+ * So it sits in the same row behind a divider rather than beside the other
+ * two as an equal. One row, because nobody should have to learn two
+ * navigation idioms on one screen; a divider, because the row is not a flat
+ * list of three interchangeable views.
+ */
 const LENSES: { key: NextLens; label: string; hint: string; icon: typeof Lightbulb }[] = [
   { key: 'feed', label: 'Ideas', hint: 'What deserves attention', icon: Lightbulb },
   { key: 'explore', label: 'Explore', hint: 'What might be interesting', icon: Compass },
+  { key: 'portfolio', label: 'Portfolio', hint: 'How the books are doing', icon: Scale },
 ]
+
+/** Where the divider falls: after the lenses that read the feed. */
+const FEED_LENSES = 2
 
 export function DashboardNext() {
   const [lens, setLens] = useState<NextLens>('feed')
+  /*
+   * Latched, the same shape `useDesktopCandidates` uses for its settle gate:
+   * Portfolio costs several queries, so it is not mounted until it is asked
+   * for, and it stays mounted afterwards so returning to it keeps the book the
+   * reader had chosen. Derived during render rather than set in an effect,
+   * which would cost a pass with the lens selected and nothing drawn.
+   */
+  const seenPortfolio = useRef(false)
+  if (lens === 'portfolio') seenPortfolio.current = true
+  const portfolioSeen = seenPortfolio.current
   const [selected, setSelected] = useState<{ selection: IdeasSelection; entry: AttentionEntry | null } | null>(null)
   const [workMode, setWorkMode] = useState<Progression['mode'] | null>(null)
   const [splitOpen, setSplitOpen] = useState(false)
@@ -132,11 +175,18 @@ export function DashboardNext() {
           <h1 className="text-sm font-semibold text-gray-900 dark:text-white">Dashboard</h1>
         </div>
         <div className="flex items-center gap-1">
-          {LENSES.map(m => {
+          {LENSES.map((m, i) => {
             const Icon = m.icon
             return (
+              <Fragment key={m.key}>
+                {/* The row is the feed's two lenses, and then the book. */}
+                {i === FEED_LENSES && (
+                  <span
+                    aria-hidden
+                    className="mx-1.5 h-4 w-px shrink-0 bg-gray-200 dark:bg-gray-700"
+                  />
+                )}
               <button
-                key={m.key}
                 onClick={() => setLens(m.key)}
                 title={m.hint}
                 aria-pressed={lens === m.key}
@@ -150,6 +200,7 @@ export function DashboardNext() {
                 <Icon className="h-3.5 w-3.5" />
                 {m.label}
               </button>
+              </Fragment>
             )
           })}
         </div>
@@ -159,10 +210,32 @@ export function DashboardNext() {
       </header>
 
       <div className="min-h-0 flex-1">
+        {/*
+          The book report.
+
+          Full width and with no work pane beside it: a book IS the subject
+          here, not a finding you open something else from, and
+          `PortfolioWorkspace` already carries its own header, book picker and
+          position detail. Mounting the existing lens rather than writing a
+          second one is the same decision the feed made about `IdeasExplore` --
+          a second portfolio surface would be a second answer to "what does
+          this book weigh", which is the duplication this direction exists to
+          end.
+
+          Mounted on first use and kept mounted after: it runs several queries,
+          so a reader who never opens it pays nothing, and a reader who does
+          keeps their chosen book when they go back to the feed and return.
+        */}
+        {portfolioSeen && (
+          <div className={clsx('h-full', lens !== 'portfolio' && 'hidden')}>
+            <PortfolioWorkspace />
+          </div>
+        )}
+
         {/* Both browse surfaces stay mounted and are hidden by class, so
             switching lens keeps each one's scroll, filters and loaded pages.
             See `IdeasApp` for why that is not state worth restoring. */}
-        <div className="flex h-full">
+        <div className={clsx('flex h-full', lens === 'portfolio' && 'hidden')}>
           <div
             className={clsx(
               'min-w-0 border-r border-gray-200 dark:border-gray-700',
