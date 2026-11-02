@@ -221,8 +221,22 @@ const codeOf = (slug: string) =>
     .replace(/^[ \t]*\/\/.*$/gm, '')
     .replace(/([^:])\/\/.*$/gm, '$1')
 
-describe('market-news gates its provider calls on a real user', () => {
-  const src = () => codeOf('market-news')
+/**
+ * Both of them, together.
+ *
+ * `market-news` and `market-events` are the same seam twice: the same four
+ * CORS headers, the same service-role cache, the same paid Finnhub key, and
+ * they were the only two functions in this project carrying the `@2.39.0` pin
+ * and the only two rejecting every reader. Fixing one and leaving the other is
+ * what happened last time -- the gate reached production on a branch that was
+ * never merged, so the repo's copy of BOTH functions had no gate at all and
+ * whoever deployed either one next would have published an open endpoint.
+ *
+ * So the block is parameterised. A new sibling function gets added here, not
+ * copied into a second describe that can drift.
+ */
+describe.each(['market-news', 'market-events'])('%s gates its provider calls on a real user', (slug) => {
+  const src = () => codeOf(slug)
 
   it('runs the shared gate', () => {
     const s = src()

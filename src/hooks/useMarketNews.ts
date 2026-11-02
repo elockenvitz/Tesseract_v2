@@ -28,7 +28,27 @@ export interface MarketNewsItem {
 
 interface MarketNewsResponse {
   items: MarketNewsItem[]
-  sources: { name: string; ok: boolean; count: number }[]
+  sources: {
+    name: string
+    /** The source answered without throwing or timing out. */
+    ok: boolean
+    /**
+     * The source has the API key it needs. Separate from `ok` because a
+     * key-less source returns an empty list without erroring, which looks
+     * exactly like a healthy source on a quiet news day.
+     */
+    configured?: boolean
+    count: number
+    /**
+     * Why the source came back empty, in the provider's own words.
+     *
+     * Only Alpha Vantage sets this, and only because it is the one provider
+     * that answers 200 with a complaint instead of data -- a bad key or an
+     * exhausted daily quota arrive as prose where the `feed` array should be.
+     * It sat at `count: 0` for weeks with nothing to read.
+     */
+    note?: string
+  }[]
 }
 
 /**

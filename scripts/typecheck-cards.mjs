@@ -234,7 +234,7 @@ const MAX_ERRORS = 0
 // maps (`tile-engine/presentation` and `tile-engine/adopt/project`), which
 // TypeScript had been reporting all along. A ratchet that only ever rises
 // spends every gain silently, so it comes down with them.
-const MAX_REPO_ERRORS = 8619
+const MAX_REPO_ERRORS = 8618
 
 /**
  * A floor on real source files, now that they are counted as source files.
