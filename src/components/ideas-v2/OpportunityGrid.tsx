@@ -362,12 +362,35 @@ export function OpportunityGrid({
    needs `useDesktopExplore` and the whole candidate pipeline to produce one
    tile, and the property under test -- that only one picture is mounted at a
    time -- is the tile's, not the field's. */
+/* Also rendered by Explore, which reads the same candidates through the same
+   adapters and had been drawing a tile of its own -- a second answer to how a
+   candidate looks. Four optional props carry the differences between the two
+   lenses; every one of them defaults to what this lens has always done, so
+   `OpportunityGrid` below passes none of them. */
 export function OpportunityTile({
   o, size, onOpen, closes: closesIn, year = null,
+  label, primaryLabel = 'Open', inert = false, selected = false,
 }: {
   o: Opportunity
   size: TileSize
   onOpen: () => void
+  /**
+   * The eyebrow word. Defaults to this lens's own vocabulary, which names what
+   * RAISED the candidate.
+   *
+   * Explore passes its category label instead, and that is not a cosmetic
+   * preference: the category is what Explore's filter narrows on, so a chip
+   * reading anything else would name a facet the reader cannot then ask for.
+   */
+  label?: string
+  /** The primary verb. Explore's resolver names it, because the destination
+   *  differs per candidate -- a story opens a reader, not a workspace. */
+  primaryLabel?: string
+  /** Nothing to open. The tile reads and does not press; see `DesktopTile`. */
+  inert?: boolean
+  /** This tile's object is in the workspace beside the field; see `DesktopTile`.
+   *  Only a lens that KEEPS its field while a pane is open passes this. */
+  selected?: boolean
   /** This symbol's closes from the field's one batched read. */
   closes?: TileClose[]
   /** Its trailing-year extremes, where the field fetched them. Scenario
@@ -567,10 +590,12 @@ export function OpportunityTile({
       tone={toneFor(o)}
       size={size}
       onOpen={onOpen}
+      inert={inert}
+      selected={selected}
       eyebrow={<>
         {/* What raised this, in the shared vocabulary. A generated opportunity
             says so here rather than dressing itself as an authored idea. */}
-        <TileState tone={toneFor(o)}>{OPPORTUNITY_LABEL[o.kind]}</TileState>
+        <TileState tone={toneFor(o)}>{label ?? OPPORTUNITY_LABEL[o.kind]}</TileState>
         {metric?.value && (
           <TileFigure strong={metric.direction === 'bad'}>
             {metric.value}
@@ -579,7 +604,11 @@ export function OpportunityTile({
       </>}
       context={context ? <span data-testid="opportunity-why">{context}</span> : undefined}
       actions={<>
-        <TileAction label="Open" onClick={onOpen} primary testId="opportunity-open" />
+        {/* No primary where there is nothing to open. Ask AI and Discuss can
+            still stand: they are about the NAME, which exists either way. */}
+        {!inert && (
+          <TileAction label={primaryLabel} onClick={onOpen} primary testId="opportunity-open" />
+        )}
         {target && (
           <TileAction label="Ask AI" onClick={() => askAI(target)} testId="opportunity-ai" />
         )}

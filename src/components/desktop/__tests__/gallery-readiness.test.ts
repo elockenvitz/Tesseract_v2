@@ -374,14 +374,32 @@ describe('a stretched tile has somewhere to put the height', () => {
 
   it('stretches the gallery grid, so rows are flush', () => {
     const grid = shell.slice(shell.indexOf('export function DesktopGallery'))
-    const el = grid.slice(grid.indexOf('className="mt-4 grid'))
+    /* Anchored on the class string rather than on `className="`: the grid now
+       picks its track count between the window breakpoints and a container
+       query, so the attribute is a `clsx` call and the old anchor found
+       nothing -- a passing assertion over an empty slice. */
+    const el = grid.slice(grid.indexOf("'mt-4 grid"))
+    expect(el).not.toBe(grid)
     expect(el.slice(0, 160)).toContain('items-stretch')
   })
 
   it('gives the tile no height of its own, which would override that', () => {
     const tile = shell.slice(shell.indexOf('export function DesktopTile'))
-    const shellClasses = tile.slice(tile.indexOf("'group flex"))
-    expect(shellClasses.slice(0, 120)).not.toContain('h-full')
+    /*
+     * ── This assertion was vacuous, and had been for a while ──────────────
+     *
+     * The anchor was `'group flex`, and the shell's class string has read
+     * `'group relative flex ...` since the action overlay was positioned
+     * against the card. `indexOf` returned -1, `slice(-1)` took the file's
+     * last character, and `not.toContain('h-full')` passed on it -- so the
+     * rule it describes was unguarded the whole time.
+     *
+     * Anchored on the part that is load-bearing, with the slice proven to
+     * have moved before anything is asserted about it.
+     */
+    const i = tile.indexOf("'group relative flex")
+    expect(i).toBeGreaterThan(-1)
+    expect(tile.slice(i, i + 160)).not.toContain('h-full')
   })
 
   it('sizes the picture box by a floor, never by an exact height', () => {

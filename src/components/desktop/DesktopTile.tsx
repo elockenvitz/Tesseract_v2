@@ -174,10 +174,31 @@ const SPAN: Record<TileFlow, Record<TileSize, string>> = {
   },
 }
 
+/**
+ * Columns from the REGION rather than the window.
+ *
+ * The four workspace lenses each own a whole tab, so the window's width IS
+ * their width and `md:`/`xl:`/`2xl:` are right for them. Explore is not: the
+ * same 1920px window shows it at full width and at ~40rem beside an open
+ * asset workspace, and a media query cannot tell those apart -- it would go on
+ * packing twelve tracks into a pane where a tile is 3rem wide.
+ *
+ * So a caller inside a resizable region asks for this instead, and the track
+ * count comes from a container query. The spans are selected on `data-size`,
+ * which `DesktopTile` has always emitted, rather than mirroring the Tailwind
+ * span table in CSS -- a copy of that table is a thing to keep in step, and
+ * the attribute is already the contract. See `.gallery-region` in index.css.
+ *
+ * The caller supplies the container: `container-type: inline-size` on the
+ * scroll host, which is also the one element that is never remounted, so the
+ * grid re-flows in place and the reader's scroll does not move.
+ */
 export function DesktopGallery({
-  title, action, note, flow = 'ranked', children,
+  title, action, note, flow = 'ranked', region = false, children,
 }: {
   title: React.ReactNode
+  /** Size the grid off the containing region instead of the window. */
+  region?: boolean
   /**
    * Accepted and not drawn.
    *
@@ -260,7 +281,12 @@ export function DesktopGallery({
         which ADAPTS to the row.
       */}
       <div
-        className="mt-4 grid grid-cols-1 items-stretch gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        className={clsx(
+          'mt-4 grid items-stretch gap-3',
+          region
+            ? 'gallery-region'
+            : 'grid-cols-1 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12',
+        )}
         style={{
           gridAutoRows: 'minmax(88px, auto)',
           /*
@@ -319,9 +345,12 @@ const SKELETON_HEIGHT: Record<TileSize, string> = {
 }
 
 export function GallerySkeleton({
-  title, count = 6, flow = 'ranked', sizeAt, heights,
+  title, count = 6, flow = 'ranked', sizeAt, heights, region = false,
 }: {
   title: React.ReactNode
+  /** As `DesktopGallery`'s: the placeholders must lay out on the same tracks
+   *  the real grid will use, or the field re-flows the moment it loads. */
+  region?: boolean
   /** How many placeholders. Default six: two rows of the usual mosaic. */
   count?: number
   flow?: TileFlow
@@ -362,7 +391,11 @@ export function GallerySkeleton({
        with a hairline was separated from its page by nothing a cheap monitor
        renders. gray-100 is the first step that reads as a surface behind the
        cards, and they gain their edge from the fill rather than the line. */
-    <div className="h-full overflow-y-auto bg-gray-100 px-6 pb-10 pt-5 dark:bg-[#070a10]">
+    <div className={clsx(
+      'h-full overflow-y-auto bg-gray-100 px-6 pb-10 pt-5 dark:bg-[#070a10]',
+      /* The scroll host is the container, here as in the loaded gallery. */
+      region && 'explore-host',
+    )}>
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>
         <span className="h-4 w-8 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
@@ -385,7 +418,12 @@ export function GallerySkeleton({
            on its own -- every placeholder carries an explicit `h-[Npx]`, which
            overrides stretch already -- but the two grids are meant to be the
            same geometry, and a difference here is how they drift. */
-        className="mt-4 grid grid-cols-1 items-stretch gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        className={clsx(
+          'mt-4 grid items-stretch gap-3',
+          region
+            ? 'gallery-region'
+            : 'grid-cols-1 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12',
+        )}
         style={{ gridAutoRows: 'minmax(88px, auto)', gridAutoFlow: 'row' }}
       >
         {Array.from({ length: count }, (_, i) => {
@@ -393,6 +431,9 @@ export function GallerySkeleton({
           return (
             <div
               key={i}
+              /* The span rule in region mode selects on this, exactly as it
+                 does on a real tile. */
+              data-size={s}
               className={clsx(
                 SPAN[flow][s],
                 heightOf(s),
@@ -490,9 +531,37 @@ export function sizeByRecency(index: number): TileSize {
  */
 export function DesktopTile({
   onOpen, eyebrow, tone = 'neutral', size = 'compact', flow = 'ranked',
-  testId, dataAttrs, context, actions, children,
+  testId, dataAttrs, context, actions, inert = false, selected = false, children,
 }: {
   onOpen: () => void
+  /**
+   * This tile has nothing to open, and must not look as though it does.
+   *
+   * Four lenses rank objects that always resolve somewhere, so none of them
+   * passes this. Explore does: `ExploreOpen` carries a `none` case whose own
+   * doctrine is that a preview with nothing behind it is still worth READING
+   * and must not offer a press -- a surface that takes a click and does
+   * nothing is worse than one that never invited it.
+   *
+   * So the affordances go and the content stays: no pointer, no tab stop, no
+   * Enter, no hover. Not `aria-disabled`, which would announce a control that
+   * has been turned off; this was never a control.
+   */
+  inert?: boolean
+  /**
+   * This tile's object is the one in the workspace beside the field.
+   *
+   * The header above records that the persistent ring was REMOVED, and the
+   * reason it gives is precise: nothing sits beneath these galleries any more,
+   * and opening a tile replaces the field. That holds for the four workspace
+   * lenses and it does not hold on the Dashboard, where Explore keeps its
+   * field in the left column with the asset workspace open beside it -- so
+   * which tile the pane belongs to is a real question a reader asks, and the
+   * tile is the only place that can answer it.
+   *
+   * Opt-in, so no lens acquires a ring it has no use for.
+   */
+  selected?: boolean
   eyebrow: React.ReactNode
   /**
    * The object's standing context, shown at rest on the shelf. Omit to get no
@@ -537,6 +606,7 @@ export function DesktopTile({
    * and openable from the keyboard, which is what the button gave us free.
    */
   const portalClick = (e: React.MouseEvent<HTMLElement>) => {
+    if (inert) return
     const t = e.target as HTMLElement
     if (t.closest('button,a,input,select,textarea,[role="button"],[data-no-portal]')) return
     // A drag that selected text is a read, not a decision to leave.
@@ -547,12 +617,15 @@ export function DesktopTile({
   return (
     <div
       role="group"
-      tabIndex={0}
+      tabIndex={inert ? undefined : 0}
       data-testid={testId ?? 'desktop-tile'}
       data-tone={tone}
       data-size={size}
+      data-inert={inert ? 'true' : undefined}
+      data-selected={selected ? 'true' : undefined}
       onClick={portalClick}
       onKeyDown={(e) => {
+        if (inert) return
         if (e.target !== e.currentTarget) return
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
       }}
@@ -591,8 +664,9 @@ export function DesktopTile({
         */
         /* `relative`: the action overlay is positioned against the CARD, not
            against the shelf it used to live in. See `TileActions`. */
-        'group relative flex min-w-0 cursor-pointer flex-col overflow-hidden rounded-[3px] border bg-white text-left',
+        'group relative flex min-w-0 flex-col overflow-hidden rounded-[3px] border bg-white text-left',
         'transition-colors duration-100',
+        !inert && 'cursor-pointer',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
         /*
           The card's edge is a real line, and its fill sits above the page.
@@ -607,9 +681,13 @@ export function DesktopTile({
           allowed its own contrast.
         */
         'dark:bg-[#161d2a]',
+        /* Hover moves the border, and an inert tile has nowhere to move to:
+           a card that lights up under the cursor is claiming a press. */
         tone === 'critical'
-          ? 'border-rose-300 hover:border-rose-400 dark:border-rose-900/60'
-          : 'border-gray-300 hover:border-gray-400 dark:border-white/[0.12] dark:hover:border-white/25',
+          ? clsx('border-rose-300 dark:border-rose-900/60', !inert && 'hover:border-rose-400')
+          : clsx('border-gray-300 dark:border-white/[0.12]', !inert && 'hover:border-gray-400 dark:hover:border-white/25'),
+        /* Last, so it beats the tone border above rather than racing it. */
+        selected && 'border-primary-400 ring-1 ring-primary-400 dark:border-primary-500 dark:ring-primary-500',
       )}
     >
       {/*

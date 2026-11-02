@@ -411,7 +411,32 @@ describe('browse, then engage: one mode at a time', () => {
     // The shell is not itself a button any more, which is what made nesting
     // one inside it invalid in the first place.
     expect(shell).toMatch(/role="group"/)
-    expect(shell).not.toMatch(/selected\s*\?:/)
+    /*
+     * ── The persistent ring, and why this assertion changed shape ─────────
+     *
+     * This read `expect(shell).not.toMatch(/selected\s*\?:/)` -- the shell may
+     * not have a `selected` prop at all. The reason was never that a ring is
+     * wrong; it was that nothing sits beneath these four galleries any more,
+     * so a ring would mark a tile against a pane that does not exist, and the
+     * moment a tile is opened its gallery is gone.
+     *
+     * That premise holds for the four workspace lenses and it does not hold
+     * everywhere. The Dashboard keeps Explore's field in the left column with
+     * the asset workspace open beside it, so "which tile is the pane about" is
+     * a real question there, and the tile is the only thing that can answer
+     * it. Banning the prop outright would have forced that lens to draw its
+     * own tile, which is the duplication this whole suite exists to end.
+     *
+     * So the ban moves from the PROP to the CALLERS, which is what it was
+     * always about: the four workspaces must not pass it, and the default must
+     * be off, so no lens acquires a ring by inheritance.
+     */
+    expect(shell).toMatch(/selected = false/)
+    for (const f of ALL_BROWSE) {
+      /* The lookbehind keeps `aria-selected={...}` out of it: that is a
+         listbox option announcing itself, not a tile wearing a ring. */
+      expect(code(f)).not.toMatch(/(?<![\w-])selected=\{/)
+    }
   })
 })
 
