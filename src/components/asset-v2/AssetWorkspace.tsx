@@ -41,16 +41,16 @@
  * happened and hands off. No idea workspace: an idea is its own object.
  */
 
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { clsx } from 'clsx'
-import { ArrowDown, ArrowUpRight, PencilLine, X } from 'lucide-react'
+import { ArrowUpRight, PencilLine, X } from 'lucide-react'
 import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
 import {
   useAssetWorkspace, primaryPosition, otherPositions,
   type AssetPosition, type AssetDecisionRow, type AssetLiveIdea,
 } from '../../hooks/useAssetWorkspace'
 import {
-  type AssetFocus, ORIGIN_NAME, issueTitle, issueDetail,
+  type AssetFocus, openAsset,
 } from '../../lib/desktop-asset'
 import { ideasTabFor } from '../../lib/desktop-ideas'
 import {
@@ -86,6 +86,14 @@ export interface AssetWorkspaceProps {
   origin?: string | null
   /** Quiet escape to the 4,300-line legacy page, for what V1 has not absorbed. */
   onOpenLegacy?: () => void
+  /**
+   * Why the reader was sent here, for the header's question mark.
+   *
+   * Passed down from `IdeasWorkPane`, which used to draw it as a band of its
+   * own above this surface. A header that already states the ticker is the
+   * right owner for "and here is why you are looking at it".
+   */
+  why?: { headline: string; reason: string | null } | null
 }
 
 /** Ideas is a separate object; this is the typed hop, not an embedded workspace. */
@@ -96,7 +104,7 @@ function routeToIdea(ideaId: string, issue: string) {
 }
 
 export function AssetWorkspacePane({
-  asset, focus, portfolioId, portfolioName, issue, origin, onOpenLegacy,
+  asset, focus, portfolioId, portfolioName, issue, origin, onOpenLegacy, why,
 }: AssetWorkspaceProps) {
   const activeFocus: AssetFocus = focus ?? 'overview'
   const symbol = asset.symbol ?? null
@@ -427,28 +435,51 @@ export function AssetWorkspacePane({
   /* ------------------------------------------------------- composition */
 
   /**
-   * The one thing to do next, and the section that answers it.
+   * The one thing to do next, and WHERE IN THE APPLICATION it is done.
    *
-   * Where the verb is to WRITE, this surface can do it -- the case section
-   * edits inline -- so the primary turns editing on rather than handing off.
-   * `ResearchDetail` cannot, and its own comment says why: "An authoring
-   * state's next step is authoring, which happens on the Asset page."
+   * ── It used to scroll, which is not an action ───────────────────────────
    *
-   * The target falls back to the case whenever the section the verb names did
-   * not render. A button that scrolls to nothing is the dead-control failure
-   * the panes' overflow icons were removed for, and the two candidate
-   * targets here are both conditional: `new-since-review` exists only when
-   * evidence has arrived, `evidence` only when any is on record.
+   * The primary moved the page: `scrollIntoView` to a section of this very
+   * pane, three hundred pixels below the button. On a surface the reader can
+   * already see end to end that is not a step, it is a nudge -- and it
+   * explains the reading that "Review thesis" is pointless. The verb says
+   * review the thesis; the button put the thesis slightly higher up.
+   *
+   * It now opens the Asset tab, which is where every one of these verbs is
+   * actually carried out -- the full page with the editor, the workflow, the
+   * lists and the estimates on it. `openAsset` is the shared seam the lens
+   * panes already use, and `focus` lands the reader on the part the verb
+   * names rather than at the top.
+   *
+   * ── The in-pane editor is not lost ──────────────────────────────────────
+   *
+   * `setEditing` is no longer called from here, and the case section keeps
+   * its own "Write the case" / "Edit" control, so authoring in place is still
+   * one press away for a reader who wants to stay. What changes is that the
+   * HEADER's verb now leaves, consistently, whatever the verb is.
    */
-  const authoring = state === 'no-thesis' || state === 'incomplete-thesis'
-  const primaryTarget =
-    state === 'evidence-since-review' && arrival ? 'new-since-review'
-    : state === 'thin' && evidenceOnRecord ? 'evidence'
-    : 'the-case'
+  /*
+   * `research` for every verb, and that is not a placeholder.
+   *
+   * All seven verbs `primaryActionFor` can return -- review it, write it,
+   * revisit it, finish it, read it, review the new evidence, add evidence --
+   * are things done to the CASE, and the Asset page's research focus is
+   * where the case and the evidence under it both live. A per-verb map here
+   * would be a table with one value repeated seven times, which is a thing
+   * to keep in step rather than a distinction.
+   */
+  const primaryFocus: AssetFocus = 'research'
   const runPrimary = () => {
-    if (authoring) setEditing(true)
-    document.getElementById(primaryTarget)
-      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    openAsset({
+      assetId: asset.id,
+      symbol,
+      companyName: asset.company_name ?? null,
+      focus: primaryFocus,
+      portfolioId: portfolioId ?? null,
+      portfolioName: portfolioName ?? null,
+      issue: issue ?? null,
+      origin: origin ?? null,
+    })
   }
 
   // Focus reorders one page. It never hides a section behind a tab.
@@ -507,14 +538,13 @@ export function AssetWorkspacePane({
         state={state}
         gap={gap}
         daysSinceWritten={subject.daysSinceReview}
-        issue={issue}
-        origin={origin ?? null}
         target={target}
         teamable={teamable}
         onOpenLegacy={onOpenLegacy}
         primary={{ label: primaryActionFor(subject), run: runPrimary }}
         assetId={subject.assetId}
         caseWrittenAt={data.caseWrittenAt ?? null}
+        why={why ?? null}
       />
       {/*
         ── One vertical read, not a mosaic ────────────────────────────────────
@@ -672,7 +702,7 @@ export function DecisionBand({
  */
 function AssetHeader({
   symbol, companyName, spot, position, showBook, state, gap, daysSinceWritten,
-  issue, origin, target, teamable, onOpenLegacy, primary, assetId, caseWrittenAt,
+  target, teamable, onOpenLegacy, primary, assetId, caseWrittenAt, why,
 }: {
   symbol: string | null
   companyName: string | null
@@ -692,8 +722,12 @@ function AssetHeader({
   state: string
   gap: GapState | null
   daysSinceWritten: number | null
-  issue: any
-  origin: string | null
+  /*
+   * `issue` and `origin` no longer reach this header. They drew the
+   * "Opened from <lens> · <finding>" line and the detail paragraph, both of
+   * which said what the question mark now holds. The PANE still reads them,
+   * to stamp the navigation the primary performs.
+   */
   target: EngagementTarget
   teamable: boolean
   onOpenLegacy?: () => void
@@ -717,20 +751,47 @@ function AssetHeader({
    * its knowledge of which sections actually rendered.
    */
   primary: { label: string; run: () => void }
+  /**
+   * Why the reader is here, for the question mark beside the ticker.
+   *
+   * Carried from the candidate they pressed. It used to be a band of its own
+   * ABOVE this header -- a ticker, a headline and a reason with a bottom
+   * border, stacked on a header that draws its own ticker -- so the surface
+   * opened with two top panes. Absent when nothing sent them, which is a
+   * direct open rather than an arrival from a finding.
+   */
+  why?: { headline: string; reason: string | null } | null
 }) {
-  const title = issueTitle(issue)
-  const detail = issueDetail(issue)
   const tone: SemanticTone = gap ? toneForGap(gap) : 'neutral'
 
   return (
-    <div className="border-b border-gray-200 bg-white px-6 pt-5 dark:border-white/10 dark:bg-[#141a25]">
-      {origin && (
-        <p className="mb-2 text-[11px] text-gray-500">
-          Opened from {ORIGIN_NAME[origin] ?? origin}
-          {title && <> · {title}</>}
-        </p>
-      )}
+    /*
+      ── Anchored, because this is the part you navigate BY ────────────────
 
+      The ticker, the price, the weight and the verb all scrolled away with
+      the first panel, so the further a reader got into a long page the less
+      of it said which name they were reading. Sticky to the top of the work
+      pane's scrollport, which is the element that actually scrolls here.
+
+      `px-6 pt-4 pb-0` and a tighter stack below: the band was reported as a
+      lot of wasted space, and it was -- a provenance line, a 32px ticker
+      row, a chip row, a detail paragraph and an action row, five bands deep
+      before the page began.
+    */
+    <div className="sticky top-0 z-20 border-b border-gray-200 bg-white px-6 pt-4 dark:border-white/10 dark:bg-[#141a25]">
+      {/*
+        ── "Opened from Ideas · <the finding>" is gone ─────────────────────
+
+        It had a line of its own at the top of the band, and it was the SAME
+        sentence the work pane's question mark already holds -- that control
+        exists precisely to keep the explanation off the page until it is
+        asked for. Printing it here as well meant the reader got the thing
+        the collapse was supposed to collapse, one band higher.
+
+        The question mark moves INTO this header instead, beside the ticker,
+        so there is one top pane rather than a thin band stacked on a thick
+        one. `why` carries the headline and reason it reveals.
+      */}
       <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
         <div className="flex min-w-0 items-baseline gap-2.5">
           <span className="font-black text-[32px] leading-[1.02] tracking-[-0.035em]">
@@ -739,6 +800,7 @@ function AssetHeader({
           {companyName && (
             <span className="min-w-0 truncate text-[14px] font-medium text-gray-500">{companyName}</span>
           )}
+          {why && <WhyHere why={why} />}
         </div>
         <div className="ml-auto flex flex-wrap gap-2">
           {spot != null && <DesktopStat value={money(spot)} label="Spot" />}
@@ -768,51 +830,28 @@ function AssetHeader({
         <span className="text-gray-500">{STATE_LABEL[state as keyof typeof STATE_LABEL] ?? state}</span>
       </div>
 
-      {detail && (
-        <p className="mt-2 max-w-[80ch] text-[12px] text-gray-600 dark:text-gray-400">{detail}</p>
-      )}
+      {/*
+        ── The issue's own sentence, dropped ────────────────────────────────
+
+        `issueDetail` is the long form of the finding that sent the reader
+        here -- the same thing the question mark above now holds, at more
+        length. It had a paragraph to itself in the middle of the band, which
+        is a third place for one sentence.
+      */}
 
       {/*
-        ── Three groups, matching `ResearchDetail` ──────────────────────────
+        ── Two groups, with the verb on the RIGHT ───────────────────────────
 
-        The step, the verdict, the tools. `flex-1` on the outer two is what
-        actually centres the middle one -- `mx-auto` beside an `ml-auto`
-        sibling does not, and measured on the research pane it left the
-        verdict 170px off centre.
+        It led the row, matching the lens panes. On this surface that put the
+        single loudest control directly under a 32px ticker and above a page
+        of reading, so the band opened with an instruction before it had
+        finished saying which name it was about.
 
-        This row used to be one left-justified run: primary, Ask AI, Team,
-        Full asset page, all packed against the left edge with the stats
-        block floating far away on the right. The other three lens panes do
-        not look like that, and the asset workspace is the surface a reader
-        reaches FROM one of them, so it was the odd one out.
+        The verdict leads instead -- it is the question this header asks --
+        and the verb joins the tools at the right end, which is also where a
+        reader's hand already is for Ask AI and the full page.
       */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 pb-3">
-        <div className="flex min-w-0 flex-1 items-center gap-1">
-          {/*
-            ── Smaller, and quieter about it ──────────────────────────────
-
-            It was `px-4 py-2.5 text-[13px]` -- a 42px-tall slab of saturated
-            blue, which at the top of a page whose job is to be read looked
-            like a call to action on a marketing site. The row leads with it
-            because a reader arriving from a finding needs to know what to do
-            next; it does not need to be the loudest thing on the screen to
-            say that.
-
-            `py-1.5 text-[12px]`, and a 600-weight rather than 700, puts it
-            at the same height as the verdict buttons beside it, so the three
-            groups read as one row instead of a button with some text next to
-            it.
-          */}
-          <button
-            type="button"
-            onClick={primary.run}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:border-blue-700 hover:bg-blue-700"
-          >
-            {primary.label}
-            <ArrowDown className="h-3 w-3 opacity-70" />
-          </button>
-        </div>
-
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 pb-2.5">
         {/*
           The verdict, which this surface had no way to express.
 
@@ -835,10 +874,7 @@ function AssetHeader({
           <ThesisVerdictBar assetId={assetId} compact />
         )}
 
-        {/* Tools, right-aligned as a set. Ask AI, Team and the legacy page
-            are not steps in the review -- they are what you reach for
-            alongside it -- and interleaving them with the action made one
-            undifferentiated run of controls. */}
+        {/* The verb and the tools, right-aligned as one set. */}
         <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
           {/* The D1 seam, which the legacy Asset page never had: the pane is
               mounted once in Layout and binds to whatever object is passed. */}
@@ -858,15 +894,44 @@ function AssetHeader({
               Team
             </button>
           )}
+          {/*
+            ── The verb, last in the row and smaller again ─────────────────
+
+            `px-2.5 py-1 text-[11px]`, a hair under the quiet controls it
+            sits beside rather than a slab above them. It was already down
+            from a 42px block to 32px and was still reported as too large;
+            the thing that makes it the primary is that it is the only
+            filled control on the band, not its size.
+
+            `ArrowUpRight`, not `ArrowDown`. The arrow was pointing down
+            because the button used to scroll down this page. It now opens
+            the Asset tab, and the icon has to say that or it is telling the
+            reader the wrong thing about where they are going.
+          */}
+          <button
+            type="button"
+            onClick={primary.run}
+            data-slot="asset-primary"
+            className="ml-1 inline-flex items-center gap-1.5 rounded-md border border-blue-600 bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:border-blue-700 hover:bg-blue-700"
+          >
+            {primary.label}
+            <ArrowUpRight className="h-3 w-3 opacity-80" />
+          </button>
           {onOpenLegacy && (
-            /* Quiet, because it is a fallback and not a destination: workflow,
-               lists, widgets and analyst estimates still live there. */
+            /*
+              ── Now that the verb opens the Asset page, this is a duplicate ─
+
+              It read "Full asset page" and opened the same tab the primary
+              beside it opens, differing only in landing at the overview
+              rather than at research. Two controls, one destination, one of
+              them unlabelled about what it does differently.
+            */
             <button
               type="button"
               onClick={onOpenLegacy}
               className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
             >
-              Full asset page
+              Overview
               <ArrowUpRight className="h-3 w-3 opacity-70" />
             </button>
           )}
@@ -880,6 +945,63 @@ function AssetHeader({
         */}
       </div>
     </div>
+  )
+}
+
+/**
+ * Why you are here, behind a question mark, in the header that owns it.
+ *
+ * ── Why a popover and not a row ───────────────────────────────────────────
+ *
+ * The previous version expanded in place, which pushed the whole page down
+ * by the height of the headline and reason -- a band appearing above the
+ * thing the reader was reading, which is the behaviour the collapse existed
+ * to stop. Absolutely positioned, it covers rather than displaces.
+ *
+ * Closes on the next press anywhere, because a panel with no way out except
+ * the control that opened it is the thing readers leave open by accident.
+ */
+function WhyHere({ why }: { why: { headline: string; reason: string | null } }) {
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    // `capture`, so a press on the toggle itself is seen here FIRST and the
+    // toggle's own handler then reopens it -- without that the two race and
+    // the panel never closes on its own control.
+    const close = () => setOpen(false)
+    document.addEventListener('pointerdown', close, { capture: true })
+    return () => document.removeEventListener('pointerdown', close, { capture: true })
+  }, [open])
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
+        aria-expanded={open}
+        aria-label="Why you are here"
+        data-slot="work-why-toggle"
+        className="inline-flex h-4 w-4 items-center justify-center self-center rounded-full border border-gray-300 text-[9px] font-bold text-gray-400 hover:border-gray-500 hover:text-gray-600 dark:border-gray-600 dark:hover:border-gray-400"
+      >
+        ?
+      </button>
+      {open && (
+        <span
+          data-slot="work-why-body"
+          className="absolute left-0 top-6 z-30 w-[34ch] rounded-lg border border-gray-200 bg-white p-3 shadow-lg dark:border-white/10 dark:bg-[#1b2230]"
+        >
+          <span className="block text-[12px] font-semibold text-gray-900 dark:text-white">
+            {why.headline}
+          </span>
+          {why.reason && (
+            <span className="mt-1 block text-[11px] text-gray-500 dark:text-gray-400">
+              {why.reason}
+            </span>
+          )}
+        </span>
+      )}
+    </span>
   )
 }
 

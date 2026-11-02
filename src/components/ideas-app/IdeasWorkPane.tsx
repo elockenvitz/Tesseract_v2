@@ -101,58 +101,58 @@ export function IdeasWorkPane({
   return (
     <div className="flex h-full flex-col">
       {/*
-        Why you are here, behind a question mark.
+        ── The band is gone; the question mark moved into the header ────────
 
-        ── Why it is no longer a band of its own ─────────────────────────────
+        It was a `?` in a 25px strip with its own bottom border, sitting on
+        top of a work surface that draws its own header with its own ticker
+        -- so the pane opened with a thin top pane stacked on a thick one for
+        the sake of a single 16px control.
 
-        It was three stacked lines -- a ticker, a headline and a reason --
-        with a bottom border, directly above a work surface that draws its
-        OWN header with its own ticker and its own caption. Two banners, one
-        on top of the other, and on the asset workspace the lower one already
-        says "Opened from <lens> · <finding>": the same sentence, twice,
-        eighty pixels apart.
+        The asset workspace takes `why` and renders the control beside its
+        ticker, inside the header it already had. One top pane.
 
-        The information is still worth having -- it is deterministic, carried
-        from the candidate the reader pressed, and it is what makes the
-        surface feel entered FROM an attention event rather than dropped into
-        cold. So it is not deleted; it is collapsed. One 24px row with the
-        ticker and a `?`, and the headline and reason are one press away.
+        ── The other three families keep the strip ──────────────────────────
 
-        Collapsed by default, and NOT remembered: the question "why am I
-        here" is asked on arrival, and a reader who wanted it pinned open
-        would be asking for the band back.
+        `PromptDetailView`, `QuickThoughtDetailPanel` and `IdeaDetail` do not
+        take a `why`, and giving all three one is a bigger change than this.
+        They are also the surfaces where the explanation carries most, since
+        a thought's own header is its author and date rather than a finding.
+        A fork, and a deliberate one: the band appears only where nothing
+        below can hold it.
       */}
-      <div className="shrink-0 border-b border-gray-200 px-4 py-1 dark:border-gray-700">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-            {selection.symbol ?? entry?.card.surface}
-          </span>
-          <button
-            type="button"
-            onClick={() => setWhyOpen(o => !o)}
-            aria-expanded={whyOpen}
-            data-slot="work-why-toggle"
-            // No em dash, and no "?" alone as the label: a bare glyph is not
-            // a name for assistive tech.
-            aria-label="Why you are here"
-            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 text-[9px] font-bold text-gray-400 hover:border-gray-500 hover:text-gray-600 dark:border-gray-600 dark:hover:border-gray-400"
-          >
-            ?
-          </button>
-        </div>
-        {whyOpen && (
-          <div className="pb-1.5 pt-1" data-slot="work-why-body">
-            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
-              {selection.why.headline}
-            </h2>
-            {selection.why.reason && (
-              <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                {selection.why.reason}
-              </p>
-            )}
+      {!selection.assetId && (
+        <div className="shrink-0 border-b border-gray-200 px-4 py-1 dark:border-gray-700">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+              {selection.symbol ?? entry?.card.surface}
+            </span>
+            <button
+              type="button"
+              onClick={() => setWhyOpen(o => !o)}
+              aria-expanded={whyOpen}
+              data-slot="work-why-toggle"
+              // No em dash, and no "?" alone as the label: a bare glyph is not
+              // a name for assistive tech.
+              aria-label="Why you are here"
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-gray-300 text-[9px] font-bold text-gray-400 hover:border-gray-500 hover:text-gray-600 dark:border-gray-600 dark:hover:border-gray-400"
+            >
+              ?
+            </button>
           </div>
-        )}
-      </div>
+          {whyOpen && (
+            <div className="pb-1.5 pt-1" data-slot="work-why-body">
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">
+                {selection.why.headline}
+              </h2>
+              {selection.why.reason && (
+                <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                  {selection.why.reason}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <WorkSurface selection={selection} onClose={onClose} mode={mode} />
@@ -207,6 +207,16 @@ function WorkSurface({ selection, onClose, mode }: {
         portfolioName={selection.portfolioName}
         issue={selection.why.headline}
         origin="ideas"
+        /*
+         * The explanation goes INTO that header rather than above it.
+         *
+         * This pane used to draw it as a band of its own -- a ticker, a
+         * headline and a reason with a bottom border -- directly over a
+         * header that draws its own ticker. Two top panes, and the header
+         * also printed "Opened from Ideas · <the finding>", so the same
+         * sentence appeared twice within eighty pixels.
+         */
+        why={{ headline: selection.why.headline, reason: selection.why.reason }}
       />
     )
   }

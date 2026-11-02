@@ -85,6 +85,24 @@ vi.mock('../../hooks/useThesisReview', () => ({
   useCurrentThesisConclusion: () => ({ current: null }),
 }))
 
+/*
+ * The navigation seam the header's verb now goes through.
+ *
+ * `openAsset` dispatches window events a real tab host listens for. Nothing
+ * in this suite mounts that host, so without the mock the press is a silent
+ * no-op and a case asserting the destination could not tell the difference
+ * between "navigated to research" and "did nothing at all". Captured, not
+ * stubbed blind, because the destination IS the behaviour under test.
+ */
+const opened: any[] = []
+vi.mock('../../lib/desktop-asset', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../lib/desktop-asset')>()
+  return {
+    ...actual,
+    openAsset: (req: any) => { opened.push(req); return true },
+  }
+})
+
 const openEngagement = vi.fn()
 vi.mock('../../lib/engagement', async importOriginal => {
   const actual = await importOriginal<typeof import('../../lib/engagement')>()
@@ -138,7 +156,9 @@ beforeEach(() => {
   readFor.length = 0
   editorFor.length = 0
   scrolledTo.length = 0
+  opened.length = 0
   openEngagement.mockClear()
+  recordVerdict.mockClear()
 })
 
 /* ------------------------------------------------------------- identity */
@@ -163,18 +183,55 @@ describe('the object is unmistakable', () => {
     expect(screen.getAllByText('Large Cap Core').length).toBeGreaterThan(0)
   })
 
-  it('credits the surface that sent the reader, and its reason', () => {
+  /**
+   * ── Rewritten, with the reason ──────────────────────────────────────────
+   *
+   * This asserted three strings printed in the band: "Opened from Research",
+   * the issue title, and the issue detail as a paragraph of its own. All
+   * three said why the reader was here, in three places, directly above a
+   * work pane that ALSO drew a "why you are here" strip with the same
+   * sentence in it. Four statements of one fact across two stacked panes.
+   *
+   * The band now carries one of them, behind a question mark beside the
+   * ticker, and the pane's strip is gone for an asset selection. What the
+   * case is FOR survives: the reader can still find out why they were sent.
+   * It is asserted through the control that holds it rather than through
+   * text that is printed unconditionally.
+   */
+  it('keeps why the reader was sent, one press from the ticker', async () => {
+    const user = userEvent.setup()
     render(
       <AssetWorkspacePane
         asset={asset}
         focus="research"
         origin="research"
+        why={{ headline: 'New research', reason: 'Two notes arrived.' }}
+      />,
+    )
+    // Not printed until asked for: that is the whole point of the control.
+    expect(screen.queryByText('Two notes arrived.')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Why you are here' }))
+    expect(screen.getByText('New research')).toBeInTheDocument()
+    expect(screen.getByText('Two notes arrived.')).toBeInTheDocument()
+  })
+
+  /** The band that said it unconditionally, gone rather than merely moved. */
+  it('no longer prints the provenance line in the header', () => {
+    render(
+      <AssetWorkspacePane
+        asset={asset}
+        origin="research"
         issue={{ title: 'New research', detail: 'Two notes arrived.' }}
       />,
     )
-    expect(screen.getByText(/Opened from Research/)).toBeInTheDocument()
-    expect(screen.getByText(/New research/)).toBeInTheDocument()
-    expect(screen.getByText('Two notes arrived.')).toBeInTheDocument()
+    expect(screen.queryByText(/Opened from/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Two notes arrived.')).not.toBeInTheDocument()
+  })
+
+  /** And no control at all where nothing sent the reader. */
+  it('shows no question mark on a direct open', () => {
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(screen.queryByRole('button', { name: 'Why you are here' })).toBeNull()
   })
 })
 
@@ -445,7 +502,13 @@ describe('one page that adapts, never a sub-navigation', () => {
     const user = userEvent.setup()
     const onOpenLegacy = vi.fn()
     render(<AssetWorkspacePane asset={asset} onOpenLegacy={onOpenLegacy} />)
-    await user.click(screen.getByRole('button', { name: /Full asset page/ }))
+    /*
+     * Renamed from "Full asset page" to "Overview", with the reason: the
+     * primary beside it now opens that same tab, so two controls read as one
+     * destination. The label says what this one does DIFFERENTLY -- it lands
+     * on the overview where the verb lands on research.
+     */
+    await user.click(screen.getByRole('button', { name: /Overview/ }))
     expect(onOpenLegacy).toHaveBeenCalled()
   })
 
@@ -642,22 +705,43 @@ describe('the workspace is one column, not a mosaic', () => {
  * The verb is `primaryActionFor`, the research vocabulary `ResearchDetail`
  * already calls, so the two cannot drift into two verb lists.
  */
-describe('the action row leads with the one thing to do', () => {
-  const firstAction = () => {
-    const row = screen.getByText('Ask AI').closest('div')!
-    return row.querySelector('button')!
-  }
+describe('the action row names the one thing to do, and goes there', () => {
+  /*
+   * ── Found by its slot, not by its position ──────────────────────────────
+   *
+   * This helper was `firstAction()`: the first `<button>` inside the row
+   * holding "Ask AI". That found the primary only because the primary was
+   * FIRST in the row, which is the thing the reader objected to -- the verb
+   * sat at the left-hand end of the band. It is now last, inside a
+   * right-aligned group, so a positional lookup would silently start
+   * asserting against "Ask AI" and every case below would pass while testing
+   * the wrong control.
+   *
+   * `data-slot="asset-primary"` is declared by the component for exactly
+   * this, so the cases no longer pin an ordering nobody asked for.
+   */
+  const primaryButton = () => screen.getByTestId('asset-workspace')
+    .querySelector<HTMLButtonElement>('[data-slot="asset-primary"]')!
 
-  it('offers a solid primary before anything quiet', () => {
+  it('is the only filled control on the band', () => {
     data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
     render(<AssetWorkspacePane asset={asset} />)
-    const first = firstAction()
+    const primary = primaryButton()
     // A case written 400 days ago is stale, and the desk's verb for that is
     // Review thesis. Taken from the shared model, not spelled here.
-    expect(first).toHaveTextContent('Review thesis')
-    expect(first.className).toMatch(/bg-blue-700/)
-    // Ask AI is still there, and still after it.
-    expect(first).not.toHaveTextContent('Ask AI')
+    expect(primary).toHaveTextContent('Review thesis')
+    expect(primary.className).toMatch(/bg-blue-600/)
+    /*
+     * What makes it the primary is now this, and not its size. It was a 42px
+     * slab, then a 32px one, and was still reported as too large; it is down
+     * to the quiet controls' own scale. If being filled stops being true the
+     * band has no primary at all, which is why the negative half is asserted
+     * against its actual siblings rather than assumed.
+     */
+    const siblings = [...primary.parentElement!.querySelectorAll('button')]
+      .filter(b => b !== primary)
+    expect(siblings.length).toBeGreaterThan(0)
+    for (const quiet of siblings) expect(quiet.className).not.toMatch(/bg-blue/)
   })
 
   it('says Write the case when there is none', () => {
@@ -667,37 +751,42 @@ describe('the action row leads with the one thing to do', () => {
     // this surface's, which is the point of taking the verb from it.
     data = { ...BASE, evidence: [{ id: 'e1', title: 'A note', createdAt: daysAgo(10), authorName: 'A', isShared: true }] } as AssetWorkspaceData
     render(<AssetWorkspacePane asset={asset} />)
-    expect(firstAction()).toHaveTextContent('Write the case')
+    expect(primaryButton()).toHaveTextContent('Write the case')
   })
 
   it('says Add evidence when the record is empty', () => {
     data = { ...BASE }
     render(<AssetWorkspacePane asset={asset} />)
-    expect(firstAction()).toHaveTextContent('Add evidence')
+    expect(primaryButton()).toHaveTextContent('Add evidence')
   })
 
   /**
-   * THE case against a dead control. The two non-case targets are both
-   * conditional -- `new-since-review` renders only when evidence arrived
-   * after the case, `evidence` only when any is on record -- so the verb and
-   * the thing it scrolls to can disagree. A button that scrolls to nothing is
-   * the failure the panes' overflow icons were removed for.
+   * ── THE case, re-aimed at the real destination ──────────────────────────
+   *
+   * Three cases here used to assert `scrollIntoView`: the verb moved this
+   * same pane to a section a few hundred pixels below the button. They
+   * existed to stop a verb pointing at a section that had not rendered -- a
+   * control that scrolls to nothing.
+   *
+   * The verb no longer scrolls. It opens the Asset page, which is where all
+   * seven of these verbs are actually carried out. The equivalent failure is
+   * therefore a press that navigates nowhere, or navigates without saying
+   * which asset -- and that is what these three now assert. The subject is
+   * unchanged: the primary must do something real, at the object it names.
    */
-  it('never points at a section that did not render', async () => {
-    // Thin: the verb is Add evidence, and there is no evidence section.
-    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(2), evidence: [] }
+  it('opens the asset instead of moving this page', async () => {
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
     render(<AssetWorkspacePane asset={asset} />)
-    expect(firstAction()).toHaveTextContent('Add evidence')
-    await userEvent.click(firstAction())
-    expect(scrolledTo).toHaveLength(1)
-    // Whatever it pointed at has to be ON the page.
-    expect(document.getElementById(scrolledTo[0])).not.toBeNull()
-    // And here specifically, the fallback is what kept it alive.
-    expect(scrolledTo[0]).toBe('the-case')
+    await userEvent.click(primaryButton())
+    expect(opened).toHaveLength(1)
+    expect(opened[0].assetId).toBe('a-1')
+    expect(opened[0].symbol).toBe('AAPL')
+    // The old behaviour, now explicitly forbidden: a press that only scrolls
+    // is the complaint this change answers, and it must not come back.
+    expect(scrolledTo).toEqual([])
   })
 
-  /** The counter-check: the fallback must not swallow a target that DID render. */
-  it('points at the arrival section when that is what the verb names', async () => {
+  it('lands on the part of the asset the verb is about', async () => {
     data = {
       ...BASE,
       sections: [section({ updatedAt: daysAgo(60) })], coreSections: ['thesis'],
@@ -708,22 +797,53 @@ describe('the action row leads with the one thing to do', () => {
       evidence: [{ id: 'e1', title: 'Arrived after', createdAt: daysAgo(5), authorName: 'A', isShared: true, isNewSinceReview: true }],
     } as AssetWorkspaceData
     render(<AssetWorkspacePane asset={asset} />)
-    expect(firstAction()).toHaveTextContent('Review new evidence')
-    await userEvent.click(firstAction())
-    expect(scrolledTo).toEqual(['new-since-review'])
+    expect(primaryButton()).toHaveTextContent('Review new evidence')
+    await userEvent.click(primaryButton())
+    // Every verb is a thing done to the case, and research is where the case
+    // and the evidence under it both live. Landing at the top of the asset
+    // page would make the reader hunt for what the verb just named.
+    expect(opened[0].focus).toBe('research')
   })
 
-  it('opens the editor itself where the verb is to write', async () => {
-    // Research on record, no thesis written from it: `no-thesis`, the one
-    // state where this surface can answer its own verb.
+  it('carries the book the reader arrived through', async () => {
+    data = { ...BASE, positions: [position()] }
+    render(
+      <AssetWorkspacePane asset={asset} portfolioId="p1" portfolioName="Large Cap Core" />,
+    )
+    await userEvent.click(primaryButton())
+    // Arriving from a book and losing it on the way to the asset page is the
+    // same context loss the Ask AI seam is asserted against elsewhere.
+    expect(opened[0].portfolioId).toBe('p1')
+    expect(opened[0].portfolioName).toBe('Large Cap Core')
+  })
+
+  /**
+   * ── Authoring in place is not lost ──────────────────────────────────────
+   *
+   * A case here used to press the header's verb in the `no-thesis` state and
+   * assert the in-pane editor mounted: this surface CAN author, so the verb
+   * did the thing rather than handing off.
+   *
+   * The header's verb now leaves, consistently, whatever the verb is -- a
+   * button that sometimes navigates and sometimes opens an editor is worse
+   * than either. What this case protects is that leaving did not take the
+   * in-place editor with it: the case section keeps its own control, so a
+   * reader who wants to stay still writes here in one press.
+   */
+  it('still writes in place from the case itself, not only away', async () => {
     data = { ...BASE, evidence: [{ id: 'e1', title: 'A note', createdAt: daysAgo(10), authorName: 'A', isShared: true }] } as AssetWorkspaceData
     render(<AssetWorkspacePane asset={asset} />)
     expect(screen.queryByTestId('real-thesis-editor')).toBeNull()
-    await userEvent.click(firstAction())
-    // This surface CAN author, which `ResearchDetail` cannot -- its own
-    // comment says authoring "happens on the Asset page". So the primary does
-    // the thing rather than handing off to it.
+
+    // The header's verb reads the same words in this state, so the section's
+    // own control has to be reached past it rather than by label alone.
+    const inCase = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter(b => b.dataset.slot !== 'asset-primary' && /Write the case/.test(b.textContent ?? ''))
+    expect(inCase).toHaveLength(1)
+    await userEvent.click(inCase[0])
     expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
+    // And pressing it did NOT navigate. Writing here means staying here.
+    expect(opened).toEqual([])
   })
 })
 
@@ -743,7 +863,15 @@ describe('the action row leads with the one thing to do', () => {
  * what they concluded about it.
  */
 describe('the header carries the step, the verdict and the tools', () => {
-  const actionRow = () => screen.getByText('Ask AI').closest('div')!
+  /*
+   * Was `actionRow().querySelector('button')`, which meant "the row's first
+   * button" and only ever found the primary because the primary led the row.
+   * It is now last, in the right-aligned group, so the lookup goes through
+   * the slot the component declares. Same subject, a handle that does not
+   * depend on the ordering this change deliberately altered.
+   */
+  const primaryButton = () => screen.getByTestId('asset-workspace')
+    .querySelector<HTMLButtonElement>('[data-slot="asset-primary"]')!
 
   /** THE case for the verdict: it exists here at all. */
   it('offers the three answers when there is a case to judge', () => {
@@ -772,7 +900,7 @@ describe('the header carries the step, the verdict and the tools', () => {
      * that is empty on both counts. Asserted from the shared model's real
      * answer rather than from what the fixture looks like it should mean.
      */
-    expect(actionRow().querySelector('button')).toHaveTextContent('Write the case')
+    expect(primaryButton()).toHaveTextContent('Write the case')
   })
 
   it('records the answer the reader presses', async () => {
@@ -786,39 +914,90 @@ describe('the header carries the step, the verdict and the tools', () => {
   })
 
   /**
-   * The tools go right, which is what the user could see was wrong: the row
-   * was one left-packed run. `justify-end` inside a `flex-1` sibling is what
-   * pushes the group, and the primary's own `flex-1` is what keeps the
-   * verdict centred between them.
+   * ── Three groups became two, and the verb crossed the row ───────────────
+   *
+   * This case asserted a three-group row -- step, verdict, tools -- with
+   * `flex-1` on BOTH outer groups to centre the middle one, and the primary
+   * in the left group.
+   *
+   * The reader asked for the verb on the right. There is no left group left
+   * to balance against, so a second `flex-1` would now centre nothing; the
+   * verdict simply starts the row and one right-aligned group holds the
+   * tools AND the verb. What the case is for is unchanged and is the half
+   * that was actually wrong before: nothing in this row packs against the
+   * left edge except the verdict.
    */
-  it('pushes the tools to the right rather than packing them left', () => {
+  it('puts the verb and the tools together, at the right', () => {
     data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
     render(<AssetWorkspacePane asset={asset} />)
     const tools = screen.getByText('Ask AI').parentElement!
     expect(tools.className).toMatch(/justify-end/)
     expect(tools.className).toMatch(/flex-1/)
-    // The primary's group takes the opposite half. Both `flex-1` or the
-    // middle group is not centred -- measured 170px off on the research pane
-    // when only one side had it.
-    const primaryGroup = actionRow().querySelector('button')!.parentElement!
-    expect(primaryGroup.className).toMatch(/flex-1/)
+    // The verb is INSIDE that group now, not in a left-hand one of its own.
+    // This is the user's actual complaint, and it cannot pass if the primary
+    // goes back to leading the row.
+    expect(tools.contains(primaryButton())).toBe(true)
+    // Last within it, after the quiet controls rather than before them.
+    const inGroup = [...tools.querySelectorAll('button')]
+    expect(inGroup.indexOf(primaryButton())).toBeGreaterThan(0)
   })
 
   /**
-   * Smaller, and the reason is that it shares a row with the verdict now: at
-   * `py-2.5 text-[13px]` it was a 42px slab of saturated blue over a page
-   * whose job is to be read.
+   * ── Smaller again, and the literals moved ───────────────────────────────
+   *
+   * This pinned `py-1.5 text-[12px]`, which was already a reduction from the
+   * 42px `py-2.5 text-[13px]` slab. It was reported as still too large, so
+   * the verb is now `px-2.5 py-1 text-[11px]` -- a hair under the quiet
+   * controls it sits beside. The case's subject never was a particular
+   * number: it is that the primary is not a slab, and is still the primary.
+   * Both halves survive, measured against the current scale.
    */
-  it('keeps the primary the same height as the controls beside it', () => {
+  it('keeps the primary no larger than the controls beside it', () => {
     data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
     render(<AssetWorkspacePane asset={asset} />)
-    const primary = actionRow().querySelector('button')!
-    expect(primary.className).toMatch(/py-1\.5/)
-    expect(primary.className).toMatch(/text-\[12px\]/)
-    // The slab it replaced, gone rather than merely overridden.
+    const primary = primaryButton()
+    expect(primary.className).toMatch(/px-2\.5/)
+    expect(primary.className).toMatch(/py-1(?![.\d])/)
+    expect(primary.className).toMatch(/text-\[11px\]/)
+    // Every size it has already been, gone rather than merely overridden.
     expect(primary.className).not.toMatch(/py-2\.5/)
+    expect(primary.className).not.toMatch(/py-1\.5/)
     expect(primary.className).not.toMatch(/px-4/)
+    expect(primary.className).not.toMatch(/text-\[1[23]px\]/)
     // Still the solid primary, not demoted to a text button.
     expect(primary.className).toMatch(/bg-blue-600/)
+  })
+
+  /**
+   * ── One top pane, and it stays put ──────────────────────────────────────
+   *
+   * Two faults the reader reported together. The header was one of two
+   * stacked bands -- a 25px strip holding a single `?` sat on top of it --
+   * and it scrolled away with the page, so the ticker, the verdict and the
+   * verb all left the screen as soon as the reader started reading.
+   *
+   * `sticky top-0` on the header, and the `?` folded into it beside the
+   * ticker. The strip above is gone (asserted from the Ideas pane's side in
+   * `work-pane-back`), so this is the only top pane and it is the one that
+   * holds.
+   */
+  it('anchors the header so the verb survives scrolling', () => {
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
+    render(<AssetWorkspacePane asset={asset} why={{ headline: 'Stale', reason: null }} />)
+    // The band that carries the ticker, which is the one that must hold.
+    const header = screen.getByText('AAPL').closest('[class*="sticky"]')!
+    expect(header).not.toBeNull()
+    expect(header.className).toMatch(/\bsticky\b/)
+    expect(header.className).toMatch(/\btop-0\b/)
+    // Above the page's own content, or it scrolls under nothing and the
+    // sections draw straight over it.
+    expect(header.className).toMatch(/\bz-\d+/)
+    // Opaque, for the same reason: a transparent sticky band shows the text
+    // passing beneath it.
+    expect(header.className).toMatch(/\bbg-/)
+    // And the verb and the question mark are both inside it, so the one
+    // anchored band is the one that holds everything the reader needs.
+    expect(header.contains(primaryButton())).toBe(true)
+    expect(header.querySelector('[data-slot="work-why-toggle"]')).not.toBeNull()
   })
 })
