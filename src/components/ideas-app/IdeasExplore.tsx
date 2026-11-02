@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { clsx } from 'clsx'
+import {
+  CARD_SURFACE, CARD_EDGE, CARD_EDGE_SELECTED, CARD_HOVER, GALLERY_GROUND,
+} from '../../lib/ui/surface'
 import { Loader2, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import { CuratePanel } from './CuratePanel'
 import { EMPTY_FILTER, filterCount, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
@@ -375,7 +378,10 @@ export function IdeasExplore({
         )}
       </div>
 
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
+      {/* The ground, stated. This scroller declared none and took whichever
+          shell it was mounted in -- the same omission the convergence suite
+          found on three lens roots, on the one surface that was not a lens. */}
+      <div ref={listRef} className={clsx('min-h-0 flex-1 overflow-y-auto', GALLERY_GROUND)}>
       <div className={clsx(FEED_MEASURE, 'px-6 pb-5')}>
         {/* While booting the list is hidden, so the spinner must not depend on
             entries being empty — the pool can be settled while history is not,
@@ -487,13 +493,24 @@ export function IdeasExplore({
               className={clsx(
                 /* With no Open button, hover and focus are what say the tile is
                    clickable at all. */
-                'feed-tile cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition-all hover:shadow-md hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-800 dark:hover:border-gray-600',
+                'feed-tile cursor-pointer overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                /*
+                 * The shared card, from `lib/ui/surface`.
+                 *
+                 * These values started here and the rest of the product has
+                 * now adopted them, which is the point: the Dashboard draws
+                 * this card beside Explore's and Portfolio's, and the three
+                 * disagreeing about their border and their page is exactly
+                 * what was reported. The edge is a step stronger than the
+                 * `border-gray-200` this card used to carry, because the
+                 * lighter one was reported as too little contrast.
+                 */
+                CARD_SURFACE,
+                CARD_HOVER,
                 // Restrained: a ring, not a fill. The card's own severity rail
                 // already uses colour, and a selected state that competes with
                 // it would make every list look alarming.
-                selectedKey === entry.key
-                  ? 'border-primary-400 ring-1 ring-primary-400 dark:border-primary-500 dark:ring-primary-500'
-                  : 'border-gray-200 dark:border-gray-700',
+                selectedKey === entry.key ? CARD_EDGE_SELECTED : CARD_EDGE,
               )}
             >
               {selectedKey === entry.key ? (

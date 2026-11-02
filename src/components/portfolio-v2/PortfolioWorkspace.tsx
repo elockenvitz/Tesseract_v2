@@ -18,6 +18,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
+import { GALLERY_GROUND } from '../../lib/ui/surface'
 import { Briefcase, ChevronDown } from 'lucide-react'
 import {
   usePortfolioList, useBook, useBookFrames, usePositionDetail, useActiveWeights,
@@ -230,7 +231,7 @@ export function PortfolioWorkspace({
      cards lost their edge. */
   return (
     <div
-      className="h-full overflow-y-auto bg-gray-100 pb-10 dark:bg-[#070a10]"
+      className={clsx('h-full overflow-y-auto pb-10', GALLERY_GROUND)}
       data-testid="portfolio-lens"
     >
       {/* The book map and its totals describe the WHOLE book, so they belong

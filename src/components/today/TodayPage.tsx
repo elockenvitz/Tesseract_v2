@@ -13,6 +13,7 @@
 
 import { useMemo } from 'react'
 import { clsx } from 'clsx'
+import { GALLERY_GROUND } from '../../lib/ui/surface'
 import { CheckCircle2 } from 'lucide-react'
 import { useDecisionEngine } from '../../engine/decisionEngine'
 import { dispatchDecisionAction } from '../../engine/decisionEngine/dispatchDecisionAction'
@@ -319,7 +320,7 @@ function toRailCard(item: TodayItem): RailCard {
       cards. The cards stay white and gain their edge for free, because the
       contrast now comes from the fill rather than the hairline.
     */
-    <div className="h-full overflow-y-auto bg-gray-100 pb-12 dark:bg-[#070a10]">{/* Layout gives full-width tabs `overflow-hidden` on an h-full box, so a
+    <div className={clsx('h-full overflow-y-auto pb-12', GALLERY_GROUND)}>{/* Layout gives full-width tabs `overflow-hidden` on an h-full box, so a
           full-width surface must own its own scrolling. min-h-full clipped
           everything past the fold with no way to reach it. */}
       {/*

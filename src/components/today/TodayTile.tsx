@@ -13,6 +13,9 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
+import {
+  CARD_SURFACE, CARD_EDGE, CARD_EDGE_CRITICAL, CARD_HOVER, CARD_HOVER_CRITICAL,
+} from '../../lib/ui/surface'
 import { ArrowRight, MoreHorizontal } from 'lucide-react'
 import { VisualPager } from '../desktop/VisualPager'
 import { askAI, canDiscuss, discuss } from '../../lib/engagement'
@@ -297,10 +300,10 @@ export function TodayTile({
        */
       tabIndex={-1}
       className={clsx(
-        // The Ideas card: hairline, small radius, no shadow. A drop shadow
-        // under every tile makes a feed read as a stack of floating panels
-        // rather than one instrument, and a large radius reads friendly where
-        // this is meant to read precise.
+        // The one card, from `lib/ui/surface`. It used to be a hairline with
+        // a small radius and no shadow, on a grey page that supplied the
+        // separation; the page is white now, so the card's own edge carries
+        // it. The reversal and its reasoning are recorded in that file.
         /* `group`, so the quiet affordances below can wait for the pointer.
            They are addressed as `group-hover`/`group-has-[:focus-visible]` rather
            than with state, which keeps them out of the render path -- four
@@ -310,17 +313,13 @@ export function TodayTile({
            from inside this box, and clipping it to the card cut the dropdown
            off -- the snooze presets were unreachable on every tile. The
            analysis slot does its own clipping, so nothing else needed it. */
-        /* The card's edge is a real line now, not a suggestion of one.
-           gray-200 against a gray-50/60 page was a ~3% step, which is inside
-           the range a cheap monitor renders as nothing at all; the page is
-           gray-100 and the hairline gray-300, so the boundary survives both
-           a bad screen and a bright room. Critical keeps its rose edge and
-           gains the same weight. */
-        'group relative flex h-full min-w-0 flex-col rounded-[3px] border bg-white',
-        'transition-colors duration-100 dark:bg-[#161d2a]',
-        toneFor(item) === 'critical'
-          ? 'border-rose-300 dark:border-rose-900/60'
-          : 'border-gray-300 dark:border-white/[0.12]',
+        /* The edge is a real line, not a suggestion of one: on a white page
+           it is the only separation there is. Critical keeps its rose edge
+           and the same weight. */
+        'group relative flex h-full min-w-0 flex-col',
+        CARD_SURFACE,
+        toneFor(item) === 'critical' ? CARD_EDGE_CRITICAL : CARD_EDGE,
+        toneFor(item) === 'critical' ? CARD_HOVER_CRITICAL : CARD_HOVER,
       )}
     >
       {/*

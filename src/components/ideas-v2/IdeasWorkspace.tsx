@@ -19,6 +19,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { clsx } from 'clsx'
+import { GALLERY_GROUND } from '../../lib/ui/surface'
 import {
   useIdeaScan, useScanExposure, useScanFramework, useScanOpenPrice, useIdeaDetail,
   type ScanFrame,
@@ -390,7 +392,7 @@ export function IdeasWorkspace({
      the two fields read as one surface. */
   return (
     <div
-      className="h-full overflow-y-auto bg-gray-100 dark:bg-[#070a10]"
+      className={clsx('h-full overflow-y-auto', GALLERY_GROUND)}
       data-testid="ideas-lens"
     >
       {/*

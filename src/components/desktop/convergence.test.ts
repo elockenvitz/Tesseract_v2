@@ -1260,47 +1260,54 @@ describe('a handoff never promises what is not there', () => {
     expect(hook).toContain('TERMINAL_STATUS.has')
   })
 
-  it('draws one card across every lens, and it is the Ideas card', () => {
+  it('draws one card across every lens, and it is the feed card', () => {
     /*
-     * ── The complaint this pins ──────────────────────────────────────────
+     * ── What this pinned, and why the values changed ─────────────────────
      *
-     * Ideas dropped its drop shadow and its large radius, and that was the
-     * single most-noticed change made to it: a shadow under every tile makes
-     * a field read as a stack of floating panels rather than one instrument,
-     * and a large radius reads friendly where this surface is meant to read
-     * precise. The other four lenses kept `rounded-xl` and `shadow-sm`, so
-     * they went on looking like a different product one tab away -- reported
-     * as "the other lenses don't look any different".
+     * It used to assert `rounded-[3px]` and no shadow anywhere near a card.
+     * The reasoning: a shadow under every tile makes a field read as a stack
+     * of floating panels rather than one instrument, a large radius reads
+     * friendly where this surface is meant to read precise, and a hairline
+     * over the page's own grey ground did the separating.
      *
-     * A hairline and the page's own ground do the work, and hover moves the
-     * border colour rather than lifting the card off the page.
+     * The founder removed the grey ground. The Dashboard puts the feed,
+     * Explore and Portfolio behind one bar, the feed was white and the other
+     * two were grey, and the instruction was to make the page white and give
+     * the tiles better contrast on all three. With the mat gone the card's
+     * own edge is the only separation left, so the border gains weight and
+     * one step of elevation -- the page's job, moved onto the card.
+     *
+     * ── Why the assertion is now about a CONSTANT ────────────────────────
+     *
+     * Both of this suite's convergence bugs were the same shape: literal
+     * class strings copied between files and then drifting. Naming the new
+     * literals here would reproduce that in the test. What is invariant is
+     * that every tile reads ONE definition, so that is what is asserted --
+     * and the feed card, which was outside the convergence and is half the
+     * reported complaint, is now inside it.
      */
-    // Comments stripped: this file explains the shadow it removed, and a
+    // Comments stripped: these files explain the look they replaced, and a
     // guard that reads its own prose would fail on the explanation.
-    const code = (f: string) => src(f).replace(/\/\*[\s\S]*?\*\//g, '')
-    for (const f of ['components/desktop/DesktopTile.tsx', 'components/today/TodayTile.tsx']) {
-      expect(code(f)).toContain('rounded-[3px]')
-      expect(code(f)).not.toContain('hover:shadow')
-      expect(code(f)).not.toContain('shadow-md')
+    const code = (f: string) => src(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const TILES = [
+      'components/desktop/DesktopTile.tsx',
+      'components/today/TodayTile.tsx',
+      /* The feed's card. Not a `DesktopTile`, and that is exactly why it
+         has to be named: it drew its own skin and the Dashboard shows it
+         beside two galleries that drew theirs. */
+      'components/ideas-app/IdeasExplore.tsx',
+    ]
+    for (const f of TILES) {
+      const body = code(f)
+      expect(body).toContain('CARD_SURFACE')
+      expect(body).toMatch(/from '[^']*lib\/ui\/surface'/)
       /*
-       * The ban is on a shadow under a CARD, not on every shadow in the
-       * file. Two things inside a tile legitimately float: the visual
-       * pager's selected segment (3px of inset chrome on a pill track, how
-       * every pill control on this product reads) and the actions menu,
-       * which is an overlay and has to lift off whatever it covers.
-       *
-       * So a shadow is allowed only on a line that is also drawing one of
-       * those: a `rounded-full` control, or an `absolute`ly positioned
-       * overlay. Put one back on the tile root and this fails.
+       * And no second answer beside the first. A file that imports the
+       * shared surface and then adds its own radius, fill or elevation to
+       * the card root is how the drift starts again.
        */
-      const lines = code(f).split('\n')
-      lines.forEach((line, i) => {
-        if (!/shadow-(sm|lg)/.test(line)) return
-        // A class string wraps, so the marker can sit a line or two above
-        // the shadow inside the same clsx call.
-        const near = lines.slice(Math.max(0, i - 3), i + 2).join('\n')
-        expect(near).toMatch(/rounded-full|absolute/)
-      })
+      expect(body).not.toContain('rounded-[3px]')
+      expect(body).not.toMatch(/\brounded-xl border bg-white\b/)
     }
 
     /*
@@ -1933,7 +1940,22 @@ describe('a handoff never promises what is not there', () => {
  * one lens would have left the other two broken.
  */
 describe('the ground is the same on every lens', () => {
-  const GROUND = ['bg-gray-100', 'dark:bg-[#070a10]']
+  /*
+   * ── The value moved into a constant, and the reason it had to ──────────
+   *
+   * This read `['bg-gray-100', 'dark:bg-[#070a10]']`, asserted as literals on
+   * each lens root. That caught the original bug -- three lenses with no
+   * ground at all -- but it pinned the colour rather than the sharing, and
+   * the colour is exactly what changed: the founder had the grey removed,
+   * because the Dashboard's three sections disagreed about it.
+   *
+   * The invariant was never the colour. It was that one definition reaches
+   * every lens, so a card cannot look right on one surface and wrong on
+   * another. `GALLERY_GROUND` is that definition, and asserting the IMPORT
+   * is strictly stronger than asserting a string: a lens that hard-codes the
+   * same colour today drifts the next time it is edited.
+   */
+  const GROUND = ['GALLERY_GROUND']
 
   /*
    * The LENS ROOT's classes, not the file's first scroller.
@@ -1950,7 +1972,11 @@ describe('the ground is the same on every lens', () => {
     const body = src(file)
     const at = body.search(/data-testid="[a-z-]+-lens"/)
     if (at < 0) {
-      const scroller = body.match(/className="[^"]*h-full overflow-y-auto[^"]*"/)
+      /* A `clsx` call now, not a quoted string: the ground is a constant and
+         the lens composes it with its own padding. Matched to the closing
+         brace of the className expression. */
+      const scroller = body.match(/className=\{[^}]*h-full overflow-y-auto[^}]*\}/)
+        ?? body.match(/className="[^"]*h-full overflow-y-auto[^"]*"/)
       return scroller?.[0] ?? null
     }
     /* The opening tag this testid belongs to, back to its `<`. */
@@ -1975,14 +2001,51 @@ describe('the ground is the same on every lens', () => {
   })
 
   it('gives no lens a contrast of its own', () => {
-    /* The reason Ideas took Today's values instead of picking its own: this
-       shell draws the same cards on five surfaces, and a lens that tuned its
-       own ground would make the identical card look wrong on one of them. */
-    const grounds = new Set<string>()
+    /* This shell draws the same cards on five surfaces, and a lens that tuned
+       its own ground would make the identical card look wrong on one of them.
+       A hard-coded `bg-gray-*` or `bg-white` on a lens root IS that tuning,
+       whatever colour it happens to be set to today. */
     for (const file of ['components/today/TodayPage.tsx', ...WORKSPACES]) {
-      grounds.add((lensRoot(file)!.match(/bg-gray-\d+/) ?? ['none'])[0])
+      const root = lensRoot(file)!
+      expect(root, `${file} tunes its own ground`).not.toMatch(/\bbg-(gray|white|slate|zinc)\S*/)
+      expect(root).toContain('GALLERY_GROUND')
     }
-    expect([...grounds]).toEqual(['bg-gray-100'])
+  })
+
+  it('reaches the surfaces the lens tabs do not own', () => {
+    /*
+     * The three the Dashboard puts behind one bar. Explore and the shared
+     * skeleton are not lens roots and were therefore outside the rule above,
+     * which is how the Dashboard ended up with a white feed beside a grey
+     * Explore and a grey Portfolio -- the report that prompted all of this.
+     */
+    /*
+     * The USE, not the import. The first cut of this read the whole file for
+     * the word, and an injection that removed the ground from Explore's
+     * scroll host went on passing because the `import { GALLERY_GROUND }`
+     * line was still there. Imports are stripped, and the assertion is
+     * anchored on the scrolling element the same way `lensRoot` is.
+     */
+    const body = (f: string) => src(f).replace(/^import [\s\S]*?from '[^']*'$/gm, '')
+    /* Any scrolling element in the file, not `h-full overflow-y-auto`
+       specifically: the feed's list is `min-h-0 flex-1 overflow-y-auto`,
+       which is the same job expressed for a flex column. */
+    const scroller = (f: string) =>
+      body(f).match(/className=\{[^}]*overflow-y-auto[^}]*GALLERY_GROUND[^}]*\}/)?.[0]
+      ?? body(f).match(/className=[{"][^}"]*overflow-y-auto[^}"]*[}"]/)?.[0]
+      ?? null
+
+    for (const f of [
+      'components/ideas-app/IdeasExploreBrowse.tsx',
+      'components/desktop/DesktopTile.tsx',
+      /* The feed's own scroller, which declared no ground at all and took
+         whichever shell it was mounted in. */
+      'components/ideas-app/IdeasExplore.tsx',
+    ]) {
+      const el = scroller(f)
+      expect(el, `${f}: no scrolling host found`).toBeTruthy()
+      expect(el!).toContain('GALLERY_GROUND')
+    }
   })
 })
 

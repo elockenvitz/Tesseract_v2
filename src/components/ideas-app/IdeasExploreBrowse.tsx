@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
+import { clsx } from 'clsx'
 import { Compass, X } from 'lucide-react'
+import { GALLERY_GROUND } from '../../lib/ui/surface'
 import { DesktopGallery, GallerySkeleton, type TileSize } from '../desktop/DesktopTile'
 import { OpportunityTile } from '../ideas-v2/OpportunityGrid'
 import type { TileClose, YearRange } from '../../hooks/useTileCloses'
@@ -178,7 +180,7 @@ export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
      * from the same fact: this element is never unmounted or replaced — only
      * its width changes — so the grid re-flows and the scroll does not move.
      */
-    <div className="explore-host h-full overflow-y-auto bg-gray-100 dark:bg-[#070a10]">
+    <div className={clsx('explore-host h-full overflow-y-auto', GALLERY_GROUND)}>
       <DesktopGallery
         title="Explore"
         region

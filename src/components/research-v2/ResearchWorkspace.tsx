@@ -50,6 +50,7 @@ import {
   openDashboardFocus, type RailCard,
 } from '../../lib/dashboard/focus'
 import { clsx } from 'clsx'
+import { GALLERY_GROUND } from '../../lib/ui/surface'
 
 /*
  * `STATE_TONE` -- Research state → shared severity -- now lives in
@@ -269,7 +270,7 @@ export function ResearchWorkspace({
      is the third lens of five to carry it, not a third answer. */
   return (
     <div
-      className="h-full overflow-y-auto bg-gray-100 dark:bg-[#070a10]"
+      className={clsx('h-full overflow-y-auto', GALLERY_GROUND)}
       data-testid="research-lens"
     >
       <DesktopGallery

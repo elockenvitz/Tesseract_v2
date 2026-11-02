@@ -21,6 +21,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
+import { GALLERY_GROUND } from '../../lib/ui/surface'
 import { Landmark } from 'lucide-react'
 import { BookFilter } from '../shared/BookFilter'
 import {
@@ -284,7 +285,7 @@ export function DecisionsWorkspace({
      values -- no lens gets its own contrast. */
   return (
     <div
-      className="h-full overflow-y-auto bg-gray-100 dark:bg-[#070a10]"
+      className={clsx('h-full overflow-y-auto', GALLERY_GROUND)}
       data-testid="decisions-lens"
     >
       <DesktopGallery

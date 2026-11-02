@@ -40,6 +40,10 @@
 import { useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import type { SemanticTone } from '../../lib/semantic-tone'
+import {
+  CARD_SURFACE, CARD_EDGE, CARD_EDGE_CRITICAL, CARD_EDGE_SELECTED,
+  CARD_HOVER, CARD_HOVER_CRITICAL, GALLERY_GROUND,
+} from '../../lib/ui/surface'
 /* One definition of "which rows am I drawing", shared with the lens charts:
    every bug this window has had was two pieces of code disagreeing about
    where it starts. */
@@ -386,13 +390,13 @@ export function GallerySkeleton({
     was never measured.
   */
   return (
-    /* The page is the MAT, not the card -- Today's rule, applied to every
-       gallery. `bg-gray-50/60` computes to about #fcfcfd, so a white card
-       with a hairline was separated from its page by nothing a cheap monitor
-       renders. gray-100 is the first step that reads as a surface behind the
-       cards, and they gain their edge from the fill rather than the line. */
+    /* The same ground the loaded gallery stands on, from `lib/ui/surface`.
+       Stated rather than inherited: a field that declares no background takes
+       whatever shell it is mounted in, which is how three lenses ended up on
+       a ground nobody chose. */
     <div className={clsx(
-      'h-full overflow-y-auto bg-gray-100 px-6 pb-10 pt-5 dark:bg-[#070a10]',
+      'h-full overflow-y-auto px-6 pb-10 pt-5',
+      GALLERY_GROUND,
       /* The scroll host is the container, here as in the loaded gallery. */
       region && 'explore-host',
     )}>
@@ -631,19 +635,25 @@ export function DesktopTile({
       }}
       {...Object.fromEntries(Object.entries(dataAttrs ?? {}).filter(([, v]) => v != null))}
       /*
-        The Ideas card, everywhere.
+        One card, everywhere, and now it is the FEED's card.
 
         ── What changed and why ─────────────────────────────────────────────
-        *
-        A drop shadow under every tile is what makes a field read as a stack
-        of floating panels rather than as one instrument, and a large radius
-        reads friendly where this surface is meant to read precise. Ideas took
-        both out and the difference was the single most-noticed thing about
-        it; the other four lenses kept `rounded-xl` and `shadow-sm`, so they
-        went on looking like a different product one tab away.
 
-        A hairline and the page's own ground do the work. Hover moves the
-        border colour rather than lifting the card off the page.
+        This used to read: a drop shadow under every tile makes a field read
+        as a stack of floating panels rather than one instrument, and a large
+        radius reads friendly where this surface is meant to read precise, so
+        Ideas dropped both and the other four lenses followed. A hairline and
+        the page's own grey ground did the work.
+
+        The grey ground is gone -- removed on request, because the Dashboard's
+        three sections disagreed about it: the feed was white and Explore and
+        Portfolio were not. With the mat gone the card's own edge has to carry
+        the separation, which is what the border weight and the one step of
+        elevation below are doing. Not ornament; the page's job, moved onto
+        the card.
+
+        The values are `lib/ui/surface`'s, which are the feed card's, so the
+        convergence now includes the one surface that was outside it.
       */
       className={clsx(
         SPAN[flow][size],
@@ -664,30 +674,23 @@ export function DesktopTile({
         */
         /* `relative`: the action overlay is positioned against the CARD, not
            against the shelf it used to live in. See `TileActions`. */
-        'group relative flex min-w-0 flex-col overflow-hidden rounded-[3px] border bg-white text-left',
-        'transition-colors duration-100',
+        'group relative flex min-w-0 flex-col overflow-hidden text-left',
+        CARD_SURFACE,
         !inert && 'cursor-pointer',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
         /*
-          The card's edge is a real line, and its fill sits above the page.
+          The card's edge is a real line, and now it is the only separation
+          there is: the page is white, so a weak border leaves the field
+          reading as one undivided sheet -- which is the "white-washed"
+          report the grey mat was introduced to answer.
 
-          gray-200 on a gray-50/60 ground is about a 3% step, which is inside
-          the range a cheap monitor renders as nothing at all -- the field
-          read as one undivided sheet, reported as "white-washed". Today
-          settled this first: the page goes a step darker and the hairline a
-          step stronger, so the boundary survives both ends of the monitor
-          range. The same pair is used here rather than a second answer,
-          because this shell draws the cards on four lenses and Ideas is not
-          allowed its own contrast.
+          An inert tile takes the edge without the hover, because a card that
+          lights up under the cursor is claiming a press it cannot take.
         */
-        'dark:bg-[#161d2a]',
-        /* Hover moves the border, and an inert tile has nowhere to move to:
-           a card that lights up under the cursor is claiming a press. */
-        tone === 'critical'
-          ? clsx('border-rose-300 dark:border-rose-900/60', !inert && 'hover:border-rose-400')
-          : clsx('border-gray-300 dark:border-white/[0.12]', !inert && 'hover:border-gray-400 dark:hover:border-white/25'),
+        tone === 'critical' ? CARD_EDGE_CRITICAL : CARD_EDGE,
+        !inert && (tone === 'critical' ? CARD_HOVER_CRITICAL : CARD_HOVER),
         /* Last, so it beats the tone border above rather than racing it. */
-        selected && 'border-primary-400 ring-1 ring-primary-400 dark:border-primary-500 dark:ring-primary-500',
+        selected && CARD_EDGE_SELECTED,
       )}
     >
       {/*
