@@ -1,9 +1,17 @@
 import { useMemo } from 'react'
 import {
   lensesToExplore, scenarioCardsToExplore, insightsToExplore,
-  ideasToExplore, newsToExplore, attentionToExplore, aggregatesFor, exploreSymbols,
+  ideasToExplore, newsToExplore, attentionToExplore, templatesToExplore,
+  aggregatesFor, exploreSymbols,
 } from '../lib/mobile/explore-adapters'
+import {
+  unusualMovers, outsizedActiveRisk, earningsAhead, earningsResult,
+  corporateActions, economicReleases,
+  type CoveredAsset, type HoldingLike, type QuoteLike,
+} from '../lib/mobile/feed-templates'
 import { useMarketNews } from './useMarketNews'
+import { useMarketEvents } from './useMarketEvents'
+import { useMarketData } from './useMarketData'
 import { diversifyExplore } from '../lib/mobile/explore-compose'
 import { exploreVisualFor } from '../lib/mobile/explore-visual'
 import { renderableExploreItems } from '../lib/desktop-ideas/explore-renderable'
@@ -191,6 +199,140 @@ export function useDesktopExplore(
    */
   const { data: news } = useMarketNews(newsSymbols, { enabled })
 
+  /*
+   * ── The market templates, which desktop never drew ──────────────────────
+   *
+   * `templatesToExplore` was the one producer this hook reported as a
+   * permanent gap: `missing` pushed 'templates' unconditionally, so the
+   * surface said "no templates" on every render whether or not there were
+   * any. The reason given was that the builders need quotes, market events and
+   * a symbol-to-asset map "that only MobileDashboard assembles". Two of those
+   * three are hooks keyed off a symbol list this file already computes, and
+   * the third is a projection of producer output already in memory.
+   *
+   * Both queries are keyed off `newsSymbols` -- the same budgeted twelve the
+   * news query spends, so no name is asked about here that was not already
+   * worth asking about -- and both are gated with the surface. That is one
+   * additional edge call and one quote batch, which is the same price mobile
+   * pays for the same six families.
+   */
+  const { data: events } = useMarketEvents(newsSymbols, { enabled })
+  const { quotes } = useMarketData(newsSymbols, {
+    enabled: enabled && newsSymbols.length > 0,
+  })
+
+  /**
+   * Symbol to asset, for the templates that turn a market fact into something
+   * openable.
+   *
+   * Built from producer output rather than fetched: every item that names a
+   * ticker was emitted by an adapter that also knew the asset it belonged to.
+   * `companyName` and `sector` are optional on `CoveredAsset` and are left
+   * absent rather than guessed -- an adapter that did not carry them is not
+   * grounds for inventing them.
+   */
+  const assetBySymbol = useMemo(() => {
+    const map = new Map<string, CoveredAsset>()
+    for (const i of produced) {
+      const sym = i.symbol?.trim().toUpperCase()
+      if (!sym || !i.assetId || map.has(sym)) continue
+      map.set(sym, { id: i.assetId, symbol: sym })
+    }
+    return map
+  }, [produced])
+
+  /**
+   * Quotes for the template builders, in the shape they take.
+   *
+   * `unusualMovers` judges a move against the MEDIAN of the set it is given,
+   * so the set must be every name we have a quote for and not a filtered
+   * selection -- narrowing it to the interesting ones is how a flat tape
+   * manufactures drama. A quote with no finite change is dropped here because
+   * it contributes nothing to a median either way.
+   */
+  const quoteList = useMemo<QuoteLike[]>(() => {
+    const out: QuoteLike[] = []
+    for (const sym of newsSymbols) {
+      const q = quotes.get(sym.toUpperCase())
+      if (!q) continue
+      /* `changePercent` is legitimately nullable -- a change needs two
+         observations and providers often give one. Checked by type and not
+         only by `Number.isFinite`, which does not narrow. Dropping the quote
+         is right: a name with no move contributes nothing to the median the
+         unusual-mover test is taken against. */
+      const { price, changePercent } = q
+      if (typeof price !== 'number' || !Number.isFinite(price)) continue
+      if (typeof changePercent !== 'number' || !Number.isFinite(changePercent)) continue
+      out.push({ symbol: sym, price, changePercent })
+    }
+    return out
+  }, [newsSymbols, quotes])
+
+  /**
+   * The whole book's active weights, which is the only population this
+   * template may be given.
+   *
+   * ── Why it is not the twelve names on screen ────────────────────────────
+   *
+   * `outsizedActiveRisk` prints "X is your largest overweight at +N%". That
+   * is a claim about the BOOK. Fed the dozen names the lenses happened to
+   * surface, it would still print the superlative, and it would be wrong --
+   * the largest active weight among twelve selected names is not the largest
+   * active weight the desk holds. This codebase has a documented defect class
+   * for exactly this (portfolio holdings collapsing at aggregating query
+   * sites), and a figure a reader cannot trust is worse than a tile that is
+   * not drawn.
+   *
+   * So it reads `lenses.weightIndex`, which covers EVERY (asset, book)
+   * exposure in the organisation on the canonical methodology, labelled by
+   * `lenses.symbolByAssetId`. No new query: both are projections of holdings
+   * the lenses query already fetched.
+   *
+   * An exposure whose weight or benchmark weight is null is skipped rather
+   * than defaulted to zero. Null means the book cannot support the claim -- no
+   * denominator, too few positions, or no benchmark file at all -- and reading
+   * that as 0% would turn "we cannot say" into "the benchmark does not hold
+   * it", which is a different and much stronger statement.
+   */
+  const activeRiskRows = useMemo<HoldingLike[]>(() => {
+    const index = lenses?.weightIndex
+    const labels = lenses?.symbolByAssetId
+    if (!index || !labels) return []
+    const out: HoldingLike[] = []
+    for (const [assetId, exposures] of index) {
+      const symbol = labels.get(assetId)
+      if (!symbol) continue
+      for (const e of exposures) {
+        if (e.portfolioPct == null || e.benchmarkPct == null) continue
+        out.push({
+          assetId,
+          symbol,
+          weight: e.portfolioPct,
+          benchmarkWeight: e.benchmarkPct,
+        })
+      }
+    }
+    return out
+  }, [lenses])
+
+  /** The six market families, from the data gathered above. */
+  const templateCards = useMemo(() => [
+    ...unusualMovers(quoteList, assetBySymbol),
+    ...outsizedActiveRisk(activeRiskRows),
+    ...earningsAhead(events?.upcomingEarnings ?? [], assetBySymbol),
+    ...earningsResult(
+      events?.recentEarnings ?? [],
+      assetBySymbol,
+      new Map(quoteList.map(q => [q.symbol.toUpperCase(), q])),
+    ),
+    ...corporateActions(
+      events?.corporateActions ?? [],
+      assetBySymbol,
+      new Map(quoteList.map(q => [q.symbol.toUpperCase(), q])),
+    ),
+    ...economicReleases(events?.economicReleases ?? []),
+  ], [quoteList, assetBySymbol, activeRiskRows, events])
+
   /**
    * What the desk knows about each name, for the stories about it.
    *
@@ -242,7 +384,7 @@ export function useDesktopExplore(
     /* Topped up before anything is ranked, so the supplement competes for
        position on the same terms as everything else. The count it is given is
        what the producers actually found. */
-    const withNews = [...produced, ...stories]
+    const withNews = [...produced, ...stories, ...templatesToExplore(templateCards)]
     const base = extra ? [...withNews, ...extra(withNews.length)] : withNews
     /*
      * Aggregates collapse a run of the same sort into one tile that resolves
@@ -270,7 +412,7 @@ export function useDesktopExplore(
     // defect, and a suppression nobody can see is how it survives.
     if (dropped.length) console.warn('[explore] not drawable', dropped)
     return diversifyExplore(drawable, now)
-  }, [produced, news, deskBySymbol, extra])
+  }, [produced, news, deskBySymbol, templateCards, extra])
 
   /*
    * Reported, not substituted.
@@ -279,9 +421,12 @@ export function useDesktopExplore(
    * fill with something that looks similar. News is now called, so it is
    * listed only when it actually returned nothing -- an unconditional entry
    * would say "no news" on a page full of stories, which is the same kind of
-   * untrue as an empty tile. `templatesToExplore` is still genuinely uncalled
-   * here: it needs quotes, market events and a symbol-to-asset map that only
-   * `MobileDashboard` assembles.
+   * untrue as an empty tile.
+   *
+   * Templates used to be pushed UNCONDITIONALLY here, with a note that the
+   * producer was genuinely uncalled. It is called now, so the entry became the
+   * same lie news had been: "no market templates" printed over a grid of them.
+   * It is listed only when the six builders between them found nothing.
    */
   const missing = useMemo(() => {
     const gaps: string[] = []
@@ -289,9 +434,9 @@ export function useDesktopExplore(
     if (!scenarioCards?.length) gaps.push('scenario cards')
     if (!insights?.length) gaps.push('derived insights')
     if (!news?.items?.length) gaps.push('news')
-    gaps.push('templates')
+    if (!templateCards.length) gaps.push('templates')
     return gaps
-  }, [lenses, scenarioCards, insights, news])
+  }, [lenses, scenarioCards, insights, news, templateCards])
 
   return {
     items,
