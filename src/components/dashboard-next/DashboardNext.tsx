@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Compass, LayoutDashboard, Lightbulb, Scale } from 'lucide-react'
 import { IdeasExplore } from '../ideas-app/IdeasExplore'
@@ -16,6 +16,17 @@ import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import { usePromptResolve } from '../../hooks/usePromptResolve'
 import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
+/*
+ * `hooks/useAuth`, NOT `contexts/AuthContext`.
+ *
+ * Both export a `useAuth`, and the context one is the wrong answer here: its
+ * `AuthProvider` is mounted nowhere in this application, so its hook throws
+ * "useAuth must be used within an AuthProvider" and takes the whole tab to the
+ * error boundary. Caught by opening the tab, not by the suite, which mocks it.
+ * The 148 other callers in this codebase all read the hook.
+ */
+import { useAuth } from '../../hooks/useAuth'
+import { readPlace, writePlace, type NextLens } from './place'
 
 /**
  * The Dashboard, rebuilt as the Ideas feed. Tab type `dashboard-next`.
@@ -77,7 +88,7 @@ import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
  * books are doing, and they are different surfaces behind one bar.
  */
 
-type NextLens = 'feed' | 'explore' | 'portfolio'
+/* `NextLens` lives in `./place`, which is where the lens is remembered. */
 
 /**
  * One constant, read by the feed and by the Explore resolver.
@@ -116,21 +127,58 @@ const LENSES: { key: NextLens; label: string; hint: string; icon: typeof Lightbu
 const FEED_LENSES = 2
 
 export function DashboardNext() {
-  const [lens, setLens] = useState<NextLens>('feed')
+  /*
+   * ── The place survives the tab switch ───────────────────────────────────
+   *
+   * `DashboardPage` renders the active tab only, so this component is
+   * unmounted whenever the reader looks at anything else and every `useState`
+   * below starts from scratch on the way back. Reported as the Dashboard not
+   * keeping "where I was and what I was working on", and it was exactly that:
+   * the lens, the selected name and the open work pane were all gone.
+   *
+   * The initialisers read the remembered place and the effect below writes it.
+   * `./place` carries why it is memory rather than storage, and why it is
+   * keyed by the reader. Owner is read first because the initialisers need it.
+   */
+  const { user } = useAuth()
+  const owner = user?.id ?? null
+  /* A lazy initialiser, so the read happens once at mount and not on every
+     render -- `readPlace` forgets a place it cannot hand back, and calling it
+     during render would make that a side effect of drawing. */
+  const [resume] = useState(() => readPlace(owner))
+
+  const [lens, setLens] = useState<NextLens>(resume.lens)
   /*
    * Latched, the same shape `useDesktopCandidates` uses for its settle gate:
    * Portfolio costs several queries, so it is not mounted until it is asked
    * for, and it stays mounted afterwards so returning to it keeps the book the
    * reader had chosen. Derived during render rather than set in an effect,
    * which would cost a pass with the lens selected and nothing drawn.
+   *
+   * NOT seeded from the remembered place, and `./place` records why: being
+   * derived during render, it is already true on the first pass whenever the
+   * restored lens is Portfolio, and seeding it would mount the book for a
+   * reader who came back to the FEED and charge them its queries unasked.
    */
   const seenPortfolio = useRef(false)
   if (lens === 'portfolio') seenPortfolio.current = true
   const portfolioSeen = seenPortfolio.current
-  const [selected, setSelected] = useState<{ selection: IdeasSelection; entry: AttentionEntry | null } | null>(null)
-  const [workMode, setWorkMode] = useState<Progression['mode'] | null>(null)
-  const [splitOpen, setSplitOpen] = useState(false)
+  const [selected, setSelected] = useState<{ selection: IdeasSelection; entry: AttentionEntry | null } | null>(resume.selected)
+  const [workMode, setWorkMode] = useState<Progression['mode'] | null>(resume.workMode)
+  const [splitOpen, setSplitOpen] = useState(resume.splitOpen)
+  /* Not remembered. See `./place` -- a reader should not have to dismiss a
+     full-screen article to get their Dashboard back. */
   const [article, setArticle] = useState<Extract<ExploreOpen, { do: 'article' }> | null>(null)
+
+  /*
+   * Written on every change rather than on unmount. An unmount-time write
+   * would be the obvious place and is the wrong one: React can drop a tree
+   * without running cleanup in the order a reader expects, and a value
+   * captured in a closure that ran once is the previous place, not this one.
+   */
+  useEffect(() => {
+    writePlace(owner, { lens, selected, workMode, splitOpen })
+  }, [owner, lens, selected, workMode, splitOpen])
   const resolvePrompt = usePromptResolve()
   /* `markIdeasViewed` is deliberately not called here: `IdeasExplore` already
      records it when the feed settles, and a second caller in the shell would

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -80,8 +80,25 @@ vi.mock('../../../hooks/usePromptResolve', () => ({
 vi.mock('../../../hooks/usePilotOnboarding', () => ({
   usePilotOnboarding: () => ({ markSignalWorked: vi.fn() }),
 }))
+/*
+ * The shell now reads the signed-in reader, because the place it remembers
+ * across a tab switch is keyed to them -- see `../place`. `useAuth` throws
+ * rather than returning a default outside a provider, so without this every
+ * case here fails on the context and not on its own subject.
+ *
+ * A fixed id, and `forgetPlace()` before each case below: the store is
+ * module-scoped by design, so two cases in one file would otherwise hand each
+ * other their lens and the ordering would decide what passes.
+ */
+vi.mock('../../../hooks/useAuth', () => ({
+  useAuth: () => ({ user: { id: 'reader-1' } }),
+}))
 
 import { DashboardNext } from '../DashboardNext'
+import { forgetPlace } from '../place'
+
+/* Each case opens the Dashboard cold, as a reader who has not been here. */
+beforeEach(forgetPlace)
 
 const lens = (name: string) => screen.getByRole('button', { name })
 
@@ -229,5 +246,77 @@ describe('the book sits behind the same bar as the feed', () => {
        of plain buttons says nothing about the current one. */
     expect(lens('Ideas')).toHaveAttribute('aria-pressed', 'true')
     expect(lens('Portfolio')).toHaveAttribute('aria-pressed', 'false')
+  })
+})
+
+/**
+ * Leaving the Dashboard tab and coming back.
+ *
+ * ── Why unmount and render again, and not a rerender ──────────────────────
+ *
+ * This is the real event. `DashboardPage.renderTabContent()` renders the
+ * ACTIVE tab only, so looking at anything else drops this whole tree and
+ * returning builds a new one. `unmount()` followed by a second `render` is
+ * that, exactly; a rerender is not, and would pass against the broken
+ * behaviour because nothing was ever lost.
+ *
+ * `forgetPlace()` runs before each case, so each one is a reader arriving
+ * cold and then returning -- never inheriting the previous case's place.
+ */
+describe('coming back to the Dashboard', () => {
+  it('returns the reader to the lens they left', async () => {
+    const first = render(<DashboardNext />)
+    await userEvent.click(lens('Portfolio'))
+    expect(lens('Portfolio')).toHaveAttribute('aria-pressed', 'true')
+    first.unmount()
+
+    render(<DashboardNext />)
+    expect(lens('Portfolio')).toHaveAttribute('aria-pressed', 'true')
+    expect(lens('Ideas')).toHaveAttribute('aria-pressed', 'false')
+    /* And the book is mounted under the bar. The latch is derived during
+       render, so the restored lens mounts it on the first pass -- which is
+       why the place does not carry the latch itself. See `../place`. */
+    expect(screen.getByTestId('portfolio')).toBeInTheDocument()
+  })
+
+  it('returns the reader to what they were working on', async () => {
+    const first = render(<DashboardNext />)
+    await userEvent.click(lens('Portfolio'))
+    await userEvent.click(screen.getByTestId('open-holding'))
+    expect(screen.getByTestId('work-pane')).toBeInTheDocument()
+    first.unmount()
+
+    render(<DashboardNext />)
+    // The open pane, the selection inside it and the way back out of it.
+    expect(screen.getByTestId('work-pane')).toBeInTheDocument()
+    expect(screen.getByText(/Back to Portfolio/)).toBeInTheDocument()
+  })
+
+  /**
+   * The counter-check. A reader who closed the pane before leaving must not
+   * have it reopened for them, or the restore is not a restore -- it is a
+   * surface that reopens whatever was last open.
+   */
+  it('does not reopen a pane the reader had closed', async () => {
+    const first = render(<DashboardNext />)
+    await userEvent.click(lens('Portfolio'))
+    await userEvent.click(screen.getByTestId('open-holding'))
+    await userEvent.click(screen.getByText(/Back to Portfolio/))
+    expect(screen.queryByTestId('work-pane')).toBeNull()
+    first.unmount()
+
+    render(<DashboardNext />)
+    expect(screen.queryByTestId('work-pane')).toBeNull()
+    // The lens is still remembered, so this is a closed pane and not a
+    // forgotten place.
+    expect(lens('Portfolio')).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  /** A first arrival, which must look like a first arrival. */
+  it('opens on Ideas for a reader with no place to return to', () => {
+    render(<DashboardNext />)
+    expect(lens('Ideas')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByTestId('work-pane')).toBeNull()
+    expect(screen.queryByTestId('portfolio')).toBeNull()
   })
 })
