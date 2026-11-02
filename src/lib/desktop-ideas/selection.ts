@@ -2,6 +2,7 @@ import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import type { AssetFocus } from '../desktop-asset/navigate'
 import type { DashboardFocusTarget } from '../dashboard/focus'
 import type { ScoredFeedItem } from '../../hooks/ideas/types'
+import { postKindOf } from '../mobile/entry-signal-type'
 
 /**
  * What the workspace router needs, and nothing else.
@@ -162,17 +163,16 @@ export function assetFocusFor(family: IdeasSelection['family']): AssetFocus {
 }
 
 /** A prompt is a `quick_thought` row that says so, or carries an assignee tag. */
+/**
+ * Delegates to `postKindOf`, which is the single rule.
+ *
+ * It used to be spelled out here. Explore needs the same answer from a raw
+ * post rather than a built feed row, and the comment on `postType` above warns
+ * that working it out in two places is how the two places disagree -- so the
+ * rule moved to the module both sides already depend on and this reads it.
+ */
 function postTypeOf(item: ScoredFeedItem | null): IdeasSelection['postType'] {
-  if (!item) return null
-  if (item.type === 'trade_idea' || item.type === 'pair_trade') return 'trade_idea'
-  if (item.type === 'quick_thought') {
-    const t = item as unknown as { idea_type?: string | null; tags?: string[] | null }
-    const isPrompt = t.idea_type === 'prompt' ||
-      (Array.isArray(t.tags) && t.tags.some(tag => tag.startsWith('assignee:')))
-    return isPrompt ? 'prompt' : 'thought'
-  }
-  if (item.type === 'note') return 'thought'
-  return null
+  return postKindOf(item as Parameters<typeof postKindOf>[0]) ?? null
 }
 
 /**

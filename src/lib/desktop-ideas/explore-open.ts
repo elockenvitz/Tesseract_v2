@@ -107,6 +107,64 @@ export function exploreOpen(item: ExploreItem, entries: AttentionEntry[]): Explo
   }
 
   if (item.objectId) {
+    /**
+     * A row the pool does not hold, but whose surface fetches by id.
+     *
+     * ── What this does NOT do ───────────────────────────────────────────
+     *
+     * It does not fall through to the asset. Answering a question about one
+     * colleague's post with a page about the company is a defect this file
+     * removed deliberately, and the case below still pins it: a preview that
+     * names a row the reader cannot be shown opens NOTHING rather than
+     * something adjacent.
+     *
+     * ── What it does ────────────────────────────────────────────────────
+     *
+     * The pool is the feed's working set, not the database. A thought or a
+     * prompt that is simply not in that set is still a real row, and the
+     * surfaces the work pane routes to for both -- `QuickThoughtDetailPanel`
+     * and `PromptDetailView` -- take an id and fetch it themselves. They do
+     * not read the `ScoredFeedItem`, so there is nothing for the pool to
+     * supply and nothing being guessed at.
+     *
+     * A trade idea is the opposite: `TradeIdeaSurface` maps the feed row onto
+     * the desktop Idea object rather than re-reading the queue, so without
+     * that row it has nothing to render. Those previews keep `none`, and the
+     * tile must keep not looking actionable.
+     *
+     * MEASURED on the live field: 3 of the previews that opened nothing were
+     * this branch -- two colleagues' thoughts and one trade idea. Two of the
+     * three are now openable; the third is honestly inert.
+     */
+    const byId = item.postKind === 'thought' || item.postKind === 'prompt'
+    if (byId) {
+      return {
+        do: 'work',
+        selection: {
+          family: 'post',
+          origin: 'explore',
+          key: item.id,
+          objectId: item.objectId,
+          /* Narrowed by `byId` just above, which admits only these two. The
+             annotation is here because `postKind` is optional on the item and
+             the guard is a boolean rather than a predicate. */
+          postType: item.postKind as 'thought' | 'prompt',
+          /* No feed row, and none needed: the surface fetches by id. Passing a
+             fabricated one would be the presentation-as-identity mistake the
+             selection type exists to prevent. */
+          item: null,
+          assetId: item.assetId ?? null,
+          symbol: item.symbol ?? null,
+          portfolioId: null,
+          portfolioName: null,
+          why: {
+            headline: item.title ?? item.symbol ?? 'This post',
+            reason: item.context ?? null,
+            occurredAt: item.occurredAt ?? null,
+          },
+        },
+      }
+    }
     return {
       do: 'none',
       why: `${item.id}: names a row the attention pool does not hold`,

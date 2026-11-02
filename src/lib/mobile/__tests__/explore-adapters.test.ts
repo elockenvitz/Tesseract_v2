@@ -233,6 +233,34 @@ describe('crowding tiles', () => {
   })
 })
 
+describe('a post says which surface its id would open', () => {
+  /**
+   * THE case for `postKind`, and the one the adapter can silently break.
+   *
+   * `exploreOpen` decides from this field alone whether a preview outside the
+   * attention pool is openable. An adapter that stopped stamping it would send
+   * every such preview back to opening nothing, with no test failing anywhere
+   * near `exploreOpen` -- so the assertion lives here, at the source.
+   */
+  it.each([
+    [{ type: 'trade_idea' }, 'trade_idea'],
+    [{ type: 'trade' }, 'trade_idea'],
+    [{ type: 'quick_thought' }, 'thought'],
+    [{ type: 'quick_thought', idea_type: 'prompt' }, 'prompt'],
+    [{ type: 'quick_thought', tags: ['assignee:u1'] }, 'prompt'],
+    [{ type: 'note' }, 'thought'],
+  ] as const)('stamps %o as %s', (row, kind) => {
+    const [item] = ideasToExplore([{ id: 'p1', asset: { id: 'a1', symbol: 'NVDA' }, ...row }])
+    expect(item.postKind).toBe(kind)
+  })
+
+  /** A row of no known post type claims nothing rather than guessing. */
+  it('leaves the kind null for a row it does not recognise', () => {
+    const [item] = ideasToExplore([{ id: 'p1', type: 'something_else', asset: { id: 'a1' } }])
+    expect(item.postKind).toBeNull()
+  })
+})
+
 describe('a post carries the id of the row it came from', () => {
   /**
    * The one family where the signal type and the asset do not identify the

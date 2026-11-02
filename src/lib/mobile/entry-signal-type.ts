@@ -117,6 +117,46 @@ export function ideaSignalType(type: unknown): 'trade_idea' | 'thought' {
   return type === 'trade' || type === 'trade_idea' ? 'trade_idea' : 'thought'
 }
 
+/** Which post a row is, as far as choosing a work surface is concerned. */
+export type PostKind = 'trade_idea' | 'thought' | 'prompt'
+
+/**
+ * Which post a row is, from the row itself.
+ *
+ * ── Why this is one function and not two ──────────────────────────────────
+ *
+ * The rule lived in `selection.ts` as `postTypeOf`, reading a `ScoredFeedItem`
+ * off the feed. Explore needs the same answer from a RAW post, because an
+ * Explore preview must be able to say which work surface its row would open
+ * without the feed having built a card for it. Deriving that twice is how the
+ * two derivations come apart, and the original's own comment says so: "working
+ * this out in two places is how the two places start disagreeing".
+ *
+ * So the rule is here, in the module both sides already depend on, and takes
+ * the loose shape both sides actually hold. A prompt is a `quick_thought` row
+ * with `idea_type: 'prompt'` or an `assignee:` tag -- it is NOT a separate
+ * table, which is why it cannot be told apart by type alone.
+ *
+ * Pure. No React, no Supabase, no clock.
+ */
+export function postKindOf(row: {
+  type?: unknown
+  item_type?: unknown
+  idea_type?: string | null
+  tags?: string[] | null
+} | null | undefined): PostKind | null {
+  if (!row) return null
+  const type = String(row.type ?? row.item_type ?? '')
+  if (type === 'trade' || type === 'trade_idea' || type === 'pair_trade') return 'trade_idea'
+  if (type === 'quick_thought') {
+    const isPrompt = row.idea_type === 'prompt'
+      || (Array.isArray(row.tags) && row.tags.some(t => String(t).startsWith('assignee:')))
+    return isPrompt ? 'prompt' : 'thought'
+  }
+  if (type === 'note') return 'thought'
+  return null
+}
+
 /**
  * The type `buildAttentionCard` gives an attention item — and so its chip.
  *

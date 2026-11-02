@@ -1,6 +1,6 @@
 import { signalTypeForTemplate } from '../signals/builders/legacy-kinds'
 import { insightSignalType } from '../signals/insight-type'
-import { ideaSignalType } from './entry-signal-type'
+import { ideaSignalType, postKindOf } from './entry-signal-type'
 import type { ExploreItem } from './explore-item'
 import type { FeedCategory } from './feed-categories'
 
@@ -373,6 +373,8 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
       // The one family where type and asset do not identify the object: a desk
       // posts many ideas about one name. See `ExploreTarget.objectId`.
       objectId: p.id != null ? String(p.id) : null,
+      // Which surface that id would open. See `ExploreItem.postKind`.
+      postKind: postKindOf(p),
       signalType: ideaSignalType(p.type),
       category: (isThesis ? 'research' : 'ideas') as FeedCategory,
       subtype: isThesis ? ('research' as const) : ('idea' as const),
