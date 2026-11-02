@@ -98,8 +98,20 @@ export type ExploreVisual =
    * "since your last contribution" rather than "overdue".
    */
   | { kind: 'timeline'; statedAt: string; dueAt?: string | null; overdueLabel?: string }
-  /** How much of a book rides on this, when the finding is about exposure. */
-  | { kind: 'exposure'; weightPct: number; portfolioName?: string }
+  /**
+   * How much of a book rides on this, when the finding is about exposure.
+   *
+   * `books` is the per-portfolio spread where the producer had it, heaviest
+   * first. A crowding finding is ABOUT the spread -- "held across five books"
+   * -- and the single largest weight was the one fact it was drawing. Where
+   * the spread is present the picture is the spread; `weightPct` stays the
+   * headline number either way, so a producer that has only the one weight
+   * degrades to exactly the bar it drew before.
+   */
+  | {
+      kind: 'exposure'; weightPct: number; portfolioName?: string
+      books?: { name: string; weightPct: number }[]
+    }
   /**
    * Two weights that disagree, both of them real.
    *
@@ -161,6 +173,14 @@ export interface ExploreVisualData {
   dueAt?: string | null
   /** The benchmark weight for this name in this book, where a file exists. */
   benchmarkPct?: number | null
+  /**
+   * The per-portfolio weight spread, heaviest first, where the producer had it.
+   *
+   * Never synthesised and never re-sorted here: it is `weightsByPortfolio` off
+   * the crowding row, which `usePortfolioLenses` already returns in weight
+   * order. Two entries or more is what makes it a spread; one is the bar.
+   */
+  books?: { name: string; weightPct: number }[]
   /** How far the price has moved since anybody reviewed it. */
   movePct?: number | null
   lastLookAt?: string | null
@@ -417,7 +437,15 @@ export function exploreVisualFor(
     && item.subtype !== 'news'
     && exposureIsTheFinding
   ) {
-    return { kind: 'exposure', weightPct: weight, portfolioName: item.portfolio?.name }
+    // A single book is not a spread, so one entry is dropped rather than drawn
+    // as a one-row chart of the number already in the headline.
+    const books = item.visual?.books?.filter(b => Number.isFinite(b.weightPct))
+    return {
+      kind: 'exposure',
+      weightPct: weight,
+      portfolioName: item.portfolio?.name,
+      books: books && books.length > 1 ? books : undefined,
+    }
   }
 
   /**

@@ -262,9 +262,20 @@ function caseRole(price: number, prices: readonly number[]): InkRole {
 }
 
 /** A small caps label. Used identically by every archetype so they read as a set. */
-function Cap({ children, className }: { children: React.ReactNode; className?: string }) {
+/**
+ * Takes `...rest` so a caption can carry its own `data-*` hook.
+ *
+ * A caption is often the only thing a guard can anchor on -- the exposure
+ * ceiling and the withheld-books line are both captions and both need to be
+ * assertable -- and the alternative was hand-copying this class string at each
+ * such site, which is how two captions drift apart.
+ */
+function Cap({ children, className, ...rest }: React.HTMLAttributes<HTMLSpanElement>) {
   return (
-    <span className={clsx('text-[9px] font-bold uppercase tracking-wide text-gray-400', className)}>
+    <span
+      {...rest}
+      className={clsx('text-[9px] font-bold uppercase tracking-wide text-gray-400', className)}
+    >
       {children}
     </span>
   )
@@ -1013,49 +1024,154 @@ function Timeline({ v, now, s, grow }: {
 }
 
 /**
- * How much of a book rides on this.
+ * The ladder of ceilings an exposure bar may be read against, in percent.
  *
- * Scaled against a fixed 20% ceiling rather than against the largest weight on
- * the page: a bar whose meaning depends on its neighbours is a bar the reader
- * has to re-learn every scroll, and 20% is comfortably above any single
- * position in these books.
+ * ── Why a ladder, and why it starts where the fixed ceiling was ───────────
+ *
+ * This was a single fixed 20%, on the argument that a bar whose meaning
+ * depends on its neighbours has to be re-learnt every scroll. The argument is
+ * right; the number was wrong, and provably so. MEASURED on the live field,
+ * 15 exposure tiles:
+ *
+ *   headline weights over 20%      3 of 15   (28.2%, 25.3%, 29.6%)
+ *   spread rows pegged at 100%     5 of 11
+ *
+ * A bar that reads full for 20%, 25% and 29% alike is the same unreadable
+ * stub the ruler was added to fix, at the other end of the track. These books
+ * are concentrated; the old comment's "comfortably above any single position"
+ * was simply not true of them.
+ *
+ * So 20% stays the FIRST rung, which keeps the common tile on exactly the
+ * scale it had and keeps those tiles comparable with each other. A tile that
+ * would peg steps up to the next rung instead, and the ceiling is printed on
+ * every tile, so the reader never has to infer which rung they are on. The
+ * rungs are few and coarse on purpose: a per-tile maximum would end every bar
+ * near the right edge and destroy magnitude altogether.
+ */
+const EXPOSURE_RUNGS = [20, 35, 50, 100] as const
+
+/** How many spread rows a tile shows before it says how many it withheld. */
+const SPREAD_ROWS = { tight: 3, grown: 6 } as const
+
+/**
+ * The smallest rung that bounds every value the tile draws.
+ *
+ * Takes the whole set rather than one value, so a spread's rows and its
+ * headline share one scale: a row rescaled on its own would make a 4%
+ * position in a tight book look like a 19% one.
+ */
+function exposureCeiling(values: number[]): number {
+  const max = Math.max(...values.filter(Number.isFinite), 0)
+  return EXPOSURE_RUNGS.find(r => max <= r) ?? EXPOSURE_RUNGS[EXPOSURE_RUNGS.length - 1]
+}
+
+function exposureWidth(weightPct: number, ceiling: number): number {
+  return Math.min((weightPct / ceiling) * 100, 100)
+}
+
+/**
+ * How much of a book rides on this, and where.
+ *
+ * ── Why there is a ruler at every size ────────────────────────────────────
+ *
+ * The ticks used to render only when `grow` was true, which is hero and large
+ * tiles. Every other tile -- the majority of the field -- drew a lone filled
+ * stub, and a filled stub says "some" and nothing else: 4.8% and 9.6% are two
+ * indistinguishable indigo rectangles. The ruler is what makes the bar a
+ * measurement rather than a mood, so it is not the thing that gets dropped
+ * when the tile is small. The ceiling is NAMED at the end of the track for the
+ * same reason -- a fraction whose denominator is invisible is not a fraction.
+ *
+ * ── Why a spread, when the producer has one ───────────────────────────────
+ *
+ * "Held across five portfolios" is a claim about five books. Drawing the
+ * largest of the five answers a different question. Where `books` arrives the
+ * picture becomes one labelled row per book, same ceiling, heaviest first, so
+ * the reader sees the concentration rather than being told a count.
  */
 function Exposure({ v, s, grow }: {
   v: Extract<Visual, { kind: 'exposure' }>
   s: Scale
   grow?: boolean
 }) {
-  const pct = Math.min((v.weightPct / 20) * 100, 100)
+  const books = v.books
+  const shown = books?.slice(0, grow ? SPREAD_ROWS.grown : SPREAD_ROWS.tight)
+  const withheld = books && shown ? books.length - shown.length : 0
+  /* Every book, not only the rows on show: the scale must not shift when a
+     tall tile reveals a row a short one withheld. */
+  const ceiling = exposureCeiling([v.weightPct, ...(books?.map(b => b.weightPct) ?? [])])
+
   return (
     <div data-explore-visual="exposure" className={fills(s, grow)}>
       <div className="flex min-w-0 items-baseline gap-1.5">
         <span data-exposure-value className={clsx('font-bold tabular-nums leading-none text-gray-900 dark:text-white', s.lead)}>
           {v.weightPct.toFixed(1)}%
         </span>
-        <Cap className="min-w-0 truncate">{v.portfolioName ? `of ${v.portfolioName}` : 'of the book'}</Cap>
+        <Cap className="min-w-0 truncate">
+          {books
+            ? `largest of ${books.length} books`
+            : v.portfolioName ? `of ${v.portfolioName}` : 'of the book'}
+        </Cap>
       </div>
-      {/* The bar, with the scale it is read against.
-          A weight has no direction -- 28% of a book is neither good nor bad
-          -- so it takes `scale`, the one colour in the vocabulary that makes
-          no claim. What it was missing was not colour but a RULER: a lone
-          filled bar says "some" and nothing else, and the ticks at each
-          quarter of the 20% span turn it back into a measurement. */}
-      <div className={clsx('relative mt-1.5 w-full overflow-hidden rounded-full', grow ? HEAVY.bar : s.bar, TRACK)}>
-        <div
-          data-exposure-fill
-          className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-indigo-600 dark:from-indigo-400 dark:to-indigo-300"
-          style={{ width: `${pct}%` }}
-        />
-        {grow && [25, 50, 75].map(t => (
-          <span
-            key={t}
-            data-exposure-tick={t}
-            className="absolute inset-y-0 w-px bg-white/55 dark:bg-gray-900/45"
-            style={{ left: `${t}%` }}
-            aria-hidden
-          />
-        ))}
-      </div>
+
+      {shown && shown.length > 1 ? (
+        /* The spread. One row per book, every row against EXPOSURE_CEILING, so
+           row length is comparable across tiles and not just within this one. */
+        <div data-exposure-spread className="mt-1.5 space-y-1">
+          {shown.map(b => (
+            <div key={b.name} className="flex min-w-0 items-center gap-1.5">
+              <Cap className="min-w-0 flex-1 truncate">{b.name}</Cap>
+              <div className={clsx('w-[44%] shrink-0 overflow-hidden rounded-full', s.bar, TRACK)}>
+                <div
+                  data-exposure-book={b.name}
+                  className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-indigo-600 dark:from-indigo-400 dark:to-indigo-300"
+                  style={{ width: `${exposureWidth(b.weightPct, ceiling)}%` }}
+                />
+              </div>
+              <span className={clsx('w-[36px] shrink-0 text-right font-bold tabular-nums text-gray-700 dark:text-gray-200', s.note)}>
+                {b.weightPct.toFixed(1)}%
+              </span>
+            </div>
+          ))}
+          {/* The rung the rows are drawn against. Printed here as well as on
+              the single bar, because with a ladder the scale is no longer
+              something the reader can assume. */}
+          <div className="flex items-baseline justify-between pt-0.5">
+            {withheld > 0 ? (
+              <Cap data-exposure-withheld>
+                {withheld} more {withheld === 1 ? 'book' : 'books'}
+              </Cap>
+            ) : <span />}
+            <Cap data-exposure-ceiling>bars to {ceiling}%</Cap>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* A weight has no direction -- 28% of a book is neither good nor bad
+              -- so it takes `scale`, the one colour in the vocabulary that
+              makes no claim. */}
+          <div className={clsx('relative mt-1.5 w-full overflow-hidden rounded-full', grow ? HEAVY.bar : s.bar, TRACK)}>
+            <div
+              data-exposure-fill
+              className="h-full rounded-full bg-gradient-to-r from-indigo-400 to-indigo-600 dark:from-indigo-400 dark:to-indigo-300"
+              style={{ width: `${exposureWidth(v.weightPct, ceiling)}%` }}
+            />
+            {[25, 50, 75].map(t => (
+              <span
+                key={t}
+                data-exposure-tick={t}
+                className="absolute inset-y-0 w-px bg-white/55 dark:bg-gray-900/45"
+                style={{ left: `${t}%` }}
+                aria-hidden
+              />
+            ))}
+          </div>
+          <div className="mt-0.5 flex items-baseline justify-between">
+            <Cap>0%</Cap>
+            <Cap data-exposure-ceiling>{ceiling}%</Cap>
+          </div>
+        </>
+      )}
     </div>
   )
 }

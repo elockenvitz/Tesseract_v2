@@ -30,6 +30,16 @@ import type { FeedCategory } from './feed-categories'
 
 const upper = (s: unknown) => String(s ?? '').trim().toUpperCase()
 
+/**
+ * One entry of a crowding row's `weightsByPortfolio`, as it actually arrives.
+ *
+ * `usePortfolioLenses` declares both fields required; this widens them to
+ * nullable because the lens rows reach here through an `any[]` and a book with
+ * a missing weight is a thing the adapter has to be able to drop rather than
+ * trust away.
+ */
+type BookWeight = { name?: string | null; weightPct?: number | null }
+
 /** Portfolio lenses: targets hit and expired, positions with no target, sizing. */
 export function lensesToExplore(lenses: {
   breaches?: any[]; stale?: any[]; untargeted?: any[]; conviction?: any[]; crowded?: any[]
@@ -168,6 +178,27 @@ export function lensesToExplore(lenses: {
         name: c.weightsByPortfolio?.[0]?.name ?? undefined,
       },
       occurredAt: c.asOf ?? null,
+      /**
+       * The spread, which is what "held across N portfolios" is actually about.
+       *
+       * The bar underneath drew `maxWeightPct` alone, so a card whose claim is
+       * that five books carry this name showed one of the five and discarded
+       * the rest -- while the phone's own crowding detail has rendered the full
+       * spread from this very field for two releases. Same source, no second
+       * query, and `weightsByPortfolio` arrives weight-ordered.
+       */
+      visual: {
+        // `flatMap` rather than filter-then-map so the narrowing is the
+        // compiler's, not an assertion: a row without a name or a finite
+        // weight contributes no element at all. `!= null` is checked before
+        // `isFinite` because `Number(null)` is a finite zero, which would let
+        // a book with no weight through as a 0.0% bar.
+        books: (c.weightsByPortfolio as BookWeight[] | undefined)?.flatMap(w =>
+          w?.name && w.weightPct != null && Number.isFinite(Number(w.weightPct))
+            ? [{ name: w.name, weightPct: Number(w.weightPct) }]
+            : [],
+        ),
+      },
       destination: { kind: 'action', action: 'open_asset', assetId: c.assetId, symbol: c.symbol },
       importance: 0.4,
     })

@@ -200,6 +200,37 @@ describe('crowding tiles', () => {
     const [item] = lensesToExplore({ crowded: [crowded] })
     expect(item.metric).toEqual({ value: '4', label: 'portfolios', direction: 'neutral' })
   })
+
+  /**
+   * THE case for the spread: the adapter is the only place the producer rows
+   * can be lost, and losing them is what made a card about four books draw
+   * one. Asserted against `weightsByPortfolio` itself rather than a literal,
+   * so a row the adapter invented would not satisfy it either.
+   */
+  it('hands the per-book spread to the picture, not just the largest', () => {
+    const [item] = lensesToExplore({ crowded: [crowded] })
+    expect(item.visual?.books).toEqual(
+      crowded.weightsByPortfolio.map(w => ({ name: w.name, weightPct: w.weightPct })),
+    )
+
+    const visual = exploreVisualFor(item)
+    expect(visual.kind === 'exposure' && visual.books?.map(b => b.name))
+      .toEqual(['Vision Fund', 'Core Equity'])
+  })
+
+  /** A book row with no usable weight is dropped at the source, not drawn. */
+  it('drops a book whose weight is not a number', () => {
+    const [item] = lensesToExplore({
+      crowded: [{
+        ...crowded,
+        weightsByPortfolio: [
+          ...crowded.weightsByPortfolio,
+          { name: 'Broken', weightPct: null as unknown as number, valueUsd: 1 },
+        ],
+      }],
+    })
+    expect(item.visual?.books?.map(b => b.name)).toEqual(['Vision Fund', 'Core Equity'])
+  })
 })
 
 describe('a post carries the id of the row it came from', () => {
