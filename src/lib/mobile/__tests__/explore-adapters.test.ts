@@ -202,7 +202,20 @@ describe('workflow tiles', () => {
     )
     expect(item.symbol).toBeNull()
     expect(item.assetId).toBeNull()
-    expect(item.destination).toMatchObject({ kind: 'filter' })
+    /*
+     * This asserted `{ kind: 'filter' }`, which was the adapter's answer for
+     * EVERY row with no asset id, and the superseding reason is that the
+     * answer was wrong: a non-aggregate filter resolves to `focus`, focus
+     * finds no card, and the tile went inert -- 10 of the 13 dead tiles
+     * measured on the live field. A row carrying `project_id` names a surface,
+     * so it now opens the project.
+     *
+     * The rule this case is actually here for is above and unchanged: no
+     * ticker and no asset id are invented for a row that is not about a name.
+     * See `attention-destination.test.ts` for the full ladder, including the
+     * rows that still and deliberately open nothing.
+     */
+    expect(item.destination).toMatchObject({ kind: 'tab', target: { type: 'project' } })
   })
 
   it('says nothing about a deadline the row does not have', () => {

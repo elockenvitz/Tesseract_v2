@@ -50,6 +50,23 @@ function firstProse(...parts: unknown[]): string | undefined {
 }
 
 /**
+ * The first part that is actually a string, with no title to avoid.
+ *
+ * `firstProse` above exists to stop a card repeating its own headline on the
+ * second line, so it reserves its last argument as the thing NOT to return.
+ * Naming a tab is the opposite problem -- the headline is often the right
+ * name -- and reaching for the wrong one of these two produced a project tab
+ * titled "Project".
+ */
+function firstNonBlank(...parts: unknown[]): string | undefined {
+  for (const p of parts) {
+    const t = String(p ?? '').trim()
+    if (t) return t
+  }
+  return undefined
+}
+
+/**
  * One entry of a crowding row's `weightsByPortfolio`, as it actually arrives.
  *
  * `usePortfolioLenses` declares both fields required; this widens them to
@@ -724,6 +741,124 @@ export function templatesToExplore(cards: any[]): ExploreItem[] {
  * card from the same row — raised date, due date, days either side of it — so
  * the two surfaces now say the same thing about the same item.
  */
+/**
+ * Where an attention tile goes when it is not about an asset.
+ *
+ * ── The tiles that opened nothing ─────────────────────────────────────────
+ *
+ * This adapter sent every row with no `context.asset_id` to
+ * `{ kind: 'filter' }`, and `resolveExploreItem` maps a non-aggregate filter
+ * to `focus`. On desktop `exploreOpen` then looks for a card in the attention
+ * pool, finds none, has no `objectId` and no `assetId`, and returns `none` --
+ * so the tile is rendered deliberately inert, with no verb.
+ *
+ * MEASURED on the live desktop field, 151 tiles: 13 opened nothing, and 10 of
+ * those were Workflow. Those ten are not missing information. They are project
+ * and deliverable rows that carry `context.project_id`, and decision requests
+ * that carry the trade-queue item's own id -- every one of them names a surface
+ * this app already has a tab for.
+ *
+ * ── Why this is a tab and not a focus ────────────────────────────────────
+ *
+ * There is no level-two preview for a project: the attention pool holds no
+ * card for one, so focusing would show the same text the tile already shows.
+ * The project tab is the real surface, and both it and `PortfolioTab` re-fetch
+ * from the id, so `data` carries the id and the title and nothing invented.
+ * `ProjectDetailTab` merges its own fetch over the prop, which is why passing
+ * a two-field stand-in is honest rather than a fabricated row.
+ *
+ * ── What deliberately still opens nothing ────────────────────────────────
+ *
+ * A `task` row has no context at all and `source_url: '/today'`; a
+ * `notification` about something other than an asset has a null asset and no
+ * other id. Neither names a surface, so neither gets a destination. A tile
+ * that cannot answer must keep not looking actionable, which is the rule
+ * `IdeasExploreBrowse` enforces with `inert`.
+ */
+/**
+ * Only the fields the ladder reads, structurally.
+ *
+ * The adapters around this take `any[]` because they normalise rows from eight
+ * collectors with no shared type, and widening that is a separate job. The
+ * ladder is small enough to state what it needs, so it does -- which is also
+ * what caught `source_id` being a uuid rather than a string.
+ */
+interface AttentionRowForDestination {
+  source_type?: string | null
+  source_id?: string | null
+  title?: string | null
+  subtitle?: string | null
+  context?: {
+    asset_id?: string | null
+    symbol?: string | null
+    project_id?: string | null
+    portfolio_id?: string | null
+  } | null
+}
+
+export function attentionDestination(
+  a: AttentionRowForDestination | null | undefined,
+  isTrade: boolean,
+): ExploreItem['destination'] {
+  const assetId = a?.context?.asset_id
+  if (assetId) {
+    return { kind: 'action' as const, action: 'open_asset', assetId, symbol: a?.context?.symbol }
+  }
+
+  // A PM decision waiting on a recommendation. The verb lives in the queue, so
+  // the queue is where the tile goes, with the row preselected. `source_id` is
+  // the `trade_queue_items` id (see `collectDecisionRequests`), which is what
+  // `MobilePipeline` and `TradeQueuePage` both select on.
+  if (isTrade && a?.source_id) {
+    return {
+      kind: 'tab' as const,
+      target: {
+        id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue',
+        data: { selectedTradeId: String(a.source_id) },
+      },
+    }
+  }
+
+  const projectId = a?.context?.project_id
+  if (projectId) {
+    /* The project's own title where the row carries it. A deliverable puts the
+       project title in `subtitle` and its own title in `title`, so the tab is
+       named after the project it opens, not the task that raised it. A project
+       row names itself in `title`.
+
+       Deliberately NOT `firstProse`: that helper takes its LAST argument as a
+       title to avoid and returns the first earlier part that differs from it,
+       so `firstProse(a.title, a.title)` is undefined -- which is exactly how
+       a project row came out named "Project". This wants plain first-non-blank. */
+    const name = firstNonBlank(a.source_type === 'project' ? a.title : a.subtitle, a.title) ?? 'Project'
+    return {
+      kind: 'tab' as const,
+      target: {
+        id: `project-${projectId}`,
+        title: name,
+        type: 'project',
+        data: { id: String(projectId), title: name },
+      },
+    }
+  }
+
+  const portfolioId = a?.context?.portfolio_id
+  if (portfolioId) {
+    const name = firstNonBlank(a.subtitle, a.title)
+    return {
+      kind: 'tab' as const,
+      target: {
+        id: `portfolio-${portfolioId}`,
+        title: name ?? 'Portfolio',
+        type: 'portfolio',
+        data: { id: String(portfolioId), name: name ?? null },
+      },
+    }
+  }
+
+  return { kind: 'filter' as const, category: (isTrade ? 'decisions' : 'workflow') as FeedCategory }
+}
+
 export function attentionToExplore(items: any[], now: number = Date.now()): ExploreItem[] {
   return withRegistryCategory((items ?? []).map(a => {
     const isTrade = a.source_type === 'trade_queue_item'
@@ -792,9 +927,7 @@ export function attentionToExplore(items: any[], now: number = Date.now()): Expl
        * did before.
        */
       visual: raisedAt && dueAt ? { statedAt: raisedAt, dueAt } : undefined,
-      destination: a.context?.asset_id
-        ? { kind: 'action' as const, action: 'open_asset', assetId: a.context.asset_id, symbol: a.context?.symbol }
-        : { kind: 'filter' as const, category: (isTrade ? 'decisions' : 'workflow') as FeedCategory },
+      destination: attentionDestination(a, isTrade),
       importance: a.priority === 'high' ? 0.6 : 0.3,
     }
   }))

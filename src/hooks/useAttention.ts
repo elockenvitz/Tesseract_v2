@@ -571,6 +571,39 @@ async function filterNotificationsToOrg(rows: any[], orgId: string): Promise<any
     trade_queue_item: 'trade_queue_items',
     quick_thought: 'quick_thoughts',
     note: 'asset_notes',
+    /*
+     * NOT `price_target`, and the reason is measured rather than argued.
+     *
+     * ── What was tried ──────────────────────────────────────────────────
+     *
+     * `price_target: 'price_targets'` was added here alongside the
+     * `context_data` fallback below, on the reasoning that a notification
+     * which now names an asset should have its subject org-checked like every
+     * other entry in this map. `price_targets` does carry `organization_id`,
+     * so the lookup was well formed.
+     *
+     * ── Why it is wrong ─────────────────────────────────────────────────
+     *
+     * Queried in production: all 13 `Price Target Expired` notifications have
+     * a `context_id` that matches NO row in `price_targets`. The target they
+     * were raised about has since been deleted. This filter drops any row
+     * whose subject the lookup cannot find, so adding the entry deleted every
+     * one of those notifications from the queue -- confirmed on the live
+     * field, where the two unread tiles disappeared instead of becoming
+     * openable. Losing the row is strictly worse than the inert tile it was
+     * meant to fix.
+     *
+     * The scoping question for these rows is "may this user see this
+     * notification", and `.eq('user_id', userId)` above already answers it.
+     * The subject is a denormalised snapshot inside a row the user owns, and
+     * the asset page it links to does its own RLS-gated fetch, so no org-owned
+     * data is reached by the link that the title did not already print.
+     *
+     * `asset` is absent for a different and permanent reason: `assets` has no
+     * `organization_id` -- global reference data by design, the documented
+     * exception -- so a lookup keyed on one would filter every asset
+     * notification to nothing. Neither key belongs here.
+     */
   }
 
   const byTable = new Map<string, Set<string>>()
@@ -656,19 +689,40 @@ async function collectNotifications(userId: string, _windowStart: Date, orgId: s
       severity: 'low',
       score: 0,
       context: {
-        asset_id: n.context_type === 'asset' ? n.context_id : null,
         /*
-         * Explicitly null, and not merely absent.
+         * The asset, from `context_type` OR from the payload the row carries.
          *
-         * `notifications` is read with `select('*')` and joins nothing, so
-         * the row carries an id and no ticker -- a notification about an
-         * asset does not know the asset's symbol. Looking it up would be a
-         * second query per row to fill a field this tile can do without, and
-         * the consumer already handles its absence. Written out so the next
-         * reader sees a decision rather than an oversight.
+         * ── The two tiles this was measured on ─────────────────────────────
+         *
+         * `context_type === 'asset'` is only one of the ways a notification
+         * is about a name. A price-target expiry writes
+         * `context_type: 'price_target'` and puts the subject in
+         * `context_data`: asset_id, asset_symbol and asset_name are all
+         * there, written by the producer. This read none of it, so two
+         * "Price Target Expired: AAPL" tiles on the live desktop field had a
+         * null asset, no destination, and rendered deliberately inert -- the
+         * last two dead tiles of the thirteen.
+         *
+         * No new query: `select('*')` already returns `context_data`, which
+         * this function reads two lines above for `changed_by`.
          */
-        symbol: null,
-        project_id: n.context_type === 'project' ? n.context_id : null,
+        asset_id: n.context_type === 'asset'
+          ? n.context_id
+          : (n.context_data?.asset_id ?? null),
+        /*
+         * The ticker, where the payload states it, and null otherwise.
+         *
+         * This was unconditionally null with the reason recorded: the row is
+         * read with `select('*')` and joins nothing, so a notification whose
+         * subject is only an id does not know the symbol, and looking it up
+         * would be a query per row for a field the tile can do without. That
+         * reasoning is unchanged and still governs those rows. What was wrong
+         * was applying it to rows that DO carry the ticker already.
+         */
+        symbol: n.context_data?.asset_symbol ?? null,
+        project_id: n.context_type === 'project'
+          ? n.context_id
+          : (n.context_data?.project_id ?? null),
       },
     })
   }

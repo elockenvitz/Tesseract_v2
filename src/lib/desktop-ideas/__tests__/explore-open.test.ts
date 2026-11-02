@@ -96,18 +96,33 @@ describe('exploreOpen', () => {
    * The defect this refuses to reintroduce: answering a question about one
    * colleague's post with a page about the company.
    *
-   * Narrowed, with the reason recorded, when the by-id branch was added: a
-   * trade idea is still the case this asserts, because `TradeIdeaSurface` maps
-   * the feed row it is handed and cannot fetch by id. The rule it pins is
-   * unchanged -- a preview the reader cannot be shown opens NOTHING, never the
-   * company page instead.
+   * ── Rewritten twice, and the rule never moved ─────────────────────────
+   *
+   * It first asserted `none` for every post the pool does not hold. It was
+   * narrowed to the trade-idea case when the by-id branch was added for
+   * thoughts and prompts, because `TradeIdeaSurface` maps the feed row it is
+   * handed and cannot fetch by id.
+   *
+   * Now `none` is no longer the right answer for this row either, and the
+   * SURFACE is still the reason: the queue holds it. A trade idea's
+   * `objectId` is its `trade_queue_items` id, and `TradeQueuePage` takes
+   * `selectedTradeId`, so the reader can be shown the row itself.
+   *
+   * What this case has always pinned is the thing that is NOT allowed, and
+   * that is unchanged and asserted below: never the company page. The asset
+   * is deliberately present on the item, so a fall-through would be caught.
    */
-  it('opens nothing when a preview names a trade row the pool does not hold', () => {
+  it('opens a trade row the pool does not hold in the queue, never the asset page', () => {
     const open = exploreOpen(item({
       dedupeKey: 'post:row-404', objectId: 'row-404', signalType: 'trade_idea',
       postKind: 'trade_idea', assetId: 'asset-nvda', symbol: 'NVDA',
     }), pool)
-    expect(open.do).toBe('none')
+    expect(open).toMatchObject({
+      do: 'navigate',
+      target: { type: 'trade-queue', data: { selectedTradeId: 'row-404' } },
+    })
+    // The invariant, stated directly: the known asset is not where this goes.
+    expect(JSON.stringify(open)).not.toContain('asset-nvda')
   })
 
   /** A post with no kind on it is the same case: nothing says it can fetch. */

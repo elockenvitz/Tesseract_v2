@@ -165,6 +165,41 @@ export function exploreOpen(item: ExploreItem, entries: AttentionEntry[]): Explo
         },
       }
     }
+    /**
+     * A trade idea the pool does not hold, opened in the queue that does.
+     *
+     * ── Why this is not `none` any more ─────────────────────────────────
+     *
+     * `TradeIdeaSurface` maps the feed row onto the desktop Idea object
+     * rather than re-reading the queue, so with no row in the pool it has
+     * nothing to render and the branch above was right to refuse it. But
+     * refusing the SURFACE is not the same as having no destination: a trade
+     * idea's `objectId` IS its `trade_queue_items` id -- `targetFor` binds
+     * exactly that -- and `TradeQueuePage` takes `selectedTradeId`, scrolls
+     * to the card and flashes it. Eleven other producers already send that
+     * payload.
+     *
+     * So the tile opens the queue with its own idea brought into view. This
+     * is not the asset-page fall-through the branch above forbids: it is the
+     * row itself, on the surface that owns it, rather than a page about the
+     * company it happens to name.
+     *
+     * MEASURED on the live desktop field: 3 of the 13 previews that opened
+     * nothing were this branch. Only a post whose kind is neither a trade
+     * idea nor a thought nor a prompt stays inert now.
+     */
+    if (item.postKind === 'trade_idea') {
+      return {
+        do: 'navigate',
+        target: {
+          id: 'trade-queue',
+          title: 'Idea Pipeline',
+          type: 'trade-queue',
+          data: { selectedTradeId: item.objectId },
+        },
+      }
+    }
+
     return {
       do: 'none',
       why: `${item.id}: names a row the attention pool does not hold`,
