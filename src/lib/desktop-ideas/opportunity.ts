@@ -388,17 +388,99 @@ export function opportunitySize(o: Opportunity, index: number): OpportunitySize 
  * never changes what a candidate IS, only how much room this page can spare.
  *
  * The hero is not counted against the budget: it is the lead, not a feature.
+ *
+ * ── `within`, and why a total was the wrong shape for a field ────────────
+ *
+ * A budget with no window is a budget for a PAGE, which is what mobile's
+ * Explore is: a screenful, scrolled a little. Desktop Explore is a field of
+ * ninety, and measured there the total spent its four features inside the
+ * first nine tiles and demoted every one after -- so the tail was seventy-five
+ * consecutive `medium`, four to a row, for the rest of the scroll.
+ *
+ * "Emphasis stops being emphasis past a handful" is a claim about what the
+ * reader can see at once, not about what a list may contain in total. So the
+ * budget is spent per window of `within` consecutive tiles rather than once,
+ * and a feature at rank sixty is as affordable as one at rank six.
+ *
+ * `Infinity` by default, so the mobile-shaped callers keep the exact
+ * behaviour they had and only a caller that knows it is drawing a long field
+ * asks for a window.
  */
 export function withFeatureBudget(
   sizes: readonly OpportunitySize[],
   max = MAX_FEATURES,
+  within = Infinity,
 ): OpportunitySize[] {
   let spent = 0
+  let window = 0
   return sizes.map((s, i) => {
-    if (i === 0 || s !== 'large') return s
+    if (i === 0) return s
+    /* Buckets, not a sliding window: a reader can point at where the budget
+       resets, and so can a test. A sliding window would make a tile's size
+       depend on what came after it, which is the unexplainability the size
+       rule above was written to end. */
+    if (window >= within) { window = 0; spent = 0 }
+    window += 1
+    if (s !== 'large') return s
     spent += 1
     return spent <= max ? s : 'medium'
   })
+}
+
+/**
+ * Break a run of identical cells.
+ *
+ * ── The reported symptom ─────────────────────────────────────────────────
+ *
+ * "I don't just want 4 in a line always after first few rows." Measured: 75
+ * of 90 tiles `medium`, and past about rank thirty an unbroken run of them.
+ * Four to a row, every row, to the bottom.
+ *
+ * Widening the budget recovers the features the CONTENT earned, which helps
+ * where there are any. It does nothing for a stretch where every candidate
+ * genuinely is a standard card, and on a thin corpus that is most of the
+ * field -- the material is repetitive, which is a known property of this data
+ * and not something layout should pretend otherwise about.
+ *
+ * ── What this rule does and does not claim ───────────────────────────────
+ *
+ * It does not say the promoted tile is better. It says a wall of identical
+ * cells is harder to read than a broken one, which is a fact about the page
+ * rather than about the item -- the same claim `sizeByRankWithRhythm` makes
+ * on Research, and the reason that function exists.
+ *
+ * Two properties keep it honest:
+ *
+ *   It is POSITIONAL. It counts cells, never content, so a tile cannot grow
+ *   because it happens to carry a chart -- which is the gaming the size rule
+ *   above is built to prevent.
+ *
+ *   It is SELF-LIMITING. It fires only where a run has already reached
+ *   `maxRun`, so a varied stretch is left exactly as it is and the rule
+ *   cannot add emphasis to a page that already has some. That is why it runs
+ *   after the budget rather than being folded into it: the budget decides how
+ *   much emphasis the content may have, and this only decides that a wall is
+ *   not a layout.
+ *
+ * Order is untouched. Nothing here reorders anything.
+ */
+export function withRunRhythm(
+  sizes: readonly OpportunitySize[],
+  maxRun = 7,
+): OpportunitySize[] {
+  const out = [...sizes]
+  let run = 0
+  for (let i = 1; i < out.length; i++) {
+    if (out[i] !== out[i - 1]) { run = 1; continue }
+    run += 1
+    if (run <= maxRun) continue
+    /* One step up, never two: a `medium` becomes `large`, a `compact` becomes
+       `medium`. Jumping a run of compacts straight to `large` would put a
+       feature in the middle of the quietest part of the field. */
+    out[i] = out[i] === 'compact' ? 'medium' : 'large'
+    run = 1
+  }
+  return out
 }
 
 /** The reader-facing name for a kind. One vocabulary, set in one place. */

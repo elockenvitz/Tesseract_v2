@@ -6,9 +6,12 @@
  * generation and never order. These cases pin that boundary.
  */
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   opportunitiesFrom, opportunityKind, isIdeaWorthy, opportunitySize,
-  withFeatureBudget, targetForOpportunity, OPPORTUNITY_LABEL, pictureBudget,
+  withFeatureBudget, withRunRhythm, targetForOpportunity, OPPORTUNITY_LABEL,
+  pictureBudget, type OpportunitySize,
 } from '../opportunity'
 import { exploreVisualKind } from '../../mobile/explore-visual'
 import type { ComposedExploreItem, ExploreItem } from '../../mobile/explore-item'
@@ -301,5 +304,100 @@ describe('the page cannot spend emphasis until it means nothing', () => {
     expect(sizes[0]).toBe('hero')            // the lead is not a feature
     expect(sizes.filter(s => s === 'large')).toHaveLength(2)
     expect(sizes.slice(3).every(s => s === 'medium')).toBe(true)
+  })
+
+  /*
+   * ── A page's budget, and a field's ───────────────────────────────────────
+   *
+   * The case above is the PAGE shape and is unchanged: mobile's Explore is a
+   * screenful, and a total is right for it. Desktop Explore is ninety tiles,
+   * and measured there the same total spent all four features inside the
+   * first nine and demoted every one after -- seventy-five consecutive
+   * `medium`, four to a row, for the rest of the scroll.
+   *
+   * "Emphasis stops being emphasis past a handful" is a claim about what the
+   * reader sees at once, not about what a list may contain, so a caller that
+   * knows it is drawing a field asks for a window.
+   */
+  it('spends the budget again further down a long field', () => {
+    const sizes = withFeatureBudget(Array(13).fill('large'), 2, 4)
+    /* Window one holds indices 1-4 and affords two; window two holds 5-8 and
+       affords two more. A total would have demoted everything from index 3. */
+    expect(sizes.slice(0, 5)).toEqual(['large', 'large', 'large', 'medium', 'medium'])
+    expect(sizes.slice(5, 9)).toEqual(['large', 'large', 'medium', 'medium'])
+    /* The point of the whole change: a feature is still affordable at the
+       bottom of the field. */
+    expect(sizes.slice(9).includes('large')).toBe(true)
+  })
+
+  it('is unchanged for a caller that does not ask for a window', () => {
+    /* `Infinity` by default. The mobile-shaped callers must not inherit a
+       behaviour change from a desktop field's requirement. */
+    const windowed = withFeatureBudget(Array(13).fill('large'), 2, Infinity)
+    const plain = withFeatureBudget(Array(13).fill('large'), 2)
+    expect(windowed).toEqual(plain)
+    /* Three larges, not two: index 0 is the lead and is never counted against
+       the budget, so two features sit behind it. */
+    expect(plain.filter(s => s === 'large')).toHaveLength(3)
+    expect(plain.slice(3).every(s => s === 'medium')).toBe(true)
+  })
+})
+
+describe('a wall of identical cells is not a layout', () => {
+  it('breaks a run once it is longer than the cap', () => {
+    const out = withRunRhythm(Array(10).fill('medium'), 3)
+    /* Four in a row is a wall at the stated cap; the fifth gets a step more
+       room and the count restarts from it. */
+    expect(out.slice(0, 4).every(s => s === 'medium')).toBe(true)
+    expect(out[4]).toBe('large')
+    expect(out.filter(s => s === 'large').length).toBeGreaterThan(1)
+  })
+
+  it('leaves a varied field exactly as it found it', () => {
+    /*
+     * Self-limiting, and this is what makes the rule defensible: it cannot
+     * add emphasis to a page that already has some. It fires only where a run
+     * has already reached the cap, so it is breaking a wall rather than
+     * claiming anything about the item it promotes.
+     */
+    const varied: OpportunitySize[] = ['hero', 'large', 'medium', 'compact', 'medium', 'large', 'medium']
+    expect(withRunRhythm(varied, 3)).toEqual(varied)
+  })
+
+  it('promotes one step, never two', () => {
+    const out = withRunRhythm(Array(6).fill('compact'), 2)
+    /* A run of compacts is the quietest part of the field. Jumping it to
+       `large` would put a feature in the middle of it. */
+    expect(out).not.toContain('large')
+    expect(out).toContain('medium')
+  })
+
+  it('never touches the lead', () => {
+    const out = withRunRhythm(['hero', 'hero', 'hero', 'hero'], 1)
+    expect(out[0]).toBe('hero')
+  })
+})
+
+describe('Explore asks for both, because it draws a field', () => {
+  const code = readFileSync(
+    join(process.cwd(), 'src/components/ideas-app/IdeasExploreBrowse.tsx'),
+    'utf8',
+  )
+
+  it('windows the budget and breaks runs, in that order', () => {
+    /*
+     * Order matters and is not interchangeable. The budget decides how much
+     * emphasis the CONTENT may have; the rhythm then decides that whatever
+     * wall survives is not a layout. Run the rhythm first and the budget
+     * would demote the very cells the rhythm promoted to break the wall.
+     */
+    const call = code.match(/withRunRhythm\([\s\S]*?\[shown\]/)?.[0]
+    expect(call, 'Explore must break runs').toBeTruthy()
+    /* Nested, so the budget runs first. Two sibling statements would compile
+       and could be reordered without anything noticing. */
+    expect(call).toContain('withFeatureBudget')
+    expect(call).toContain('FEATURE_WINDOW')
+    expect(call).toContain('MAX_RUN')
+    expect(call!.indexOf('withFeatureBudget')).toBeLessThan(call!.indexOf('MAX_RUN'))
   })
 })

@@ -6,8 +6,9 @@ import { DesktopGallery, GallerySkeleton, type TileSize } from '../desktop/Deskt
 import { OpportunityTile } from '../ideas-v2/OpportunityGrid'
 import type { TileClose, YearRange } from '../../hooks/useTileCloses'
 import {
-  opportunityKind, opportunitySize, withFeatureBudget, type Opportunity,
+  opportunityKind, opportunitySize, withFeatureBudget, withRunRhythm, type Opportunity,
 } from '../../lib/desktop-ideas/opportunity'
+import { MAX_FEATURES } from '../../lib/mobile/explore-layout'
 import { exploreVisualFor } from '../../lib/mobile/explore-visual'
 import { CATEGORY_LABEL } from '../../lib/mobile/feed-categories'
 import { useGalleryCloses, useYearRanges } from '../../hooks/useTileCloses'
@@ -78,6 +79,11 @@ import type { ComposedExploreItem, ExploreItem } from '../../lib/mobile/explore-
  */
 
 /** Explore's own verb for each thing the resolver can answer. */
+/** How many tiles the emphasis budget is spent over before it resets. */
+const FEATURE_WINDOW = 12
+/** The longest run of identical cells before one is given a step more room. */
+const MAX_RUN = 7
+
 const VERB: Record<Exclude<ExploreOpen['do'], 'none'>, string> = {
   /* The workspace, the same place a feed card lands. */
   work: 'Open',
@@ -140,7 +146,34 @@ export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
    * decision, two spellings of it; this takes the one that also distinguishes
    * medium from compact.
    */
-  const sizes = useMemo(() => withFeatureBudget(shown.map(opportunitySize)), [shown])
+  /**
+   * ── Explore is a FIELD, not a page ───────────────────────────────────────
+   *
+   * Both arguments below exist because of that, and neither is a taste
+   * setting. Measured at 90 tiles before them: 75 `medium`, and past about
+   * rank thirty an unbroken run of them, four to a row to the bottom.
+   *
+   * `FEATURE_WINDOW` makes the emphasis budget a rate instead of a total.
+   * Spent once, it went entirely inside the first nine tiles and demoted
+   * every feature after -- a budget shaped for a screenful, applied to a
+   * scroll. Twelve is a window of about three rows at full width.
+   *
+   * `MAX_RUN` then breaks whatever wall survives that, which on a thin corpus
+   * is most of the field: the material genuinely is repetitive, and the
+   * layout's job is to stay readable rather than to pretend otherwise. Seven
+   * is just under two rows of `medium`, so a run is broken before it reads as
+   * a wall and not so often that the break stops meaning anything.
+   *
+   * Order is untouched by either. See `withFeatureBudget` and
+   * `withRunRhythm`.
+   */
+  const sizes = useMemo(
+    () => withRunRhythm(
+      withFeatureBudget(shown.map(opportunitySize), MAX_FEATURES, FEATURE_WINDOW),
+      MAX_RUN,
+    ),
+    [shown],
+  )
 
   /* Every tile's price in ONE batched read. The per-tile alternative is one
      request per card, each resolving on its own schedule and reflowing its
