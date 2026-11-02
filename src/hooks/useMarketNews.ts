@@ -32,11 +32,28 @@ interface MarketNewsResponse {
 }
 
 /**
- * Symbols per request. Each one costs a call at two of the three providers, so
- * this is the difference between a fast feed and a rate-limit. The caller
- * passes its most relevant names; the rest wait for the next page.
+ * Symbols per request, and a HARD cap: anything past it is dropped here.
+ *
+ * ── What it actually costs, counted in the edge function ──────────────────
+ *
+ * `market-news` fans out to four sources, and three of them loop the symbol
+ * list one name at a time -- `fromFinnhub`, `fromYahoo` and `fromYahooRss`
+ * each `for (const symbol of symbols)` an HTTP call. Only
+ * `fromAlphaVantage` batches, by joining them into one `tickers=` parameter.
+ * So a name costs three upstream requests, not a longer query string, and
+ * twelve names is already thirty-six calls behind one client request.
+ *
+ * ── Why it is exported ────────────────────────────────────────────────────
+ *
+ * Because a caller cannot see the cap and one was budgeting against a
+ * different number. `MobileDashboard` passed 24 names on a comment reading
+ * "the marginal cost of a name is a longer query string", which described
+ * AlphaVantage alone; twelve of those 24 were silently discarded on this
+ * line. The caller now slices to this constant, so the list it builds is the
+ * list that gets asked about.
  */
-const MAX_SYMBOLS = 12
+export const MAX_NEWS_SYMBOLS = 12
+const MAX_SYMBOLS = MAX_NEWS_SYMBOLS
 
 export function useMarketNews(symbols: string[], options?: { enabled?: boolean; limit?: number }) {
   // Sorted and truncated so the query key is stable regardless of the order

@@ -174,7 +174,7 @@ import { WeightBars } from '../signals/WeightBars'
 import { buildNewsCard } from '../../lib/signals/builders/news'
 import { useRecommendationCards } from '../../hooks/mobile/useRecommendationCards'
 import type { SignalCard } from '../../lib/signals/contract'
-import { useMarketNews } from '../../hooks/useMarketNews'
+import { useMarketNews, MAX_NEWS_SYMBOLS } from '../../hooks/useMarketNews'
 import { useMarketEvents } from '../../hooks/useMarketEvents'
 import { useMarketData } from '../../hooks/useMarketData'
 import {
@@ -1407,16 +1407,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (sym) out.push(sym)
     }
     /**
-     * Twenty-four names, not twelve.
+     * The news hook's own cap, not a number of this file's own.
      *
-     * The cap was written when each symbol was assumed to cost a provider
-     * call. It does not: `useMarketNews` posts the whole list to one edge
-     * function in a single request, so the marginal cost of a name is a longer
-     * query string. Twelve names in a feed that runs to dozens of cards meant
-     * most of what the reader scrolled past carried no story even when one
-     * existed.
+     * ── The comment that used to be here, and why it was wrong ────────────
+     *
+     * It said twenty-four, on the reasoning that "`useMarketNews` posts the
+     * whole list to one edge function in a single request, so the marginal
+     * cost of a name is a longer query string". That is true of ONE of the
+     * four sources. `market-news` loops the symbol list one name at a time in
+     * `fromFinnhub`, `fromYahoo` and `fromYahooRss` -- three upstream calls
+     * per name -- and only `fromAlphaVantage` batches.
+     *
+     * The 24 never took effect either way: `useMarketNews` slices to
+     * `MAX_NEWS_SYMBOLS` itself, so half of what this built was discarded a
+     * function call later, and the feed's budgeting was against a number that
+     * was not the one in force. It now asks about exactly what it sends.
+     *
+     * Raising the real cap is a provider-rate-limit decision, not a layout
+     * one, and is deliberately not made here.
      */
-    return Array.from(new Set(out)).slice(0, 24)
+    return Array.from(new Set(out)).slice(0, MAX_NEWS_SYMBOLS)
   }, [visibleItems, realSignals])
 
   /**
