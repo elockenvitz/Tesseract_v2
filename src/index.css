@@ -403,6 +403,39 @@
     }
   }
 
+  /* ── A ceiling, so one tall card cannot inflate a whole row ──────────────
+
+     Measured at 1920 over 108 tiles: heights ran 134 to 418 with a median of
+     265, and the top of that range was reported as cards that are "way too
+     big/tall". The named example was a 915x418 hero -- 2.2:1, taller than
+     two of the rows beneath it put together.
+
+     The multiplier is `items-stretch`. The row sizes to its tallest member,
+     so ONE 418px card made the two 451px-wide cards beside it 418px as well:
+     three oversized tiles for one oversized card.
+
+     A ceiling and not a height. The picture inside every tile is a `flex-1`
+     box with an absolutely-positioned panel (see `OpportunityGrid`'s note on
+     why it is out of flow), so the room taken away comes out of the PICTURE
+     and not out of the words: the headline, the context line and the metric
+     are all intrinsically sized and sit above it. A tile whose text alone
+     exceeded the cap would clip, which is why the numbers are set above the
+     measured text block (~171px on the tallest hero) with room to spare.
+
+     ── A CEILING WAS TRIED HERE AND CUT THE WORDS ─────────────────────────
+
+     `max-height: 332px` on a hero and 268px on a medium did bring the range
+     down -- 418 to 332 -- and clipped real text on 39 of the 108 tiles:
+     "14.2% in Large Cap Growth" lost 65px, and a dozen caption lines lost 10
+     to 18px each. The picture does NOT absorb the reduction, because it is
+     already at its `minHeight` floor by then and the caption sits below it.
+
+     A card that hides its own caption is worse than a tall card, so the
+     ceiling is gone and the height is taken out of the picture instead, at
+     `chartHeight` in `OpportunityGrid`, where shrinking is something the
+     chart is built to do. Recorded rather than deleted so the next person
+     reaching for `max-height` here knows what it costs. */
+
   /* ── Desktop feed tile: side-by-side when the TILE is wide enough ────────
      A container query, not a media query, because the same viewport shows the
      feed at full width and at ~40% beside an open workspace. Only the tile's

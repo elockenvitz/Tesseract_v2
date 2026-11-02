@@ -479,9 +479,23 @@ export function OpportunityTile({
    */
   const drawsPrice = hasCloses
   /* A compact tile asked for the tape still gets a readable plot and not a
-     third of its own height: 150/120 were chosen for the wide tiles that
-     carry the chart as a SECOND panel. */
-  const chartHeight = size === 'hero' ? 150 : big ? 120 : 92
+     third of its own height: these were chosen for the wide tiles that carry
+     the chart as a SECOND panel.
+     ── Trimmed, because the tiles read as oversized ──────────────────────
+     Measured at 1920 over 108 tiles: heights ran 134 to 418 with a median of
+     265, and the top of that range was reported as cards that are "way too
+     big/tall" -- the named example a 915x418 hero, 2.2:1 and taller than two
+     rows beneath it together. `items-stretch` multiplies it: the row sizes to
+     its tallest member, so one 418px card made the two cards beside it 418px
+     as well.
+     The height comes out of the PICTURE and not the words. A `max-height` on
+     the grid cell was tried first and clipped real text on 39 of the 108
+     tiles -- see the note left at `.gallery-region` in index.css. The chart
+     is the one part of a tile built to be given less room: it measures its
+     own box in `fill` mode, so a shorter plot is a shorter plot and not a
+     cropped one. 150 -> 112 and 120 -> 98 keep both above the ~92px a narrow
+     tile has always drawn legibly. */
+  const chartHeight = size === 'hero' ? 112 : big ? 98 : 92
   /* The carousel's box, sized to the taller panel. The chart is it: the
      archetypes are a bar and two labels and none of them reaches 120px. The
      ladder, the plot and the caption are what `height` covers, plus the

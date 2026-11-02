@@ -708,7 +708,19 @@ export function DesktopTile({
       <div className={clsx(
         'flex min-w-0 flex-1 flex-col',
         tone === 'critical' && 'bg-rose-50/60 dark:bg-rose-950/20',
-        size === 'hero' ? 'gap-4 p-5' : size === 'large' ? 'gap-3 p-4'
+        /*
+         * The hero's own padding and row gap, trimmed with the picture.
+         *
+         * `p-5` and `gap-4` put 40px of padding and up to 48px of gaps into a
+         * card measured at 915x418 -- the one reported as "way too big". The
+         * height is coming out of the picture (see `chartHeight` in
+         * `OpportunityGrid`); leaving the frame at its old size would spend
+         * what the picture gave back on white space instead.
+         *
+         * Only the hero moves. `large`, `medium` and `compact` were already
+         * at `p-4`/`p-3` and are not what the reader was looking at.
+         */
+        size === 'hero' ? 'gap-3 p-4' : size === 'large' ? 'gap-3 p-4'
           : size === 'medium' ? 'gap-2 p-4' : 'gap-1.5 p-3',
       )}>
         <div className="flex flex-wrap items-center gap-1.5">
