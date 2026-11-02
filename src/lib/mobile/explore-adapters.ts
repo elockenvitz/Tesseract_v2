@@ -1,4 +1,6 @@
 import { signalTypeForTemplate } from '../signals/builders/legacy-kinds'
+import { CONTENT_REGISTRY, categoryForType } from '../signals/content-registry'
+import type { SignalType } from '../signals/contract'
 import { insightSignalType } from '../signals/insight-type'
 import { ideaSignalType, isTradePostType, postKindOf } from './entry-signal-type'
 import type { ExploreItem } from './explore-item'
@@ -39,6 +41,51 @@ const upper = (s: unknown) => String(s ?? '').trim().toUpperCase()
  * trust away.
  */
 type BookWeight = { name?: string | null; weightPct?: number | null }
+
+/**
+ * The category the REGISTRY declares, not the one the adapter happened to type.
+ *
+ * ── The drift this closes ─────────────────────────────────────────────────
+ *
+ * `CONTENT_REGISTRY` is the single answer to "where does this card belong",
+ * and `categoryOf` defers to it for every surface that has a built card. The
+ * adapters below never consulted it: each one typed a category literal beside
+ * its signal type, and three of them disagreed with the registry.
+ *
+ *   signal type     adapter said   registry says
+ *   no_target       decisions      PORTFOLIO
+ *   crowding        decisions      PORTFOLIO
+ *   active_risk     news           PORTFOLIO
+ *
+ * Each of those three has a comment in the registry explaining why it is
+ * Portfolio -- a book fact, not a document fact; a spread that cannot be
+ * stated without more than one portfolio; a weight against a benchmark -- and
+ * `active_risk` under News is recorded there as having been reported from a
+ * phone and called, "correctly, nonsense". The registry was the fix. Explore
+ * then re-made the same mistake one layer up, where nothing was watching.
+ *
+ * The consequence a reader sees: Portfolio has been a category of the
+ * taxonomy, with its own filter row, its own colour and three declared
+ * members, that NO Explore tile could ever belong to. Every crowding and
+ * no-target tile wore "Decisions" instead, which is also why that chip is on
+ * most of the field.
+ *
+ * ── Why a pass over the items and not a literal per producer ──────────────
+ *
+ * Because a literal per producer is what broke. A new family added below
+ * cannot forget to consult the registry if nothing below names a category
+ * that the registry already knows. The adapter's own literal survives only as
+ * the fallback for a type the registry does not hold -- an aggregate, whose
+ * `signalType` is deliberately null because it stands for many cards.
+ */
+export function withRegistryCategory(items: ExploreItem[]): ExploreItem[] {
+  return items.map(i => {
+    const t = i.signalType
+    if (!t || !(t in CONTENT_REGISTRY)) return i
+    const declared = categoryForType(t as SignalType)
+    return declared === i.category ? i : { ...i, category: declared }
+  })
+}
 
 /** Portfolio lenses: targets hit and expired, positions with no target, sizing. */
 export function lensesToExplore(lenses: {
@@ -204,12 +251,30 @@ export function lensesToExplore(lenses: {
     })
   }
 
-  return out
+  // `no_target` and `crowding` are declared Portfolio; the literals above are
+  // now only the fallback. See `withRegistryCategory`.
+  return withRegistryCategory(out)
 }
 
 /** Scenario cards, which are already built contract cards. */
 export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
-  return (cards ?? []).map(c => ({
+  /**
+   * The capital stamp beats the type, exactly as it does in `categoryOf`.
+   *
+   * `scenario_gap` is ONE signal type covering two findings -- a held position
+   * outside its modelled range, and an unheld name outside the same range --
+   * and the registry can give a type only one category, so it says Decisions.
+   * The builder settles it per card: `capital.issueType` is stamped only where
+   * a real position sits behind the break. `portfolio-taxonomy.test.ts` pins
+   * this rule for Curate; Explore applies the same one rather than a second.
+   *
+   * Applied AFTER the registry pass, so the precedence is the same both ways
+   * round: capital, then the declared type, then the adapter's fallback.
+   */
+  const stamped = (c: any, item: ExploreItem): ExploreItem =>
+    c?.capital?.issueType ? { ...item, category: 'portfolio' as FeedCategory } : item
+
+  const built = (cards ?? []).map(c => ({
     id: `scenario-${c.entity?.id ?? c.id}`,
     dedupeKey: `scenario_gap:${c.entity?.id ?? c.id}`,
     signalType: 'scenario_gap',
@@ -249,6 +314,7 @@ export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
     // it called informational, and the builder computed that from the numbers.
     importance: c.severity === 'critical' ? 0.9 : c.severity === 'attention' ? 0.6 : 0.3,
   }))
+  return withRegistryCategory(built).map((item, i) => stamped((cards ?? [])[i], item))
 }
 
 /**
@@ -272,7 +338,7 @@ export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
  * redesign into a repair. Flagged for Explore to decide on its own terms.
  */
 export function insightsToExplore(insights: any[]): ExploreItem[] {
-  return (insights ?? []).map(i => {
+  return withRegistryCategory((insights ?? []).map(i => {
     // Was `i.context?.kind`. Same question, new home.
     const issue = i.issue
     const moved = issue?.framing === 'price_move'
@@ -356,7 +422,7 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
       },
       importance: Math.min((i.score ?? 0), 1),
     }
-  })
+  }))
 }
 
 /**
@@ -368,7 +434,7 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
  * takes the post itself rather than a feed entry wrapping it.
  */
 export function ideasToExplore(posts: any[]): ExploreItem[] {
-  return (posts ?? []).map(p => {
+  return withRegistryCategory((posts ?? []).map(p => {
     const type = String(p.type ?? p.item_type ?? '')
     // The same set `ideaSignalType` answers from: a pair trade is a trade, and
     // this deciding otherwise is how one row got a trade's type and a
@@ -466,7 +532,7 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
       positive: true,
       importance: 0.4,
     }
-  })
+  }))
 }
 
 /**
@@ -556,7 +622,7 @@ export function postContext(
 
 /** Market news, where it is about a name the desk follows. */
 export function newsToExplore(news: any[]): ExploreItem[] {
-  return (news ?? []).map(n => ({
+  return withRegistryCategory((news ?? []).map(n => ({
     id: `news-${n.id ?? n.url}`,
     dedupeKey: `news:${n.id ?? n.url}`,
     // A desk follows several stories about one name on any given day, so the
@@ -595,12 +661,14 @@ export function newsToExplore(news: any[]): ExploreItem[] {
         ? { kind: 'action' as const, action: 'open_asset', assetId: n.assetId, symbol: n.primarySymbol }
         : { kind: 'filter' as const, category: 'news' as FeedCategory },
     importance: 0.25,
-  }))
+  })))
 }
 
 /** Market templates: unusual moves, earnings, corporate actions, releases. */
 export function templatesToExplore(cards: any[]): ExploreItem[] {
-  return (cards ?? []).map(c => ({
+  // `active_risk` arrives as a template and is declared Portfolio, which is
+  // the whole reason the registry entry exists. See `withRegistryCategory`.
+  return withRegistryCategory((cards ?? []).map(c => ({
     id: `tpl-${c.id ?? `${c.kind}-${c.symbol}`}`,
     dedupeKey: `${c.kind}:${c.assetId ?? c.symbol ?? c.id}`,
     // `economic` is not `economic_release`, and `active_risk` is not in the map
@@ -619,7 +687,7 @@ export function templatesToExplore(cards: any[]): ExploreItem[] {
       ? { kind: 'action' as const, action: 'open_asset', assetId: c.assetId, symbol: c.symbol }
       : { kind: 'filter' as const, category: 'news' as FeedCategory },
     importance: 0.3,
-  }))
+  })))
 }
 
 /**
@@ -640,7 +708,7 @@ export function templatesToExplore(cards: any[]): ExploreItem[] {
  * the two surfaces now say the same thing about the same item.
  */
 export function attentionToExplore(items: any[], now: number = Date.now()): ExploreItem[] {
-  return (items ?? []).map(a => {
+  return withRegistryCategory((items ?? []).map(a => {
     const isTrade = a.source_type === 'trade_queue_item'
     const raisedAt = a.created_at ?? a.last_activity_at ?? null
     const dueAt = a.due_at ?? null
@@ -699,7 +767,7 @@ export function attentionToExplore(items: any[], now: number = Date.now()): Expl
         : { kind: 'filter' as const, category: (isTrade ? 'decisions' : 'workflow') as FeedCategory },
       importance: a.priority === 'high' ? 0.6 : 0.3,
     }
-  })
+  }))
 }
 
 /**
