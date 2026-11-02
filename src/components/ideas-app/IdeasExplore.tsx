@@ -575,9 +575,17 @@ export function IdeasExplore({
               />
               {/*
                 The analytical object. Beside the narrative once the TILE is
-                wide enough — see `.feed-tile-cols` — and stacked beneath it
-                otherwise, which is what keeps a 30rem pane from squeezing a
-                chart next to a claim.
+                wide enough — see `.feed-tile-cols` — and NOT DRAWN AT ALL
+                below that, which is a reversal: it used to stack underneath,
+                and in the 640px rail beside an open workspace the stack cost
+                between 117px and 281px a tile. A reader picking their next
+                name needs the claim and the metric; the chart is study
+                material and the tile at full width is where it is studied.
+
+                The rule is a container query rather than a prop, because the
+                tile's own width is the only thing that can answer it and the
+                same tile is drawn at both widths. It stays mounted and
+                hidden, so nothing here changes per width.
 
                 Text-led candidates produce no preview and render nothing here,
                 so they get no empty right column.

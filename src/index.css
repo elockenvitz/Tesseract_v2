@@ -394,6 +394,26 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
+  /* ── The analytical object does not stack ────────────────────────────────
+     A reversal, and a deliberate one. The original fallback below 46rem was
+     to put the chart UNDERNEATH the claim, on the reasoning that a stacked
+     object is better than a squeezed one. Measured in the rail beside an open
+     workspace, that fallback costs between 117px and 281px per tile -- about
+     half the height of every tile that has one -- and the whole 613px rail
+     then holds a little over one card.
+
+     What the rail is for decides this. With a workspace open the reader has
+     already chosen a name; the column beside it is a QUEUE they scan to pick
+     the next one, and a claim plus a metric is what makes a finding
+     triageable. A 280px chart is study material, and the place to study it is
+     the tile at full width, which is one press of "Back to ..." away.
+
+     So the object renders only where it can sit BESIDE the narrative. Stated
+     as one threshold, in one place: hidden by default, shown by the same
+     container query that puts it in its own column. */
+  .feed-tile-aside {
+    display: none;
+  }
   /* 46rem is the measured floor: below it the narrative column drops under
      ~26rem and the claim starts wrapping every two or three words. */
   @container (min-width: 46rem) {
@@ -422,8 +442,10 @@
     .feed-tile-prose {
       grid-template-columns: minmax(0, 50rem);
     }
-    /* The preview becomes a neighbour rather than a band underneath. */
+    /* The preview becomes a neighbour rather than a band underneath -- and
+       this is the only width at which it renders at all. */
     .feed-tile-aside {
+      display: block;
       border-top: 0;
       /* The divider runs the height of the preview, not of the card, because
          the preview no longer stretches. A rule that ends where its content
