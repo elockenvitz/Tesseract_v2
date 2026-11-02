@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { recommendationInputFrom } from '../decision-recommendation'
 import { buildRecommendationCard } from '../builders/recommendation'
+import { primaryForFeed } from '../feed-primary'
 import type { DecisionRecord, DecisionStatus } from '../../desktop-decisions/model'
 
 /**
@@ -58,6 +59,13 @@ const unwrapCard = (d: DecisionRecord) => {
   const input = recommendationInputFrom(d)
   if (!input) throw new Error('adapter declined the row')
   return buildRecommendationCard(input)
+}
+
+/** The built card, for the cases that need one rather than a result. */
+const unwrapOk = (d: DecisionRecord) => {
+  const r = unwrapCard(d)
+  if (!r.ok) throw new Error(`suppressed: ${r.reason}`)
+  return r.card
 }
 
 describe('only an unanswered request is work', () => {
@@ -244,8 +252,40 @@ describe('the producer reads the table that holds the rows', () => {
      * again. The label is substituted for this family only; the action id is
      * kept, so routing and analytics are unchanged.
      */
-    const feed = src('components/ideas-app/IdeasExplore.tsx')
-    expect(feed).toContain("entry.family === 'recommendation'")
-    expect(feed).toContain("label: 'Open the decision'")
+    const entry = { family: 'recommendation', card: unwrapOk(decision()) } as never
+    expect(primaryForFeed(entry).label).toBe('Open the decision')
+    /* The id is the card's own, so routing and analytics never see this. */
+    expect(primaryForFeed(entry).id).toBe('approve')
+  })
+
+  it('leaves every other family saying exactly what its builder said', () => {
+    const card = { actions: { primary: { id: 'open_cases', label: 'Review cases' } } }
+    for (const family of ['post', 'stale_target', 'research', 'conviction'] as const) {
+      const e = { family, card } as never
+      expect(primaryForFeed(e)).toEqual({ id: 'open_cases', label: 'Review cases' })
+    }
+  })
+
+  it('is read by BOTH the card footer and the Start here band', () => {
+    /*
+     * ── The bug this replaces, which shipped for one run ────────────────
+     *
+     * The substitution first lived inside `IdeasExplore` alone. Live, that
+     * put a card footer reading "Open the decision" directly beneath a Start
+     * here row reading "Approve · LLY" — one finding, two verbs, one screen.
+     *
+     * That is exactly the failure the band was built to be incapable of,
+     * arriving from the other side: the band faithfully projects the card's
+     * primary label, so a renderer holding a PRIVATE opinion about that label
+     * is all it takes to make the two disagree. Neither surface may read the
+     * raw label while the other reads a substituted one.
+     */
+    for (const f of [
+      'components/ideas-app/IdeasExplore.tsx',
+      'components/dashboard-next/StartHereBand.tsx',
+    ]) {
+      expect(src(f)).toContain('primaryForFeed(')
+      expect(src(f)).not.toMatch(/\{\s*card\.actions\.primary\.label\s*\}/)
+    }
   })
 })

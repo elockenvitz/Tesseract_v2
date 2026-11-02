@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { clsx } from 'clsx'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
+import { primaryForFeed } from '../../lib/signals/feed-primary'
 
 /**
  * Start here — the top of the feed, written as instructions.
@@ -24,11 +25,20 @@ import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
  *
  * ── Every word is read off the card ───────────────────────────────────────
  *
- * The verb is `actions.primary.label`, the subject is `entity.ticker`, and the
- * reason is `headline` — the card's own sentence for what is true. Nothing is
- * composed here beyond punctuation. Writing an instruction of our own would
+ * The verb is the card's primary action, the subject is `entity.ticker`, and
+ * the reason is `headline` — the card's own sentence for what is true. Nothing
+ * is composed here beyond punctuation. Writing an instruction of our own would
  * mean a second voice describing the same finding, which is the exact defect
  * above in miniature.
+ *
+ * The verb goes through `primaryForFeed` rather than reading
+ * `actions.primary.label` directly, and that is not a hedge on the paragraph
+ * above. A few families carry a verb that COMMITS something — `Approve` — on a
+ * surface that can only navigate, so the desktop feed substitutes the word.
+ * Reading the raw label here while the card footer read the substituted one is
+ * a mistake that actually shipped for one run: the band said "Approve · LLY"
+ * directly above a card that said "Open the decision". One shared function is
+ * what makes that unreachable.
  *
  * Opening a row goes through the shell's `onOpen`, the same function a card
  * click calls, so the band lands in the asset workspace on the same tab the
@@ -94,7 +104,7 @@ export function StartHereBand({ entries, onOpen }: {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[15px] font-semibold text-gray-900 dark:text-white">
-                    {card.actions.primary.label}
+                    {primaryForFeed(entry).label}
                     {ticker && (
                       <span className="font-mono font-bold text-gray-500 dark:text-gray-400">
                         {' · '}{ticker}

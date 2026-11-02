@@ -7,6 +7,7 @@ import { SignalCardView } from '../signals/SignalCardView'
 import { ideaPanes } from '../signals/ideaPanes'
 import { FeedPreview } from '../signals/FeedPreview'
 import { previewFor, previewSymbol } from '../../lib/signals/feed-preview'
+import { primaryForFeed } from '../../lib/signals/feed-primary'
 import { progressionFor } from '../../lib/desktop-ideas/progression'
 import { selectionFor } from '../../lib/desktop-ideas/selection'
 import { ideaRowFromFeedItem } from '../../lib/desktop-ideas/from-feed'
@@ -545,28 +546,15 @@ export function IdeasExplore({
                  */
                 onAction={() => onSelect?.(entry)}
                 /*
-                 * A commitment verb must not name a navigation.
-                 *
-                 * Every action on this surface opens the work pane, which is
-                 * right for "Review cases" or "Capture": those name the work,
-                 * and the click takes you to where the work happens. It is
-                 * NOT right for `Approve`. A reader who presses Approve and
-                 * lands on a pane either believes they have approved
-                 * something they have not, or presses it again. The phone's
-                 * card can afford that label because the phone approves
-                 * inline; this column cannot.
-                 *
-                 * So the label is substituted and the action id is kept, which
-                 * is exactly what `primaryOverride` is for -- routing and
-                 * analytics are unchanged, and the builder keeps owning what
-                 * the card's real primary is.
-                 *
-                 * Only this family. Null leaves every other card's footer
-                 * precisely as it was.
+                 * A commitment verb must not name a navigation. See
+                 * `primaryForFeed`, which is SHARED with the Start here band
+                 * so the footer and the band cannot name one finding two
+                 * different ways. Passing `null` where nothing is substituted
+                 * leaves every other card's footer exactly as it was.
                  */
-                primaryOverride={entry.family === 'recommendation'
-                  ? { id: entry.card.actions.primary.id, label: 'Open the decision' }
-                  : null}
+                primaryOverride={primaryForFeed(entry).label === entry.card.actions.primary.label
+                  ? null
+                  : primaryForFeed(entry)}
               />
               {/*
                 The analytical object. Beside the narrative once the TILE is
