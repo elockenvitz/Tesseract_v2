@@ -1,8 +1,11 @@
-import { useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { usePortfolioLenses } from './mobile/usePortfolioLenses'
 import { useScenarioCards } from './mobile/useScenarioCards'
 import { useDerivedInsights } from './mobile/useDerivedInsights'
 import { useDesktopIdeasFeed } from './useDesktopIdeasFeed'
+import { useAttention } from './useAttention'
+import { attentionPool, workAttention } from '../lib/signals/attention-pool'
+import type { AttentionItem } from '../types/attention'
 import type { ScoredFeedItem } from './ideas/types'
 
 /**
@@ -50,6 +53,24 @@ export interface DesktopCandidates {
   insights: unknown[]
   /** The mixed post feed: trade ideas, thoughts, prompts, notes. */
   feedItems: ScoredFeedItem[]
+  /**
+   * Outstanding work: projects, deliverables, coverage changes, reviews.
+   *
+   * ── The one producer here that IS a new query ────────────────────────────
+   *
+   * Every other hook in this pool is already mounted by some desktop surface,
+   * so calling it costs nothing. `useAttention` is not: it was mobile-only
+   * plus two standalone desktop pages, which is why the Workflow category --
+   * a declared member of the taxonomy, with its own filter row and its own
+   * colour -- had no desktop producer at all and could never appear on an
+   * Explore field.
+   *
+   * It is one org-scoped React Query entry keyed on the user, shared with
+   * `AttentionPage` and `AttentionDashboard`, so the cost is one request per
+   * shell rather than per surface. Trade-queue rows are excluded; see
+   * `workAttention` for why.
+   */
+  attention: AttentionItem[]
   /** Paging for the post half. The machine families are not paged. */
   hasNextPage: boolean
   isFetchingNextPage: boolean
@@ -78,9 +99,18 @@ export function useDesktopCandidates(opts: { enabled?: boolean } = {}): DesktopC
   const scenarioQ = useScenarioCards({ enabled })
   const insightsQ = useDerivedInsights()
   const feed = useDesktopIdeasFeed('all')
+  const { sections: attentionSections } = useAttention()
   const { data: lenses } = lensesQ
   const { data: scenarioCards } = scenarioQ
   const { data: insights } = insightsQ
+
+  /* The same eligibility rule mobile applies, minus the trade rows desktop
+     already builds for itself. Both halves are documented in
+     `lib/signals/attention-pool`. */
+  const attention = useMemo(
+    () => workAttention(attentionPool(attentionSections)),
+    [attentionSections],
+  )
 
   /**
    * Has every producer finished its FIRST attempt?
@@ -113,6 +143,7 @@ export function useDesktopCandidates(opts: { enabled?: boolean } = {}): DesktopC
     scenarioCards: (scenarioCards ?? []) as unknown[],
     insights: (insights ?? []) as unknown[],
     feedItems: feed.items,
+    attention,
     hasNextPage: feed.hasNextPage,
     isFetchingNextPage: feed.isFetchingNextPage,
     fetchNextPage: feed.fetchNextPage,

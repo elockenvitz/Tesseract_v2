@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import {
   lensesToExplore, scenarioCardsToExplore, insightsToExplore,
-  ideasToExplore, newsToExplore, aggregatesFor,
+  ideasToExplore, newsToExplore, attentionToExplore, aggregatesFor,
 } from '../lib/mobile/explore-adapters'
 import { diversifyExplore } from '../lib/mobile/explore-compose'
 import { exploreVisualFor } from '../lib/mobile/explore-visual'
@@ -136,6 +136,16 @@ export function useDesktopExplore(
       ...scenarioCardsToExplore(builtScenarioCards(scenarioCards)),
       ...insightsToExplore((insights ?? []) as never),
       ...ideasToExplore(pool.feedItems as never),
+      /*
+       * Outstanding work, which this field carried none of.
+       *
+       * `attentionToExplore` is the only producer that emits the Workflow
+       * category, and desktop never called it -- so Workflow was a declared
+       * member of the taxonomy, with a filter row and a colour, that no tile
+       * could belong to. The rows come from the pool, where the eligibility
+       * rule and the trade-row exclusion are documented.
+       */
+      ...attentionToExplore(pool.attention as never),
       ...newsToExplore([] as never),
     ]
     /* Topped up before anything is ranked, so the supplement competes for
@@ -168,7 +178,7 @@ export function useDesktopExplore(
     // defect, and a suppression nobody can see is how it survives.
     if (dropped.length) console.warn('[explore] not drawable', dropped)
     return diversifyExplore(drawable, now)
-  }, [lenses, scenarioCards, insights, pool.feedItems, extra])
+  }, [lenses, scenarioCards, insights, pool.feedItems, pool.attention, extra])
 
   /*
    * Reported, not substituted.

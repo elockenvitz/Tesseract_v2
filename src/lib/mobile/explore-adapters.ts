@@ -33,6 +33,23 @@ import type { FeedCategory } from './feed-categories'
 const upper = (s: unknown) => String(s ?? '').trim().toUpperCase()
 
 /**
+ * The first candidate that is a real clause, and is not the headline again.
+ *
+ * The LAST argument is the title: a producer whose second line merely
+ * restates its first adds nothing, and `explorePreview` already drops a
+ * context equal to the title, so this agrees with it at the source rather
+ * than leaving the strip to clean up after.
+ */
+function firstProse(...parts: unknown[]): string | undefined {
+  const title = String(parts[parts.length - 1] ?? '').trim().toLowerCase()
+  for (const p of parts.slice(0, -1)) {
+    const t = String(p ?? '').trim()
+    if (t && t.toLowerCase() !== title) return t
+  }
+  return undefined
+}
+
+/**
  * One entry of a crowding row's `weightsByPortfolio`, as it actually arrives.
  *
  * `usePortfolioLenses` declares both fields required; this widens them to
@@ -725,7 +742,20 @@ export function attentionToExplore(items: any[], now: number = Date.now()): Expl
       category: (isTrade ? 'decisions' : 'workflow') as FeedCategory,
       subtype: isTrade ? ('signal' as const) : ('workflow' as const),
       title: a.title ?? a.summary ?? 'Awaiting you',
-      context: a.summary && a.title ? a.summary : undefined,
+      /**
+       * The row's own second line, read from the fields it actually has.
+       *
+       * This read `a.summary`, and `AttentionItem` has no such field -- it
+       * carries `subtitle`, `preview` and `reason_text`. So every workflow
+       * tile rendered a headline and nothing else, which is the thinness the
+       * adapter header above already complained about for a different field.
+       *
+       * `reason_text` is last because it is the system's explanation of why
+       * the row exists rather than anything about the work, and it repeats
+       * across every row of a kind. `summary` is kept first for a caller that
+       * does supply one.
+       */
+      context: firstProse(a.summary, a.subtitle, a.preview, a.reason_text, a.title),
       /**
        * The deadline, said the way the Curate card says it.
        *

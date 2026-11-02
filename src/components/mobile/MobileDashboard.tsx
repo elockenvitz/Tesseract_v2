@@ -11,6 +11,7 @@ import { rotateForRound } from '../../lib/mobile/feed-rounds'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
+import { attentionPool } from '../../lib/signals/attention-pool'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import {
@@ -355,19 +356,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
 
   const { sections, acknowledge, snoozeFor, markRead, refetch: refetchAttention, isLoading: attentionLoading } = useAttention()
 
-  const attentionItems = useMemo(() => {
-    // All four types, not just decisions and actions. The feed is meant to be
-    // endless and to keep pointing the user at something to do; restricting it
-    // to the two most urgent buckets left long stretches with nothing to act
-    // on. Priority still orders them, so decisions surface first.
-    const byPriority = [
-      ...(sections?.decision_required ?? []),
-      ...(sections?.action_required ?? []),
-      ...(sections?.alignment ?? []),
-      ...(sections?.informational ?? []),
-    ]
-    return byPriority.filter(a => a.status !== 'resolved' && a.status !== 'dismissed')
-  }, [sections])
+  /* The rule moved to `lib/signals/attention-pool` unchanged, so desktop can
+     reach it without importing this file or copying it. Both decisions it
+     carries -- all four sections, most urgent first, and resolved/dismissed
+     rows dropped -- are documented there. */
+  const attentionItems = useMemo(() => attentionPool(sections), [sections])
 
   // Genuinely derived signals — stale coverage, conflicting team sentiment,
   // catalyst proximity. These are the real "what should I be thinking about"
