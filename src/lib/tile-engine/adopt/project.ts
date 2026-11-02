@@ -103,6 +103,12 @@ const EVIDENCE_FOR_PRIMITIVE: Record<VisualPrimitive, EvidenceKind> = {
   last_look: 'sparkline',
   workflow: 'timeline',
   quote: 'none',
+  /* A question is prose, exactly as a quote is: no series, no bar, nothing for
+     an evidence band to hold. It was missing from this map entirely and
+     `Record<VisualPrimitive, ...>` had been reporting that all along -- a
+     pre-existing error in the repo-wide count, not one this change caused.
+     `presentation.ts` carried the identical gap and is fixed with it. */
+  question: 'none',
   price_trend: 'sparkline',
   none: 'none',
 }

@@ -97,6 +97,14 @@ function Harness({
   const result = buildInsightCard(ins)
   if (!result.ok) throw new Error('suppressed')
   const card: SignalCard = result.card
+  /**
+   * `prompt` became optional when `no_case` and `incomplete_case` stopped
+   * emitting one -- `framingWantsJudgment` is false for both. This harness
+   * takes only the three framings that DO want a judgment, so a missing
+   * prompt here means that invariant broke, and saying so beats widening
+   * `VerdictBar.question` to accept nothing.
+   */
+  if (!ins.prompt) throw new Error(`${framing} wants a judgment but has no prompt`)
 
   const [activePane, setActivePane] = useState<string>('')
   const [pending, setPending] = useState<{ key: string; label: string; note: string } | null>(null)

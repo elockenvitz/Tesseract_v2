@@ -230,7 +230,11 @@ const MAX_ERRORS = 0
 // c.user_id)` reads with one annotated memo. The `coverage` query selects an
 // embed the generated row type does not describe, so its rows infer as `never`
 // and each inline read carried its own error. Measured, not arithmetic.
-const MAX_REPO_ERRORS = 8621
+// 8621 -> 8619: `question` was missing from both `Record<VisualPrimitive, ...>`
+// maps (`tile-engine/presentation` and `tile-engine/adopt/project`), which
+// TypeScript had been reporting all along. A ratchet that only ever rises
+// spends every gain silently, so it comes down with them.
+const MAX_REPO_ERRORS = 8619
 
 /**
  * A floor on real source files, now that they are counted as source files.

@@ -4,7 +4,7 @@ import {
   composeExplore, dedupeExplore, freshness,
   materiality, repulsion, scoreExplore,
 } from '../explore-compose'
-import { aggregatesFor, exploreSymbols } from '../explore-adapters'
+import { aggregatesFor, exploreSymbols, insightsToExplore } from '../explore-adapters'
 import type { ExploreItem } from '../explore-item'
 import { EXPLORE_FIXTURE, NOW } from './explore-fixture'
 
@@ -220,6 +220,43 @@ describe('taxonomy', () => {
     for (const i of authored) {
       expect(['research', 'ideas', 'decisions', 'workflow', 'news']).toContain(i.category)
     }
+  })
+})
+
+describe('a research insight with no exposure still says something', () => {
+  /**
+   * The exposure clause wins where it exists: "4.2% of Large Cap Growth" is
+   * what makes a documentation gap urgent, and the body repeats what the
+   * headline implies.
+   */
+  it('prefers the exposure line when the name is held', () => {
+    const [item] = insightsToExplore([{
+      kind: 'no_thesis', assetId: 'a1', symbol: 'IBM', headline: 'IBM has no investment thesis',
+      body: 'None of thesis, where different, risks to thesis has been written.',
+      portfolioName: 'Large Cap Growth', weightPct: 4.2,
+    }] as never)
+    expect(item.context).toBe('4.2% of Large Cap Growth')
+  })
+
+  /**
+   * THE case. An unheld name has no exposure clause, and before this the tile
+   * carried a headline and an Open button and nothing else -- measured live on
+   * IBM, BKNG and TGT once the incoherent prompt was removed.
+   */
+  it('falls back to the producer’s own body when nobody holds it', () => {
+    const [item] = insightsToExplore([{
+      kind: 'no_thesis', assetId: 'a1', symbol: 'IBM', headline: 'IBM has no investment thesis',
+      body: 'None of thesis, where different, risks to thesis has been written.',
+    }] as never)
+    expect(item.context).toBe('None of thesis, where different, risks to thesis has been written.')
+  })
+
+  /** And claims nothing when the producer gave it nothing. */
+  it.each([undefined, '', '   '])('adds nothing for a body of %o', body => {
+    const [item] = insightsToExplore([{
+      kind: 'no_thesis', assetId: 'a1', symbol: 'IBM', headline: 'IBM has no investment thesis', body,
+    }] as never)
+    expect(item.context).toBeUndefined()
   })
 })
 

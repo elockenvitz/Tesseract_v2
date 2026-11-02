@@ -68,8 +68,16 @@ export interface DerivedInsight {
   headline: string
   /** The evidence. Always concrete and checkable. */
   body: string
-  /** The question the judgment pane asks. Framing-specific. */
-  prompt: string
+  /**
+   * The question the judgment pane asks. Framing-specific, and absent where
+   * the framing has no coherent question.
+   *
+   * Optional because `framingWantsJudgment` is false for `no_case` and
+   * `incomplete_case`: those two have no judgment to ask for, so they emit no
+   * prompt. A required field here forced a sentence to exist for them, and
+   * Explore then drew it as the tile's picture on every untouched name.
+   */
+  prompt?: string
   assetId: string
   symbol: string
   companyName?: string | null

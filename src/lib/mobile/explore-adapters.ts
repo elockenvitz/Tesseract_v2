@@ -289,9 +289,30 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
       category: 'research' as FeedCategory,
       subtype: 'research' as const,
       title: i.headline,
+      /**
+       * The exposure line where there is one, and the producer's own body
+       * where there is not.
+       *
+       * ── What was being dropped ──────────────────────────────────────────
+       *
+       * `researchCopy` computes a body that names exactly what is missing --
+       * "Thesis is written; where different and risks to thesis are not" --
+       * and the adapter discarded it, keeping only the exposure clause. For a
+       * name nobody holds there is no exposure clause, so those tiles carried
+       * a headline and nothing else. MEASURED live: IBM, BKNG and TGT, each a
+       * single sentence and an Open button.
+       *
+       * The exposure line still wins where it exists: "4.2% of Large Cap
+       * Growth" is the fact that makes a documentation gap urgent, and the
+       * body repeats what the headline already implies. This is the fallback
+       * for the unheld case, not a replacement.
+       *
+       * `explorePreview` drops a context equal to the title, so a producer
+       * whose body merely restates its headline still adds nothing.
+       */
       context: i.portfolioName
         ? `${i.weightPct != null ? `${Number(i.weightPct).toFixed(1)}% of ` : ''}${i.portfolioName}`
-        : undefined,
+        : typeof i.body === 'string' && i.body.trim() ? i.body.trim() : undefined,
       symbol: i.symbol, assetId: i.assetId, companyName: i.companyName,
       metric: moved
         ? {
