@@ -87,6 +87,49 @@ describe('a wide tile spends less of its height on the picture', () => {
   })
 })
 
+/**
+ * The picture box is floored whenever it holds a chart.
+ *
+ * ── The defect, measured ──────────────────────────────────────────────────
+ *
+ * The floor read `panels.length > 1`, which is true only when a tile has an
+ * archetype AND a chart. A tile whose ONLY panel is the chart therefore got
+ * no floor -- and the chart is the one panel with a fixed intrinsic height,
+ * so it rendered at full size inside whatever `flex-1` left and was clipped
+ * by the panel's own `overflow-hidden`.
+ *
+ * At 1920 over the whole field: 27 tiles drew a chart taller than its box,
+ * and on the worst the cut was 93px out of a 93px chart -- the picture was
+ * not short, it was entirely invisible. Every one was a Research card, the
+ * category with no archetype of its own. After: 0 cut.
+ */
+describe('a chart is given room for the height it actually draws', () => {
+  it('floors the box on the chart being present, not on the panel count', () => {
+    const grid = read(GRID)
+    const line = grid.match(/style=\{\{ minHeight: [^\n]+/)?.[0]
+    expect(line).toBeTruthy()
+    expect(line).toMatch(/panels\.some\(p => p\.key === 'price'\)/)
+    // The condition that left a chart-only tile unfloored.
+    expect(line).not.toMatch(/panels\.length > 1/)
+  })
+
+  /**
+   * Non-vacuity: a floor of `undefined`, or one applied unconditionally,
+   * would both satisfy a check that only looked at the condition. The value
+   * has to still be the carousel's own box, which is what keeps paging from
+   * resizing the card.
+   */
+  it('still floors it at the panel box, so paging cannot resize the card', () => {
+    const grid = read(GRID)
+    expect(grid).toMatch(/const panelBox = chartHeight \+ 22/)
+    const line = grid.match(/style=\{\{ minHeight: [^\n]+/)?.[0]
+    expect(line).toContain('? panelBox :')
+    // And a tile with no chart still gets none: an archetype is `fill` and
+    // has no fixed height to protect.
+    expect(line).toContain(': undefined')
+  })
+})
+
 describe('the cell is not capped, because capping cut the words', () => {
   /**
    * The counter-case, and the reason it exists: `max-height` on the gallery

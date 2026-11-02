@@ -407,8 +407,26 @@ describe('a stretched tile has somewhere to put the height', () => {
        the whole defect once it is not: an exact height cannot grow, so the
        stretch landed UNDER the picture instead of in it. The floor is what
        still stops a carousel page from relayouting the field. */
-    expect(field).toMatch(/minHeight: panels\.length > 1 \? panelBox : undefined/)
-    expect(field).not.toMatch(/height: panels\.length > 1 \? panelBox/)
+    /*
+     * ── The CONDITION moved; the subject of this case did not ────────────
+     *
+     * This pinned `panels.length > 1`, which was the floor's gate and not
+     * its point. That gate was itself a defect: it is true only when a tile
+     * has an archetype AND a chart, so a tile whose ONLY panel is the chart
+     * got no floor -- and the chart is the one panel with a fixed intrinsic
+     * height. Measured at 1920: 27 tiles drew a chart taller than the box
+     * holding it, and on the worst the cut was 93px out of a 93px chart.
+     * Every one was a Research card, the category with no archetype.
+     *
+     * What this case is FOR survives exactly: `minHeight` and not `height`,
+     * floored at `panelBox`, on a `flex-1` box. Only the gate is now written
+     * as "the chart is present" rather than "there are two panels", so the
+     * assertion matches the floor rather than the condition in front of it.
+     */
+    expect(field).toMatch(/minHeight: [^\n]*\? panelBox : undefined/)
+    expect(field).toMatch(/minHeight: panels\.some\(p => p\.key === 'price'\)/)
+    // The exact height that cannot grow, in either spelling of the gate.
+    expect(field).not.toMatch(/[^n]height: panels\.(length > 1|some)[^\n]*\? panelBox/)
     expect(field).toMatch(/className="relative flex min-h-0 min-w-0 flex-1 flex-col"/)
   })
 

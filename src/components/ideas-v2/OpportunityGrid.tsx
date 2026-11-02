@@ -713,7 +713,33 @@ export function OpportunityTile({
              * given: the chart measures its own in `fill` mode and the axis
              * is a flex column over a 30px floor. */
             className="relative flex min-h-0 min-w-0 flex-1 flex-col"
-            style={{ minHeight: panels.length > 1 ? panelBox : undefined }}
+            /*
+             * ── The floor is about the CHART, not about the panel count ───
+             *
+             * This read `panels.length > 1`, which is true only when a tile
+             * has an archetype AND a chart. A tile whose ONLY panel is the
+             * chart therefore got no floor at all -- and the chart is the one
+             * panel with a fixed intrinsic height (`height={chartHeight}`),
+             * so it rendered at its full size inside whatever `flex-1` left
+             * and was clipped by the panel's own `overflow-hidden`.
+             *
+             * Measured at 1920 over the whole field: 27 tiles drew a chart
+             * taller than the box holding it, and on the worst of them the
+             * cut was 93px out of a 93px chart -- the picture was not short,
+             * it was ENTIRELY invisible. Every one was a Research card, the
+             * category with no archetype of its own, so the chart was always
+             * its only panel. The LLY card that surfaced it was a 451x185
+             * compact whose picture box was 51px tall around a 93px chart.
+             * After: 0 tiles cut, and that box is 114px.
+             *
+             * `some(price)` is a strict superset of the old condition: the
+             * panel list is at most an archetype plus a chart, so a length
+             * above one already implies the chart is in it. The only case
+             * that changes is the chart-only tile, which is the broken one.
+             * A tile with an archetype and no chart still gets no floor,
+             * correctly -- archetypes are `fill` and have no fixed height.
+             */
+            style={{ minHeight: panels.some(p => p.key === 'price') ? panelBox : undefined }}
             data-testid="opportunity-visual"
             data-panel={panels[shown].key}
           >
