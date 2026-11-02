@@ -1,4 +1,4 @@
-import { Lightbulb, X } from 'lucide-react'
+import { ArrowLeft, Lightbulb } from 'lucide-react'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
 import { PromptDetailView } from '../thoughts/PromptDetailView'
 import { IdeaDetail } from '../ideas-v2/IdeaDetail'
@@ -37,8 +37,20 @@ import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
  * which is the same rule as the Explore producer gaps: name what is missing,
  * do not substitute something that looks similar.
  */
+/*
+ * ── The way out is named ──────────────────────────────────────────────────
+ *
+ * The only exit used to be an unlabelled icon in the top-right corner, which
+ * is the convention for dismissing a dialog. This pane is not a dialog. The
+ * reader arrived from a section they can name, so the exit says that section's
+ * name and sits top-left, where a back control belongs.
+ *
+ * `backTo` is required rather than defaulted: a host that mounts this pane
+ * knows which section the reader left, and a generic "Back" would be a worse
+ * answer than making the host say.
+ */
 export function IdeasWorkPane({
-  selection, entry, onClose, mode = null,
+  selection, entry, onClose, backTo, mode = null,
 }: {
   /** What the reader came to DO, when a progression CTA sent them. */
   mode?: Progression['mode'] | null
@@ -46,24 +58,28 @@ export function IdeasWorkPane({
   selection: IdeasSelection | null
   /** Presentation only, for the header. May be stale; never routed on. */
   entry: AttentionEntry | null
+  /**
+   * The section the reader came from, in the words its own tab uses. Not a
+   * route: the host decides what going back means, and here it means putting
+   * this pane away and giving the section its full width again.
+   */
+  backTo: string
   onClose: () => void
 }) {
   if (!selection) {
     return (
-      <div className="relative flex h-full items-center justify-center px-8">
+      <div className="flex h-full flex-col">
         {/* The empty region is still a region, and it still has to be
             dismissible — it is now reachable by clearing a selection, not only
-            before one is made, so the collapse control cannot live in the
-            header that only a selected item renders. */}
-        <button
-          onClick={onClose}
-          aria-label="Close workspace"
-          className="absolute right-3 top-3 rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-        >
-          <X className="h-4 w-4" />
-        </button>
+            before one is made, so the way out cannot live in the header that
+            only a selected item renders. It is the same control in the same
+            place either way, which is the whole reason it is one component. */}
+        <div className="flex shrink-0 items-center border-b border-gray-200 px-4 py-2.5 dark:border-gray-700">
+          <BackToSection backTo={backTo} onBack={onClose} />
+        </div>
         {/* Quiet. Half a screen of empty chrome, or a second dashboard invented
             to fill it, would both be worse than one line saying what to do. */}
+        <div className="flex min-h-0 flex-1 items-center justify-center px-8">
         <div className="max-w-xs text-center">
           <Lightbulb className="mx-auto h-5 w-5 text-gray-300 dark:text-gray-600" />
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
@@ -72,6 +88,7 @@ export function IdeasWorkPane({
           <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
             The feed keeps its place while you do.
           </p>
+        </div>
         </div>
       </div>
     )
@@ -87,8 +104,12 @@ export function IdeasWorkPane({
         knows. This is what makes the surface below feel entered FROM an
         attention event rather than dropped into cold.
       */}
-      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-200 px-5 py-3 dark:border-gray-700">
-        <div className="min-w-0">
+      <div className="flex shrink-0 items-start gap-3 border-b border-gray-200 px-4 py-2.5 dark:border-gray-700">
+        {/* Left, before the identity, because it answers "where am I" before
+            the heading answers "what is this". */}
+        <BackToSection backTo={backTo} onBack={onClose} />
+        <span aria-hidden className="mt-1 h-4 w-px shrink-0 bg-gray-200 dark:bg-gray-700" />
+        <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
             {selection.symbol ?? entry?.card.surface}
           </p>
@@ -101,19 +122,32 @@ export function IdeasWorkPane({
             </p>
           )}
         </div>
-        <button
-          onClick={onClose}
-          aria-label="Close workspace"
-          className="shrink-0 rounded-md p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
-        >
-          <X className="h-4 w-4" />
-        </button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <WorkSurface selection={selection} onClose={onClose} mode={mode} />
       </div>
     </div>
+  )
+}
+
+/**
+ * The way back to the section the reader left.
+ *
+ * One component for both states of the pane, so the control cannot drift into
+ * two places or two labels. The section's name is in the visible text rather
+ * than only in an `aria-label`: the reader who needs to know which section is
+ * behind this pane is looking at the screen, not listening to it.
+ */
+function BackToSection({ backTo, onBack }: { backTo: string; onBack: () => void }) {
+  return (
+    <button
+      onClick={onBack}
+      className="-ml-1.5 flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
+    >
+      <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
+      Back to {backTo}
+    </button>
   )
 }
 

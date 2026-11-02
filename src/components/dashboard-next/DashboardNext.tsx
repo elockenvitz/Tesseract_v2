@@ -290,6 +290,12 @@ export function DashboardNext() {
                 selection={selected?.selection ?? null}
                 entry={selected?.entry ?? null}
                 mode={workMode}
+                /* The lens the reader is standing in, read from the same state
+                   the bar reads, so the way out names the section they will
+                   actually land on rather than whichever one opened the pane
+                   first. Read from `LENSES` rather than spelled again here:
+                   the bar's label and the exit's label are one string. */
+                backTo={LENSES.find(m => m.key === lens)?.label ?? 'Dashboard'}
                 onClose={() => { setSelected(null); setWorkMode(null); setSplitOpen(false) }}
               />
             </div>

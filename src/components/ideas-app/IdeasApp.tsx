@@ -336,6 +336,12 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
               selection={selected?.selection ?? null}
               entry={selected?.entry ?? null}
               mode={workMode}
+              /* The mode the reader is standing in, read from the same state
+                 the bar reads, so the way out names the section they will
+                 actually land on rather than whichever one opened the pane
+                 first. From `MODES` rather than spelled again here: the bar's
+                 label and the exit's label are one string. */
+              backTo={MODES.find(m => m.key === mode)?.label ?? 'Ideas'}
               /* The only route back to a single feed. */
               onClose={() => { setSelected(null); setWorkMode(null); setSplitOpen(false) }}
             />
