@@ -379,6 +379,29 @@ export const GATED_DIRS = [
    * with it.
    */
   'src/lib/today',
+  /*
+   * The Dashboard-as-feed trial's own shell. Two things in it are worth
+   * gating and neither announces a failure.
+   *
+   * `place` decides whether one reader's selected name is handed to the next
+   * reader to sign in on the same browser -- signing out does not reload this
+   * application, so an unkeyed store would do exactly that, and it would look
+   * like a convenience working correctly.
+   *
+   * The lens and the work pane coming back after a tab switch are the other
+   * half, and they are asserted across a real unmount, which is the event the
+   * tab host actually performs.
+   */
+  'src/components/dashboard-next/__tests__',
+  /*
+   * The Ideas application's own shell: the way back out of the work pane,
+   * the feed rail, and the Explore tile.
+   *
+   * Gated because the failures here are all navigational and all quiet -- an
+   * exit that points away from the column it widens, a tile that resolves to
+   * nothing, a rail that loses the reader's place. None of them throws.
+   */
+  'src/components/ideas-app/__tests__',
 
 ]
 
@@ -397,6 +420,15 @@ export const GATED_DIRS = [
 export const DEFERRED_DIRS = [
   'src/components/asset-v2',
   'src/components/dashboard',
+  /*
+   * The entries above are matched EXACTLY, so `src/components/dashboard` does
+   * not cover `src/components/dashboard/__tests__`. Both of the pairs below
+   * were unclassified for that reason -- a subdirectory appearing beside an
+   * already-deferred directory, which is precisely the case the exact match
+   * is designed to surface rather than absorb. Deferred to match the sibling
+   * each one sits beside; neither is a new judgement about the tests.
+   */
+  'src/components/dashboard/__tests__',
   'src/components/decisions-v2',
   'src/components/desktop',
   'src/components/ideas-v2',
@@ -417,6 +449,7 @@ export const DEFERRED_DIRS = [
   'src/lib/attention-state',
   'src/lib/dashboard/__tests__',
   'src/lib/desktop-asset',
+  'src/lib/desktop-asset/__tests__',
   'src/lib/desktop-decisions',
   // 'src/lib/desktop-ideas' moved UP to the gated list: the standalone Ideas
   // lane now holds the assertions that Explore and the feed resolve to the same

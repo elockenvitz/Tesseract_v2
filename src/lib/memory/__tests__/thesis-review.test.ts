@@ -144,8 +144,54 @@ describe('only "still holds" stops the staleness clock', () => {
   })
 })
 
+/*
+ * ── RE-POINTED, and the reason kept ───────────────────────────────────────
+ *
+ * Every pin below read `components/research-v2/ResearchDetail.tsx`, because
+ * that pane owned the three answers outright: its own `REVIEW_CHOICES`, its
+ * own hooks, its own handler.
+ *
+ * The Asset workspace needed the same bar -- a reader who opened a name from
+ * a finding could read the case and had no way to record what they concluded
+ * about it, so the same case reached by a different door could or could not
+ * be answered. Rather than a second copy of the three buttons, the bar became
+ * `components/desktop/ThesisVerdictBar.tsx` and both surfaces render it.
+ *
+ * That is why these moved, and it is also why they still matter: ONE bar is
+ * exactly the claim this file is making, and a pin on the pane that no longer
+ * holds the markup would have gone quietly green against a second copy.
+ */
 describe('all three conclusions are reachable and write the same way', () => {
-  const detail = src('components/research-v2/ResearchDetail.tsx')
+  const detail = src('components/desktop/ThesisVerdictBar.tsx')
+
+  /**
+   * THE case this block was missing, and the reason these pins went stale
+   * without anyone noticing.
+   *
+   * When the bar moved out of `ResearchDetail`, nine pins went on reading a
+   * file that no longer held the markup. They failed, which is the good
+   * outcome -- but the failure said "ResearchDetail lost its review bar",
+   * which is true and harmless, and NOT the thing worth guarding.
+   *
+   * The thing worth guarding is that there is exactly ONE bar. Two copies is
+   * how "Still holds" comes to mean different things on two surfaces, and it
+   * is the state this codebase was in before the bar moved. So: both surfaces
+   * render the shared component, and neither spells the choices itself.
+   */
+  it('is one bar, rendered by both surfaces rather than copied into each', () => {
+    for (const rel of [
+      'components/research-v2/ResearchDetail.tsx',
+      'components/asset-v2/AssetWorkspace.tsx',
+    ]) {
+      const body = src(rel)
+      expect(body, rel).toContain('ThesisVerdictBar')
+      // Not a second copy: the choices, the recorder and the standing slot
+      // all belong to the bar.
+      expect(body, rel).not.toContain('REVIEW_CHOICES')
+      expect(body, rel).not.toContain('data-slot={`research-review-')
+      expect(body, rel).not.toContain('useRecordThesisReview')
+    }
+  })
 
   it('offers exactly the three outcomes, in order', () => {
     expect(detail).toContain("{ outcome: 'holds', label: 'Still holds' }")
@@ -176,13 +222,27 @@ describe('all three conclusions are reachable and write the same way', () => {
     expect(detail).not.toMatch(/recordReview\([^)]*\).*(update|upsert)/)
   })
 
-  /* Secondary to actually fixing it: the primary action still comes first in
-     the row, and these stay quiet. */
+  /*
+   * Secondary to actually fixing it.
+   *
+   * This compared two positions inside `ResearchDetail`: the primary's
+   * `onClick={runPrimary}` had to appear before `research-thesis-review`.
+   * The bar is its own component now, so there is no primary in the same file
+   * to come before -- and the two surfaces that render it put it in different
+   * places, which is a layout decision rather than this bar's business.
+   *
+   * What the case is FOR survives whole and is the half that could regress
+   * silently: none of the three answers may be dressed as the thing to do.
+   * The surfaces' own suites assert where the bar sits relative to their
+   * primary; this one asserts that the bar never competes with it.
+   */
   it('stays secondary to editing the thesis', () => {
-    expect(detail.indexOf('onClick={runPrimary}')).toBeLessThan(
-      detail.indexOf('research-thesis-review'),
-    )
-    expect(detail).not.toMatch(/research-review-holds[\s\S]{0,400}bg-blue-700/)
+    expect(detail).not.toMatch(/research-review-holds[\s\S]{0,400}bg-blue-7?0?0?/)
+    /* No filled control at all: on both surfaces the one filled button in the
+       band is the verb, and a second would be two primaries. */
+    expect(detail).not.toMatch(/bg-blue-600/)
+    /* And it is still the bar being looked at, not an empty file. */
+    expect(detail).toContain('data-slot="research-thesis-review"')
   })
 })
 
@@ -201,7 +261,8 @@ describe('all three conclusions are reachable and write the same way', () => {
  * also means a reader's change of mind is itself auditable.
  */
 describe('the standing conclusion is shown back, and can be replaced', () => {
-  const detail = src('components/research-v2/ResearchDetail.tsx')
+  /* The shared bar, for the reason recorded above the previous block. */
+  const detail = src('components/desktop/ThesisVerdictBar.tsx')
   const row = src('components/lists/ListRowExpansion.tsx')
 
   it('resolves the newest conclusion per asset, whatever it said', () => {
@@ -420,7 +481,8 @@ describe('a review is recorded, not disguised as an edit', () => {
    */
   it('refuses a second submit while one is in flight', () => {
     expect(src('hooks/useThesisReview.ts')).toContain('if (mutation.isPending) return')
-    expect(src('components/research-v2/ResearchDetail.tsx'))
+    /* The shared bar, for the reason recorded above `all three conclusions`. */
+    expect(src('components/desktop/ThesisVerdictBar.tsx'))
       .toContain('disabled={reviewPending || standing}')
   })
 

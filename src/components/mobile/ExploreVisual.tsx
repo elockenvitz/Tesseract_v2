@@ -3,7 +3,11 @@ import { clsx } from 'clsx'
 import { Quote, HelpCircle } from 'lucide-react'
 
 import type { ExploreVisual as Visual } from '../../lib/mobile/explore-visual'
-import { fitsTheLabel, type YearRange } from '../../lib/market-data/daily-closes'
+/* `./year-range` and not `./daily-closes`: the latter imports the Supabase
+   client, which throws at module load without an environment, and the layout
+   gallery renders this component with no environment at all. See
+   `lib/market-data/year-range`. */
+import { fitsTheLabel, type YearRange } from '../../lib/market-data/year-range'
 import { scenarioLabelsCollide } from '../../lib/mobile/explore-visual'
 import { useWidth } from '../../lib/charts/use-width'
 

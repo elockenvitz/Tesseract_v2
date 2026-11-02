@@ -75,9 +75,26 @@ describe('UX1c-2b: in-tab navigation is routed through the guard', () => {
      * which run before any editor can be dirty.
      */
     expect(ASSET_TAB).toContain('onClick={() => goToMode(mode)}')
-    // The persistent context strip is visible while editing, so its deep-link
-    // is guarded too. (UX2 P1 moved the strip into AssetWorkspaceHeader.)
-    expect(ASSET_TAB).toContain('onOpenSubPage={(sub) => goToSubPage(sub)}')
+    /*
+     * The persistent context strip is visible while editing, so its deep-link
+     * is guarded too. (UX2 P1 moved the strip into AssetWorkspaceHeader.)
+     *
+     * ── Loosened from one spelling to the rule ──────────────────────────
+     *
+     * This demanded the literal `onOpenSubPage={(sub) => goToSubPage(sub)}`.
+     * The call site is point-free now -- `onOpenSubPage={goToSubPage}` --
+     * which is the SAME guarded helper and the identical behaviour, so the
+     * case was failing on a wrapper somebody removed rather than on anything
+     * a reader could notice. A pin that fails when an arrow is dropped is
+     * pinning the arrow.
+     *
+     * The rule is what is asserted now, in both halves: the prop is bound to
+     * the guarded helper, and it is never bound to the raw setter. The second
+     * half is what makes this non-vacuous -- without it, any binding at all
+     * would pass.
+     */
+    expect(ASSET_TAB).toMatch(/onOpenSubPage=\{(goToSubPage|\(sub\) => goToSubPage\(sub\))\}/)
+    expect(ASSET_TAB).not.toMatch(/onOpenSubPage=\{[^}]*setActiveSubPage/)
     // Deep links into Research from the work surfaces.
     expect(ASSET_TAB).toContain("onOpenResearch={() => goToSubPage('research')}")
 

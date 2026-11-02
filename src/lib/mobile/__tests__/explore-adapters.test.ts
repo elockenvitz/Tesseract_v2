@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import {
   attentionToExplore, ideasToExplore, lensesToExplore, postTitle, shortNextAction,
@@ -141,6 +143,66 @@ describe('workflow tiles', () => {
   it('calls a deadline still ahead neutral, not a problem', () => {
     const [item] = attentionToExplore([{ ...overdue, due_at: iso(3) }], NOW)
     expect(item.metric).toEqual({ value: '3d', label: 'until due', direction: 'neutral' })
+  })
+
+  /**
+   * ── The ticker, which was read and never written ────────────────────────
+   *
+   * This adapter has always done `a.context?.symbol`. `AttentionItem['context']`
+   * did not declare a `symbol`, and none of the collectors in `useAttention`
+   * wrote one -- so the read resolved to `undefined` on every row and every
+   * Workflow tile in Explore carried no ticker, on desktop and on the phone
+   * alike. A tile about a name that does not say which name, and nothing
+   * anywhere threw.
+   *
+   * The collectors that joined `assets` now write the symbol they had already
+   * read for their own title. These two cases are the pair: the ticker travels
+   * when the row has one, and nothing is invented when it does not.
+   */
+  it('carries the ticker the row was raised about', () => {
+    const [item] = attentionToExplore(
+      [{ ...overdue, context: { asset_id: 'a-1', symbol: 'AMZN' } }],
+      NOW,
+    )
+    expect(item.symbol).toBe('AMZN')
+    expect(item.assetId).toBe('a-1')
+    // And it reaches the destination too, which is what opens the right name.
+    expect(item.destination).toMatchObject({ action: 'open_asset', symbol: 'AMZN' })
+  })
+
+  /**
+   * The other half, and the half that was actually broken.
+   *
+   * The adapter was already correct: it read `context.symbol` and passed it
+   * through. The failure was upstream, in a producer that never wrote one, and
+   * no adapter test could see that -- which is exactly how a field stays
+   * `undefined` in production while its unit tests pass.
+   *
+   * Source-pinned because the collectors are async Supabase reads; what is
+   * asserted is that every collector writing an `asset_id` into the context
+   * also writes a symbol beside it.
+   */
+  it('is written by every collector that raises a row about a name', () => {
+    const file = readFileSync(
+      join(process.cwd(), 'src/hooks/useAttention.ts'), 'utf8',
+    )
+    const withAsset = file.match(/context: \{[^}]*asset_id:[^}]*\}/g) ?? []
+    expect(withAsset.length).toBeGreaterThan(4)
+    for (const site of withAsset) {
+      // `asset_id: null` is a row that is deliberately not about a name.
+      if (/asset_id: null/.test(site)) continue
+      expect(site, site).toMatch(/symbol:/)
+    }
+  })
+
+  it('invents no ticker for a row that is not about a name', () => {
+    const [item] = attentionToExplore(
+      [{ ...overdue, context: { project_id: 'p-1' } }],
+      NOW,
+    )
+    expect(item.symbol).toBeNull()
+    expect(item.assetId).toBeNull()
+    expect(item.destination).toMatchObject({ kind: 'filter' })
   })
 
   it('says nothing about a deadline the row does not have', () => {

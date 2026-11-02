@@ -131,6 +131,24 @@ export interface AttentionItem {
   // Context linking
   context: {
     asset_id?: string | null
+    /**
+     * The ticker, where the collector that raised the item had one.
+     *
+     * ── It was being READ and never written ─────────────────────────────
+     *
+     * `attentionToExplore` has always done `a.context?.symbol`, which this
+     * type did not declare -- so it resolved to `undefined` on every row and
+     * every Workflow tile in Explore carried no ticker, on desktop and on the
+     * phone alike. A tile about a name that does not say which name.
+     *
+     * Not derived from `asset_id` anywhere: nothing in this pipeline holds an
+     * id-to-symbol map, and inventing one would be a second lookup against a
+     * table the collectors have already joined. Each collector that joined
+     * `assets` writes the symbol it already read; the ones that genuinely have
+     * no asset leave it absent, which is the honest answer and is what the
+     * consumer already handles.
+     */
+    symbol?: string | null
     portfolio_id?: string | null
     theme_id?: string | null
     project_id?: string | null

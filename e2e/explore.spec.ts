@@ -818,12 +818,36 @@ test.describe('visual diversity', () => {
     expect(dotMid).toBeLessThan(band!.x)
   })
 
-  test('a missing target draws a dashed empty slot, never a number', async ({ page }) => {
+  /*
+   * ── Rewritten, and the reason kept ───────────────────────────────────────
+   *
+   * This required `target_compare` on a no-target card: a dashed amber run
+   * from the current price to a "NOT SET" chip. That was deliberately changed
+   * in `explore-visual` and the reasoning is recorded there -- on a card whose
+   * headline already reads "AAPL has no price target on record", the dashed
+   * run restates the headline and then stops, and it was the DOMINANT case in
+   * this corpus rather than an edge. A sized position now draws the exposure
+   * bar instead, which answers the question the absence actually raises: how
+   * much rides on it while nobody has said what it is worth.
+   *
+   * The fixture carries `weightPct: 4.8`, so exposure is the right answer for
+   * it. This case never ran against that change -- `guard:layout` could not
+   * serve its harness at all until `guard:gallery` was fixed -- so it is the
+   * old expectation surfacing, not a regression.
+   *
+   * THE HALF THAT MATTERS SURVIVES VERBATIM: whatever the picture is, it must
+   * not imply a target number that does not exist. The no-WEIGHT branch, where
+   * the dashed empty slot is still correct, is covered in
+   * `lib/mobile/__tests__/no-target-visual.test.ts`; there is no unsized
+   * no-target row in this corpus to render here.
+   */
+  test('a missing target never draws a number, and says what rides on it', async ({ page }) => {
     const v = visualOf(page, 'd-aapl-notarget')
-    await expect(v).toHaveAttribute('data-explore-visual', 'target_compare')
-    await expect(v.locator('[data-target-empty]')).toBeVisible()
+    await expect(v).toHaveAttribute('data-explore-visual', 'exposure')
     // Implying precision where no target exists is the one thing this must not do.
     await expect(v.locator('[data-target-value]')).toHaveCount(0)
+    // And the weight is the thing it draws instead, not an empty box.
+    await expect(v.getByText('4.8%')).toBeVisible()
   })
 
   test('an expired target draws time, because time is why it is here', async ({ page }) => {

@@ -468,6 +468,11 @@ async function collectTradeQueueItems(userId: string, orgId: string): Promise<At
       score: 0,
       context: {
         asset_id: t.asset_id,
+        /* The ticker the title above already printed. See `AttentionItem`.
+           `as any` because the whole row is inferred `never` here -- a
+           pre-existing condition of this file that the titles above already
+           work around, and not a licence this fix is taking for itself. */
+        symbol: (t as any).assets?.symbol ?? null,
         portfolio_id: t.portfolio_id,
       },
     })
@@ -539,6 +544,7 @@ async function collectListSuggestions(userId: string, orgId: string): Promise<At
       score: 0,
       context: {
         asset_id: s.asset_id,
+        symbol: (s as any).assets?.symbol ?? null,
         list_id: s.list_id,
       },
     })
@@ -651,6 +657,17 @@ async function collectNotifications(userId: string, _windowStart: Date, orgId: s
       score: 0,
       context: {
         asset_id: n.context_type === 'asset' ? n.context_id : null,
+        /*
+         * Explicitly null, and not merely absent.
+         *
+         * `notifications` is read with `select('*')` and joins nothing, so
+         * the row carries an id and no ticker -- a notification about an
+         * asset does not know the asset's symbol. Looking it up would be a
+         * second query per row to fill a field this tile can do without, and
+         * the consumer already handles its absence. Written out so the next
+         * reader sees a decision rather than an oversight.
+         */
+        symbol: null,
         project_id: n.context_type === 'project' ? n.context_id : null,
       },
     })
@@ -766,6 +783,8 @@ async function collectQuickThoughts(userId: string, windowStart: Date, orgId: st
         score: 0,
         context: {
           asset_id: t.asset_id,
+          /* The same ticker `contextLabel` above already read off the row. */
+          symbol: (t as any).assets?.symbol ?? null,
           project_id: t.project_id,
           portfolio_id: t.portfolio_id,
         },
@@ -875,6 +894,7 @@ async function collectQuickThoughts(userId: string, windowStart: Date, orgId: st
           score: 0,
           context: {
             asset_id: t.asset_id,
+            symbol: (t as any).assets?.symbol ?? null,
             project_id: t.project_id,
             portfolio_id: t.portfolio_id,
           },
@@ -1095,7 +1115,7 @@ async function collectStaleTradeIdeas(userId: string, orgId: string): Promise<At
       next_action: 'Review: advance stage, update thesis, or archive',
       severity: daysSince > 14 ? 'high' : 'medium',
       score: 0,
-      context: { asset_id: asset?.id },
+      context: { asset_id: asset?.id, symbol: asset?.symbol ?? null },
     })
   }
   return items
@@ -1170,7 +1190,7 @@ async function collectNeglectedCoverage(userId: string, orgId: string): Promise<
       next_action: 'Update thesis, rating, or research for this covered name',
       severity: daysSince > 30 ? 'high' : 'medium',
       score: 0,
-      context: { asset_id: c.asset_id },
+      context: { asset_id: c.asset_id, symbol: asset?.symbol ?? null },
     })
   }
   return items
@@ -1231,7 +1251,7 @@ async function collectUpcomingEarnings(userId: string, orgId: string): Promise<A
       next_action: 'Review thesis and positioning before results',
       severity: daysUntil <= 3 ? 'high' : daysUntil <= 7 ? 'medium' : 'low',
       score: 0,
-      context: { asset_id: asset?.id },
+      context: { asset_id: asset?.id, symbol: asset?.symbol ?? null },
     })
   }
   return items
