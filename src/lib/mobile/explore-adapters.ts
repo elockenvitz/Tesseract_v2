@@ -1,6 +1,6 @@
 import { signalTypeForTemplate } from '../signals/builders/legacy-kinds'
 import { insightSignalType } from '../signals/insight-type'
-import { ideaSignalType, postKindOf } from './entry-signal-type'
+import { ideaSignalType, isTradePostType, postKindOf } from './entry-signal-type'
 import type { ExploreItem } from './explore-item'
 import type { FeedCategory } from './feed-categories'
 
@@ -349,7 +349,10 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
 export function ideasToExplore(posts: any[]): ExploreItem[] {
   return (posts ?? []).map(p => {
     const type = String(p.type ?? p.item_type ?? '')
-    const isTrade = type === 'trade' || type === 'trade_idea'
+    // The same set `ideaSignalType` answers from: a pair trade is a trade, and
+    // this deciding otherwise is how one row got a trade's type and a
+    // thought's headline at the same time.
+    const isTrade = isTradePostType(type)
     // A thesis update is research, not a post about research — the artifact is
     // the thesis. Categorising by what it IS keeps Curate and Explore agreeing.
     const isThesis = type === 'thesis_update' || type === 'research_note'
