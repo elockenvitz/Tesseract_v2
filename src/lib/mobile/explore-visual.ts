@@ -322,7 +322,45 @@ export function exploreVisualFor(
   if (v.currentPrice != null && Number.isFinite(v.currentPrice) && 'target' in v) {
     // `null` is the finding on a no-target card and must survive as null.
     const target = v.target != null && Number.isFinite(v.target) ? v.target : null
-    return { kind: 'target_compare', current: v.currentPrice, target }
+    /**
+     * A no-target card yields to the exposure bar, where there is a weight.
+     *
+     * ── What was being drawn ────────────────────────────────────────────
+     *
+     * `target_compare` with `target: null` draws a dashed amber run from the
+     * current price to a "NOT SET" chip. It was defended as the shape of the
+     * absence being the statement, and on a card whose headline is "JNJ has
+     * no price target on record" that statement has already been made in
+     * words directly above it. The picture restated the headline and then
+     * stopped.
+     *
+     * It is also the DOMINANT case in this corpus, not an edge: JNJ, PG,
+     * ROKU, SQ and ZOOM all surface this way, so most of the Decisions column
+     * was a line pointing at nothing.
+     *
+     * ── Why exposure, and not a chart ───────────────────────────────────
+     *
+     * The question a no-target position actually raises is how much rides on
+     * it while nobody has said what it is worth. That is `weightPct`, which
+     * the `untargeted` lens already carries on the row, and the exposure bar
+     * is a ruled measurement of exactly it. Nothing new is fetched and
+     * nothing is invented.
+     *
+     * Not the tape: the tile's own pager already offers Price beside the
+     * finding, so drawing a line here would be the second copy of a chart the
+     * reader can already reach, in the pane that is supposed to argue.
+     *
+     * Where there is NO weight, the stated absence is still the honest
+     * answer and the dashed run stays. A position whose size is unknown is a
+     * different card from one whose size is 4.2%.
+     */
+    const noTargetButSized = target == null
+      && item.portfolio?.weightPct != null
+      && Number.isFinite(item.portfolio.weightPct)
+      && item.portfolio.weightPct > 0
+    if (!noTargetButSized) {
+      return { kind: 'target_compare', current: v.currentPrice, target }
+    }
   }
 
   // ── Elapsed time, where the clock is the trigger ────────────────────────
