@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Compass, LayoutDashboard, Lightbulb, Scale } from 'lucide-react'
 import { IdeasExplore } from '../ideas-app/IdeasExplore'
@@ -11,6 +11,7 @@ import { ArticleReader } from '../mobile/ArticleReader'
 import { useDesktopAttentionFeed, type AttentionEntry, type AttentionInclude } from '../../hooks/useDesktopAttentionFeed'
 import { selectionFor, selectionForPosition, type IdeasSelection } from '../../lib/desktop-ideas/selection'
 import { exploreOpen, type ExploreOpen } from '../../lib/desktop-ideas/explore-open'
+import type { ExploreItem } from '../../lib/mobile/explore-item'
 import { openAsset } from '../../lib/desktop-asset/navigate'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import type { Progression } from '../../lib/desktop-ideas/progression'
@@ -186,17 +187,62 @@ export function DashboardNext() {
   const { markSignalWorked } = usePilotOnboarding()
 
   /* One route into the workspace, as in `IdeasApp`: a card click, a
-     progression CTA, a resolved Explore preview, and now a Start here row. */
-  const openWorkspace = (selection: IdeasSelection, entry: AttentionEntry | null, mode: Progression['mode'] | null) => {
+     progression CTA, a resolved Explore preview, and now a Start here row.
+
+     `useCallback` because the Explore field below hands this, through `onOpen`,
+     to 145 memoised tiles -- an identity that changed every render would defeat
+     every one of them. All four calls are setters or a stable hook callback. */
+  const openWorkspace = useCallback((
+    selection: IdeasSelection, entry: AttentionEntry | null, mode: Progression['mode'] | null,
+  ) => {
     setSelected({ selection, entry })
     setWorkMode(mode)
     setSplitOpen(true)
     markSignalWorked()
-  }
+  }, [markSignalWorked])
 
   /* Resolving an Explore preview, never for drawing. A memo over the shared
      candidate pool, so this fetches nothing. */
   const resolver = useDesktopAttentionFeed('all', { include: INCLUDE })
+
+  /**
+   * The Explore field's two callbacks, hoisted out of JSX and stabilised.
+   *
+   * ── The hitch this fixes ────────────────────────────────────────────────
+   *
+   * MEASURED in the running app with a long-task observer: opening a tile cost
+   * 234ms in two long tasks, and going back cost 258ms in two more, both well
+   * past the 50ms threshold. Nothing was refetching -- the tile count never
+   * left 145 and no skeleton appeared -- so the whole cost was rendering: a
+   * selection change re-rendered all 145 tiles twice, to change the appearance
+   * of two of them.
+   *
+   * These were inline arrows in the JSX, so every render of this component
+   * handed the field new function identities. `React.memo` on the tile cannot
+   * see past that, which is why the tile was not memoised before: it would
+   * have been decoration.
+   *
+   * `resolve` is called at RENDER time, not on click, so it cannot be hidden
+   * behind a ref -- its result has to change when the candidate pool does.
+   * Keying it on `resolver.entries` is exactly that and no more.
+   */
+  const resolveExplore = useCallback(
+    (item: ExploreItem) => exploreOpen(item, resolver.entries),
+    [resolver.entries],
+  )
+
+  const onExploreOpen = useCallback((open: Exclude<ExploreOpen, { do: 'filter' }>) => {
+    if (open.do === 'work') {
+      openWorkspace(open.selection, null, null)
+      return
+    }
+    if (open.do === 'article') { setArticle(open); return }
+    if (open.do === 'navigate') {
+      window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: open.target }))
+      return
+    }
+    console.warn('[dashboard-next/explore] nothing to open', open.why)
+  }, [openWorkspace])
 
   /* The same thing a card click does, so Start here and the card it was
      derived from cannot land in different places. */
@@ -350,19 +396,8 @@ export function DashboardNext() {
             <div className={clsx('min-h-0 flex-1', lens !== 'explore' && 'hidden')}>
               <IdeasExploreBrowse
                 selectedKey={selected?.selection.key ?? null}
-                resolve={item => exploreOpen(item, resolver.entries)}
-                onOpen={open => {
-                  if (open.do === 'work') {
-                    openWorkspace(open.selection, null, null)
-                    return
-                  }
-                  if (open.do === 'article') { setArticle(open); return }
-                  if (open.do === 'navigate') {
-                    window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: open.target }))
-                    return
-                  }
-                  console.warn('[dashboard-next/explore] nothing to open', open.why)
-                }}
+                resolve={resolveExplore}
+                onOpen={onExploreOpen}
               />
             </div>
             {/* `!== 'feed'`, not `=== 'explore'`. With Portfolio outside this

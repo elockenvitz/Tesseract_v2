@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { Compass, X } from 'lucide-react'
 import { GALLERY_GROUND } from '../../lib/ui/surface'
@@ -181,6 +181,23 @@ export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
     [shown],
   )
 
+  /**
+   * What each tile would do, resolved ONCE per field rather than per render.
+   *
+   * ── Why this moved out of the map ───────────────────────────────────────
+   *
+   * `resolve(o.item)` returns a fresh object, so calling it inside the render
+   * loop gave every tile a new `open` prop on every render and no amount of
+   * memoising the tile could help. Hoisting it into a memo keyed on the field
+   * and the resolver means the answers change when the candidate pool changes
+   * and not otherwise.
+   *
+   * This depends on `resolve` being stable at the call site. `DashboardNext`
+   * wraps it in `useCallback` over `resolver.entries`; a caller that passes an
+   * inline arrow gets correct behaviour and the old cost, not a stale answer.
+   */
+  const opens = useMemo(() => shown.map(o => resolve(o.item)), [shown, resolve])
+
   /* Every tile's price in ONE batched read. The per-tile alternative is one
      request per card, each resolving on its own schedule and reflowing its
      card when it lands — measured on the Ideas field at 56 tiles. */
@@ -257,41 +274,73 @@ export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
               Nothing to explore here yet.
             </p>
           </div>
-        ) : shown.map((o, i) => {
-          const open = resolve(o.item)
-          return (
-            <ExploreTile
-              key={o.item.id}
-              o={o}
-              size={sizes[i]}
-              open={open}
-              closes={o.item.symbol ? closes.map.get(o.item.symbol) ?? [] : []}
-              year={o.item.symbol ? yearRanges.get(o.item.symbol) ?? null : null}
-              selectedKey={selectedKey}
-              onFilter={setCategory}
-              onOpen={onOpen}
-            />
-          )
-        })}
+        ) : shown.map((o, i) => (
+          <ExploreTile
+            key={o.item.id}
+            o={o}
+            size={sizes[i]}
+            open={opens[i]}
+            closes={o.item.symbol ? closes.map.get(o.item.symbol) ?? NO_CLOSES : NO_CLOSES}
+            year={o.item.symbol ? yearRanges.get(o.item.symbol) ?? null : null}
+            /* A BOOLEAN, not the selected key.
+               `selectedKey` changes on every selection, so handing it to every
+               tile made all 145 of them re-render to change the look of two.
+               Deciding `selected` here keeps the prop identical for the 143
+               that did not move, which is what lets `memo` below do anything. */
+            selected={isSelected(opens[i], selectedKey)}
+            onFilter={setCategory}
+            onOpen={onOpen}
+          />
+        ))}
       </DesktopGallery>
     </div>
   )
 }
 
-function ExploreTile({
-  o, size, open, closes, year, selectedKey, onFilter, onOpen,
+/**
+ * One frozen empty array, so a tile with no prices keeps the same prop.
+ *
+ * `?? []` allocates a new array on every render, which is a changed prop under
+ * a shallow compare -- enough on its own to re-render all 145 tiles and defeat
+ * the memo below. Measured: that re-render was costing 234ms to open a tile
+ * and 258ms to go back, in two long tasks each.
+ */
+const NO_CLOSES: TileClose[] = []
+
+/** Whether this tile is the one the open workspace belongs to. */
+function isSelected(open: ExploreOpen, selectedKey: string | null): boolean {
+  return open.do === 'work' && selectedKey != null && open.selection.key === selectedKey
+}
+
+/**
+ * One tile, memoised.
+ *
+ * ── What this is for, and what it is not ────────────────────────────────
+ *
+ * Going back from the workspace changes ONE thing: which tile is selected.
+ * Without this, that re-rendered the entire field -- every chart, every
+ * sparkline, every archetype -- to move a ring from one card to another, and
+ * it was measurable as a hitch on both the way in and the way out.
+ *
+ * It is not a correctness mechanism. Every prop is either a primitive, a value
+ * from a memo over the field, or a callback the caller holds stable, so a tile
+ * whose content genuinely changes still re-renders. If a future prop is
+ * computed inline in the loop, this silently stops working rather than going
+ * wrong -- which is why `ideas-explore-render.test.ts` pins the prop shapes
+ * rather than asserting a render count.
+ */
+const ExploreTile = memo(function ExploreTile({
+  o, size, open, closes, year, selected, onFilter, onOpen,
 }: {
   o: Opportunity
   size: TileSize
   open: ExploreOpen
   closes: TileClose[]
   year: YearRange | null
-  selectedKey: string | null
+  selected: boolean
   onFilter: (category: string) => void
   onOpen: (open: Exclude<ExploreOpen, { do: 'filter' }>) => void
 }) {
-  const selected = open.do === 'work' && selectedKey != null && open.selection.key === selectedKey
-
   return (
     <OpportunityTile
       o={o}
@@ -333,4 +382,4 @@ function ExploreTile({
       }}
     />
   )
-}
+})
