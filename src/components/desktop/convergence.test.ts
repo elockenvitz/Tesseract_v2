@@ -1877,9 +1877,21 @@ describe('a handoff never promises what is not there', () => {
      * when the second landed; above xl it was 15px short of the day panel and
      * the grid still stepped by that. Both were measured, not estimated, and
      * the second only after the first attempt had been declared done.
+     *
+     * ── Why it is no longer `min-h-[400px]` / `xl:min-h-[200px]` ─────────
+     *
+     * Those are VIEWPORT breakpoints, and the window is 1920 whether this
+     * lens is the page or the ~20rem rail beside an open workspace. So the
+     * placeholder promised the rail a two-panel row 200px tall and the page
+     * then drew one stacked column of figures -- the placeholder's one job,
+     * done backwards. It reserves through the same `.book-header-panels`
+     * contract the loaded header uses now, so the tracks and the heights
+     * cannot drift apart: the shared `data-waiting` reservation, plus a
+     * `book-panel-ghost` per panel whose height follows the container query
+     * (72px in the rail, 186px at full width).
      */
-    expect(body).toContain('min-h-[400px]')
-    expect(body).toContain('xl:min-h-[200px]')
+    expect(body).toContain('<div data-waiting className="book-header-panels')
+    expect(body).toMatch(/book-panel-ghost[\s\S]{0,200}book-panel-ghost/)
     /*
      * And the HEADER's copy of that reservation is conditioned on the wait,
      * not unconditional. It was unconditional, and a book whose panels are
@@ -1895,7 +1907,83 @@ describe('a handoff never promises what is not there', () => {
      *
      * The skeleton's own copy above stays unconditional: it IS the wait.
      */
-    expect(body).toContain("benchmark.state === 'loading' && 'min-h-[400px] xl:min-h-[200px]'")
+    /*
+     * ── It became an attribute, and it had to ────────────────────────────
+     *
+     * This read the Tailwind classes directly. The reservation now has to
+     * follow a CONTAINER threshold rather than a viewport one -- the lens is
+     * drawn at full width and in a ~20rem rail, where the panels carry no
+     * movers and no strip, so the full-width figure would reserve space for
+     * content that is not coming.
+     *
+     * Tailwind 3.4 ships no container-query variants and this project adds
+     * no plugin, so `@[34rem]:min-h-[400px]` would have emitted nothing and
+     * the reservation would silently not exist -- a gate that cannot observe
+     * its own failure. The heights live in `index.css` beside the tracks they
+     * must agree with, and the component says only whether it is waiting.
+     *
+     * Both halves are pinned, because either alone is decoration.
+     */
+    expect(body).toContain("data-waiting={benchmark.state === 'loading' ? '' : undefined}")
+    const css = src('index.css')
+    expect(css).toContain('.book-header-panels[data-waiting]')
+    /* By the block, not by a character budget. A `[\s\S]{0,900}` slack
+       between the query and the selector asserts how much CSS happens to sit
+       between them, so it failed the moment the column-pinning rules were
+       added -- a gate that breaks on an unrelated edit teaches the next
+       reader to widen the number instead of reading the rule. */
+    const wide = css.slice(css.indexOf('@container (min-width: 34rem)'))
+    expect(wide).toMatch(/\.book-header-panels\[data-waiting\] \{\s*min-height: 200px/)
+    expect(wide).toMatch(/\.book-panel-ghost \{\s*height: 186px/)
+  })
+
+  /**
+   * The book summary is laid out by its COLUMN, not by the window.
+   *
+   * ── What a viewport breakpoint cost here ─────────────────────────────────
+   *
+   * This lens is drawn at full width AND in the ~20rem rail beside an open
+   * workspace, and the window is 1920 in both. So `xl:grid-cols-2` put two
+   * panels side by side in 352px: the mover lists collided with their own
+   * column keys, ten benchmark bars became a 26px smear with overlapping
+   * tickers, and the band ran past 460px so the Positions list it introduces
+   * was below the fold. Reported as "all messed up ... needs to be simplified
+   * and smaller".
+   *
+   * Moving only the TRACKS was not enough and the half-fix is worth pinning:
+   * the children still carried `xl:col-start-2`, so a panel claimed column
+   * two in a one-track grid, CSS created an implicit second track, and the
+   * two panels drew on top of each other -- "-0.81%" over "68.8%".
+   *
+   * So the rule is that nothing in this header decides its layout from the
+   * viewport. The threshold is 34rem, the same one `.gallery-host` and
+   * `.feed-tile` use, because it is the same question: is this surface a page
+   * or a rail.
+   */
+  it('lays the book header out by its own column, never by the window', () => {
+    const css = src('index.css')
+    expect(css).toMatch(/\.book-header \{\s*container-type: inline-size;/)
+    expect(css).toMatch(/@container \(max-width: 34rem\)[\s\S]{0,200}\.book-header-detail/)
+
+    const body = src('components/portfolio-v2/PortfolioWorkspace.tsx')
+    expect(body).toContain('book-header rounded-xl')
+    expect(body).toContain('book-header-panels')
+    /* The two that caused it. A viewport breakpoint anywhere in this header
+       is the defect, not a style preference.
+
+       Against the code with its comments stripped, because the comments that
+       record WHY those two classes are gone necessarily name them -- a
+       whole-file `not.toContain` would make the explanation the failure. */
+    const code = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(code).not.toContain('xl:grid-cols-2')
+    expect(code).not.toMatch(/xl:col-start-\d/)
+
+    /* And the study material names itself, in both panels. Hidden rather
+       than reflowed: a ten-bar distribution and a two-column ranked list
+       have a width below which they stop being readable at all. */
+    expect(src('components/portfolio-v2/DayPanel.tsx')).toContain('book-header-detail mt-3 grid')
+    expect(src('components/portfolio-v2/ActiveWeights.tsx'))
+      .toContain('book-header-detail relative mt-2 flex h-[116px]')
     // And stands in for the list wait too, rather than a separate spinner.
     expect(body).toContain('if (listLoading) {')
     expect(body).not.toContain('function Loading()')

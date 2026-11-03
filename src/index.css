@@ -561,6 +561,98 @@
     }
   }
 
+  /* ── The book summary, sized by its own column ──────────────────────────
+     The Portfolio lens is drawn at full width AND in the ~20-26rem rail
+     beside an open workspace, and the header was laid out entirely on
+     VIEWPORT breakpoints. The viewport is the same 1920 either way, so in
+     the rail `xl:grid-cols-2` put two panels side by side in 296px: the two
+     mover columns collided with their own figures, the ten benchmark bars
+     became a 26px-wide smear with its labels overlapping, and the band ran
+     past 460px tall so the Positions list it introduces was below the fold.
+     Reported as "all messed up ... needs to be simplified and smaller".
+
+     Only the container's width can answer this, which is the same reason
+     `.feed-tile` and `.gallery-host` above are containers. Same 34rem
+     threshold as both, because it is the same question -- is this surface a
+     page or a rail -- and a second number would put the book's answer out of
+     step with the feed's.
+
+     ── What goes, and why it is these ──────────────────────────────────────
+     In the rail the reader has already chosen a name; this column is a QUEUE
+     they scan to pick the next one. The figures and the two sentences about
+     the framework are what make a book triageable; the mover lists and the
+     active-weight strip are study material, and the place to study them is
+     the lens at full width, one press of "Back to Portfolio" away. That is
+     the same decision `.feed-tile-aside` records, for the same reason.
+
+     Hidden rather than reflowed: a ten-bar distribution and a two-column
+     ranked list have a width below which they stop being readable at all,
+     and drawing them anyway is what was reported. */
+  .book-header {
+    container-type: inline-size;
+  }
+  .book-header-panels {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+  /* ── The reservation, which must follow the tracks ──────────────────────
+     Both panels resolve on their own queries after the book beneath them has
+     painted, so without a reservation each arrival lands as new height under
+     a reader who has started reading. The number differs by layout, and in
+     the rail the panels carry no movers and no strip -- there is far less to
+     wait for, and the full-width figure would reserve space for content that
+     is not coming.
+
+     Here and not in Tailwind: 3.4 ships no container-query variants and this
+     project adds no plugin, so `@[34rem]:min-h-[400px]` would emit nothing
+     and the reservation would silently not exist. The component sets
+     `data-waiting` and says nothing about height. */
+  .book-header-panels[data-waiting] {
+    min-height: 180px;
+  }
+  /* The placeholder's two panels, sized like the panels they stand in for --
+     measured on the loaded page at both widths. Here rather than in Tailwind
+     for the same reason the reservation is: 3.4 ships no container-query
+     variants, so `@[34rem]:h-[186px]` would emit nothing and the placeholder
+     would promise the rail a 186px panel the page never draws. */
+  .book-header-panels .book-panel-ghost {
+    height: 72px;
+  }
+  @container (max-width: 34rem) {
+    .book-header-detail {
+      display: none;
+    }
+  }
+  @container (min-width: 34rem) {
+    .book-header-panels {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    /* ── Each panel owns its column, present or not ──────────────────────
+       Both render null until their own query lands, and a null child takes
+       no grid cell -- so the benchmark strip, which resolves first, was
+       placed in column ONE and then slid across to column two the moment the
+       day panel appeared beside it. Measured: x=24, then x=980.
+
+       Pinned HERE rather than as `xl:col-start-*` on the children, because
+       the viewport is 1920 whether this lens is a page or a ~20rem rail: a
+       child claiming column two in a one-track grid makes CSS create an
+       implicit second track for it, and the two panels then overlap in
+       352px. Pinned only where there are two tracks to pin to. */
+    .book-header-panels > :nth-child(1) {
+      grid-column-start: 1;
+    }
+    .book-header-panels > :nth-child(2) {
+      grid-column-start: 2;
+    }
+    .book-header-panels[data-waiting] {
+      min-height: 200px;
+    }
+    .book-header-panels .book-panel-ghost {
+      height: 186px;
+    }
+  }
+
   /* Opt in where a row genuinely must scroll sideways (a wide table kept as a
      table). Adds momentum scrolling and stops the scroll chaining to the page. */
   .mobile-scroll-x {

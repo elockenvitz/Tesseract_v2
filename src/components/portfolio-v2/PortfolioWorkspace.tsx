@@ -409,7 +409,11 @@ function BookHeader({
       instrument, which is what they are.
     */
     <header className="px-6 pt-6">
-      <div className={clsx('rounded-xl p-5', CARD_SURFACE, CARD_EDGE)}>
+      {/* `book-header` makes this a container, so everything inside is laid
+          out by THIS column's width and not by the window's. See index.css --
+          the lens is drawn at full width and in a ~20rem rail, and the window
+          is 1920 either way. */}
+      <div className={clsx('book-header rounded-xl p-5', CARD_SURFACE, CARD_EDGE)}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
         {/* The book selector belongs to browsing the book. In detail the
             reader has already chosen; switching books there would silently
@@ -422,7 +426,10 @@ function BookHeader({
         )}
       </div>
 
-      <p className="mt-1.5 max-w-[70ch] text-[12px] text-gray-600 dark:text-gray-400">
+      {/* The lens explaining itself. Worth two lines on a page and not worth
+          four in a rail, where the reader arrived by pressing a position and
+          already knows what they are looking at. */}
+      <p className="book-header-detail mt-1.5 max-w-[70ch] text-[12px] text-gray-600 dark:text-gray-400">
         Where this book and the written framework disagree. Ordered by whether
         the disagreement is live, then by how much capital is behind it.
       </p>
@@ -551,10 +558,33 @@ function BookHeader({
          * still fetching reserves the full height until it is not.
          */
         className={clsx(
+          /*
+           * ── The track count moved to a CONTAINER query ──────────────────
+           *
+           * It was `xl:grid-cols-2`, a viewport breakpoint, and this lens is
+           * drawn both at full width and in a ~20rem rail beside an open
+           * workspace. The viewport is 1920 in both, so the rail got two
+           * panels side by side in 296px and the result was unreadable. The
+           * tracks are in `.book-header-panels` now, keyed on the column.
+           */
           /* Ruled, like the band below it. See the card note at the top. */
-          'mt-4 grid grid-cols-1 items-start gap-x-10 gap-y-4 border-t border-gray-100 pt-4 dark:border-gray-800 xl:grid-cols-2',
-          benchmark.state === 'loading' && 'min-h-[400px] xl:min-h-[200px]',
+          'book-header-panels mt-4 gap-x-10 gap-y-4 border-t border-gray-100 pt-4 dark:border-gray-800',
         )}
+        /*
+         * ── The reservation is an attribute, not a utility class ──────────
+         *
+         * It has to follow the same container threshold as the tracks above:
+         * in the rail the panels carry no movers and no strip, so there is
+         * far less to wait for and the full-width number would reserve space
+         * for content that is not coming.
+         *
+         * Tailwind 3.4 ships NO container-query variants and this project
+         * adds no plugin for them -- `@[34rem]:min-h-[400px]` would emit
+         * nothing at all and the reservation would silently not exist. So the
+         * two heights live beside the tracks in `index.css`, keyed off this
+         * attribute, and the component says only whether it is waiting.
+         */
+        data-waiting={benchmark.state === 'loading' ? '' : undefined}
       >
         {/*
           Each panel owns its column, present or not.
@@ -567,8 +597,21 @@ function BookHeader({
           `col-start` pins them, so an absent panel leaves its slot empty
           instead of letting the other move into it.
         */}
-        <div className="min-w-0 xl:col-start-1"><DayPanel day={day} onOpen={onOpenAsset} /></div>
-        <div className="min-w-0 xl:col-start-2"><ActiveWeights comparison={benchmark} onOpen={onOpenAsset} /></div>
+        {/*
+          The column pinning moved to CSS with the tracks, and it had to.
+          *
+          It was `xl:col-start-1` / `xl:col-start-2`, viewport breakpoints, and
+          the viewport is 1920 whether this lens is a page or a ~20rem rail. So
+          once the TRACKS became a container query the second panel still
+          claimed column two, CSS grid created an implicit second track for it,
+          and the two panels sat on top of each other in 352px -- the reported
+          "all messed up", with "-0.81%" drawn over "68.8%".
+          *
+          See `.book-header-panels` in index.css: pinned above 34rem, where
+          there are two tracks to pin to, and not below, where there is one.
+        */}
+        <div className="min-w-0"><DayPanel day={day} onOpen={onOpenAsset} /></div>
+        <div className="min-w-0"><ActiveWeights comparison={benchmark} onOpen={onOpenAsset} /></div>
       </div>
 
       {/*
@@ -1065,17 +1108,31 @@ function PositionTile({
 function SkeletonGrid() {
   const box = 'animate-pulse rounded-[3px] bg-gray-200/70 dark:bg-white/[0.06]'
   return (
-    <div data-testid="portfolio-skeleton" className="px-6 pt-6">
-      {/* Title, role chip, the two-line description, the stats row. */}
+    /*
+      A container, like the header it stands in for.
+
+      The loaded header is laid out by its own column now, because this lens
+      is drawn at full width and in a ~20rem rail. A placeholder still keyed
+      on the viewport would promise the rail a two-panel row and two lines of
+      description that the page then does not draw -- which is this block's
+      one job, done backwards.
+    */
+    <div data-testid="portfolio-skeleton" className="book-header px-6 pt-6">
+      {/* Title, role chip, the two-line description, the stats row. The two
+          description lines go in the rail, exactly as the sentence does. */}
       <div className={`${box} h-[26px] w-[220px]`} />
-      <div className={`${box} mt-3 h-[13px] w-[420px]`} />
-      <div className={`${box} mt-1.5 h-[13px] w-[360px]`} />
+      <div className={`${box} book-header-detail mt-3 h-[13px] w-[420px]`} />
+      <div className={`${box} book-header-detail mt-1.5 h-[13px] w-[360px]`} />
       <div className={`${box} mt-3 h-[14px] w-[300px]`} />
 
-      {/* The two header panels, in the same reservation the loaded row uses. */}
-      <div className="mt-5 grid min-h-[400px] grid-cols-1 gap-x-10 gap-y-4 xl:min-h-[200px] xl:grid-cols-2">
-        <div className={`${box} h-[186px]`} />
-        <div className={`${box} h-[186px]`} />
+      {/* The two header panels, in the same reservation the loaded row uses
+          -- which is now `.book-header-panels` and its `data-waiting`, so the
+          tracks and the height cannot drift from the page's. The 186px box is
+          the full-width panel; in the rail the panels carry no movers and no
+          strip, so it stands down to the figures the page will draw. */}
+      <div data-waiting className="book-header-panels mt-5 gap-x-10 gap-y-4">
+        <div className={`${box} book-panel-ghost`} />
+        <div className={`${box} book-panel-ghost`} />
       </div>
 
       {/* The gallery's own heading block: title, count, and the rule of

@@ -175,7 +175,8 @@ export function ActiveWeights({
         <h2 className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">
           Against the benchmark
         </h2>
-        <span className="text-[11px] text-gray-400">five each end · click to open</span>
+        {/* Instructions for a strip that is not drawn in the rail. */}
+        <span className="book-header-detail text-[11px] text-gray-400">five each end · click to open</span>
 
         {/*
           One line, one height, whether or not a bar is under the pointer --
@@ -248,8 +249,18 @@ export function ActiveWeights({
         looked interactive while being inert. Same defect as the Ideas resting
         layer, which was `opacity-0` and still swallowing the pointer.
       */}
+      {/*
+        Ten named bars need room to be ten named bars.
+        *
+        `book-header-detail` drops the strip when this column is the ~20rem
+        rail beside an open workspace -- see index.css. At 296px each bar is
+        about 26px, so the tickers that were the whole point of cutting from
+        thirty bars to ten overlap each other and the strip reads as a smear.
+        The three figures above survive, because a number does not stop being
+        legible at a narrower width and a distribution does.
+      */}
       <div
-        className="relative mt-2 flex h-[116px] w-full items-stretch justify-center gap-[3px]"
+        className="book-header-detail relative mt-2 flex h-[116px] w-full items-stretch justify-center gap-[3px]"
         onPointerLeave={() => setAt(null)}
       >
         <div

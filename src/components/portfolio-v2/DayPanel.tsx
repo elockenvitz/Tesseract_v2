@@ -112,7 +112,8 @@ export function DayPanel({
             {day.lagDays}d behind
           </span>
         )}
-        <span className="ml-auto text-[11px] text-gray-400">click a name to open it</span>
+        {/* Instructions for lists that are not drawn in the rail. */}
+        <span className="book-header-detail ml-auto text-[11px] text-gray-400">click a name to open it</span>
       </div>
 
       <div className="mt-2 flex flex-wrap items-baseline gap-x-8 gap-y-2">
@@ -134,7 +135,20 @@ export function DayPanel({
         {spread != null && <Figure label="Active" value={spread} />}
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-x-8 gap-y-3 md:grid-cols-2">
+      {/*
+        The ranked lists are study material; the figures above are the triage.
+        *
+        `book-header-detail` drops them when this column is the ~20rem rail
+        beside an open workspace -- see index.css. Two ranked lists at 56px
+        and 64px of figures each, in 296px, collided with their own column
+        keys, which is what "all messed up" was looking at.
+        *
+        `md:grid-cols-2` is a VIEWPORT breakpoint and stays only because the
+        container query above now decides whether this renders at all: the
+        panel is either in the rail, where it is gone, or at full width,
+        where the viewport is past md by definition.
+      */}
+      <div className="book-header-detail mt-3 grid grid-cols-1 gap-x-8 gap-y-3 md:grid-cols-2">
         <Movers
           title="Added most" rows={top} at={at} setAt={setAt} onOpen={onOpen} scale={day.movers}
         />

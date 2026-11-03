@@ -767,11 +767,29 @@ describe('the weight opens the size behind it', () => {
    * pinned on the source in `convergence.test.ts`, because a settled state
    * cannot be reached from this suite's module mock.
    */
-  it('still reserves the panel row while the benchmark is in flight', () => {
+  /*
+   * ── The heights moved to CSS, and the claim moved with them ────────────
+   *
+   * This read the Tailwind classes off the row. The reservation now has to
+   * follow a CONTAINER threshold, not a viewport one: this lens is drawn at
+   * full width and in a ~20rem rail beside an open workspace, and in the rail
+   * the panels carry no movers and no strip, so the full-width number would
+   * reserve space for content that is not coming.
+   *
+   * Tailwind 3.4 ships no container-query variants here, so the two heights
+   * live in `index.css` keyed off `data-waiting`. What this component is
+   * still responsible for -- and all it is responsible for -- is saying
+   * truthfully whether it is waiting, which is what is asserted here.
+   *
+   * Only the waiting half is reachable from this suite -- it mocks
+   * `useActiveWeights` to 'loading' at module scope, so a settled state
+   * cannot be rendered. The other half, that the attribute is CONDITIONAL
+   * rather than always present, is pinned on the source in
+   * `convergence.test.ts` along with the CSS that gives it its heights.
+   */
+  it('says it is waiting while the benchmark is in flight', () => {
     held()
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
-    const row = screen.getByTestId('book-header-panels')
-    expect(row.className).toContain('min-h-[400px]')
-    expect(row.className).toContain('xl:min-h-[200px]')
+    expect(screen.getByTestId('book-header-panels').hasAttribute('data-waiting')).toBe(true)
   })
 })
