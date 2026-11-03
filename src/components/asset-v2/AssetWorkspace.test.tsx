@@ -943,6 +943,68 @@ describe('the header carries the step, the verdict and the tools', () => {
   })
 
   /**
+   * Two bands, with the question on the ticker's own line.
+   *
+   * ── What the three bands cost ───────────────────────────────────────────
+   *
+   * The header stacked a ticker row, a context line and an action row. The
+   * verdict -- the one question this surface asks -- opened the third of
+   * them, so it sat below two rows of description, and the tools sat below
+   * it again. Measured on the running app: the band was 146px of a sticky
+   * element, the verdict's top edge at y=256 and the tools at y=256.
+   *
+   * The verdict joins the ticker row and the tools join the context line.
+   * Measured after: 107px, the verdict at y=179 and the tools at y=229.
+   * Reported as: centre it in the top banner and raise it, and raise the Ask
+   * AI and Review thesis buttons.
+   *
+   * ── Why both halves are pinned ──────────────────────────────────────────
+   *
+   * Either one alone leaves the band standing. The verdict could move up and
+   * the tools keep a row of their own, which is two bands and no height
+   * back; or the tools could move up and the verdict keep one, which is the
+   * same thing with the question buried instead of the controls.
+   */
+  it('carries the verdict on the ticker row and the tools on the context line', () => {
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
+    render(<AssetWorkspacePane asset={asset} />)
+
+    const header = screen.getByText('AAPL').closest('[class*="sticky"]')!
+    const verdict = header.querySelector('[data-slot="research-thesis-review"]')!
+    const tickerRow = screen.getByText('AAPL').parentElement!.parentElement!
+
+    // The verdict shares the ticker's row, rather than opening one below it.
+    expect(tickerRow.contains(verdict)).toBe(true)
+
+    /*
+     * And it is centred BY that row, not by a margin: both groups beside it
+     * carry `flex-1` on the same basis, so the free space splits evenly and
+     * the bar lands on the header's midline whatever the ticker and the
+     * stats measure. `mx-auto` against one `ml-auto` neighbour puts it a
+     * third of the way across, which is what centring it by hand gets you.
+     */
+    const sides = [...tickerRow.children].filter(c => c !== verdict)
+    expect(sides).toHaveLength(2)
+    for (const side of sides) {
+      expect(side.className).toMatch(/\bflex-1\b/)
+      expect(side.className).toMatch(/basis-\[11rem\]/)
+    }
+
+    // The tools ride the context line, which is the row the state label is
+    // on -- so there is no third band left for them to be in.
+    const tools = screen.getByText('Ask AI').parentElement!
+    const contextRow = tools.parentElement!
+    expect(contextRow).not.toBe(tickerRow)
+
+    /*
+     * Two bands under the sticky header and no more, and they are these two.
+     * The length alone would pass on a header that dropped the context line
+     * and kept an action band, which is the shape this replaced.
+     */
+    expect([...header.children]).toEqual([tickerRow, contextRow])
+  })
+
+  /**
    * ── Smaller again, and the literals moved ───────────────────────────────
    *
    * This pinned `py-1.5 text-[12px]`, which was already a reduction from the

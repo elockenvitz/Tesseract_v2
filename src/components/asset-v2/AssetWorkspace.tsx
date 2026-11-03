@@ -792,8 +792,8 @@ function AssetHeader({
         so there is one top pane rather than a thin band stacked on a thick
         one. `why` carries the headline and reason it reveals.
       */}
-      <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
-        <div className="flex min-w-0 items-baseline gap-2.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-1 basis-[11rem] items-baseline gap-2.5">
           <span className="font-black text-[32px] leading-[1.02] tracking-[-0.035em]">
             {symbol ?? '—'}
           </span>
@@ -802,7 +802,31 @@ function AssetHeader({
           )}
           {why && <WhyHere why={why} />}
         </div>
-        <div className="ml-auto flex flex-wrap gap-2">
+
+        {/*
+          ── The verdict moved up here, centred ───────────────────────────
+
+          It had the third band of the header to itself, under the ticker
+          row and under the context line, which put the one question this
+          surface asks below two rows of description and cost a whole band
+          of height on a sticky element. Reported as: centre it in the top
+          banner and raise it, to preserve space.
+
+          Centred by the two groups beside it, not by `mx-auto`: both carry
+          `flex-1` with the same basis, so the free space splits evenly and
+          the bar sits on the header's midline whatever the ticker and the
+          stats happen to measure. `flex-wrap` and a basis below the rail
+          width mean a narrow column stacks the three rather than crushing
+          them.
+
+          Gated on a case existing, the same gate `ResearchDetail` uses.
+          There is nothing to conclude about a thesis nobody has written.
+        */}
+        {caseWrittenAt && assetId && (
+          <ThesisVerdictBar assetId={assetId} compact />
+        )}
+
+        <div className="flex flex-1 basis-[11rem] flex-wrap justify-end gap-2">
           {spot != null && <DesktopStat value={money(spot)} label="Spot" />}
           {showBook && position?.weightPct != null && (
             <DesktopStat value={`${position.weightPct.toFixed(1)}%`} label="Weight" />
@@ -814,8 +838,16 @@ function AssetHeader({
         </div>
       </div>
 
-      {/* One line of context, not a bar of chips. */}
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[12px]">
+      {/*
+        One line of context, not a bar of chips -- and the tools ride it.
+
+        The tools had a band of their own below this one. Three stacked
+        bands on a sticky header is three bands of the page a reader never
+        gets back, and the context line was a 21px row with most of its
+        width empty. The chips keep the left, the tools take the right, and
+        the header loses a band.
+      */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-2.5 text-[12px]">
         {gap && (
           <span className={clsx(
             'rounded-full border px-2 py-[2px] text-[10px] font-bold uppercase tracking-wider',
@@ -828,53 +860,35 @@ function AssetHeader({
           <span className="text-gray-700 dark:text-gray-300">{position.portfolioName}</span>
         )}
         <span className="text-gray-500">{STATE_LABEL[state as keyof typeof STATE_LABEL] ?? state}</span>
-      </div>
 
-      {/*
-        ── The issue's own sentence, dropped ────────────────────────────────
-
-        `issueDetail` is the long form of the finding that sent the reader
-        here -- the same thing the question mark above now holds, at more
-        length. It had a paragraph to itself in the middle of the band, which
-        is a third place for one sentence.
-      */}
-
-      {/*
-        ── Two groups, with the verb on the RIGHT ───────────────────────────
-
-        It led the row, matching the lens panes. On this surface that put the
-        single loudest control directly under a 32px ticker and above a page
-        of reading, so the band opened with an instruction before it had
-        finished saying which name it was about.
-
-        The verdict leads instead -- it is the question this header asks --
-        and the verb joins the tools at the right end, which is also where a
-        reader's hand already is for Ask AI and the full page.
-      */}
-      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 pb-2.5">
         {/*
-          The verdict, which this surface had no way to express.
+          ── The issue's own sentence, dropped ──────────────────────────────
 
-          A reader opens a name from a finding, reads the case here, and
-          until now the only durable trace of a conclusion was an edit -- so
-          "it still holds" and "this is broken" both had to be said by
-          rewriting a document. `ResearchDetail` gained the three answers and
-          this surface did not, which meant the same reader reaching the same
-          case by a different route could or could not record what they
-          thought depending on which door they came through.
-
-          `compact`, because this row shares its width with the stats block
-          above it: the standing sentence is a fixed 19rem slot, and the
-          filled button already says what the record holds.
-
-          Gated on a case existing, the same gate `ResearchDetail` uses.
-          There is nothing to conclude about a thesis nobody has written.
+          `issueDetail` is the long form of the finding that sent the reader
+          here -- the same thing the question mark above now holds, at more
+          length. It had a paragraph to itself in the middle of the band,
+          which is a third place for one sentence.
         */}
-        {caseWrittenAt && assetId && (
-          <ThesisVerdictBar assetId={assetId} compact />
-        )}
 
-        {/* The verb and the tools, right-aligned as one set. */}
+        {/*
+          ── The verb and the tools, right-aligned as one set ───────────────
+
+          The verb led a band of its own below this line, matching the lens
+          panes. On this surface that put the single loudest control directly
+          under a 32px ticker and above a page of reading, so the band opened
+          with an instruction before it had finished saying which name it was
+          about.
+
+          The band is gone now and the set rides the context line, which is
+          also where a reader's hand already is for Ask AI and the full page.
+          `flex-1 justify-end` rather than `ml-auto`: it is what holds the
+          set against the right edge whether or not the chips beside it
+          render, and the case below pins it.
+
+          `compact` on the verdict above, because its row shares its width
+          with the stats block: the standing sentence is a fixed 19rem slot,
+          and the filled button already says what the record holds.
+        */}
         <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
           {/* The D1 seam, which the legacy Asset page never had: the pane is
               mounted once in Layout and binds to whatever object is passed. */}
