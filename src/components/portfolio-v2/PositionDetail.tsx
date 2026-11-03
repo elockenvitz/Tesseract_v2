@@ -33,7 +33,7 @@ import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openResearch, researchTabFor, type ResearchFocus } from '../../lib/desktop-research'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import {
-  gapOf, toneForGap, whyItMatters, primaryActionFor, targetFor, GAP_LABEL,
+  gapOf, spotOf, toneForGap, whyItMatters, primaryActionFor, targetFor, GAP_LABEL,
   type PositionFrame,
 } from '../../lib/desktop-portfolio/model'
 import { TONE_PILL } from '../../lib/semantic-tone'
@@ -83,6 +83,10 @@ export function PositionDetailPane({
   maxWeight: number
 }) {
   const gap = gapOf(position, frame)
+  /* The marked close where the frame carries one, the holding's own price
+     where it does not. See `PositionFrame.mark`: the book's price is the
+     file's, and every claim on this pane is about where the market is now. */
+  const spot = spotOf(position, frame)
   const action = primaryActionFor(position, frame)
   const target = position.isCash ? null : targetFor(position, frame, portfolioName ?? undefined)
   const teamable = !!target && canDiscuss(target)
@@ -111,13 +115,15 @@ export function PositionDetailPane({
    */
   const breakBy = (() => {
     const rung = (n: string) => frame.ladder?.cases.find(c => c.name === n)?.price ?? null
-    const bear = rung('Bear'), bull = rung('Bull'), spot = position.price
+    const bear = rung('Bear'), bull = rung('Bull')
     if (!frame.ladder?.valid || !(spot > 0)) return null
-    if (bear != null && spot < bear) {
-      return { value: `${(((bear - spot) / bear) * 100).toFixed(1)}%`, label: 'below bear case' }
-    }
+    /* Bull first, the order `gapOf` resolves them in, so a crossed ladder
+       cannot have the heading name one break and this name the other. */
     if (bull != null && spot > bull) {
       return { value: `${(((spot - bull) / bull) * 100).toFixed(1)}%`, label: 'above bull case' }
+    }
+    if (bear != null && spot < bear) {
+      return { value: `${(((bear - spot) / bear) * 100).toFixed(1)}%`, label: 'below bear case' }
     }
     return null
   })()
@@ -163,7 +169,7 @@ export function PositionDetailPane({
         <MetricStrip>
           <Metric value={`${position.weightPct.toFixed(1)}%`} label="of this book" lead />
           <Metric value={bigMoney(position.marketValue)} label="market value" />
-          {position.price > 0 && <Metric value={money(position.price)} label="spot" />}
+          {spot > 0 && <Metric value={money(spot)} label="spot" />}
           {breakBy && (
             <Metric value={breakBy.value} label={breakBy.label} tone="critical" />
           )}
@@ -238,12 +244,12 @@ export function PositionDetailPane({
             {/* The one module that can say the position is wrong. It keeps its
                 chrome, and on a broken framework it is the loudest object on
                 the page. */}
-            {frame.ladder?.valid && position.price > 0 && (
+            {frame.ladder?.valid && spot > 0 && (
               <DesktopModule
                 title="Framework"
                 meta={breakBy ? `${breakBy.value} ${breakBy.label}` : 'spot inside the case'}
               >
-                <FrameworkScale ladder={frame.ladder} spot={position.price} />
+                <FrameworkScale ladder={frame.ladder} spot={spot} />
                 {breakBy && (
                   <p className="mt-3 text-[12px] text-rose-700 dark:text-rose-400">
                     Spot is <span className="font-semibold">{breakBy.value}</span> {breakBy.label}.

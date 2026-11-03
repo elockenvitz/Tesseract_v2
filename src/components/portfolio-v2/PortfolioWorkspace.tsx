@@ -29,7 +29,7 @@ import { ActiveWeights } from './ActiveWeights'
 import { DayPanel } from './DayPanel'
 import { useDayPerformance } from '../../hooks/useDayPerformance'
 import {
-  gapOf, toneForGap, whyItMatters, comparePositions, targetFor,
+  gapOf, spotOf, toneForGap, whyItMatters, comparePositions, targetFor,
   GAP_LABEL, EMPTY_FRAME, type PositionFrame,
 } from '../../lib/desktop-portfolio/model'
 /* The same two engagements Today and Ideas offer on a tile, through the
@@ -130,20 +130,46 @@ export function PortfolioWorkspace({
   const benchmark = useActiveWeights(book)
   const day = useDayPerformance(book, benchmark.rows)
 
+  /* Every tile's price in ONE batched read, rather than one request per tile
+     resolving on its own schedule and reflowing its card when it lands. The
+     same hook and the same reasoning as the Ideas and Research fields.
+
+     Asked of the BOOK and not of `rows`, because the rows below are now
+     marked from this map: taking the symbols off them would make the fetch
+     depend on its own result. The book's lines are the same set either way. */
+  const { map: fieldCloses, pending: closesPending } = useGalleryCloses(useMemo(
+    () => (book?.positions ?? []).map(p => p.symbol),
+    [book],
+  ))
+
+  /*
+   * ── Marked to the stored close, not to the upload ───────────────────────
+   *
+   * `position.price` is whatever price was in the file the book was loaded
+   * from, carrying that file's own date. It is the right number for market
+   * value and it is not a current price: AAPL sits in Large Cap Core at
+   * 175.50 as of 2025-08-02, and the newest stored close is 330.32.
+   *
+   * Every framework claim on this surface was made against the first number,
+   * so a tile said AAPL was below a bear case of 205 and the workspace it
+   * opened said the same name was above a bull case of 285. Reported as
+   * exactly that: "I clicked on below bear case for AAPL and the workspace
+   * says above bull case."
+   *
+   * The mark is the LAST POINT OF THE SERIES THIS TILE ALREADY DRAWS, so the
+   * number the verdict rests on is the number the chart ends at and nothing
+   * is fetched to get it. `PositionFrame.mark` carries why the frame is where
+   * it lives, and `spotOf` is the one function that decides what spot means.
+   */
   const rows = useMemo(() => {
     if (!book) return []
     return book.positions
-      .map(position => ({ position, frame: frames[position.assetId] ?? EMPTY_FRAME }))
+      .map(position => {
+        const base = frames[position.assetId] ?? EMPTY_FRAME
+        return { position, frame: markFrame(base, fieldCloses.get(position.symbol ?? '')) }
+      })
       .sort(comparePositions)
-  }, [book, frames])
-
-  /* Every tile's price in ONE batched read, rather than one request per tile
-     resolving on its own schedule and reflowing its card when it lands. The
-     same hook and the same reasoning as the Ideas and Research fields. */
-  const { map: fieldCloses } = useGalleryCloses(useMemo(
-    () => rows.map(r => r.position.symbol),
-    [rows],
-  ))
+  }, [book, frames, fieldCloses])
 
   /**
    * Selection lives in the deck. The lens draws the book and says which card
@@ -224,7 +250,17 @@ export function PortfolioWorkspace({
    * tile because the height genuinely varies per position. One skeleton and
    * one paint is both calmer and honest about what is still arriving.
    */
-  if (bookLoading || framesPending || !book) {
+  /*
+   * The closes join the same gate as the frames, for the same reason twice
+   * over. They decide the tile's verdict now, and the verdict decides the
+   * tile's RANK -- so drawing the grid before they land would order the book
+   * by one set of prices and then re-order it under the reader's cursor. It
+   * also removes the second paint the charts used to arrive in.
+   *
+   * `pending` is false the moment the query resolves OR fails, so a market
+   * data outage cannot hold this shut.
+   */
+  if (bookLoading || framesPending || closesPending || !book) {
     return <div className="h-full bg-gray-50/60 dark:bg-[#0b0f16]"><SkeletonGrid /></div>
   }
   /*
@@ -315,6 +351,21 @@ export function PortfolioWorkspace({
 }
 
 /**
+ * The frame, carrying the market price the book's own file does not.
+ *
+ * The series is the one the tile's chart is drawn from, so the mark is its
+ * last point: the verdict and the picture end on the same number. A name with
+ * nothing stored -- cash, or a symbol with no cached history -- keeps the
+ * frame it came with, and `spotOf` then falls back to the holding's price
+ * exactly as this surface always did.
+ */
+function markFrame(frame: PositionFrame, closes: readonly TileClose[] | undefined): PositionFrame {
+  const last = closes && closes.length ? closes[closes.length - 1] : null
+  if (!last || !(last.value > 0) || Number.isNaN(last.date.getTime())) return frame
+  return { ...frame, mark: { price: last.value, asOf: last.date.toISOString().slice(0, 10) } }
+}
+
+/**
  * How far spot sits outside the case, as a percentage of the rung it broke.
  *
  * Only computed where a valid ladder and a real price exist, and only when
@@ -326,13 +377,21 @@ function outsideBy(
 ): { value: string; label: string } | null {
   const rung = (n: string) => frame.ladder?.cases.find(c => c.name === n)?.price ?? null
   const bear = rung('Bear'), bull = rung('Bull')
-  const spot = position.price
+  /* The marked price. Read through `spotOf` so this cannot disagree with
+     `gapOf` about the same position, which is the defect it closes: the gap
+     checked the bull rung first and this checked the bear rung first, so on
+     two different prices they named two different breaks. */
+  const spot = spotOf(position, frame)
   if (!frame.ladder?.valid || !(spot > 0)) return null
-  if (bear != null && spot < bear) {
-    return { value: `${(((bear - spot) / bear) * 100).toFixed(1)}%`, label: 'below bear' }
-  }
+  /* Bull BEFORE bear, which is the order `gapOf` resolves them in. A written
+     ladder whose rungs are crossed -- bull below bear, which the data permits
+     -- puts spot outside both at once, and the side that is named must not
+     depend on which function happens to be asking. */
   if (bull != null && spot > bull) {
     return { value: `${(((spot - bull) / bull) * 100).toFixed(1)}%`, label: 'above bull' }
+  }
+  if (bear != null && spot < bear) {
+    return { value: `${(((bear - spot) / bear) * 100).toFixed(1)}%`, label: 'below bear' }
   }
   return null
 }
@@ -879,7 +938,11 @@ function PositionTile({
   const closes = closesIn ?? soloCloses.data
   const rung = (name: string) => frame.ladder?.cases.find(c => c.name === name)?.price ?? null
   const bear = rung('Bear'), bull = rung('Bull')
-  const showScale = !!frame.ladder?.valid && bear != null && bull != null && position.price > 0
+  /* The marked price, so the dot on the scale sits where the verdict says it
+     does. Drawn from the holding's upload price it could sit inside the band
+     under an eyebrow reading "Below bear case". */
+  const spot = spotOf(position, frame)
+  const showScale = !!frame.ladder?.valid && bear != null && bull != null && spot > 0
   const outside = gap === 'above-bull' || gap === 'below-bear'
 
   /*
@@ -1029,7 +1092,7 @@ function PositionTile({
               )}
               {showScale && (
                 <div className="min-w-[200px] flex-1">
-                  <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
+                  <TileScale low={bear!} high={bull!} spot={spot} outside={outside} />
                 </div>
               )}
             </div>
@@ -1085,7 +1148,7 @@ function PositionTile({
             prices for at all.
           */}
           {showScale && (
-            <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
+            <TileScale low={bear!} high={bull!} spot={spot} outside={outside} />
           )}
 
           <div className="flex min-h-0 flex-1 flex-col justify-end">
@@ -1391,7 +1454,13 @@ function WeightChip({ position, active }: {
           label: 'Shares',
           value: position.shares.toLocaleString(undefined, { maximumFractionDigits: 0 }),
         },
-        { label: 'Price', value: `$${position.price.toFixed(2)}` },
+        /* "Book price", not "Price": this is the figure the market value and
+           the shares above it multiply out from, which is the price in the
+           file the book was loaded from and not today's. The marked close is
+           what every verdict on this card is made against, and two numbers
+           both called "price" differing by 88% with nothing to tell them
+           apart is the confusion this label removes. */
+        { label: 'Book price', value: `$${position.price.toFixed(2)}` },
         active == null
           ? { label: 'Active weight', value: 'no benchmark' }
           : {

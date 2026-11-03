@@ -12,7 +12,7 @@ import {
   type HoldingRow,
 } from '../portfolio/holdings'
 import {
-  gapOf, toneForGap, breakPct, whyItMatters, primaryActionFor, issueFor, seedPromptFor,
+  gapOf, spotOf, toneForGap, breakPct, whyItMatters, primaryActionFor, issueFor, seedPromptFor,
   targetFor, tierOf, scoreOf, comparePositions, GAP_LABEL, EMPTY_FRAME,
   type PositionFrame,
 } from './index'
@@ -208,6 +208,51 @@ describe('framework gaps are proved, never inferred', () => {
     const f = frame({ thesisUpdatedAt: daysAgo(10), daysSinceReview: 10, ladder: ladder([['Bear', 100], ['Bull', 300]]) })
     expect(gapOf(p, f)).toBe('below-bear')
     expect(breakPct(p, f)).toBeCloseTo(-50, 1)
+  })
+
+  /**
+   * The verdict is made against the MARKET price, not the book's file.
+   *
+   * `portfolio_holdings.price` is the price that was in the upload the book
+   * came from, carrying that upload's own date. Every framework claim here
+   * used to be made against it, and the numbers below are the live ones that
+   * exposed it: AAPL sits in Large Cap Core at 175.50 as of 2025-08-02, its
+   * written ladder is bear 205 / bull 285, and the newest stored close is
+   * 330.32. So the Portfolio lens called the name 14.4% BELOW its bear case
+   * while the asset page, reading the stored close, called the same name
+   * above its bull case. One click apart, opposite verdicts.
+   */
+  it('judges the case against the stored close, not the price the book was uploaded at', () => {
+    const p = pos({ price: 175.5 })
+    const written = { thesisUpdatedAt: daysAgo(10), daysSinceReview: 10, ladder: ladder([['Bear', 205], ['Bull', 285]]) }
+
+    // What the book's own file says, which is what this used to answer.
+    expect(gapOf(p, frame(written))).toBe('below-bear')
+
+    // What the market says, which is what it answers now.
+    const marked = frame({ ...written, mark: { price: 330.32, asOf: '2026-10-01' } })
+    expect(gapOf(p, marked)).toBe('above-bull')
+    expect(breakPct(p, marked)).toBeCloseTo(15.9, 1)
+    expect(whyItMatters(p, marked)).toContain('above your bull case')
+    expect(spotOf(p, marked)).toBe(330.32)
+  })
+
+  it('falls back to the holding price where no close is stored for the name', () => {
+    const p = pos({ price: 400 })
+    const f = frame({
+      thesisUpdatedAt: daysAgo(10), daysSinceReview: 10,
+      ladder: ladder([['Bear', 100], ['Bull', 300]]),
+      mark: null,
+    })
+    expect(spotOf(p, f)).toBe(400)
+    expect(gapOf(p, f)).toBe('above-bull')
+  })
+
+  /* A mark of zero, or a negative one, is a bad row rather than a price. */
+  it('ignores a mark that is not a price', () => {
+    const p = pos({ price: 400 })
+    expect(spotOf(p, frame({ mark: { price: 0, asOf: '2026-10-01' } }))).toBe(400)
+    expect(spotOf(p, frame({ mark: { price: -5, asOf: '2026-10-01' } }))).toBe(400)
   })
 
   it('makes no framework claim without a valid ladder', () => {

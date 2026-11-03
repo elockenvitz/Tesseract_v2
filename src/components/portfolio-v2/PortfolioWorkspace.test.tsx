@@ -68,8 +68,31 @@ const A_YEAR_RISING: { date: Date; value: number }[] = Array.from({ length: 300 
   date: new Date(Date.now() - (299 - i) * 86_400_000),
   value: 100 + i * 0.08,
 }))
+/**
+ * A flat series ending at `price`, for cases about where spot sits.
+ *
+ * A tile's framework verdict is made against the LAST STORED CLOSE now, not
+ * against `portfolio_holdings.price` -- see `PositionFrame.mark` for the
+ * defect that closed: the book's price is whatever was in the file it was
+ * uploaded from, and on this project AAPL carried 175.50 from August 2025
+ * against a stored close of 330.32, so the lens called it below a bear case
+ * of 205 while the asset page called it above a bull case of 285.
+ *
+ * So a case that wants spot outside the written ladder has to say so in the
+ * series the tile draws. Flat rather than rising, so the distance outside the
+ * case and the six-month move beside it cannot be the same number and a
+ * passing assertion cannot be reading the wrong one.
+ */
+const FLAT_AT = (price: number): { date: Date; value: number }[] =>
+  Array.from({ length: 300 }, (_, i) => ({
+    date: new Date(Date.now() - (299 - i) * 86_400_000),
+    value: price,
+  }))
+
 /** Per test, so a case can say "this name has no stored closes". */
 let tileCloses: { date: Date; value: number }[] = A_YEAR_RISING
+/** Per test, so a case can say "the closes have not landed yet". */
+let closesPending = false
 
 vi.mock('../../hooks/useTileCloses', () => ({
   useTileCloses: () => ({ data: tileCloses, isLoading: false }),
@@ -77,7 +100,7 @@ vi.mock('../../hooks/useTileCloses', () => ({
      series, so these tests see exactly what they saw when each tile fetched
      its own -- the change under test is where the data comes from, not what
      it is. */
-  useGalleryCloses: () => ({ map: { get: () => tileCloses }, pending: false }),
+  useGalleryCloses: () => ({ map: { get: () => tileCloses }, pending: closesPending }),
 }))
 
 vi.mock('../../hooks/useDesktopPortfolio', () => ({
@@ -141,6 +164,7 @@ beforeEach(() => {
   rowsByBook = {}
   frames = {}
   tileCloses = A_YEAR_RISING
+  closesPending = false
   detail = { sections: [], alsoHeldIn: [] }
   bookRequestedFor.length = 0
   detailRequestedFor.length = 0
@@ -263,6 +287,23 @@ describe('the scan leads with the gap, not the holding', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     expect(screen.getByText(/no holdings on record/)).toBeInTheDocument()
   })
+
+  /**
+   * The grid waits for the prices, because the prices decide the ORDER.
+   *
+   * A tile's framework verdict is made against the last stored close, and
+   * `tierOf` ranks the book by that verdict. Painting before the closes land
+   * would order the book by the upload's prices and then re-order it under
+   * the reader's cursor a moment later -- the same reflow the frames gate
+   * already exists to prevent, now with the rows moving as well as growing.
+   */
+  it('holds the one placeholder until the prices have landed', () => {
+    closesPending = true
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 100 })] }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    expect(screen.queryByTestId('portfolio-lens')).not.toBeInTheDocument()
+    expect(screen.queryAllByTestId('position-tile')).toHaveLength(0)
+  })
 })
 
 describe('a position expands into the deck, in place', () => {
@@ -322,6 +363,48 @@ describe('a position expands into the deck, in place', () => {
     expect(t.objectId).toBe('a-1')
     expect(t.originLens).toBe('portfolio')
     expect(t.portfolioId).toBe('p1')
+  })
+
+  /**
+   * The card and the workspace it opens name ONE side of the case.
+   *
+   * ── The report ──────────────────────────────────────────────────────────
+   *
+   * "I clicked on below bear case card for AAPL in portfolio and when I open
+   * the workspace it says above bull case."
+   *
+   * Both were reading a real price. They were reading DIFFERENT real prices:
+   * the tile took `portfolio_holdings.price` -- 175.50, the price in the file
+   * the book was uploaded from in August 2025 -- and the asset page took the
+   * newest stored close, 330.32. Against a written ladder of bear 205 / bull
+   * 285 the first is below the bear and the second is above the bull, so the
+   * two surfaces stated opposite verdicts one click apart.
+   *
+   * The fixture is those numbers. What is asserted is agreement: the
+   * eyebrow, the figures row and the descriptor the host is handed all say
+   * the same thing, and it is the thing the market says.
+   */
+  it('names the same break on the card and in the descriptor it hands the host', async () => {
+    const user = userEvent.setup()
+    tileCloses = FLAT_AT(330.32)
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAPL', shares: 100, price: 175.5 })] }
+    frames = {
+      'a-1': {
+        ...EMPTY_FRAME,
+        ladder: ladder([['Bear', 205], ['Bull', 285]]),
+        thesisUpdatedAt: daysAgo(40), daysSinceReview: 40,
+      },
+    }
+    const onOpenPosition = vi.fn()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" onOpenPosition={onOpenPosition} />)
+
+    const tile = screen.getAllByTestId('position-tile')[0]
+    expect(within(tile).getByText('Above bull case')).toBeInTheDocument()
+    expect(tile.textContent).not.toMatch(/below bear/i)
+    expect(within(tile).getByTestId('tile-stats').textContent).toMatch(/above bull/i)
+
+    await user.click(tile)
+    expect(onOpenPosition.mock.calls[0][0].issue).toBe('Above bull case')
   })
 
   it('does not also dispatch to the deck when a host took it', async () => {
@@ -597,6 +680,10 @@ describe('the tile drops prose that only restates itself', () => {
   it('keeps prose that carries something the figures do not', () => {
     // Spot outside the written case: how far outside is not on the card
     // anywhere else, so the sentence stays.
+    //
+    // The series carries the spot, not the holding row. The verdict is made
+    // against the last stored close now; see `FLAT_AT`.
+    tileCloses = FLAT_AT(400)
     rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 400 })] }
     frames = { 'a-1': { ...EMPTY_FRAME, ladder: ladder([['Bear', 100], ['Bull', 200]]) } }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
@@ -620,7 +707,10 @@ describe('the tile drops prose that only restates itself', () => {
    */
   it('states the figures its finding rests on', () => {
     // Spot at 400 against a written bear of 100 and bull of 200: outside, and
-    // far enough outside that the distance is the first thing to say.
+    // far enough outside that the distance is the first thing to say. The 400
+    // is in the SERIES, which is what the verdict is made against; see
+    // `FLAT_AT`.
+    tileCloses = FLAT_AT(400)
     rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 400 })] }
     frames = {
       'a-1': {
@@ -645,10 +735,12 @@ describe('the tile drops prose that only restates itself', () => {
 
     /*
      * And the move the chart beside it draws, stated rather than left as a
-     * shape. `A_YEAR_RISING` runs 100 -> 123.92, so the card has to say
-     * +23.9% and not, for instance, the spot or the weight.
+     * shape. The series here is FLAT at 400, so the card has to say +0.0% --
+     * which is also the proof that the figure is read off the series and not
+     * off the spot, the rungs or the weight, every one of which is non-zero
+     * on this fixture.
      */
-    expect(stats.textContent).toMatch(/\+23\.9%/)
+    expect(stats.textContent).toMatch(/\+0\.0%/)
     expect(stats.textContent).toMatch(/6 months/i)
   })
 
