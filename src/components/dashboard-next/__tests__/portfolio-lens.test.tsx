@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
@@ -102,8 +104,26 @@ beforeEach(forgetPlace)
 
 const lens = (name: string) => screen.getByRole('button', { name })
 
-/** The feed's half of the screen is hidden by class, never unmounted. */
-const feedIsHidden = () => screen.getByTestId('feed').closest('.hidden') !== null
+/**
+ * The lens the reader is not standing in is hidden by class, never unmounted.
+ *
+ * ── Why the class is no longer `hidden` ───────────────────────────────────
+ *
+ * It was Tailwind's `hidden`, which is `display: none` -- the one way of
+ * hiding something that destroys every layout object in the subtree and
+ * rebuilds them on the way back. MEASURED on the live Dashboard with all
+ * three surfaces warm and React doing nothing but toggling that class:
+ * a 74-81ms task going back to Ideas, and 50-67ms between frames going back
+ * to Explore with no script running at all, because 145 tiles were having
+ * their boxes built from nothing.
+ *
+ * `.lens-stowed` is `content-visibility: hidden`, which skips the contents
+ * the same way and keeps their rendering state. What these cases are about
+ * is unchanged -- mounted, not visible -- so the spelling moves and the
+ * assertions do not.
+ */
+const stowed = (id: string) => screen.getByTestId(id).closest('.lens-stowed') !== null
+const feedIsHidden = () => stowed('feed')
 
 describe('the book sits behind the same bar as the feed', () => {
   it('opens on the feed and has not mounted the book', () => {
@@ -175,7 +195,7 @@ describe('the book sits behind the same bar as the feed', () => {
     /* And the book stays beside it, rather than being replaced by it: the
        reader picks the next holding from the same list. */
     expect(screen.getByTestId('portfolio')).toBeInTheDocument()
-    expect(screen.getByTestId('portfolio').closest('.hidden')).toBeNull()
+    expect(stowed('portfolio')).toBe(false)
   })
 
   /*
@@ -234,7 +254,36 @@ describe('the book sits behind the same bar as the feed', () => {
      * under the book.
      */
     expect(feedIsHidden()).toBe(true)
-    expect(screen.getByTestId('explore').closest('.hidden')).not.toBeNull()
+    expect(stowed('explore')).toBe(true)
+  })
+
+  /**
+   * And the stowing is the cheap kind.
+   *
+   * ── Why a class name is the subject ─────────────────────────────────────
+   *
+   * jsdom has no layout and no `content-visibility`, so the only honest way
+   * to assert this here is the contract between the shell and the stylesheet:
+   * the shell asks for `.lens-stowed`, and `.lens-stowed` is the rule that
+   * keeps the rendering state. Both halves are pinned, because either one
+   * alone passes while the other is wrong -- a shell that went back to
+   * `hidden` would still find the rule in the stylesheet, and a rule changed
+   * to `display: none` would still be named by the shell.
+   *
+   * The cost it protects is invisible in every other test and plain on
+   * screen: a 74-81ms task on every press, measured in the running app.
+   */
+  it('stows a lens without throwing its layout away', () => {
+    const shell = readFileSync(join(process.cwd(), 'src/components/dashboard-next/DashboardNext.tsx'), 'utf8')
+    /* Every one of the three, so a lens added later cannot quietly keep the
+       expensive spelling. */
+    expect(shell.match(/lens !== '(feed|explore|portfolio)' && 'lens-stowed'/g)).toHaveLength(3)
+
+    const css = readFileSync(join(process.cwd(), 'src/index.css'), 'utf8')
+    const rule = css.slice(css.indexOf('.lens-stowed {'))
+    expect(rule.slice(0, rule.indexOf('}'))).toMatch(/content-visibility:\s*hidden/)
+    /* Out of flow, or the showing lens gets a third of the column. */
+    expect(rule.slice(0, rule.indexOf('}'))).toMatch(/position:\s*absolute/)
   })
 
   it('is one row with three buttons, not a second navigation idiom', () => {

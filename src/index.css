@@ -369,6 +369,42 @@
      The one-track base is not decoration either -- without it the tile's own
      `md:col-span-6` still fires at any window wider than 768px, which is every
      desktop, and a 6-wide tile in a 1-track grid overflows the pane. */
+  /* ── A lens the reader is not standing in ──────────────────────────────
+
+     The Dashboard keeps all three browse surfaces mounted and shows one, so
+     that each keeps its scroll, its filters and its loaded pages. It did
+     that with Tailwind's `hidden`, which is `display: none`, and that is the
+     one way of hiding something that throws the work away: the browser
+     destroys every layout object in the subtree and rebuilds the lot on the
+     way back.
+
+     MEASURED on the live Dashboard, every surface already warm, nothing
+     fetching and React doing almost nothing -- 7 to 9 DOM mutations per
+     press, which is one class and two `aria-pressed`:
+
+         to Ideas     a 74-81ms task, frames 66-117ms apart
+         to Explore   no script at all, and still 50-67ms between frames
+
+     Explore's is the clearer half: no JavaScript runs and the frame is still
+     late, because 145 tiles are having their boxes built from nothing.
+
+     `content-visibility: hidden` skips the contents exactly as `display:
+     none` does, and PRESERVES their rendering state, which is the whole
+     difference. The box is taken out of flow so the showing lens still gets
+     the full column, and it paints nothing and takes no pointer, so being
+     last in the stacking order costs nothing.
+
+     Not `visibility: hidden`: that keeps the subtree in layout, so all three
+     lenses would be laid out on every frame and the off-screen tiles' own
+     `content-visibility: auto` would stop saving anything -- they would be
+     inside the viewport, which is the test it applies. */
+  .lens-stowed {
+    position: absolute;
+    inset: 0;
+    content-visibility: hidden;
+    pointer-events: none;
+  }
+
   .gallery-region {
     grid-template-columns: minmax(0, 1fr);
   }

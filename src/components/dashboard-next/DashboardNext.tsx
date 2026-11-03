@@ -483,7 +483,10 @@ export function DashboardNext() {
         <div className="flex h-full">
           <div
             className={clsx(
-              'flex min-w-0 flex-col border-r border-gray-200 dark:border-gray-700',
+              /* `relative`, because a stowed lens is taken out of flow and
+                 pinned to this column rather than left to take a third of
+                 it. See `.lens-stowed`. */
+              'relative flex min-w-0 flex-col border-r border-gray-200 dark:border-gray-700',
               /*
                * ~30% between 20rem and 26rem, down from ~42% between 30 and
                * 40. Two reasons, and the second is the one that matters.
@@ -550,7 +553,7 @@ export function DashboardNext() {
                    with a back band above, and `h-full` would measure the whole
                    column and push the surface's own scroller past the bottom.
                    All three wrappers below carry the same pair. */
-                className={clsx('min-h-0 flex-1', lens !== 'portfolio' && 'hidden')}
+                className={clsx('min-h-0 flex-1', lens !== 'portfolio' && 'lens-stowed')}
               >
                 <Book
                   onOpenPosition={openPosition}
@@ -571,7 +574,7 @@ export function DashboardNext() {
                 />
               </div>
             )}
-            <div className={clsx('min-h-0 flex-1', lens !== 'explore' && 'hidden')}>
+            <div className={clsx('min-h-0 flex-1', lens !== 'explore' && 'lens-stowed')}>
               <Explore
                 /*
                   EXPLORE's own selection, not the lens the reader happens to
@@ -592,7 +595,7 @@ export function DashboardNext() {
                 column the two spellings meant the same thing; now that there
                 are three lenses in it, the old one would draw the feed
                 underneath the book. */}
-            <div className={clsx('min-h-0 flex-1', lens !== 'feed' && 'hidden')}>
+            <div className={clsx('min-h-0 flex-1', lens !== 'feed' && 'lens-stowed')}>
               <Feed
                 /* The FEED's own selection. See the note on Explore's: these
                    read `selected`, which is whichever lens is on screen, so
