@@ -1691,12 +1691,48 @@ export function SignalCardView({
           * text without hiding the box is what keeps the footer where their
           * thumb left it.
           */}
-        {!!card.body?.trim() && bodyIsPrimaryProse(card.type) && (
+        {/**
+          * ── Supporting prose comes back, on the SURFACE that has room ─────
+          *
+          * It was removed from every card, and the reason was good: "im still
+          * seeing sometimes the text at the bottom and sometimes why it
+          * matters. i should only see why it matters and not the text at all
+          * anymore." A depth that is sometimes in the tile is not a depth.
+          *
+          * But that was decided against a PHONE tile, and the arithmetic in
+          * the commit that removed it is all phone arithmetic: a 582px card
+          * where two body lines cost 44px, taken off the chart above them,
+          * and the gap before the tray was paid for by the paragraph leaving.
+          * Every guard that pins the absence runs at 360, 390 and 430.
+          *
+          * The desktop feed card has the opposite problem. Measured live on
+          * the Case vs Price tile at 1920: the narrative column is 250px of
+          * content inside a 315px row, because the carousel beside it is
+          * taller -- so the column ends with a growing spacer and then the
+          * affordance, and the words the affordance leads to are nowhere on
+          * a tile with room for them twice over.
+          *
+          * So the rule is per layout rather than per card: `viewport` is the
+          * phone tile and keeps the depth exactly as decided; `flow` is a
+          * card in a scrolling desktop column, where the sentence costs two
+          * lines of a surplus and answers the question the prompt asks.
+          *
+          * `data-prose-role` is unchanged and still derived from the TYPE, so
+          * it keeps reporting "supporting" here and the phone guard keeps
+          * meaning what it meant.
+          */}
+        {!!card.body?.trim() && (bodyIsPrimaryProse(card.type) || layout === 'flow') && (
         <div
           data-slot="body-region"
           data-prose-role={bodyIsPrimaryProse(card.type) ? 'primary' : 'supporting'}
           className={clsx(
-            'relative shrink-0 text-[15px] leading-[1.5] text-gray-600 dark:text-gray-300',
+            'relative shrink-0 leading-[1.5] text-gray-600 dark:text-gray-300',
+            /* A supporting sentence is not the finding and must not be set at
+               the size of one. 15px is the prompt directly above it; 14px and
+               a reading measure put it a step below, which is the relationship
+               the two lines actually have. Primary prose IS the post and keeps
+               its size. */
+            bodyIsPrimaryProse(card.type) ? 'text-[15px]' : 'max-w-[62ch] text-[14px]',
             // Exactly two lines, by construction rather than by measurement.
             // The paragraph inside may wrap to one line or to two; the box does
             // not change either way, so nothing below it can move.

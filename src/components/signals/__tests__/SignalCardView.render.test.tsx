@@ -351,4 +351,46 @@ describe('SignalCardView renders every builder output', () => {
     )
     expect(container.querySelector('[data-testid="chart"]')).toBeNull()
   })
+
+  /**
+   * ── Supporting prose, on the surface that has room for it ───────────────
+   *
+   * This is the half that the phone guard cannot see, and it is the half
+   * that keeps getting dropped.
+   *
+   * `e2e/responsive.spec.ts > supporting prose is never in the tile` asserts
+   * the ABSENCE, at 360, 390 and 430. It is right and it stays: on a phone
+   * the paragraph cost 44px of a 582px card, taken off the chart above it,
+   * and the reader asked for it to go.
+   *
+   * Nothing asserted the presence anywhere, so the desktop feed card -- a
+   * narrative column 250px tall inside a 315px row, ending in a spacer that
+   * grows -- rendered the affordance and not the words it leads to, on a
+   * tile with room for them twice over. The material was built and dropped
+   * at the last gate.
+   *
+   * Both directions are pinned here, off the one prop that distinguishes the
+   * two surfaces, so neither can be changed without the other being noticed.
+   */
+  it('renders supporting prose in a flow card and never in a viewport tile', () => {
+    const flow = render(
+      <SignalCardView card={RISK} onAction={noop} onOpen={noop} layout="flow" />,
+    )
+    const region = flow.container.querySelector('[data-slot="body-region"]')
+    expect(region, 'a flow card drops the sentence its prompt is asking about').toBeTruthy()
+    expect(region!.textContent).toContain(RISK.body)
+    /* The role still comes from the TYPE, not the layout, so the phone guard
+       keeps meaning what it meant: this IS supporting prose, drawn on a
+       surface that can afford it. */
+    expect(region!.getAttribute('data-prose-role')).toBe('supporting')
+
+    flow.unmount()
+    const tile = render(
+      <SignalCardView card={RISK} onAction={noop} onOpen={noop} layout="viewport" />,
+    )
+    expect(
+      tile.container.querySelector('[data-slot="body-region"]'),
+      'the phone tile is Depth 2 and must carry no supporting paragraph',
+    ).toBeNull()
+  })
 })
