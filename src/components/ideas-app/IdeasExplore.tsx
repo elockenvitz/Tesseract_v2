@@ -8,8 +8,8 @@ import { CuratePanel } from './CuratePanel'
 import { EMPTY_FILTER, filterCount, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { SignalCardView } from '../signals/SignalCardView'
 import { ideaPanes } from '../signals/ideaPanes'
-import { FeedPreview } from '../signals/FeedPreview'
-import { previewFor, previewSymbol } from '../../lib/signals/feed-preview'
+import { FeedPreviewCarousel } from '../signals/FeedPreview'
+import { previewsFor, previewSymbol } from '../../lib/signals/feed-preview'
 import { primaryForFeed } from '../../lib/signals/feed-primary'
 import { progressionFor } from '../../lib/desktop-ideas/progression'
 import { selectionFor } from '../../lib/desktop-ideas/selection'
@@ -444,10 +444,18 @@ export function IdeasExplore({
             const sym = previewSymbol(entry.card)
             /* Dated closes: the desktop chart reads out the date under the
                cursor, which bare numbers cannot answer. */
-            const preview = previewFor(
+            /* Every object this card supports, finding first. It was
+               `previewFor`, which returns at most one and threw the price
+               series away unread on any card whose finding was a ladder or a
+               set of bars. See `previewsFor`. */
+            const panes = previewsFor(
               entry.family, entry.card, entry.source,
               sym ? history?.get(sym) : undefined,
             )
+            /* The two places below ask only WHETHER there is a right column:
+               the prose layout switches on it and the aside renders on it.
+               Neither needs the descriptor, so neither gets one. */
+            const preview = panes.length > 0
             return (
             <div
               key={entry.key}
@@ -598,7 +606,7 @@ export function IdeasExplore({
               */}
               {preview && (
                 <div className="feed-tile-aside border-t border-gray-100 px-4 py-3 dark:border-gray-800">
-                  <FeedPreview preview={preview} />
+                  <FeedPreviewCarousel panes={panes} />
                 </div>
               )}
               </div>

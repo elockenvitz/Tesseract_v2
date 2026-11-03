@@ -40,6 +40,37 @@ export type FeedPreview =
   /** A weight distribution — across books, or against a benchmark. */
   | { kind: 'exposure'; rows: WeightRow[]; unitNote: string; baselineIndex: number }
 
+/**
+ * One pane of a feed card's carousel: an object, and the word for it.
+ *
+ * ── Why the feed draws one picture and the gallery draws several ──────────
+ *
+ * `previewFor` below answers with AT MOST ONE object, by a chain of early
+ * returns. That is not a judgment that one is enough; it is the shape the
+ * function was given before anything could page. Meanwhile the Explore tile
+ * next to it has built a list of panels and shipped a pager for them for some
+ * time, and `VisualPager` is a shared component precisely so both surfaces
+ * page the same way.
+ *
+ * The cost is concrete. A scenario card's price series is already fetched
+ * (the feed collects every preview symbol in one batched read) and already
+ * handed to `previewFor` -- and then thrown away unread, because the ladder
+ * branch returns before the sparkline branch is reached. The reader is shown
+ * the cases and cannot reach the price that moved against them, on a card
+ * whose entire claim is about the distance between the two.
+ *
+ * So: a list, ordered, with the pane that IS the finding first. Nothing new
+ * is fetched and nothing is invented. `previewsFor` composes the same
+ * branches; they just stop cutting each other off.
+ */
+export interface FeedPreviewPane {
+  /** Stable handle, for tests and for restoring a pane. Never shown. */
+  id: string
+  /** One short sentence-case word, as `VisualPager` takes them. */
+  label: string
+  preview: FeedPreview
+}
+
 /** The structured row a machine-derived candidate came from. */
 export interface PreviewSource {
   /** `CrowdedName.weightsByPortfolio` */
@@ -121,9 +152,99 @@ export function previewFor(
   return null
 }
 
+/**
+ * Every object this card can support, in the order a reader should meet them.
+ *
+ * The FINDING leads. Whatever raised the card is the first pane, because that
+ * is the pane the headline is about and a reader who pages nowhere must still
+ * be looking at the right thing. The price trails it, because "what has it
+ * done lately" is the question asked second on every one of these cards and
+ * the series is already in hand.
+ *
+ * Where the finding IS the price path, there is one pane and no pager -- the
+ * sparkline branch of `previewFor` returns a `price` object, and a second
+ * copy of it behind an arrow would be furniture. `VisualPager` draws nothing
+ * below two labels, so that case needs no special handling here, but it is
+ * guarded anyway so the list never carries the same object twice.
+ */
+export function previewsFor(
+  family: string,
+  card: SignalCard,
+  source: PreviewSource | null,
+  series: { date: string; close: number }[] | undefined,
+): FeedPreviewPane[] {
+  const panes: FeedPreviewPane[] = []
+
+  const lead = previewFor(family, card, source, series)
+  if (lead) {
+    panes.push({
+      id: lead.kind,
+      /*
+       * Sentence case and one word, which is `VisualPager`'s contract. These
+       * are the reader's words for the object, not the descriptor's: "Cases"
+       * rather than "scenario_ladder", "Exposure" rather than "exposure".
+       */
+      label: lead.kind === 'scenario_ladder' ? 'Cases'
+        : lead.kind === 'exposure' ? 'Exposure'
+        : 'Price',
+      preview: lead,
+    })
+  }
+
+  /*
+   * The price, where it is not already the lead and where there is a line to
+   * draw. Two closes is the same floor the sparkline branch uses: a single
+   * point is not a path, and a flat stroke through it would be a claim about
+   * the price that nobody made.
+   */
+  if (lead?.kind !== 'price' && series && series.length >= 2) {
+    panes.push({
+      id: 'price',
+      label: 'Price',
+      /*
+       * No reference level. The ladder pane already carries the cases, and a
+       * `reference` here would have to come from `evidence.data.target`,
+       * which a scenario card does not have -- the sparkline branch reads it
+       * from its own evidence kind. Drawing an unlabelled line at a number
+       * this card never declared is the kind of invented fact the header
+       * above rules out.
+       */
+      preview: { kind: 'price', series, reference: null },
+    })
+  }
+
+  return panes
+}
+
 /** The symbol a candidate needs price history for. Drives the feed's batch. */
 export function previewSymbol(card: SignalCard): string | null {
-  if (card.evidence?.kind !== 'sparkline') return null
-  const d = card.evidence.data as { symbol?: string } | null
+  /*
+   * ── Why this used to answer only for sparkline cards ─────────────────────
+   *
+   * The feed collects these symbols into ONE batched price read, and the only
+   * consumer of that read was the sparkline branch of `previewFor`. So the
+   * gate was "does this card's evidence declare a sparkline", and for every
+   * other card the answer was null.
+   *
+   * That gate is now circular. `previewsFor` gives a scenario or exposure
+   * card a second pane carrying the price -- which is the question a reader
+   * asks second on exactly those cards, since the claim is about the distance
+   * between a written case and where the price actually went. But the pane
+   * can only exist if the series was fetched, and the series was only fetched
+   * if the card was already a price card. A ladder card could never reach its
+   * own price.
+   *
+   * So the question becomes the one that was always meant: is this card about
+   * a NAME. A card with a ticker can show that ticker's price; a prompt, a
+   * thought or a card about a book has no ticker and still answers null, so
+   * the batch does not grow by a single symbol that has nothing to draw.
+   *
+   * The sparkline's own `data.symbol` still wins where it is present -- an
+   * evidence row may name a symbol other than the card's entity, and that one
+   * is the one its line was computed for.
+   */
+  const d = card.evidence?.kind === 'sparkline'
+    ? (card.evidence.data as { symbol?: string } | null)
+    : null
   return (d?.symbol ?? card.entity?.ticker ?? null)?.toUpperCase() ?? null
 }
