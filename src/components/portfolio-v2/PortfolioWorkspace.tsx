@@ -51,6 +51,8 @@ import {
      two of the four ways it used to state what a position weighs; `WeightChip`
      in the tile's corner is the one way now. */
   TileBar, TileScale, TileAction,
+  /* The figures row the kit has always had and this lens never called. */
+  TileStats,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 /* The shared price chart -- the same object Decisions draws, not a sparkline
@@ -333,6 +335,80 @@ function outsideBy(
     return { value: `${(((spot - bull) / bull) * 100).toFixed(1)}%`, label: 'above bull' }
   }
   return null
+}
+
+/**
+ * The figures that frame the tile's finding, each under its own key.
+ *
+ * ── What the tile showed instead ─────────────────────────────────────────
+ *
+ * An eyebrow, a ticker and a chart. On a name with nothing written -- which
+ * is most of this book -- the sentence is deliberately suppressed and the
+ * ladder does not exist, so the card went straight from the company name to
+ * a price line with not one number on it. The reader could see the shape of
+ * six months and could not read a single value off the card.
+ *
+ * `TileStats` has existed in the tile kit the whole time, at the exact scale
+ * this wants: a 19px mono figure over a 9.5px uppercase key. The Portfolio
+ * tile never called it.
+ *
+ * ── What goes in, and what deliberately does not ─────────────────────────
+ *
+ * Each figure is a fact already on the frame or on the series the chart is
+ * drawn from. Nothing is derived from a source the card does not show:
+ *
+ *   how far outside   `outsideBy`, the same number the rail card carries
+ *   the rung it broke the written bear or bull, so the distance can be
+ *                     checked rather than taken on trust
+ *   six months        first to last close of the SAME series `TilePriceChart`
+ *                     plots, named for the window `TILE_HISTORY_DAYS` sets
+ *   since written     `frame.daysSinceReview`, where a case exists
+ *
+ * The WEIGHT is not here, and that is the point of the corner chip: it is
+ * stated once, at every size, with the dollars and the shares one click
+ * behind it. Four ways to say what a position weighs is what the chip
+ * replaced, and a fifth would undo it.
+ *
+ * Unpriced names simply get fewer figures. A row of three is not a target.
+ */
+function tileStatsFor(
+  p: Position, f: PositionFrame, closes: readonly TileClose[] | undefined, max: number,
+): { value: string; key: string; tone?: SemanticTone }[] {
+  const out: { value: string; key: string; tone?: SemanticTone }[] = []
+
+  const outside = outsideBy(p, f)
+  if (outside) {
+    out.push({ value: outside.value, key: outside.label, tone: 'critical' })
+    /* The rung it broke, so the distance above is auditable on the card.
+       Read back off the ladder rather than recomputed, so the two figures
+       cannot disagree. */
+    const rung = f.ladder?.cases.find(
+      c => c.name === (outside.label === 'below bear' ? 'Bear' : 'Bull'),
+    )?.price
+    if (rung != null) {
+      out.push({
+        value: `$${rung.toFixed(rung < 10 ? 2 : 0)}`,
+        key: outside.label === 'below bear' ? 'your bear' : 'your bull',
+      })
+    }
+  }
+
+  /* The move the chart beside it draws, stated. Guarded on both ends being
+     real and the first being non-zero: a series that starts at zero is a bad
+     row, not a position that went up infinitely. */
+  if (closes && closes.length >= 2) {
+    const first = closes[0].value, last = closes[closes.length - 1].value
+    if (first > 0 && Number.isFinite(last)) {
+      const pct = ((last - first) / first) * 100
+      out.push({ value: `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`, key: '6 months' })
+    }
+  }
+
+  if (f.daysSinceReview != null) {
+    out.push({ value: `${f.daysSinceReview}d`, key: 'since written' })
+  }
+
+  return out.slice(0, max)
 }
 
 /**
@@ -921,6 +997,11 @@ function PositionTile({
             </p>
           )}
 
+          {/* The figures, under the sentence and above the objects that
+              describe the case. Three is the most a tile of this width reads
+              as separate facts rather than one long number. */}
+          <TileStats stats={tileStatsFor(position, frame, closes, 3)} size={size} />
+
           {/*
             The case's own objects, side by side on one row rather than stacked
             into a column: the standing window, and either the written ladder
@@ -983,6 +1064,11 @@ function PositionTile({
           {tileReasonFor(position, frame) && (
             <TileReason>{tileReasonFor(position, frame)}</TileReason>
           )}
+
+          {/* Two, not three: a medium cell is roughly half the width and the
+              third figure wrapped onto a line of its own, which reads as a
+              second row of content rather than as the same row continued. */}
+          <TileStats stats={tileStatsFor(position, frame, closes, 2)} size={size} />
 
           {/*
             ── The ladder AND the price, not one or the other ────────────────

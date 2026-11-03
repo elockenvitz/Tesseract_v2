@@ -604,6 +604,89 @@ describe('the tile drops prose that only restates itself', () => {
     expect(tile.textContent).toMatch(/above your bull case/i)
   })
 
+  /**
+   * The figures the finding rests on, on the card.
+   *
+   * ── What the tile showed instead ────────────────────────────────────────
+   *
+   * An eyebrow, a ticker and a chart. On a name with nothing written -- most
+   * of this book -- the sentence is deliberately suppressed and there is no
+   * ladder, so the card ran from the company name straight to a price line
+   * with not one number on it. Reported as the tiles not looking like the
+   * prototype, whose tile carries two or three figures under uppercase keys.
+   *
+   * `TileStats` was already in the kit at that exact scale. This lens never
+   * called it.
+   */
+  it('states the figures its finding rests on', () => {
+    // Spot at 400 against a written bear of 100 and bull of 200: outside, and
+    // far enough outside that the distance is the first thing to say.
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 400 })] }
+    frames = {
+      'a-1': {
+        ...EMPTY_FRAME,
+        ladder: ladder([['Bear', 100], ['Bull', 200]]),
+        thesisUpdatedAt: daysAgo(40), daysSinceReview: 40,
+      },
+    }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const stats = within(screen.getAllByTestId('position-tile')[0]).getByTestId('tile-stats')
+
+    /*
+     * How far outside, and THE RUNG IT BROKE. The distance alone is a claim
+     * the reader cannot check; "100.0% above bull" beside "$200 your bull"
+     * is one they can, and the rung is read back off the same ladder the
+     * distance was computed from so the two cannot disagree.
+     */
+    expect(stats.textContent).toMatch(/100\.0%/)
+    expect(stats.textContent).toMatch(/above bull/i)
+    expect(stats.textContent).toMatch(/\$200/)
+    expect(stats.textContent).toMatch(/your bull/i)
+
+    /*
+     * And the move the chart beside it draws, stated rather than left as a
+     * shape. `A_YEAR_RISING` runs 100 -> 123.92, so the card has to say
+     * +23.9% and not, for instance, the spot or the weight.
+     */
+    expect(stats.textContent).toMatch(/\+23\.9%/)
+    expect(stats.textContent).toMatch(/6 months/i)
+  })
+
+  /**
+   * And the weight is NOT among them.
+   *
+   * The corner chip states it once, at every size, with the dollars and the
+   * shares one click behind it -- which is what replaced four different ways
+   * of saying the same thing. A fifth in the figures row would undo that,
+   * and a row of figures is exactly where it would look like it belonged.
+   */
+  it('leaves the weight to the corner, where it is stated once', () => {
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'GOOGL', shares: 100, price: 100 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME } }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')[0]
+    expect(within(tile).getByTestId('tile-stats').textContent).not.toMatch(/weight/i)
+    // Still stated, in the one place that states it.
+    expect(within(tile).getByTestId('position-weight')).toBeInTheDocument()
+  })
+
+  /**
+   * An unpriced name draws fewer figures, not padded ones.
+   *
+   * A row of three is not a target. With no closes there is no six-month
+   * move to state, and inventing one -- from the spot, from the weight --
+   * would put a number on the card that the card cannot show the source of.
+   */
+  it('draws no figures row at all when there is nothing to put in it', () => {
+    tileCloses = []
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'GOOGL', shares: 100, price: 100 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME } }   // no ladder, no review date
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    expect(
+      within(screen.getAllByTestId('position-tile')[0]).queryByTestId('tile-stats'),
+    ).toBeNull()
+  })
+
   it('lets the chart take the height the other column does not use', () => {
     rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'GOOGL', shares: 100, price: 100 })] }
     frames = { 'a-1': { ...EMPTY_FRAME } }
