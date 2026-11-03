@@ -1262,10 +1262,36 @@ export function TileClaim({
        * Leading drops to 1.45 with it: 1.5 is a reading measure for a
        * paragraph and this is three lines in a card.
        */
-      size === 'hero' ? 'line-clamp-3 text-[17px] leading-[1.45]'
-        : size === 'large' ? 'line-clamp-3 text-[15px] leading-[1.45]'
-        : size === 'medium' ? 'line-clamp-3 text-[13px] leading-[1.45]'
-        : 'line-clamp-2 text-[12px] leading-[1.45]',
+      /*
+       * ── And the ladder's BOTTOM rung is the one that matters ────────────
+       *
+       * The step above raised the claim off an 11px caption. Measured on the
+       * live field straight after, it had barely moved: 90 of 145 tiles are
+       * `compact` and compact's rung is 12px, so 62% of the field changed by
+       * ONE PIXEL. 40 more went to 13. Only the 18 large-and-up tiles got a
+       * size a reader would notice, and the reader's words for the result
+       * were that nothing looked different. They were right.
+       *
+       * The ladder was wrong for this because of what it was drawn for: a
+       * long written thesis inside a small card, where 12px buys lines. A
+       * finding is one clause and there is no trade to make -- at the width
+       * these cells actually are, 15px fits it.
+       *
+       * The widths, measured in the 12-track field at 1920: a compact cell is
+       * ~430px and a medium ~430px, which is wider than the phone this type
+       * scale is cautious for. In the narrow rail every cell is 376px, and
+       * 15px is what the prototype sets its own full-width tiles at. Neither
+       * is tight.
+       *
+       * So the rungs compress: 17 for the one featured tile and 15 for
+       * everything else, which is the prototype's own ladder rather than a
+       * four-step descent to a caption. `compact` keeps the two-line clamp,
+       * so it buys the size with ~6px of height and not with a third line.
+       */
+      size === 'hero' ? 'line-clamp-3 text-[17px] leading-[1.4]'
+        : size === 'large' ? 'line-clamp-3 text-[16px] leading-[1.4]'
+        : size === 'medium' ? 'line-clamp-3 text-[15px] leading-[1.4]'
+        : 'line-clamp-2 text-[15px] leading-[1.4]',
     )}>
       {children}
     </p>
