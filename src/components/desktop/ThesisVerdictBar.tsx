@@ -129,7 +129,9 @@ export function ThesisVerdictBar({
       className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-1.5 dark:border-white/10 dark:bg-white/[0.03]"
       data-slot="research-thesis-review"
     >
-      <span className="text-[11px] font-medium text-gray-500">
+      {/* The question is asked, not labelled: it takes the row step its own
+          answers take, not the caption step beneath them. */}
+      <span className="text-[13px] font-medium text-gray-500">
         Does the case still hold?
       </span>
       <span className="flex items-center gap-1.5">
@@ -144,7 +146,7 @@ export function ThesisVerdictBar({
               onClick={() => recordReview(choice.outcome)}
               disabled={reviewPending || standing}
               className={clsx(
-                'rounded-lg border px-2.5 py-1 text-[12px] font-semibold transition-colors',
+                'rounded-lg border px-2.5 py-1 text-[13px] font-semibold transition-colors',
                 standing
                   ? VERDICT_SELECTED[choice.outcome]
                   : clsx(VERDICT_TONE[choice.outcome], 'disabled:opacity-60'),
@@ -158,7 +160,7 @@ export function ThesisVerdictBar({
       {!compact && (
         <span
           data-slot="research-review-standing"
-          className="w-[19rem] shrink-0 whitespace-nowrap text-[12px] text-gray-500"
+          className="w-[19rem] shrink-0 whitespace-nowrap text-[13px] text-gray-500"
         >
           {reviewPending ? 'Recording…' : reviewState ? (
             <>

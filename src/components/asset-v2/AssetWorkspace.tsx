@@ -188,7 +188,7 @@ export function AssetWorkspacePane({
           type="button"
           onClick={() => setEditing(v => !v)}
           className={clsx(
-            'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-semibold',
+            'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-semibold',
             editing
               ? 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]'
               : 'text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30',
@@ -210,12 +210,12 @@ export function AssetWorkspacePane({
             <div className="mt-4 border-t border-gray-200 pt-3 dark:border-white/10">
               <div className={EYEBROW}>Also on record</div>
               {peripheral.map(sec => (
-                <p key={sec.section} className="mt-1.5 text-[12px] text-gray-600 dark:text-gray-400">
+                <p key={sec.section} className="mt-1.5 text-[13px] text-gray-600 dark:text-gray-400">
                   <span className="font-semibold">{SECTION_LABEL[sec.section] ?? sec.section}:</span>{' '}
                   {sec.content}
                 </p>
               ))}
-              <p className="mt-1.5 text-[10px] text-gray-500">
+              <p className="mt-1.5 text-[11px] text-gray-500">
                 Supporting sections sit outside the core case and do not move the review date.
               </p>
             </div>
@@ -226,22 +226,22 @@ export function AssetWorkspacePane({
           {core.map(sec => (
             <div key={sec.section}>
               <div className={EYEBROW}>{SECTION_LABEL[sec.section] ?? sec.section}</div>
-              <p className="mt-1 max-w-[74ch] whitespace-pre-line text-[14px] leading-[1.65] text-gray-900 dark:text-gray-100">
+              <p className="mt-1 max-w-[74ch] whitespace-pre-line text-[15px] leading-[1.7] text-gray-900 dark:text-gray-100">
                 {sec.content || <span className="italic text-gray-500">Empty.</span>}
               </p>
               {sec.supportingDetail && (
-                <p className="mt-1.5 max-w-[74ch] text-[12px] leading-relaxed text-gray-600 dark:text-gray-400">
+                <p className="mt-1.5 max-w-[74ch] text-[13px] leading-relaxed text-gray-600 dark:text-gray-400">
                   {sec.supportingDetail}
                 </p>
               )}
-              <div className="mt-1 text-[10px] text-gray-500">
+              <div className="mt-1 text-[11px] text-gray-500">
                 {sec.authorName ? `${sec.authorName} · ` : ''}
                 {new Date(sec.updatedAt).toLocaleDateString()}
               </div>
             </div>
           ))}
           {peripheral.length > 0 && (
-            <p className="text-[11px] text-gray-500">
+            <p className="text-[13px] text-gray-500">
               {peripheral.length} supporting section{peripheral.length === 1 ? '' : 's'} also on record.
             </p>
           )}
@@ -253,7 +253,7 @@ export function AssetWorkspacePane({
           <p className="text-[15px] leading-relaxed text-gray-900 dark:text-gray-100">
             No core investment case has been written for {symbol ?? 'this name'}.
           </p>
-          <p className="mt-1.5 text-[12px] text-gray-600 dark:text-gray-400">
+          <p className="mt-1.5 text-[13px] text-gray-600 dark:text-gray-400">
             {data.evidence.length > 0
               ? `${data.evidence.length} research item${data.evidence.length === 1 ? '' : 's'} exist${data.evidence.length === 1 ? 's' : ''} against it`
               : 'No research is on record either'}
@@ -284,7 +284,7 @@ export function AssetWorkspacePane({
       <div className="flex flex-col gap-2">
         {newEvidence.slice(0, 8).map(e => <EvidenceRow key={e.id} item={e} isNew />)}
       </div>
-      <p className="mt-2.5 text-[10px] text-gray-500">
+      <p className="mt-2.5 text-[11px] text-gray-500">
         Dated after the case was last written. Whether each supports or
         challenges it is not recorded — that is the review.
       </p>
@@ -306,11 +306,11 @@ export function AssetWorkspacePane({
       {position.weightPct != null ? (
         <WeightBar weightPct={position.weightPct} max={maxWeight} label={`Weight in ${position.portfolioName}`} />
       ) : (
-        <p className="text-[11px] text-gray-500">
+        <p className="text-[13px] text-gray-500">
           This book&apos;s market value could not be derived, so no weight is shown.
         </p>
       )}
-      <div className="mt-3 flex flex-col gap-1.5 text-[11px]">
+      <div className="mt-3 flex flex-col gap-1.5 text-[13px]">
         <Row k="Shares" v={position.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} />
         <Row k="Market value" v={bigMoney(position.marketValue)} />
         {position.avgCost != null && <Row k="Average cost" v={money(position.avgCost)} />}
@@ -323,7 +323,7 @@ export function AssetWorkspacePane({
         )}
       </div>
       {position.avgCost == null && (
-        <p className="mt-2 text-[10px] text-gray-500">
+        <p className="mt-2 text-[11px] text-gray-500">
           No average cost on record, so no unrealised figure is shown.
         </p>
       )}
@@ -334,15 +334,15 @@ export function AssetWorkspacePane({
     <DesktopSection key="also" title="Also held in">
       <div className="flex flex-col gap-1">
         {others.map(o => (
-          <div key={o.portfolioId} className="flex items-baseline gap-2 text-[12px]">
+          <div key={o.portfolioId} className="flex items-baseline gap-2 text-[13px]">
             <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">{o.portfolioName}</span>
             {/* Each book's weight is against its OWN market value. Showing one
                 book's percentage beside another book's name is the confusion a
                 name held at 25% in one fund and 4% in another produces. */}
-            <span className="font-mono text-[11px] text-gray-500">
+            <span className="font-mono text-[13px] text-gray-500">
               {o.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} sh
             </span>
-            <span className="w-14 text-right font-mono text-[11px] font-semibold tabular-nums">
+            <span className="w-16 text-right font-mono text-[13px] font-semibold tabular-nums">
               {o.weightPct != null ? `${o.weightPct.toFixed(1)}%` : '—'}
             </span>
           </div>
@@ -355,12 +355,12 @@ export function AssetWorkspacePane({
     <DesktopSection key="research-state" title="Research status">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className={clsx(
-          'rounded-full border px-2 py-[2px] text-[10px] font-bold uppercase tracking-wider',
+          'rounded-full border px-2 py-[2px] text-[11px] font-semibold uppercase tracking-wider',
           TONE_PILL[RESEARCH_TONE[state] ?? 'neutral'],
         )}>
           {STATE_LABEL[state]}
         </span>
-        <span className="text-[12px] text-gray-600 dark:text-gray-400">
+        <span className="text-[13px] text-gray-600 dark:text-gray-400">
           {data.evidence.length} research item{data.evidence.length === 1 ? '' : 's'}
           {priorEvidence.length !== data.evidence.length && `, ${newEvidence.length} since the case`}
         </span>
@@ -368,7 +368,7 @@ export function AssetWorkspacePane({
       {/* There is no reviewed_at column and no review event anywhere in the
           schema, so "reviewed, unchanged" cannot be recorded. Said plainly
           rather than papered over with a button that would fake it. */}
-      <p className="mt-2 text-[10px] leading-snug text-gray-500">
+      <p className="mt-2 text-[11px] leading-snug text-gray-500">
         Saving a core section is the only thing that moves this date — there is
         no separate &ldquo;reviewed, no change&rdquo; record.
       </p>
@@ -393,17 +393,17 @@ export function AssetWorkspacePane({
             onClick={() => routeToIdea(i.id, `${symbol ?? 'Asset'} — open idea`)}
             className="group flex items-baseline gap-2 rounded-md px-1 py-0.5 text-left hover:bg-gray-100 dark:hover:bg-white/[0.06]"
           >
-            <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-gray-500">
               {i.action ?? 'idea'}
             </span>
-            <span className="min-w-0 flex-1 truncate text-[12px] text-gray-800 dark:text-gray-200">
+            <span className="min-w-0 flex-1 truncate text-[13px] text-gray-800 dark:text-gray-200">
               {i.rationale || i.portfolioName || 'No claim written'}
             </span>
             <ArrowUpRight className="h-3 w-3 shrink-0 text-blue-600 opacity-0 group-hover:opacity-100" />
           </button>
         ))}
       </div>
-      <p className="mt-2 text-[10px] text-gray-500">
+      <p className="mt-2 text-[11px] text-gray-500">
         An idea is its own object. Opening one leaves this page.
       </p>
     </DesktopSection>
@@ -413,20 +413,20 @@ export function AssetWorkspacePane({
     <DesktopSection key="decisions" title="Recent decisions" meta={`${data.decisions.length}`}>
       <div className="flex flex-col gap-1.5">
         {data.decisions.slice(0, 5).map(d => (
-          <div key={d.id} className="flex items-baseline gap-2 text-[12px]">
-            <span className="w-[68px] shrink-0 font-mono text-[10px] uppercase tracking-wider text-gray-500">
+          <div key={d.id} className="flex items-baseline gap-2 text-[13px]">
+            <span className="w-[74px] shrink-0 font-mono text-[11px] uppercase tracking-wider text-gray-500">
               {d.status}
             </span>
             <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">
               {d.action ?? 'decision'}{d.portfolioName ? ` · ${d.portfolioName}` : ''}
             </span>
-            <span className="shrink-0 font-mono text-[10px] text-gray-500">
+            <span className="shrink-0 font-mono text-[11px] text-gray-500">
               {d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : '—'}
             </span>
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[10px] text-gray-500">
+      <p className="mt-2 text-[11px] text-gray-500">
         What was decided and why is kept in Decisions.
       </p>
     </DesktopSection>
@@ -650,11 +650,11 @@ export function DecisionBand({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className={EYEBROW}>Waiting on you</p>
-          <p className="mt-0.5 text-[14px] font-semibold text-gray-900 dark:text-gray-100">
+          <p className="mt-0.5 text-[15px] font-semibold text-gray-900 dark:text-gray-100">
             {pending.action ?? 'Decision request'}{pending.portfolioName ? ` · ${pending.portfolioName}` : ''}
           </p>
           {pending.decisionNote && (
-            <p className="mt-0.5 max-w-[70ch] text-[12px] text-gray-600 dark:text-gray-400">“{pending.decisionNote}”</p>
+            <p className="mt-0.5 max-w-[70ch] text-[13px] text-gray-600 dark:text-gray-400">“{pending.decisionNote}”</p>
           )}
         </div>
         {/* Elevated: the one primary action on the page, beside the request it acts on. */}
@@ -666,7 +666,7 @@ export function DecisionBand({
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div data-testid="against-view">
           <p className={EYEBROW}>Against our view</p>
-          <p className="mt-0.5 text-[12px] text-gray-700 dark:text-gray-300">
+          <p className="mt-0.5 text-[13px] text-gray-700 dark:text-gray-300">
             {toSpot != null
               ? `Target ${money(data.target!)} · ${toSpot >= 0 ? '+' : ''}${toSpot.toFixed(1)}% to spot`
               : 'No target on record to weigh the request against.'}
@@ -680,7 +680,7 @@ export function DecisionBand({
         </div>
         <div data-testid="against-book">
           <p className={EYEBROW}>Against the book</p>
-          <p className="mt-0.5 text-[12px] text-gray-700 dark:text-gray-300">
+          <p className="mt-0.5 text-[13px] text-gray-700 dark:text-gray-300">
             {position && position.weightPct != null
               ? `${position.portfolioName} carries ${position.weightPct.toFixed(2)}% against it.`
               : 'Not held in the book this request is for.'}
@@ -794,11 +794,11 @@ function AssetHeader({
       */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-1 basis-[11rem] items-baseline gap-2.5">
-          <span className="font-black text-[32px] leading-[1.02] tracking-[-0.035em]">
+          <span className="font-extrabold text-[32px] leading-[1.02] tracking-[-0.03em]">
             {symbol ?? '—'}
           </span>
           {companyName && (
-            <span className="min-w-0 truncate text-[14px] font-medium text-gray-500">{companyName}</span>
+            <span className="min-w-0 truncate text-[15px] font-medium text-gray-500">{companyName}</span>
           )}
           {why && <WhyHere why={why} />}
         </div>
@@ -847,10 +847,10 @@ function AssetHeader({
         width empty. The chips keep the left, the tools take the right, and
         the header loses a band.
       */}
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-2.5 text-[12px]">
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 pb-3 text-[13px]">
         {gap && (
           <span className={clsx(
-            'rounded-full border px-2 py-[2px] text-[10px] font-bold uppercase tracking-wider',
+            'rounded-full border px-2 py-[2px] text-[11px] font-semibold uppercase tracking-wider',
             TONE_PILL[tone],
           )}>
             {GAP_LABEL[gap]}
@@ -895,7 +895,7 @@ function AssetHeader({
           <button
             type="button"
             onClick={() => askAI(target)}
-            className="rounded-md px-2.5 py-1.5 text-[12px] font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+            className="rounded-md px-2.5 py-1.5 text-[13px] font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
           >
             Ask AI
           </button>
@@ -903,7 +903,7 @@ function AssetHeader({
             <button
               type="button"
               onClick={() => discuss(target)}
-              className="rounded-md px-2.5 py-1.5 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+              className="rounded-md px-2.5 py-1.5 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               Team
             </button>
@@ -911,11 +911,15 @@ function AssetHeader({
           {/*
             ── The verb, last in the row and smaller again ─────────────────
 
-            `px-2.5 py-1 text-[11px]`, a hair under the quiet controls it
-            sits beside rather than a slab above them. It was already down
-            from a 42px block to 32px and was still reported as too large;
-            the thing that makes it the primary is that it is the only
-            filled control on the band, not its size.
+            It was already down from a 42px block to 32px and was still
+            reported as too large; the thing that makes it the primary is
+            that it is the only filled control on the band, not its size.
+
+            It used to be a hair SMALLER than the quiet controls beside it
+            (`text-[11px]` against their 12px) to say that. 11px is now the
+            floor of the scale, where labels and captions live, so a verb
+            set there reads as a caption rather than as quiet. It takes the
+            same 13px as its neighbours and stays primary on fill alone.
 
             `ArrowUpRight`, not `ArrowDown`. The arrow was pointing down
             because the button used to scroll down this page. It now opens
@@ -926,7 +930,7 @@ function AssetHeader({
             type="button"
             onClick={primary.run}
             data-slot="asset-primary"
-            className="ml-1 inline-flex items-center gap-1.5 rounded-md border border-blue-600 bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:border-blue-700 hover:bg-blue-700"
+            className="ml-1 inline-flex items-center gap-1.5 rounded-md border border-blue-600 bg-blue-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:border-blue-700 hover:bg-blue-700"
           >
             {primary.label}
             <ArrowUpRight className="h-3 w-3 opacity-80" />
@@ -943,7 +947,7 @@ function AssetHeader({
             <button
               type="button"
               onClick={onOpenLegacy}
-              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[12px] text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
+              className="inline-flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[13px] text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
             >
               Overview
               <ArrowUpRight className="h-3 w-3 opacity-70" />
@@ -996,7 +1000,7 @@ function WhyHere({ why }: { why: { headline: string; reason: string | null } }) 
         aria-expanded={open}
         aria-label="Why you are here"
         data-slot="work-why-toggle"
-        className="inline-flex h-4 w-4 items-center justify-center self-center rounded-full border border-gray-300 text-[9px] font-bold text-gray-400 hover:border-gray-500 hover:text-gray-600 dark:border-gray-600 dark:hover:border-gray-400"
+        className="inline-flex h-5 w-5 items-center justify-center self-center rounded-full border border-gray-300 text-[11px] font-bold text-gray-400 hover:border-gray-500 hover:text-gray-600 dark:border-gray-600 dark:hover:border-gray-400"
       >
         ?
       </button>
@@ -1005,11 +1009,11 @@ function WhyHere({ why }: { why: { headline: string; reason: string | null } }) 
           data-slot="work-why-body"
           className="absolute left-0 top-6 z-30 w-[34ch] rounded-lg border border-gray-200 bg-white p-3 shadow-lg dark:border-white/10 dark:bg-[#1b2230]"
         >
-          <span className="block text-[12px] font-semibold text-gray-900 dark:text-white">
+          <span className="block text-[13px] font-semibold text-gray-900 dark:text-white">
             {why.headline}
           </span>
           {why.reason && (
-            <span className="mt-1 block text-[11px] text-gray-500 dark:text-gray-400">
+            <span className="mt-1 block text-[13px] text-gray-500 dark:text-gray-400">
               {why.reason}
             </span>
           )}
@@ -1025,10 +1029,10 @@ function EvidenceRow({ item, isNew }: { item: any; isNew?: boolean }) {
   return (
     <div className="flex items-baseline gap-2">
       {isNew && <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />}
-      <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-900 dark:text-gray-100">
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-gray-900 dark:text-gray-100">
         {item.title || item.content?.slice(0, 90) || 'Untitled'}
       </span>
-      <span className="shrink-0 font-mono text-[10px] text-gray-500">
+      <span className="shrink-0 font-mono text-[11px] text-gray-500">
         {new Date(item.createdAt).toLocaleDateString()}
       </span>
     </div>

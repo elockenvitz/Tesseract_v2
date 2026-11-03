@@ -1005,27 +1005,42 @@ describe('the header carries the step, the verdict and the tools', () => {
   })
 
   /**
-   * ── Smaller again, and the literals moved ───────────────────────────────
+   * ── Stated as a relationship, because the literals keep moving ──────────
    *
-   * This pinned `py-1.5 text-[12px]`, which was already a reduction from the
-   * 42px `py-2.5 text-[13px]` slab. It was reported as still too large, so
-   * the verb is now `px-2.5 py-1 text-[11px]` -- a hair under the quiet
-   * controls it sits beside. The case's subject never was a particular
-   * number: it is that the primary is not a slab, and is still the primary.
-   * Both halves survive, measured against the current scale.
+   * Rewritten rather than dropped; what it asserts has not changed.
+   *
+   * It pinned `py-1.5 text-[12px]`, then `px-2.5 py-1 text-[11px]`, each time
+   * naming the exact literal of the day. The subject was never a particular
+   * number -- it is that the primary is not a slab and is still the primary
+   * -- and pinning the number meant the case broke on every legitimate pass
+   * over the type scale while never once catching a slab.
+   *
+   * So it reads the quiet controls' own size out of the band and compares.
+   * That survives a scale change and still fails on the thing it is for.
+   *
+   * The floor clause is the other half: 11px is now where labels and
+   * captions live, so a verb set there is not quiet, it is a caption.
    */
   it('keeps the primary no larger than the controls beside it', () => {
     data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
     render(<AssetWorkspacePane asset={asset} />)
     const primary = primaryButton()
-    expect(primary.className).toMatch(/px-2\.5/)
-    expect(primary.className).toMatch(/py-1(?![.\d])/)
-    expect(primary.className).toMatch(/text-\[11px\]/)
-    // Every size it has already been, gone rather than merely overridden.
+    const sizeOf = (el: Element) => Number(el.className.match(/text-\[(\d+)px\]/)?.[1] ?? NaN)
+
+    const neighbours = [...primary.parentElement!.querySelectorAll('button')]
+      .filter(b => b !== primary)
+      .map(sizeOf)
+      .filter(n => Number.isFinite(n))
+    /* Without this the comparison below passes on an empty band, which is
+       the one state where the question is meaningless. */
+    expect(neighbours.length).toBeGreaterThan(0)
+
+    expect(sizeOf(primary)).toBeLessThanOrEqual(Math.max(...neighbours))
+    // Not a caption either: the floor of the scale is for labels.
+    expect(sizeOf(primary)).toBeGreaterThanOrEqual(13)
+    // Every block size it has already been, gone rather than overridden.
     expect(primary.className).not.toMatch(/py-2\.5/)
-    expect(primary.className).not.toMatch(/py-1\.5/)
     expect(primary.className).not.toMatch(/px-4/)
-    expect(primary.className).not.toMatch(/text-\[1[23]px\]/)
     // Still the solid primary, not demoted to a text button.
     expect(primary.className).toMatch(/bg-blue-600/)
   })

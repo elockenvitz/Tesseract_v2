@@ -2739,3 +2739,159 @@ describe('no lens pane offers an overflow control with nothing behind it', () =>
     expect(body.match(/onClick=\{/g)?.length ?? 0).toBeGreaterThan(2)
   })
 })
+
+/**
+ * The type scale the asset workspace and the shared grammar are set on.
+ *
+ * ── What went wrong ──────────────────────────────────────────────────────
+ *
+ * MEASURED in the running app at 1920px, with one Ideas feed card open
+ * beside the asset workspace that card opens. Both already render in the
+ * same family, so nothing was wrong with the typeface. The scale was:
+ *
+ *   the card, in a 26rem column   30, 23, 15, 14, 13, 11   floor 11px
+ *   the pane, 1504px wide         32, 17, 14, 13, 12, 11, 10, 9
+ *
+ * 29 elements in the pane ran at 9 or 10px, below the card's floor, on a
+ * surface roughly six times wider -- so a reader moving from the card into
+ * the workspace moved from larger type to smaller as the column grew. The
+ * lead section title sat at 13px against the card's 23px headline.
+ *
+ * ── Why a gate and not just a pass ───────────────────────────────────────
+ *
+ * Nine sizes with no role attached is how it got there: each pass picked a
+ * number that looked right locally, and 9px existed because 10px already
+ * did. The subject here is therefore the SET, not a minimum -- a floor
+ * alone passes happily on eleven different sizes between 11 and 32.
+ *
+ * Four steps below the figures, one role each:
+ *
+ *   18  the section that IS the object (the case, the reason)
+ *   15  running text somebody wrote
+ *   13  rows, controls, secondary prose
+ *   11  eyebrows, small-caps labels, meta, captions
+ *
+ * ── Scope, stated so it is not mistaken for coverage ─────────────────────
+ *
+ * Two files: the asset workspace, which is what was reported, and the
+ * grammar it shares with Ideas, Research, Portfolio and Decisions, whose
+ * primitives all four inherit. Those four panes still carry 25 sub-11px
+ * literals of their own and are deliberately NOT in this list -- lifting
+ * them is its own change, and listing them here would make this gate red on
+ * work nobody has done yet.
+ */
+describe('the asset workspace and the grammar it shares are on one type scale', () => {
+  const SCALED = [
+    'components/asset-v2/AssetWorkspace.tsx',
+    'components/desktop/DesktopModule.tsx',
+    /* The verdict bar rides this pane's context line and was the last 12px
+       step left on it: a question and its three answers, which are a row and
+       its controls, not captions. Its only other host is ResearchDetail,
+       the same width. */
+    'components/desktop/ThesisVerdictBar.tsx',
+  ]
+  /* Body steps plus the figures: DesktopStat and a supporting Metric at 20,
+     a lead Metric at 30, the ticker at 32. */
+  const STEPS = [11, 13, 15, 18, 20, 30, 32]
+
+  it.each(SCALED)('%s sets nothing below the 11px floor', file => {
+    const sizes = [...src(file).matchAll(/text-\[(\d+)px\]/g)].map(m => Number(m[1]))
+    /* Non-vacuity: a file that sets no explicit size satisfies any claim
+       about the sizes it sets. Three rather than more, because the verdict
+       bar legitimately sets only three. */
+    expect(sizes.length).toBeGreaterThanOrEqual(3)
+    expect(sizes.filter(n => n < 11)).toEqual([])
+  })
+
+  it.each(SCALED)('%s draws every size from the agreed steps', file => {
+    const sizes = [...src(file).matchAll(/text-\[(\d+)px\]/g)].map(m => Number(m[1]))
+    expect([...new Set(sizes)].filter(n => !STEPS.includes(n))).toEqual([])
+  })
+
+  /*
+   * And the roles themselves, read off the grammar rather than off a count.
+   *
+   * The two cases above are satisfied by a file that renames nothing: every
+   * eyebrow could still be the smallest thing on the page while sitting on
+   * an allowed step. These pin what the named primitives actually are, which
+   * is what the four sibling workspaces inherit.
+   */
+  /*
+   * The two visuals the asset workspace embeds, scoped to those two.
+   *
+   * After the pane's own scale was lifted, ten elements in it were still
+   * below the floor and every one came from `PortfolioVisual.tsx` -- 9px
+   * captions and 10px figures, as local literals in a file nobody reaches
+   * for when fixing the asset workspace.
+   *
+   * The whole FILE is not the subject: `BookMap` puts its label INSIDE a
+   * stacked-bar segment whose width is a weight, so its size is a fit
+   * constraint rather than a reading one, it does not render on this pane,
+   * and it is listed as its own item rather than quietly swept in here.
+   * Hence the two function bodies, sliced out by name.
+   */
+  it('lifts the embedded framework scale and weight bar off the floor', () => {
+    const vis = src('components/portfolio-v2/PortfolioVisual.tsx')
+    /* Taking the role from the grammar, not restating it -- which is what
+       let this file fall four steps behind the panes that embed it. */
+    expect(vis).toMatch(/import \{ LABEL \} from '\.\.\/desktop\/DesktopModule'/)
+
+    const bodyOf = (name: string) => {
+      const start = vis.indexOf(`export function ${name}(`)
+      expect(start).toBeGreaterThan(-1)
+      const next = vis.indexOf('\nexport function ', start + 1)
+      return vis.slice(start, next === -1 ? vis.length : next)
+    }
+    for (const name of ['FrameworkScale', 'WeightBar']) {
+      const body = bodyOf(name)
+      /* Non-vacuity: a body that sets no size satisfies any claim about the
+         sizes it sets, and both of these do set them. */
+      expect(body).toMatch(/\bLABEL\b/)
+      expect([...body.matchAll(/text-\[(\d+)px\]/g)].map(m => Number(m[1])).filter(n => n < 11))
+        .toEqual([])
+    }
+  })
+
+  /*
+   * The shared price chart, chrome only.
+   *
+   * It drew eleven of the pane's sub-floor elements and four off-scale sizes
+   * -- including a 22px readout that belonged to no role at all -- and it is
+   * drawn on four lenses, so it was that much type wrong in four places.
+   *
+   * The plot is not the subject. The anchor marker is an SVG `<text>` placed
+   * in user units 4px from a dashed rule it labels, where size is a fit
+   * constraint; this strips `<text>` elements out rather than pretending the
+   * rule reaches inside the drawing.
+   */
+  it('puts the price chart chrome on the scale, leaving the plot alone', () => {
+    const chart = src('components/desktop/AnchoredPriceChart.tsx')
+    expect(chart).toMatch(/import \{ LABEL \} from '\.\/DesktopModule'/)
+    /* `<text\s`, not `<text`: this file's own commentary names the element
+       as `<text>`, and matching that ran the strip from the comment to the
+       real closing tag and swallowed most of the chrome with it. The same
+       shape the overflow case above already paid for once. */
+    const chrome = chart.replace(/<text\s[\s\S]*?<\/text>/g, '')
+    const sizes = [...chrome.matchAll(/text-\[(\d+)px\]/g)].map(m => Number(m[1]))
+    /* Non-vacuity: the chrome does set sizes, and stripping must not have
+       taken them with it. */
+    expect(sizes.length).toBeGreaterThanOrEqual(5)
+    expect(sizes.filter(n => !STEPS.includes(n))).toEqual([])
+    /* And the carve-out is a carve-out, not a hole: the plot's own label is
+       still there to be excluded. */
+    expect(chart).toMatch(/<text\s[\s\S]*?text-\[9px\][\s\S]*?<\/text>/)
+  })
+
+  it('gives the label role the floor and the lead section the top body step', () => {
+    const grammar = src('components/desktop/DesktopModule.tsx')
+    const label = grammar.match(/export const LABEL = '([^']+)'/)?.[1]
+    expect(label).toBeTruthy()
+    expect(label).toContain('text-[11px]')
+    expect(label).toContain('uppercase')
+    /* The eyebrow is the same role, so it must be the same type and not a
+       second opinion about it. */
+    expect(grammar).toMatch(/export const EYEBROW = LABEL\b/)
+    /* The one section set in the page's dominant type. */
+    expect(grammar).toMatch(/lead\s*\n?\s*\?\s*'text-\[18px\]/)
+  })
+})

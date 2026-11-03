@@ -33,7 +33,26 @@ import { useId, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { useWidth } from '../../lib/charts/use-width'
 import { indexAtClientX } from '../../lib/charts/scrub'
+import { LABEL } from './DesktopModule'
 import type { AnchoredWindow } from '../../lib/market-data/anchored-window'
+
+/*
+ * ── The chart's chrome is on the page's scale; its plot is not ────────────
+ *
+ * MEASURED in the asset workspace: eleven elements below the 11px floor and
+ * four off-scale sizes, all of them this file's. The chrome -- caption,
+ * meta, the price readout, the change chip, the scrub hint, the note, the
+ * y-gutter ticks and the x-axis dates -- is page type and now reads as page
+ * type: the caption takes `LABEL` rather than restating it, the readout
+ * takes the figure step (it was 22px, which belonged to no role), and
+ * everything that was 10px is at the floor.
+ *
+ * The one deliberate exception is the anchor marker's `<text>` INSIDE the
+ * plot, at 9px. It is positioned in SVG user units against the series it
+ * labels and sits 4px from a dashed rule; its size is a fit constraint, not
+ * a reading one, and enlarging it would have it overlap the path. A gate
+ * that forbade it would be forbidding the right thing.
+ */
 
 /** A second dated event inside the window, as a fraction of its span. */
 export interface WindowMark {
@@ -116,22 +135,22 @@ export function AnchoredPriceChart({
   return (
     <div data-testid={testId}>
       <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
+        <span className={LABEL}>
           {caption}
         </span>
-        <span className="ml-auto font-mono text-[10px] text-gray-500">{meta}</span>
+        <span className="ml-auto font-mono text-[11px] text-gray-500">{meta}</span>
       </div>
 
       {/* One line, one height, hovered or not: a plot that grows a row on
           hover moves everything below it. */}
       <div data-testid={readoutTestId} className="mb-2 flex items-baseline gap-2">
-        <span className="font-mono text-[22px] font-semibold leading-none tabular-nums tracking-tight text-gray-900 dark:text-gray-100">
+        <span className="font-mono text-[20px] font-semibold leading-none tabular-nums tracking-tight text-gray-900 dark:text-gray-100">
           {shownPrice.toFixed(2)}
         </span>
         {/* The sign is a fact and stays in both modes. The HUE is the
             judgement, so a neutral chart's chip carries none. */}
         <span className={clsx(
-          'rounded px-1.5 py-[2px] font-mono text-[12px] font-semibold tabular-nums',
+          'rounded px-1.5 py-[2px] font-mono text-[13px] font-semibold tabular-nums',
           !graded
             ? 'bg-gray-100 text-gray-800 dark:bg-white/10 dark:text-gray-200'
             : shownPct >= 0
@@ -169,7 +188,7 @@ export function AnchoredPriceChart({
             chart is making. So the hint says what this chart actually does,
             and it goes quiet once the reader is doing it. */}
         {picked == null && (
-          <span data-chart-scrub-hint className="ml-auto shrink-0 text-[10px] text-gray-400 dark:text-gray-500">
+          <span data-chart-scrub-hint className="ml-auto shrink-0 text-[11px] text-gray-400 dark:text-gray-500">
             Hover for any day
           </span>
         )}
@@ -267,7 +286,7 @@ export function AnchoredPriceChart({
               key={t.tag}
               data-tick={t.tag}
               className={clsx(
-                'absolute right-0 -translate-y-1/2 font-mono text-[10px] tabular-nums',
+                'absolute right-0 -translate-y-1/2 font-mono text-[11px] tabular-nums',
                 t.tag === 'open' ? 'text-slate-500 dark:text-slate-400' : 'text-gray-400 dark:text-gray-500',
               )}
               style={{ top: `${Math.min(93, Math.max(7, (y(t.v) / H) * 100))}%` }}
@@ -294,7 +313,7 @@ export function AnchoredPriceChart({
         much, and over what" without a caption.
       */}
       <div
-        className="mt-1 flex items-baseline justify-between font-mono text-[10px] tabular-nums text-gray-400 dark:text-gray-500"
+        className="mt-1 flex items-baseline justify-between font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500"
         style={{ paddingRight: gutter + 8 }}
       >
         <span className={w.reachesAnchor ? 'text-slate-500 dark:text-slate-400' : undefined}>
@@ -303,7 +322,7 @@ export function AnchoredPriceChart({
         <span>{day(w.to)}</span>
       </div>
 
-      {note && <p className="mt-1 text-[10px] text-gray-500">{note}</p>}
+      {note && <p className="mt-1 text-[11px] text-gray-500">{note}</p>}
     </div>
   )
 }

@@ -27,6 +27,35 @@
 import { clsx } from 'clsx'
 import { ArrowUpRight } from 'lucide-react'
 
+/**
+ * ── The type scale, and why it moved up ──────────────────────────────────
+ *
+ * MEASURED in the running app at 1920px, with one feed card beside the asset
+ * workspace it opens. Both already render in the same family (Inter), so the
+ * mismatch was never the typeface -- it was the scale:
+ *
+ *   the card, in a 26rem column   30, 23, 15, 14, 13, 11   floor 11px
+ *   the pane, 1504px wide         32, 17, 14, 13, 12, 11, 10, 9
+ *
+ * 29 elements in the pane ran at 9 or 10px -- below the card's floor -- on a
+ * surface roughly six times wider, and the lead section title sat at 13px
+ * where the card's own headline is 23px. A reader moving from the card into
+ * the workspace was moving from larger type to smaller as the column grew.
+ *
+ * Four steps, one role each, so a surface has a reason to pick a size:
+ *
+ *   LEAD    18  the section that IS the object (the case, the reason)
+ *   prose   15  running text somebody wrote
+ *   13      rows, controls, secondary prose, inline figures
+ *   LABEL   11  eyebrows, small-caps labels, meta, captions
+ *
+ * `tracking-wider` (0.05em) rather than `widest` (0.1em): the wide tracking
+ * was compensation for 9px type and reads as a gap at 11px.
+ */
+
+/** Small-caps label, meta and caption: the floor of the scale. */
+export const LABEL = 'text-[11px] font-semibold uppercase tracking-wider text-gray-500'
+
 export interface DesktopModuleProps {
   /** Anchor id, for in-page jumps. */
   id?: string
@@ -82,13 +111,13 @@ export function DesktopModule({
         yields the whole header rather than drawing an empty strip.
       */}
       {(title || meta || action) && (
-        <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-4 py-2 dark:border-white/10 dark:bg-white/[0.03]">
-          {title && <h3 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">{title}</h3>}
-          {meta && <span className="ml-auto text-[10px] text-gray-500">{meta}</span>}
+        <div className="flex items-center gap-2 border-b border-gray-200/80 bg-gray-50/80 px-5 py-2.5 dark:border-white/10 dark:bg-white/[0.03]">
+          {title && <h3 className={LABEL}>{title}</h3>}
+          {meta && <span className="ml-auto text-[11px] text-gray-500">{meta}</span>}
           {action && <span className={clsx(meta ? 'ml-2' : 'ml-auto')}>{action}</span>}
         </div>
       )}
-      <div className="px-4 py-3.5">{children}</div>
+      <div className="px-5 py-4">{children}</div>
     </section>
   )
 }
@@ -119,12 +148,12 @@ export function DesktopStat({
     */
     <div className="px-1">
       <span className={clsx(
-        'block font-mono text-[17px] font-semibold tabular-nums leading-none tracking-tight',
+        'block font-mono text-[20px] font-semibold tabular-nums leading-none tracking-tight',
         tone === 'warn' && 'text-amber-700 dark:text-amber-400',
         tone === 'up' && 'text-emerald-600 dark:text-emerald-400',
         tone === 'down' && 'text-rose-600 dark:text-rose-400',
       )}>{value}</span>
-      <span className="mt-1 block text-[10px] font-bold uppercase tracking-wide text-gray-400">
+      <span className="mt-1 block text-[11px] font-semibold uppercase tracking-wider text-gray-400">
         {label}
       </span>
     </div>
@@ -133,13 +162,21 @@ export function DesktopStat({
 
 /** A quiet line: a footnote, a caveat, a stated absence. Never a box. */
 export function DesktopNote({ children, className }: { children: React.ReactNode; className?: string }) {
+  /* 13px with the grey doing the quieting, rather than a 12px step that
+     belongs to no role. What makes a note quiet is the colour and the absence
+     of chrome, not being a pixel smaller than the rows above it. */
   return (
-    <p className={clsx('text-[10px] leading-snug text-gray-500', className)}>{children}</p>
+    <p className={clsx('text-[13px] leading-relaxed text-gray-500', className)}>{children}</p>
   )
 }
 
-/** The canonical eyebrow. One tracking value across the whole desktop. */
-export const EYEBROW = 'text-[9px] font-bold uppercase tracking-widest text-gray-500'
+/**
+ * The canonical eyebrow. One size and one tracking value across the desktop.
+ *
+ * Was 9px/bold/widest, which is a caption size being asked to act as a
+ * heading. It is the same role as `LABEL` and now the same type.
+ */
+export const EYEBROW = LABEL
 
 /**
  * An open section: a heading and its content, with no box around it.
@@ -188,22 +225,22 @@ export function DesktopSection({
       className={className}
     >
       <div className={clsx(
-        'flex items-baseline gap-2 pb-1.5',
+        'flex items-baseline gap-2 pb-2',
         focused
           ? 'border-b-2 border-blue-400 dark:border-blue-600'
           : 'border-b border-gray-200/70 dark:border-white/[0.07]',
       )}>
         <h3 className={clsx(
           lead
-            ? 'text-[13px] font-semibold tracking-tight text-gray-900 dark:text-gray-100'
-            : 'text-[10px] font-semibold uppercase tracking-widest text-gray-500',
+            ? 'text-[18px] font-semibold tracking-[-0.015em] text-gray-900 dark:text-gray-100'
+            : LABEL,
         )}>
           {title}
         </h3>
-        {meta && <span className="ml-auto text-[10px] text-gray-500">{meta}</span>}
+        {meta && <span className="ml-auto text-[11px] text-gray-500">{meta}</span>}
         {action && <span className={clsx(meta ? 'ml-2' : 'ml-auto')}>{action}</span>}
       </div>
-      <div className="pt-2.5">{children}</div>
+      <div className="pt-3">{children}</div>
     </section>
   )
 }
@@ -257,7 +294,7 @@ export function DesktopColumns({
 export function DeepLinks({ children }: { children: React.ReactNode }) {
   return (
     <div className="mt-5 flex flex-wrap items-center gap-x-1 gap-y-1 border-t border-gray-200/70 pt-2.5 dark:border-white/[0.07]">
-      <span className="mr-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">
+      <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
         Open in full
       </span>
       {children}
@@ -270,7 +307,7 @@ export function DeepLink({ label, onClick }: { label: string; onClick: () => voi
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12px] text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-100"
+      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[13px] text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/[0.06] dark:hover:text-gray-100"
     >
       {label}
       <ArrowUpRight className="h-3 w-3 opacity-70" />
@@ -307,14 +344,14 @@ export function Metric({
     <div className="flex flex-col">
       <span className={clsx(
         'font-mono font-semibold leading-none tabular-nums tracking-[-0.02em]',
-        lead ? 'text-[30px]' : 'text-[16px]',
+        lead ? 'text-[30px]' : 'text-[20px]',
         tone === 'critical' ? 'text-rose-700 dark:text-rose-400'
           : tone === 'review' ? 'text-amber-700 dark:text-amber-400'
           : 'text-gray-900 dark:text-gray-100',
       )}>
         {value}
       </span>
-      <span className="mt-1 text-[10px] uppercase tracking-wider text-gray-500">{label}</span>
+      <span className="mt-1 text-[11px] uppercase tracking-wider text-gray-500">{label}</span>
     </div>
   )
 }
@@ -322,7 +359,7 @@ export function Metric({
 /** One "what does exist" row: a fact, or an honest dash. */
 export function Exists({ label, value }: { label: string; value: string | null }) {
   return (
-    <li className="flex items-baseline gap-2">
+    <li className="flex items-baseline gap-2 text-[13px]">
       <span className={value ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400'}>{label}</span>
       <span className={clsx(
         'ml-auto font-mono tabular-nums',
