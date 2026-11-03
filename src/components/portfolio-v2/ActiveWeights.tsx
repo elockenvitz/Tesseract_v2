@@ -175,13 +175,7 @@ export function ActiveWeights({
         <h2 className="text-[10px] font-medium uppercase tracking-[0.08em] text-gray-400">
           Against the benchmark
         </h2>
-        <span className="font-mono text-[11px] tabular-nums text-gray-500">
-          {activeShare.toFixed(1)}% active share
-        </span>
-        <span className="text-[11px] text-gray-500">
-          {overCount} overweight · {underCount} underweight
-          <span className="ml-1 text-gray-400">· five each end · click to open</span>
-        </span>
+        <span className="text-[11px] text-gray-400">five each end · click to open</span>
 
         {/*
           One line, one height, whether or not a bar is under the pointer --
@@ -207,6 +201,36 @@ export function ActiveWeights({
             </>
           )}
         </span>
+      </div>
+
+      {/*
+        ── The headline fact was inside the caption ─────────────────────────
+        *
+        Active share is the one number that says how much of this book is a
+        decision rather than the index, and it was set at 11px in gray-500,
+        third item in a nowrap caption line, between a heading and a pair of
+        counts and a hover readout. The panel beside it opens with a 28px
+        figure. So the left half of this row announced what the book did and
+        the right half announced nothing, and the two read as a statement
+        next to a label.
+        *
+        Three figures on the same rung the day panel's secondary figures
+        take, with 9px keys underneath -- the same block, in the same place,
+        at the same size. That is what makes the two halves one instrument
+        rather than two adjacent strips, which is the claim the row's own
+        note upstairs makes and could not support.
+        *
+        The counts move here with it. "11 overweight" is a figure with a
+        key, not a clause in a sentence, and as a clause it was competing
+        with the active share for the same 11px.
+        *
+        Nothing is derived that was not already computed: all three read off
+        `rows`, the whole book, not the ten bars drawn below.
+      */}
+      <div className="mt-2 flex flex-wrap items-baseline gap-x-8 gap-y-2">
+        <Stat value={`${activeShare.toFixed(1)}%`} label="Active share" />
+        <Stat value={String(overCount)} label="Overweight" />
+        <Stat value={String(underCount)} label="Underweight" />
       </div>
 
       {/*
@@ -311,5 +335,28 @@ export function ActiveWeights({
         the right-hand end the last ticker was landing on top of one of them.
       */}
     </section>
+  )
+}
+
+/**
+ * One figure on the row's secondary rung, with its key under it.
+ *
+ * Deliberately the same 19px / 9px pair as `DayPanel`'s `Figure`, and not
+ * imported from it: that one takes a signed number and colours itself by the
+ * sign through `moveTone`, which is right for a return and wrong for every
+ * figure here. An active share is never negative and a count of overweights
+ * is not a move, so neither carries a direction and neither should be inked
+ * as though it did.
+ */
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <div>
+      <div className="font-mono text-[19px] font-semibold leading-none tabular-nums tracking-[-0.02em] text-gray-900 dark:text-gray-100">
+        {value}
+      </div>
+      <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+        {label}
+      </div>
+    </div>
   )
 }

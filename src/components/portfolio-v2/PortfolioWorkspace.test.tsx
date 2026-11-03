@@ -742,4 +742,36 @@ describe('the weight opens the size behind it', () => {
      */
     expect(screen.getByTestId('position-weight-detail')).toHaveTextContent(/no benchmark/i)
   })
+
+  /*
+   * ── The reservation is for the WAIT, and it was outliving it ────────────
+   *
+   * The header's two panels resolve on their own queries after the book
+   * beneath them has painted, so the row reserves the height they will take
+   * and both arrivals are fades rather than jumps. That part is right.
+   *
+   * What it did not account for: both panels are sized by their ROW COUNT,
+   * capped at five a side but often far fewer. Measured live on a five
+   * position book, where the cap resolves to two: the tallest panel is 149px
+   * against a 200px reservation, so 51px of the header was permanently empty
+   * -- and it was the gap directly above the line that says how much of the
+   * book has no framework, which is the most important line in the header.
+   *
+   * Shrinking the number is not the fix; it would under-reserve the five-row
+   * book the number is sized for and bring the jump back.
+   *
+   * So the reservation stops once there is nothing left to wait for. This
+   * suite mocks `useActiveWeights` to 'loading', which is exactly the wait,
+   * so it pins the half that must KEEP reserving. The other half -- that it
+   * is conditioned on the state at all, rather than unconditional -- is
+   * pinned on the source in `convergence.test.ts`, because a settled state
+   * cannot be reached from this suite's module mock.
+   */
+  it('still reserves the panel row while the benchmark is in flight', () => {
+    held()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const row = screen.getByTestId('book-header-panels')
+    expect(row.className).toContain('min-h-[400px]')
+    expect(row.className).toContain('xl:min-h-[200px]')
+  })
 })

@@ -1453,7 +1453,11 @@ describe('a handoff never promises what is not there', () => {
      */
     const panel = src('components/portfolio-v2/ActiveWeights.tsx')
     expect(panel).toContain('Against the benchmark')
-    expect(panel).toContain('active share')
+    /* Case-insensitive: the label moved from a caption clause ("11.2% active
+       share") to a figure with a key under it ("Active share"), which is the
+       same claim said at a size a reader can see. The claim is that the panel
+       states active share at all, not how it capitalises it. */
+    expect(panel).toMatch(/active share/i)
 
     /*
      * ── The line it must never draw ──────────────────────────────────────
@@ -1876,6 +1880,22 @@ describe('a handoff never promises what is not there', () => {
      */
     expect(body).toContain('min-h-[400px]')
     expect(body).toContain('xl:min-h-[200px]')
+    /*
+     * And the HEADER's copy of that reservation is conditioned on the wait,
+     * not unconditional. It was unconditional, and a book whose panels are
+     * shorter than the five-row maximum they are sized for -- which is most
+     * books -- held 51px of empty header open forever, directly above the
+     * line that says how much of the book has no framework.
+     *
+     * `BenchmarkComparison` is a state machine, which is why this can be
+     * written at all: "still fetching" and "this book has no benchmark file"
+     * are distinguishable, and only the first is a wait. A null check could
+     * not tell them apart and would have collapsed the row on every book
+     * that simply has no index, reintroducing the jump on book switch.
+     *
+     * The skeleton's own copy above stays unconditional: it IS the wait.
+     */
+    expect(body).toContain("benchmark.state === 'loading' && 'min-h-[400px] xl:min-h-[200px]'")
     // And stands in for the list wait too, rather than a separate spinner.
     expect(body).toContain('if (listLoading) {')
     expect(body).not.toContain('function Loading()')

@@ -18,7 +18,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { GALLERY_GROUND } from '../../lib/ui/surface'
+import { CARD_EDGE, CARD_SURFACE, GALLERY_GROUND } from '../../lib/ui/surface'
 import { Briefcase, ChevronDown } from 'lucide-react'
 import {
   usePortfolioList, useBook, useBookFrames, usePositionDetail, useActiveWeights,
@@ -389,7 +389,27 @@ function BookHeader({
 
 
   return (
+    /*
+      ── The book summary is a CARD ────────────────────────────────────────
+      *
+      This was a bare `px-6 pt-6` header: a title, a sentence, a facts row,
+      two panels and two more sentences, all floating directly on the page
+      with nothing saying where the summary of the book ends and the list of
+      its positions begins. Every other object on this product's surfaces --
+      a feed card, an Explore tile, a position tile -- is inside an edge, and
+      the one thing that describes the whole book was the exception.
+      *
+      The edge is `CARD_SURFACE` and `CARD_EDGE`, the same two the feed card
+      and the gallery tile take, so this is the existing card and not a
+      seventh way of drawing a box.
+      *
+      The bands inside it are separated by hairlines rather than by margin.
+      Four unrelated facts at four sizes with only white space between them
+      read as a column of leftovers; ruled, they read as sections of one
+      instrument, which is what they are.
+    */
     <header className="px-6 pt-6">
+      <div className={clsx('rounded-xl p-5', CARD_SURFACE, CARD_EDGE)}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
         {/* The book selector belongs to browsing the book. In detail the
             reader has already chosen; switching books there would silently
@@ -501,7 +521,40 @@ function BookHeader({
           400 stacked, 200 side by side, each a little over the tallest panel
           that layout can produce.
         */
-        className="mt-5 grid min-h-[400px] grid-cols-1 items-start gap-x-10 gap-y-4 xl:min-h-[200px] xl:grid-cols-2"
+        /*
+         * ── The reservation is for the WAIT, and it was outliving it ──────
+         *
+         * Everything above is right and stays: two panels resolve on their
+         * own queries after the book beneath them has painted, so without a
+         * reservation each arrival lands as new height under a reader who has
+         * started reading, and the sizes are per-layout because the panels
+         * stack below xl.
+         *
+         * What it did not account for is that both panels are sized by their
+         * ROW COUNT, and the count is capped at five a side but is often far
+         * fewer. 200px is a little over a five-row panel, which is correct.
+         * Measured on a five-position book, where `n = min(5, floor(5/2))` is
+         * two: the tallest panel is 149px and the row reserves 200, so 51px
+         * of the header is permanently empty -- and it is the gap directly
+         * above the two sentences that say how much of the book has no
+         * framework, which is the most important line in the header.
+         *
+         * A smaller number is not the fix; it would under-reserve the
+         * five-row book this one is sized for and bring back the jump.
+         *
+         * The reservation simply stops once there is nothing left to wait
+         * for. `BenchmarkComparison` is a state machine, so "still loading"
+         * and "this book has no benchmark file" are distinguishable -- which
+         * is the distinction the note above says a collapse must respect, and
+         * the reason it could not be written as a null check. A book with no
+         * file is settled on arrival and reserves nothing; a book that is
+         * still fetching reserves the full height until it is not.
+         */
+        className={clsx(
+          /* Ruled, like the band below it. See the card note at the top. */
+          'mt-4 grid grid-cols-1 items-start gap-x-10 gap-y-4 border-t border-gray-100 pt-4 dark:border-gray-800 xl:grid-cols-2',
+          benchmark.state === 'loading' && 'min-h-[400px] xl:min-h-[200px]',
+        )}
       >
         {/*
           Each panel owns its column, present or not.
@@ -537,11 +590,27 @@ function BookHeader({
         the work as. The strip goes; the sentences stay.
       */}
       {rows.length > 1 && (
-        <div className="mt-4">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
+        /*
+          ── This line was whispering the header's whole point ─────────────
+          *
+          "84.8% needs framework work" is the sentence this entire lens
+          exists to produce -- the subtitle three bands above says the page
+          is about where the book and the written framework disagree, and
+          this is the answer. It was set at 10px in gray-500, which is the
+          size of an axis label, below 51px of empty space, with no rule
+          above it.
+          *
+          13px on a ruled band, which is the prototype's treatment and the
+          same step the figures in it already take. The coloured numbers are
+          unchanged: amber for work outstanding, rose for a position outside
+          its own case, and those two tones already mean exactly that
+          everywhere else on this page.
+        */
+        <div className="mt-4 border-t border-gray-100 pt-3.5 dark:border-gray-800">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-gray-600 dark:text-gray-400">
             {workWeight > 0 && (
               <span>
-                <strong className="font-semibold text-amber-700 dark:text-amber-400">
+                <strong className="font-mono font-bold tabular-nums text-amber-700 dark:text-amber-400">
                   {workWeight.toFixed(1)}%
                 </strong>{' '}
                 needs framework work
@@ -549,7 +618,7 @@ function BookHeader({
             )}
             {brokenWeight > 0 && (
               <span>
-                <strong className="font-semibold text-rose-700 dark:text-rose-400">
+                <strong className="font-mono font-bold tabular-nums text-rose-700 dark:text-rose-400">
                   {brokenWeight.toFixed(1)}%
                 </strong>{' '}
                 is trading outside its own case
@@ -561,6 +630,7 @@ function BookHeader({
           </div>
         </div>
       )}
+      </div>
     </header>
   )
 }

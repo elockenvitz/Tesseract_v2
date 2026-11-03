@@ -123,7 +123,9 @@ export function DayPanel({
           /* Stated, not hidden. A blank where a benchmark should be reads as
              a bug; this reads as the limit it is. */
           <div data-testid="bench-unpriced">
-            <div className="font-mono text-[15px] font-semibold leading-none text-gray-400">—</div>
+            {/* Same rung as the benchmark figure it stands in for, so the
+                row does not change shape when a book has no index file. */}
+            <div className="font-mono text-[19px] font-semibold leading-none text-gray-400">—</div>
             <div className="mt-1 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
               Benchmark · {Math.round(day.coverage * 100)}% priced
             </div>
@@ -148,8 +150,27 @@ function Figure({ label, value, lead }: { label: string; value: number; lead?: b
   return (
     <div>
       <div className={clsx(
+        /*
+         * ── Two rungs, far enough apart to be a ladder ───────────────────
+         *
+         * 26 against 15 is a ratio of 1.7, which reads as "one big number
+         * and two small ones" rather than as a hierarchy: the benchmark and
+         * the active figure sat at the size of the axis labels below them,
+         * and the book's own return was the only thing on the panel a
+         * reader could see from a seat away.
+         *
+         * 28 / 19 is the prototype's step and it is the step the rest of
+         * this product already uses -- 19px is the figure size on an
+         * Explore tile's stats row, so the secondary rung here matches a
+         * primary figure elsewhere instead of inventing a sixth size.
+         *
+         * The book stays the lead because the question is "what did WE do";
+         * the benchmark and the spread are what that answer is measured
+         * against, and they are now legible as answers rather than as
+         * captions.
+         */
         'font-mono font-semibold leading-none tabular-nums tracking-[-0.02em]',
-        lead ? 'text-[26px]' : 'text-[15px]',
+        lead ? 'text-[28px]' : 'text-[19px]',
         moveTone(value),
       )}>
         {pct(value)}
@@ -182,7 +203,28 @@ function Movers({
   const ceiling = Math.max(...scale.map(m => Math.abs(m.contribPct)), 0.01)
   return (
     <div>
-      <div className="text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">{title}</div>
+      {/*
+        ── The two percentage columns were unlabelled ───────────────────────
+        *
+        Every mover row prints two percentages side by side -- the name's
+        contribution to the book's return, and the name's own return -- and
+        nothing said which was which. They differ by 1px of size and by
+        colour, so a reader comparing "+0.04%" against "+2.1%" on one line
+        had no way to know the first was weighted and the second was not,
+        and the natural reading (two attempts at the same number) made the
+        panel look wrong.
+        *
+        Naming them once at the top of the column costs one 9px line and
+        resolves it. The widths and the `px-1` mirror the button below so
+        each key sits over its own figure; `gap-3` and the `flex-1` spacer
+        stand in for the symbol cell and the bar track.
+      */}
+      <div className="flex items-baseline gap-3 px-1 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+        <span>{title}</span>
+        <span className="min-w-0 flex-1" />
+        <span className="w-[56px] shrink-0 text-right">of book</span>
+        <span className="w-[64px] shrink-0 text-right">own</span>
+      </div>
       <ul className="mt-1.5" onPointerLeave={() => setAt(null)}>
         {rows.map(m => (
           <li key={m.assetId}>
