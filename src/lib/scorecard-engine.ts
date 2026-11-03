@@ -184,7 +184,7 @@ export function interpretAnalystScorecard(d: AnalystScorecardData | null): Score
   else if (verdict === 'mixed') headline = 'Some dimensions are working, others are not.'
   else if (verdict === 'developing') headline = 'Directional edge has not yet been demonstrated.'
   else if (verdict === 'weak') headline = 'Decision quality is below threshold across most dimensions.'
-  else if (verdict === 'critical') headline = 'Persistent underperformance — process intervention required.'
+  else if (verdict === 'critical') headline = 'Persistent underperformance. Process intervention required.'
   else headline = 'Too few resolved outcomes for reliable evaluation.'
 
   // Interpretation — consequence-driven
@@ -192,17 +192,17 @@ export function interpretAnalystScorecard(d: AnalystScorecardData | null): Score
   if (d.ratings.directionalHitRate != null) {
     interp.push(d.ratings.directionalHitRate >= 60
       ? `Directional instincts are sound (${d.ratings.directionalHitRate.toFixed(0)}% accuracy on ${d.ratings.totalRated} rated names)`
-      : `Directional calls are inconsistent (${d.ratings.directionalHitRate.toFixed(0)}% accuracy) — ideas may be reaching the portfolio without sufficient edge`)
+      : `Directional calls are inconsistent (${d.ratings.directionalHitRate.toFixed(0)}% accuracy), so ideas may be reaching the portfolio without sufficient edge`)
   }
   if (d.priceTargets.hitRate != null && d.priceTargets.hit + d.priceTargets.missed >= 2) {
     interp.push(d.priceTargets.hitRate >= 55
       ? `target accuracy at ${d.priceTargets.hitRate.toFixed(0)}%`
-      : `targets hitting at only ${d.priceTargets.hitRate.toFixed(0)}% — conviction levels may be miscalibrated`)
+      : `targets hitting at only ${d.priceTargets.hitRate.toFixed(0)}%, so conviction levels may be miscalibrated`)
   }
   if (d.decisions.executedTotal > 0 && d.decisions.executedHitRate != null) {
     interp.push(d.decisions.executedHitRate >= 55
       ? 'approved recommendations are generating positive outcomes'
-      : 'approved recommendations are underperforming — thesis quality needs review')
+      : 'approved recommendations are underperforming, so thesis quality needs review')
   }
   let interpretation = interp.length > 0
     ? interp[0].charAt(0).toUpperCase() + interp[0].slice(1) + (interp.length > 1 ? '. ' + interp.slice(1).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('. ') : '') + '.'
@@ -230,7 +230,7 @@ export function interpretAnalystScorecard(d: AnalystScorecardData | null): Score
   if (d.ratings.totalRated === 0) focus.push('Establish directional track record with ratings')
   else if (d.ratings.directionalHitRate != null && d.ratings.directionalHitRate < 45) focus.push('Improve directional quality before adding coverage')
   if (d.priceTargets.total === 0) focus.push('Set price targets to measure conviction accuracy')
-  else if (d.priceTargets.hitRate != null && d.priceTargets.hitRate < 40 && d.priceTargets.hit + d.priceTargets.missed >= 3) focus.push('Recalibrate target levels — current hit rate is too low')
+  else if (d.priceTargets.hitRate != null && d.priceTargets.hitRate < 40 && d.priceTargets.hit + d.priceTargets.missed >= 3) focus.push('Recalibrate target levels: the current hit rate is too low')
   if (d.decisions.totalProposed === 0) focus.push('Propose trade ideas to demonstrate conviction')
   else if (d.decisions.executedTotal === 0 && d.decisions.approved > 0) focus.push('Ensure approved ideas reach execution')
   if (d.priceTargets.bullishBias != null && Math.abs(d.priceTargets.bullishBias) > 15) focus.push('Address systematic bias in target setting')
@@ -249,7 +249,7 @@ export function buildAnalystOutcomeSnapshot(d: AnalystScorecardData | null): Out
   const winRate = executed > 0 ? (winners / executed) * 100 : null
 
   let summaryText: string
-  if (total === 0) summaryText = 'No trade recommendations — outcome quality not assessable.'
+  if (total === 0) summaryText = 'No trade recommendations, so outcome quality is not assessable.'
   else if (executed === 0) summaryText = `${d.decisions.approved} approved, none executed. Outcome quality cannot be measured until recommendations reach the portfolio.`
   else summaryText = winRate != null && winRate >= 55
     ? `${winners} of ${executed} executed recommendations moved in the intended direction.`
@@ -285,10 +285,10 @@ export function buildAnalystProcessBreakdown(d: AnalystScorecardData | null): Pr
   const failurePoint = failing.length > 0 ? failing.sort((a, b) => (a.score ?? 999) - (b.score ?? 999))[0].label : null
 
   const summaryMap: Record<string, string> = {
-    'Direction': 'Directional calls are not demonstrating edge — ideas may lack sufficient thesis rigor.',
-    'Targets': 'Price targets are not landing — conviction levels or timeframes need recalibration.',
+    'Direction': 'Directional calls are not demonstrating edge. Ideas may lack sufficient thesis rigor.',
+    'Targets': 'Price targets are not landing. Conviction levels or timeframes need recalibration.',
     'Recommendations': 'Approved ideas are underperforming post-execution.',
-    'Calibration': 'Systematic bias detected — targets are skewed in one direction.',
+    'Calibration': 'Systematic bias detected. Targets are skewed in one direction.',
   }
 
   return { stages, failurePoint, failureSummary: failurePoint ? summaryMap[failurePoint] || null : null }
@@ -336,9 +336,9 @@ export function buildAnalystPillars(d: AnalystScorecardData | null): DiagnosticP
         { label: 'Hit rate', value: fmtPct(dirScore) },
       ],
       takeaway: d.ratings.totalRated === 0
-        ? 'No ratings assigned — directional edge cannot be assessed without coverage.'
+        ? 'No ratings assigned, so directional edge cannot be assessed without coverage.'
         : dirScore != null && dirScore >= 60 ? 'Calls are directionally sound versus subsequent price movement.'
-        : dirScore != null && dirScore < 40 ? 'Directional calls are inconsistent — thesis construction may need review.'
+        : dirScore != null && dirScore < 40 ? 'Directional calls are inconsistent. Thesis construction may need review.'
         : 'Middling accuracy. More resolved ratings needed to determine if edge exists.',
     },
     {
@@ -350,9 +350,9 @@ export function buildAnalystPillars(d: AnalystScorecardData | null): DiagnosticP
         { label: 'Pending', value: `${d.priceTargets.pending}` },
       ],
       takeaway: d.priceTargets.total === 0
-        ? 'No price targets set — conviction accuracy cannot be measured.'
+        ? 'No price targets set, so conviction accuracy cannot be measured.'
         : ptResolved === 0
-          ? `${d.priceTargets.pending} targets pending. Too early to evaluate — outcomes must resolve first.`
+          ? `${d.priceTargets.pending} targets pending. Too early to evaluate, because outcomes must resolve first.`
           : ptScore != null && ptScore >= 60 ? `Hitting at ${d.priceTargets.hitRate?.toFixed(0)}% with ${d.priceTargets.avgAccuracy?.toFixed(0)}% precision.`
           : 'Target accuracy below standard. Review price level construction and timeframe assumptions.',
     },
@@ -365,7 +365,7 @@ export function buildAnalystPillars(d: AnalystScorecardData | null): DiagnosticP
         { label: 'Outcome', value: d.decisions.executedTotal > 0 ? `${d.decisions.executedCorrect}/${d.decisions.executedTotal} correct` : 'None executed' },
       ],
       takeaway: d.decisions.totalProposed === 0
-        ? 'No trade ideas proposed — recommendation quality not evaluable.'
+        ? 'No trade ideas proposed, so recommendation quality is not evaluable.'
         : d.decisions.executedTotal === 0
           ? `${d.decisions.approved} approved but none executed. Recommendations are not reaching the portfolio.`
           : decScore != null && decScore >= 60 ? 'Approved recommendations are generating positive directional outcomes.'
@@ -380,8 +380,8 @@ export function buildAnalystPillars(d: AnalystScorecardData | null): DiagnosticP
         { label: 'Avg time to hit', value: fmtDays(d.priceTargets.avgDaysToHit) },
       ],
       takeaway: d.priceTargets.total < 3
-        ? 'Fewer than 3 targets — insufficient data to assess systematic bias.'
-        : biasScore != null && biasScore >= 70 ? 'Well calibrated — no persistent directional skew in targets.'
+        ? 'Fewer than 3 targets, which is insufficient data to assess systematic bias.'
+        : biasScore != null && biasScore >= 70 ? 'Well calibrated, with no persistent directional skew in targets.'
         : d.priceTargets.bullishBias != null && d.priceTargets.bullishBias > 10 ? 'Systematically overestimating upside. Targets are set too aggressively.'
         : d.priceTargets.bullishBias != null && d.priceTargets.bullishBias < -10 ? 'Systematically underestimating downside risk in target construction.'
         : 'Minor bias present. Monitor as more targets resolve.',
@@ -396,21 +396,21 @@ export function buildAnalystInsights(d: AnalystScorecardData | null): BehaviorIn
   if (n === 0) return [{ text: 'No activity recorded. Begin setting targets and ratings to establish track record.', severity: 'neutral' }]
 
   if (d.priceTargets.pending > 0 && d.priceTargets.pending > d.priceTargets.hit + d.priceTargets.missed)
-    insights.push({ text: `${d.priceTargets.pending} targets pending vs ${d.priceTargets.hit + d.priceTargets.missed} resolved — pipeline is front-loaded with unresolved conviction.`, severity: 'negative' })
+    insights.push({ text: `${d.priceTargets.pending} targets pending vs ${d.priceTargets.hit + d.priceTargets.missed} resolved. The pipeline is front-loaded with unresolved conviction.`, severity: 'negative' })
   if (d.ratings.totalRated > 0 && d.priceTargets.total === 0)
-    insights.push({ text: 'Ratings exist but no price targets — conviction precision is unmeasured.', severity: 'negative' })
+    insights.push({ text: 'Ratings exist but no price targets, so conviction precision is unmeasured.', severity: 'negative' })
   if (d.priceTargets.total > 0 && d.ratings.totalRated === 0)
-    insights.push({ text: 'Targets set without ratings — directional edge is unvalidated.', severity: 'negative' })
+    insights.push({ text: 'Targets set without ratings, so directional edge is unvalidated.', severity: 'negative' })
   if (d.decisions.approved > 0 && d.decisions.executedTotal === 0)
-    insights.push({ text: `${d.decisions.approved} approved ideas remain unexecuted — recommendations are stalled before reaching the portfolio.`, severity: 'negative' })
+    insights.push({ text: `${d.decisions.approved} approved ideas remain unexecuted. Recommendations are stalled before reaching the portfolio.`, severity: 'negative' })
   if (d.decisions.executedHitRate != null && d.decisions.executedHitRate >= 70 && d.decisions.executedTotal >= 3)
-    insights.push({ text: `${d.decisions.executedCorrect} of ${d.decisions.executedTotal} executed ideas working — idea quality is translating into portfolio value.`, severity: 'positive' })
+    insights.push({ text: `${d.decisions.executedCorrect} of ${d.decisions.executedTotal} executed ideas working. Idea quality is translating into portfolio value.`, severity: 'positive' })
   if (d.priceTargets.bullishBias != null && d.priceTargets.bullishBias > 15 && d.priceTargets.total >= 5)
     insights.push({ text: 'Persistent bullish bias suggests overconfidence in upside scenarios.', severity: 'negative' })
   if (d.decisions.approvalRate != null && d.decisions.approvalRate < 40 && d.decisions.totalProposed >= 5)
-    insights.push({ text: `${d.decisions.approvalRate.toFixed(0)}% approval rate — proposals may need stronger thesis validation before submission.`, severity: 'negative' })
+    insights.push({ text: `${d.decisions.approvalRate.toFixed(0)}% approval rate, so proposals may need stronger thesis validation before submission.`, severity: 'negative' })
   if (d.ratings.directionalHitRate != null && d.ratings.directionalHitRate >= 65 && d.decisions.executedTotal === 0 && d.ratings.totalRated >= 3)
-    insights.push({ text: 'Directional instincts are good but no ideas have been executed — edge is not being captured in the portfolio.', severity: 'negative' })
+    insights.push({ text: 'Directional instincts are good but no ideas have been executed, so edge is not being captured in the portfolio.', severity: 'negative' })
 
   if (insights.length === 0) insights.push({ text: 'Track record developing. More resolved outcomes will sharpen this assessment.', severity: 'neutral' })
   return insights.slice(0, 4)
@@ -452,7 +452,7 @@ export function interpretPMScorecard(d: PMScorecardData | null): ScorecardVerdic
   else if (verdict === 'elite') headline = 'Decision process is operating at institutional standard.'
   else if (verdict === 'strong') headline = 'Decisions are consistently adding portfolio value.'
   else if (verdict === 'solid') headline = 'Process is functional with minor execution gaps.'
-  else if (verdict === 'mixed') headline = 'Decision quality is inconsistent — execution and follow-through need work.'
+  else if (verdict === 'mixed') headline = 'Decision quality is inconsistent. Execution and follow-through need work.'
   else if (verdict === 'developing') headline = 'Process is not yet translating decisions into measurable outcomes.'
   else if (verdict === 'weak') headline = 'Decision process is breaking down at execution.'
   else if (verdict === 'critical') headline = 'Approvals are accumulating without reaching the portfolio. Process intervention required.'
@@ -462,7 +462,7 @@ export function interpretPMScorecard(d: PMScorecardData | null): ScorecardVerdic
   if (d.executionRate != null) {
     if (d.executionRate >= 80) parts.push(`Execution discipline is strong (${d.executionRate.toFixed(0)}% conversion)`)
     else if (d.executionRate < 50) parts.push(`Only ${d.executionRate.toFixed(0)}% of approvals are reaching the portfolio`)
-    else parts.push(`Execution at ${d.executionRate.toFixed(0)}% — below the ${80}% threshold`)
+    else parts.push(`Execution at ${d.executionRate.toFixed(0)}%, below the ${80}% threshold`)
   }
   if (d.directionalHitRate != null && resolved >= 2) {
     if (d.directionalHitRate >= 60) parts.push('decisions that reach execution are adding value')
@@ -506,9 +506,9 @@ export function buildPMOutcomeSnapshot(d: PMScorecardData | null): OutcomeSnapsh
   const winRate = resolved > 0 ? (d.decisionsPositive / resolved) * 100 : null
 
   let summaryText: string
-  if (d.totalDecisions === 0) summaryText = 'No decisions made — outcome profile cannot be assessed.'
+  if (d.totalDecisions === 0) summaryText = 'No decisions made, so the outcome profile cannot be assessed.'
   else if (d.decisionsExecuted === 0) summaryText = `${d.totalDecisions} approved but none executed. Decisions are not reaching the portfolio.`
-  else if (resolved === 0) summaryText = `${d.decisionsExecuted} executed — awaiting price-based outcome resolution.`
+  else if (resolved === 0) summaryText = `${d.decisionsExecuted} executed, awaiting price-based outcome resolution.`
   else if (winRate != null && winRate >= 55) summaryText = `${d.decisionsPositive} of ${resolved} resolved decisions helped. Net contribution is positive.`
   else summaryText = `${d.decisionsPositive} winners vs ${d.decisionsNegative} losers. Decision accuracy needs improvement.`
 
@@ -548,9 +548,9 @@ export function buildPMProcessBreakdown(d: PMScorecardData | null): ProcessBreak
 
   const summaryMap: Record<string, string> = {
     'Approval': 'Decision pipeline may need more throughput.',
-    'Execution': 'Approvals are not converting into trades — the decision process is disconnected from the portfolio.',
+    'Execution': 'Approvals are not converting into trades. The decision process is disconnected from the portfolio.',
     'Timing': 'Execution lag is creating material opportunity cost between approval and trade.',
-    'Outcome': 'Executed decisions are underperforming — thesis quality or timing may be the issue.',
+    'Outcome': 'Executed decisions are underperforming. Thesis quality or timing may be the issue.',
   }
 
   return { stages, failurePoint, failureSummary: failurePoint ? summaryMap[failurePoint] || null : null }
@@ -589,9 +589,9 @@ export function buildPMPillars(d: PMScorecardData | null): DiagnosticPillar[] {
         { label: 'Hit rate', value: fmtPct(d.directionalHitRate) },
       ],
       takeaway: resolved === 0
-        ? 'No decisions have resolved with price data — execute and hold positions to generate outcome signal.'
+        ? 'No decisions have resolved with price data. Execute and hold positions to generate outcome signal.'
         : d.directionalHitRate != null && d.directionalHitRate >= 60 ? 'Approved decisions are moving positions in the right direction.'
-        : 'Decision accuracy below threshold — review idea screening rigor before approving.',
+        : 'Decision accuracy is below threshold. Review idea screening rigor before approving.',
     },
     {
       id: 'execution', title: 'Execution Discipline', score: d.executionRate,
@@ -614,7 +614,7 @@ export function buildPMPillars(d: PMScorecardData | null): DiagnosticPillar[] {
         { label: 'Avg lag', value: fmtDays(d.avgExecutionLagDays) },
         { label: 'Delay cost', value: d.totalDelayCostBps != null ? `${d.totalDelayCostBps > 0 ? '+' : ''}${d.totalDelayCostBps.toFixed(0)} bps` : '—' },
       ],
-      takeaway: d.avgExecutionLagDays == null ? 'No executed decisions with timing data — cannot assess delay cost until trades are executed.'
+      takeaway: d.avgExecutionLagDays == null ? 'No executed decisions with timing data, so delay cost cannot be assessed until trades are executed.'
         : d.avgExecutionLagDays <= 2 ? 'Fast execution. Delay cost is minimal.'
         : d.avgExecutionLagDays > 7 ? `${d.avgExecutionLagDays.toFixed(0)}-day lag is likely creating material opportunity cost.`
         : 'Execution timing is adequate. Monitor for drift.',
@@ -629,7 +629,7 @@ export function buildPMInsights(d: PMScorecardData | null): BehaviorInsight[] {
   if (d.totalDecisions === 0) return [{ text: 'No approved decisions in the system. Begin approving ideas to build PM track record.', severity: 'neutral' }]
 
   if (d.decisionsPending > d.decisionsExecuted && d.totalDecisions > 3)
-    insights.push({ text: `${d.decisionsPending} approvals are stalled — decisions are not reaching the portfolio.`, severity: 'negative' })
+    insights.push({ text: `${d.decisionsPending} approvals are stalled, so decisions are not reaching the portfolio.`, severity: 'negative' })
   if (d.avgExecutionLagDays != null && d.avgExecutionLagDays > 7 && d.decisionsExecuted > 0)
     insights.push({ text: `${d.avgExecutionLagDays.toFixed(0)}-day average lag between approval and trade. Entry quality is likely degrading.`, severity: 'negative' })
   if (d.totalDelayCostBps != null && d.totalDelayCostBps > 30)
@@ -637,7 +637,7 @@ export function buildPMInsights(d: PMScorecardData | null): BehaviorInsight[] {
   if (d.directionalHitRate != null && d.directionalHitRate >= 70 && d.decisionsPositive + d.decisionsNegative >= 3)
     insights.push({ text: `${d.decisionsPositive} of ${d.decisionsPositive + d.decisionsNegative} resolved decisions helped. Decision quality is net positive.`, severity: 'positive' })
   if (d.directionalHitRate != null && d.directionalHitRate < 35 && d.decisionsPositive + d.decisionsNegative >= 3)
-    insights.push({ text: 'Negative outcomes outweigh positive — approvals may be happening before ideas are fully validated.', severity: 'negative' })
+    insights.push({ text: 'Negative outcomes outweigh positive, so approvals may be happening before ideas are fully validated.', severity: 'negative' })
   if (d.executionRate != null && d.executionRate >= 90 && d.totalDecisions >= 5)
     insights.push({ text: 'Near-complete execution follow-through. Pipeline is functioning.', severity: 'positive' })
 

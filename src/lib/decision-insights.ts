@@ -155,21 +155,21 @@ export function buildSystemInsight(row: AccountabilityRow): SystemInsight {
   // ── Pass / reject / withdrawn ─────────────────────────────────
   if (action === 'pass') {
     if (tier === 'strong_positive' || tier === 'mild_positive') return {
-      text: `You passed on ${sym} and it appreciated — the position you skipped moved against you.`,
+      text: `You passed on ${sym} and it appreciated. The position you skipped moved against you.`,
       conclusion: tier === 'strong_positive'
-        ? 'A meaningful conviction signal was missed — review what made you pass.'
+        ? 'A meaningful conviction signal was missed. Review what made you pass.'
         : 'Worth reviewing whether the case has changed since you passed.',
       tone: 'negative',
     }
     if (tier === 'strong_negative' || tier === 'mild_negative') return {
-      text: `You passed on ${sym} and it underperformed — avoiding the risk improved the portfolio.`,
+      text: `You passed on ${sym} and it underperformed. Avoiding the risk improved the portfolio.`,
       conclusion: tier === 'strong_negative'
         ? 'The decision to skip clearly protected capital.'
         : 'A small win for risk discipline.',
       tone: 'positive',
     }
     return {
-      text: `You passed on ${sym} — no clear signal yet on whether that was the right call.`,
+      text: `You passed on ${sym}, with no clear signal yet on whether that was the right call.`,
       conclusion: 'Monitor whether the original case still holds.',
       tone: 'neutral',
     }
@@ -180,12 +180,12 @@ export function buildSystemInsight(row: AccountabilityRow): SystemInsight {
   // timing rather than just describing the move.
   if (tier === 'strong_positive') {
     if (action === 'increase') return {
-      text: `You increased exposure to ${sym} before strong appreciation — conviction has been rewarded.`,
-      conclusion: 'Strong outcome — but too early to attribute to skill vs timing. Track the catalysts that would confirm the thesis.',
+      text: `You increased exposure to ${sym} before strong appreciation. Conviction has been rewarded.`,
+      conclusion: 'A strong outcome, but too early to attribute to skill vs timing. Track the catalysts that would confirm the thesis.',
       tone: 'positive',
     }
     if (action === 'reduce') return {
-      text: `You reduced exposure to ${sym} before strong upside — significant gains were left on the table.`,
+      text: `You reduced exposure to ${sym} before strong upside. Significant gains were left on the table.`,
       conclusion: 'Was this risk management working as intended, or did you mistime the trim?',
       tone: 'negative',
     }
@@ -197,13 +197,13 @@ export function buildSystemInsight(row: AccountabilityRow): SystemInsight {
   }
   if (tier === 'strong_negative') {
     if (action === 'increase') return {
-      text: `You increased exposure to ${sym} and it moved against you — outcome is diverging materially.`,
+      text: `You increased exposure to ${sym} and it moved against you. The outcome is diverging materially.`,
       conclusion: 'Reassess whether this is thesis-driven or timing noise before adding more.',
       tone: 'negative',
     }
     if (action === 'reduce') return {
-      text: `You reduced exposure to ${sym} before strong weakness — risk was managed effectively.`,
-      conclusion: 'Decision aligned with what played out — a good test case for the process.',
+      text: `You reduced exposure to ${sym} before strong weakness. Risk was managed effectively.`,
+      conclusion: 'The decision aligned with what played out, a good test case for the process.',
       tone: 'positive',
     }
     return {
@@ -216,29 +216,29 @@ export function buildSystemInsight(row: AccountabilityRow): SystemInsight {
   // ── Mild-magnitude branch (1.5–5%) ────────────────────────────
   if (tier === 'mild_positive') {
     if (action === 'increase') return {
-      text: `You increased exposure to ${sym} before appreciation — capture what you saw early.`,
+      text: `You increased exposure to ${sym} before appreciation. Capture what you saw early.`,
       conclusion: 'Track the catalysts that would actually confirm your call, not the tape.',
       tone: 'positive',
     }
     if (action === 'reduce') return {
-      text: `You reduced exposure to ${sym} before further upside — small gains being missed.`,
-      conclusion: 'Define a re-entry trigger — even modest upside compounds over time.',
+      text: `You reduced exposure to ${sym} before further upside. Small gains are being missed.`,
+      conclusion: 'Define a re-entry trigger: even modest upside compounds over time.',
       tone: 'negative',
     }
     return {
       text: `${sym} has moved up modestly since this decision.`,
-      conclusion: 'Don\'t anchor on price — track thesis drivers.',
+      conclusion: 'Don\'t anchor on price. Track thesis drivers.',
       tone: 'neutral',
     }
   }
   if (tier === 'mild_negative') {
     if (action === 'increase') return {
-      text: `Initial move on ${sym} is against you — too early to react, focus on whether the thesis changed.`,
+      text: `The initial move on ${sym} is against you. Too early to react, so focus on whether the thesis changed.`,
       conclusion: 'Don\'t let a short-term move force a change of mind on a longer thesis.',
       tone: 'negative',
     }
     if (action === 'reduce') return {
-      text: `You reduced exposure to ${sym} before weakness — early risk management is working.`,
+      text: `You reduced exposure to ${sym} before weakness. Early risk management is working.`,
       conclusion: 'This improved portfolio risk positioning so far.',
       tone: 'positive',
     }
@@ -255,7 +255,7 @@ export function buildSystemInsight(row: AccountabilityRow): SystemInsight {
   if (!hasRationale) {
     const phrase = actionPhrase(row.direction, sym)
     return {
-      text: `This decision has no recorded reasoning — write down why you ${phrase} before hindsight biases it.`,
+      text: `This decision has no recorded reasoning. Write down why you ${phrase} before hindsight biases it.`,
       conclusion: 'Lock in your reasoning now so the outcome can be evaluated honestly later.',
       tone: 'neutral',
     }
@@ -263,14 +263,14 @@ export function buildSystemInsight(row: AccountabilityRow): SystemInsight {
   if (ageDays >= 14) {
     const phrase = actionPhrase(row.direction, sym)
     return {
-      text: `Two weeks since you ${phrase} with no clear signal — the thesis hasn't been tested either way.`,
+      text: `Two weeks since you ${phrase} with no clear signal, so the thesis hasn't been tested either way.`,
       conclusion: 'Define what would prove or break the thesis before more time passes.',
       tone: 'neutral',
     }
   }
   return {
-    text: `No meaningful signal on ${sym} yet — avoid reacting to short-term noise.`,
-    conclusion: 'No action required yet — revisit when new data emerges.',
+    text: `No meaningful signal on ${sym} yet, so avoid reacting to short-term noise.`,
+    conclusion: 'No action required yet. Revisit when new data emerges.',
     tone: 'neutral',
   }
 }
@@ -517,32 +517,32 @@ export function buildStateSummary(
     // Strong magnitude — speak to the interpretation question first.
     if (tier === 'strong_negative') {
       return {
-        category: 'NEEDS CONTEXT — OUTCOME DIVERGED',
-        explanation: `You ${exposurePhrase} and it moved sharply against you — capture whether this was timing or thesis-driven.`,
+        category: 'NEEDS CONTEXT: OUTCOME DIVERGED',
+        explanation: `You ${exposurePhrase} and it moved sharply against you. Capture whether this was timing or thesis-driven.`,
       }
     }
     if (tier === 'strong_positive') {
       return {
-        category: 'NEEDS CONTEXT — STRONG OUTCOME',
-        explanation: `You ${exposurePhrase} and it has moved sharply — capture whether this was a real call or timing luck.`,
+        category: 'NEEDS CONTEXT: STRONG OUTCOME',
+        explanation: `You ${exposurePhrase} and it has moved sharply. Capture whether this was a real call or timing luck.`,
       }
     }
     if (tier === 'mild_negative') {
       return {
-        category: 'NEEDS CONTEXT — OUTCOME DIVERGING',
-        explanation: `You ${exposurePhrase} and it has moved against you — write down what you saw so the outcome can be evaluated honestly.`,
+        category: 'NEEDS CONTEXT: OUTCOME DIVERGING',
+        explanation: `You ${exposurePhrase} and it has moved against you. Write down what you saw so the outcome can be evaluated honestly.`,
       }
     }
     if (tier === 'mild_positive') {
       return {
-        category: 'NEEDS CONTEXT — EARLY SIGNAL',
-        explanation: `You ${exposurePhrase} and it has moved your way — capture what you saw early before the outcome colours the memory.`,
+        category: 'NEEDS CONTEXT: EARLY SIGNAL',
+        explanation: `You ${exposurePhrase} and it has moved your way. Capture what you saw early, before the outcome colours the memory.`,
       }
     }
     // No signal yet — vary by rationale presence.
     if (!hasRationale && (ageDays < 7 || (!result || result === 'neutral'))) {
       return {
-        category: 'NEEDS CONTEXT — EARLY DECISION',
+        category: 'NEEDS CONTEXT: EARLY DECISION',
         explanation: `Write down why you ${exposurePhrase} before the outcome rewrites the memory.`,
       }
     }
@@ -554,23 +554,23 @@ export function buildStateSummary(
 
   if (verdict === 'evaluate') {
     if (tier === 'strong_negative' || tier === 'mild_negative') return {
-      category: 'MONITORING — OUTCOME DIVERGING',
-      explanation: `You ${exposurePhrase} and it has moved against you — reflect when the thesis becomes clearer.`,
+      category: 'MONITORING: OUTCOME DIVERGING',
+      explanation: `You ${exposurePhrase} and it has moved against you. Reflect when the thesis becomes clearer.`,
     }
     if (tier === 'strong_positive' || tier === 'mild_positive') return {
-      category: 'MONITORING — POSITIVE SIGNAL',
-      explanation: `You ${exposurePhrase} and it has moved your way — reflect on whether the thesis is playing out.`,
+      category: 'MONITORING: POSITIVE SIGNAL',
+      explanation: `You ${exposurePhrase} and it has moved your way. Reflect on whether the thesis is playing out.`,
     }
     return {
       category: 'MONITORING',
-      explanation: `Tesseract is watching ${sym} — reflect when the thesis becomes clearer.`,
+      explanation: `Tesseract is watching ${sym}. Reflect when the thesis becomes clearer.`,
     }
   }
 
   if (verdict === 'hurting') {
     return {
       category: 'THESIS UNDER STRESS',
-      explanation: `You ${exposurePhrase} and it has moved against your case — decide whether the original thesis still holds.`,
+      explanation: `You ${exposurePhrase} and it has moved against your case. Decide whether the original thesis still holds.`,
     }
   }
 
@@ -598,7 +598,7 @@ export function buildStateSummary(
   if (verdict === 'awaiting') {
     return {
       category: 'AWAITING EXECUTION',
-      explanation: 'Approved recently and pending. Normal state — no action needed yet.',
+      explanation: 'Approved recently and pending. A normal state, with no action needed yet.',
     }
   }
 

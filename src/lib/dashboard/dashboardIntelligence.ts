@@ -200,11 +200,11 @@ export function buildHeroConsequence(item: DashboardItem): HeroConsequence {
   } else if (status === 'blocked') {
     tension = `Blocking downstream execution. Waiting on you.`
   } else if (status === 'at risk' && weight != null && weight >= 2) {
-    tension = `${weight.toFixed(1)}% exposure misaligned \u2014 open ${age}d without resolution.`
+    tension = `${weight.toFixed(1)}% exposure misaligned, open ${age}d without resolution.`
   } else if (status === 'at risk') {
     tension = `High-impact, open ${age}d. Position deteriorating without action.`
   } else if (status === 'aging') {
-    tension = `Open ${age}d \u2014 approaching decision window limit.`
+    tension = `Open ${age}d, approaching the decision window limit.`
   } else if (action && (action === 'Sell' || action === 'Trim')) {
     tension = 'Risk reduction trade waiting on you.'
   } else if (weight != null && weight >= 3) {
@@ -341,19 +341,19 @@ export function getDecisionContext(item: DashboardItem): DecisionContext {
   if (urgency === 'urgent') {
     downstream = 'Blocking downstream execution'
   } else if (age >= 14) {
-    downstream = 'Stalling pipeline — other decisions waiting'
+    downstream = 'Stalling pipeline, other decisions waiting'
   }
 
   // Why now
   let whyNow: string
   if (age >= 14) {
-    whyNow = `${age}d stalled — timing risk increasing`
+    whyNow = `${age}d stalled, timing risk increasing`
   } else if (urgency === 'urgent') {
-    whyNow = 'Blocking execution — act immediately'
+    whyNow = 'Blocking execution, act immediately'
   } else if (age >= 7) {
-    whyNow = `${age}d open — approaching limit`
+    whyNow = `${age}d open, approaching the limit`
   } else if (item.severity === 'HIGH') {
-    whyNow = 'High impact — early action preferred'
+    whyNow = 'High impact, early action preferred'
   } else {
     whyNow = `Open ${age}d`
   }
@@ -492,7 +492,7 @@ export function buildBriefingInsights(
     insights.push({
       id: 'bottleneck',
       icon: 'bottleneck',
-      text: `${bottleneck.label} bottleneck \u2014 ${bottleneck.count} stalled, median ${bottleneck.medianDays}d.`,
+      text: `${bottleneck.label} bottleneck: ${bottleneck.count} stalled, median ${bottleneck.medianDays}d.`,
       severity: bottleneck.medianDays >= 7 ? 'critical' : 'warning',
       ctaLabel: `Unblock`,
       ctaAction: () => onOpenTradeQueue?.(bottleneck.stage!),
@@ -514,7 +514,7 @@ export function buildBriefingInsights(
       ? `${action ? action + ' ' : ''}${ticker}`
       : oldestDecision.title
     const risk = days >= 14
-      ? `${label} stalled ${days}d \u2014 execution risk increasing.`
+      ? `${label} stalled ${days}d, execution risk increasing.`
       : `${label} open ${days}d without resolution.`
     insights.push({
       id: 'aging',
@@ -531,7 +531,7 @@ export function buildBriefingInsights(
   if (thesisStack && thesisStack.count > 0) {
     const redCount = thesisStack.itemsAll.filter(i => i.severity === 'HIGH').length
     const text = redCount > 0
-      ? `Coverage degrading \u2014 ${redCount} thesis${redCount !== 1 ? 'es' : ''} stale >180d.`
+      ? `Coverage degrading: ${redCount} thesis${redCount !== 1 ? 'es' : ''} stale >180d.`
       : `${thesisStack.count} thesis${thesisStack.count !== 1 ? 'es' : ''} beyond review window.`
     insights.push({
       id: 'stale',
@@ -556,7 +556,7 @@ export function buildBriefingInsights(
     insights.push({
       id: 'deliverables',
       icon: 'workload',
-      text: `${overdueDelivs} deliverable${overdueDelivs !== 1 ? 's' : ''} overdue \u2014 worst ${maxOverdue}d late.`,
+      text: `${overdueDelivs} deliverable${overdueDelivs !== 1 ? 's' : ''} overdue, worst ${maxOverdue}d late.`,
       severity: 'warning',
       ctaLabel: 'Open projects',
       ctaAction: () => onScrollToBand?.('ADVANCE'),
@@ -568,7 +568,7 @@ export function buildBriefingInsights(
   const executingOldest = pipelineStats.stages.executing.oldestDays ?? 0
   if (executingCount > 0) {
     const risk = executingOldest >= 5
-      ? `Execution gap \u2014 ${executingCount} approved, oldest ${executingOldest}d unexecuted.`
+      ? `Execution gap: ${executingCount} approved, oldest ${executingOldest}d unexecuted.`
       : `${executingCount} approved trade${executingCount !== 1 ? 's' : ''} not yet executed.`
     insights.push({
       id: 'execution',
@@ -695,7 +695,7 @@ export function getDiscussionItems(viewModel: CockpitViewModel): FocusDiscussIte
       items.push({
         id: `discuss-concentration-${name}`,
         title: `${pItems.length} decisions in ${name}`,
-        reason: 'Concentrated decision load — coordinate priorities',
+        reason: 'Concentrated decision load, coordinate priorities',
         items: pItems,
       })
     }
@@ -709,7 +709,7 @@ export function getDiscussionItems(viewModel: CockpitViewModel): FocusDiscussIte
     items.push({
       id: 'discuss-high-exposure',
       title: `${highExposure.length} large position change${highExposure.length !== 1 ? 's' : ''}`,
-      reason: 'Significant exposure shifts — team alignment needed',
+      reason: 'Significant exposure shifts, team alignment needed',
       items: highExposure,
     })
   }
@@ -721,7 +721,7 @@ export function getDiscussionItems(viewModel: CockpitViewModel): FocusDiscussIte
     items.push({
       id: 'discuss-stale-thesis',
       title: `${staleHighImpact.length} thesis${staleHighImpact.length !== 1 ? 'es' : ''} critically stale`,
-      reason: 'Coverage blind spots — discuss research priorities',
+      reason: 'Coverage blind spots, discuss research priorities',
       items: staleHighImpact,
     })
   }
@@ -744,7 +744,7 @@ export function getUnblockItems(
   if (!bottleneck.isHealthy) {
     items.push({
       id: 'unblock-bottleneck',
-      title: `${bottleneck.label} bottleneck — ${bottleneck.count} stalled`,
+      title: `${bottleneck.label} bottleneck: ${bottleneck.count} stalled`,
       reason: `Median ${bottleneck.medianDays}d in stage`,
       age: bottleneck.medianDays,
     })
@@ -759,7 +759,7 @@ export function getUnblockItems(
     items.push({
       id: 'unblock-stalled-decisions',
       title: `${stalledDecisions.length} decision${stalledDecisions.length !== 1 ? 's' : ''} stalled >14d`,
-      reason: `Oldest: ${oldest}d — needs escalation or resolution`,
+      reason: `Oldest: ${oldest}d, needs escalation or resolution`,
       age: oldest,
       onClick: stalledDecisions[0]?.primaryAction.onClick,
     })
@@ -786,7 +786,7 @@ export function getUnblockItems(
     items.push({
       id: 'unblock-pipeline-ideas',
       title: `${simStack.count} idea${simStack.count !== 1 ? 's' : ''} stuck in pipeline`,
-      reason: `Oldest: ${simStack.oldestAgeDays}d — advance or discard`,
+      reason: `Oldest: ${simStack.oldestAgeDays}d, advance or discard`,
       age: simStack.oldestAgeDays,
     })
   }
