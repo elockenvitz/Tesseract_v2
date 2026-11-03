@@ -170,6 +170,14 @@ export function DashboardNext() {
   /* Not remembered. See `./place` -- a reader should not have to dismiss a
      full-screen article to get their Dashboard back. */
   const [article, setArticle] = useState<Extract<ExploreOpen, { do: 'article' }> | null>(null)
+  /*
+   * The node the feed portals its filter rail into, in this bar's right-hand
+   * end. State rather than a ref, because the child needs to RE-RENDER once
+   * the node exists -- a ref assignment does not schedule one, and the rail
+   * would stay in the feed's own band until something else happened to
+   * re-render it.
+   */
+  const [railHost, setRailHost] = useState<HTMLElement | null>(null)
 
   /*
    * Written on every change rather than on unmount. An unmount-time write
@@ -302,6 +310,29 @@ export function DashboardNext() {
         <span className="hidden text-xs text-gray-400 lg:inline dark:text-gray-500">
           {LENSES.find(m => m.key === lens)?.hint}
         </span>
+
+        {/*
+          Where the feed draws its own filters.
+
+          The feed used to put a second full-width control band directly under
+          this one: a mode row, a rule, a chip row, a rule. Two bands of
+          controls, stacked, for one surface -- and the lower one went on
+          drawing itself while the reader was looking at Explore or the book,
+          where its chips mean nothing.
+
+          An empty node, filled by `IdeasExplore` through a portal, so the
+          lens, the applied facets and the Curate popover all stay owned by
+          the component whose state they are. `ml-auto` is the right-hand end
+          of the bar, which is where a filter belongs beside a mode switch.
+
+          Keyed on the lens so the node is REPLACED rather than reused when
+          the reader leaves the feed: React removes a portal's children with
+          its host, and reusing one node across lenses would leave the feed's
+          chips sitting over the book.
+        */}
+        {lens === 'feed' && (
+          <div ref={setRailHost} className="ml-auto flex min-w-0 items-center" />
+        )}
       </header>
 
       <div className="min-h-0 flex-1">
@@ -408,6 +439,9 @@ export function DashboardNext() {
               <IdeasExplore
                 selectedKey={selected?.selection.key ?? null}
                 include={INCLUDE}
+                /* Its filters draw in this shell's own bar, not in a second
+                   band under it. See the node in the header. */
+                railHost={railHost}
                 /* The band is handed the entries this feed is drawing, so the
                    instructions and the cards are one list in one order. */
                 lead={entries => <StartHereBand entries={entries} onOpen={openEntry} />}

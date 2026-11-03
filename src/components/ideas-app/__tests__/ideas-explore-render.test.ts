@@ -142,3 +142,72 @@ describe('the shell holds the two callbacks stable', () => {
     expect(body).toContain('nothing to open')
   })
 })
+
+/**
+ * The feed's filters draw in the shell's own bar, not in a second band.
+ *
+ * ── What this is protecting ──────────────────────────────────────────────
+ *
+ * The Dashboard drew a mode row -- Dashboard, Ideas, Explore, Portfolio --
+ * and the feed drew its own full-width chip band directly beneath it: two
+ * bands of controls and two rules for one surface. The chips are in the mode
+ * bar now, right-justified.
+ *
+ * Source assertions for the reason the file already states: the alternative
+ * is mounting the desktop feed with a query client, an attention pool and
+ * market data to observe which DOM node a chip landed in.
+ *
+ * Every failure here is SILENT on screen, which is why each is pinned:
+ *
+ *  - a second rail written for the host's bar drifts from this one;
+ *  - a `ref` instead of state leaves the rail in the old band, because a ref
+ *    assignment schedules no re-render and the child never learns the node
+ *    exists;
+ *  - a host node that outlives the feed lens leaves the feed's chips sitting
+ *    over the book;
+ *  - and the Ideas tab, which passes no host, silently loses its filters.
+ */
+describe('the feed puts its filters in the host bar', () => {
+  const FEED = 'src/components/ideas-app/IdeasExplore.tsx'
+
+  it('has one toolbar, moved rather than copied', () => {
+    const src = bare(FEED)
+    expect(src).toContain('function RailSlot(')
+    expect(src).toContain('return host ? createPortal(children, host)')
+    /* One `IDEA_LENSES.map` in the file. A second is the copy this exists to
+       prevent, and two chip rows reading the same state is how they start
+       differing by a divider. */
+    expect(src.match(/IDEA_LENSES\.map\(/g) ?? []).toHaveLength(1)
+  })
+
+  it('falls back to its own band when no host is given', () => {
+    // The Ideas tab passes nothing and must keep the bar it has.
+    expect(bare(FEED)).toContain(': <>{children}</>')
+    expect(bare(FEED)).toContain('railHost = null')
+  })
+
+  it('hands over a node the child can react to, not a ref', () => {
+    const src = bare(SHELL)
+    expect(src).toContain('const [railHost, setRailHost] = useState<HTMLElement | null>(null)')
+    expect(src).toContain('ref={setRailHost}')
+    expect(src).toContain('railHost={railHost}')
+  })
+
+  it('removes the host with the lens, so the chips cannot outlive the feed', () => {
+    const src = bare(SHELL)
+    const i = src.indexOf('ref={setRailHost}')
+    expect(i).toBeGreaterThan(-1)
+    // The node is inside the feed-lens guard, not a permanent slot.
+    expect(src.slice(0, i)).toMatch(/\{lens === 'feed' && \([\s\S]{0,200}$/)
+  })
+
+  it('opens Curate into the page from the right-hand end of the bar', () => {
+    /* Measured at 1920 with `left-0`: the panel opened at x=1812 and was
+       436px wider than the window, with its facets unreachable. `right-0`
+       is correct at either end of a band -- at the left it still has the
+       whole width to grow into. */
+    const src = bare('src/components/ideas-app/CuratePanel.tsx')
+    expect(src).toContain('absolute right-0 top-full')
+    expect(src).not.toContain('absolute left-0 top-full')
+  })
+})

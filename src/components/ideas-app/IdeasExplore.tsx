@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
 import {
   CARD_SURFACE, CARD_EDGE, CARD_EDGE_SELECTED, CARD_HOVER, GALLERY_GROUND,
@@ -86,9 +87,50 @@ const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
  */
 const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready']
 
+/**
+ * Draw these controls here, or in a bar the host already has.
+ *
+ * Module level and not an inline ternary at the call site, so the toolbar
+ * below is written ONCE. A second copy behind a condition is how two chip
+ * rows start differing by a divider while both read the same state.
+ *
+ * A portal is the right tool because nothing about ownership changes: the
+ * rail's lens, its applied facets and its popover all live in `IdeasExplore`,
+ * and lifting three pieces of state into a host so it could draw the rail
+ * would give the Ideas tab -- which has no such bar -- a second answer to
+ * "which lens am I in".
+ */
+function RailSlot({ host, children }: { host: HTMLElement | null; children: ReactNode }) {
+  return host ? createPortal(children, host) : <>{children}</>
+}
+
 export function IdeasExplore({
-  onSelect, selectedKey = null, onSelectionInvalid, onProgress, lead, include,
+  onSelect, selectedKey = null, onSelectionInvalid, onProgress, lead, include, railHost = null,
 }: {
+  /**
+   * Where to draw the lens rail, when the host already has a bar for it.
+   *
+   * ── Why a portal and not a lifted prop ────────────────────────────────────
+   *
+   * The Dashboard draws a mode bar -- Dashboard, Ideas, Explore, Portfolio --
+   * and this component drew its own bar of chips directly beneath it. Two
+   * full-width control bands, stacked, for one surface. The chips belong on
+   * the mode bar, right-justified, which is what was asked for.
+   *
+   * The rail is driven entirely by state that lives HERE: the lens, the
+   * applied Curate facets, and the popover's own open flag. Lifting three
+   * pieces of state into the host so it can draw the rail would give the
+   * Ideas tab, which has no such bar, a second copy of all of it and two
+   * places where "which lens am I in" is answered.
+   *
+   * A portal moves the DOM and leaves the ownership alone. The rail is a
+   * child of this component in every way that matters -- state, handlers,
+   * re-render -- and simply paints somewhere else.
+   *
+   * Null by default, and `IdeasApp` passes nothing, so the Ideas tab keeps
+   * the bar it has.
+   */
+  railHost?: HTMLElement | null
   /**
    * Candidate families beyond the ones the Ideas tab asks for.
    *
@@ -280,11 +322,33 @@ export function IdeasExplore({
          above the scroller takes the same gutter. */
       className="gallery-host flex h-full flex-col"
     >
-      {/* `relative z-20` only so the Curate popover paints above the list; the
-          app header is z-30 and above, so nothing is covered that matters. */}
-      <div className={clsx(FEED_MEASURE, 'rail-pad relative z-20 shrink-0 border-b border-gray-200 bg-white px-6 pt-5 dark:border-gray-700 dark:bg-gray-900')}>
-        {/* Lens rail. Persistent, because it is the primary control. */}
-        <div className="flex flex-wrap items-center gap-1.5 pb-3">
+      {/*
+        The controls, drawn here or in the host's own bar -- see `railHost`.
+
+        ONE toolbar either way. The alternative was a second copy of this
+        block behind a condition, and two copies is how the chip row and the
+        host's chip row start differing by a divider while both read the same
+        state. `RailSlot` moves the DOM and leaves everything else alone.
+
+        `relative z-20` only so the Curate popover paints above the list; the
+        app header is z-30 and above, so nothing is covered that matters.
+      */}
+      <RailSlot host={railHost}>
+      <div className={clsx(
+        'relative z-20 shrink-0',
+        railHost
+          /* In the host's bar: no measure, no gutter, no rule of its own --
+             the bar already draws all three -- and pushed to the right end of
+             it, which is where a filter belongs beside a mode switch. */
+          ? 'ml-auto flex items-center justify-end'
+          : clsx(FEED_MEASURE, 'rail-pad border-b border-gray-200 bg-white px-6 pt-5 dark:border-gray-700 dark:bg-gray-900'),
+      )}>
+        <div className={clsx(
+          'flex flex-wrap items-center gap-1.5',
+          /* The chips carry the band's bottom padding only when the band is
+             this component's own. In the host's bar the bar sets it. */
+          railHost ? 'justify-end' : 'pb-3',
+        )}>
           {IDEA_LENSES.map((l, i) => (
             <Fragment key={l.key}>
             {/*
@@ -400,6 +464,7 @@ export function IdeasExplore({
           </div>
         )}
       </div>
+      </RailSlot>
 
       {/* The ground, stated. This scroller declared none and took whichever
           shell it was mounted in -- the same omission the convergence suite
