@@ -27,7 +27,7 @@ import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
  * The 148 other callers in this codebase all read the hook.
  */
 import { useAuth } from '../../hooks/useAuth'
-import { readPlace, writePlace, type NextLens } from './place'
+import { readPlace, writePlace, type LensPlace, type NextLens } from './place'
 
 /**
  * The Dashboard, rebuilt as the Ideas feed. Tab type `dashboard-next`.
@@ -164,9 +164,31 @@ export function DashboardNext() {
   const seenPortfolio = useRef(false)
   if (lens === 'portfolio') seenPortfolio.current = true
   const portfolioSeen = seenPortfolio.current
-  const [selected, setSelected] = useState<{ selection: IdeasSelection; entry: AttentionEntry | null } | null>(resume.selected)
-  const [workMode, setWorkMode] = useState<Progression['mode'] | null>(resume.workMode)
-  const [splitOpen, setSplitOpen] = useState(resume.splitOpen)
+  /*
+   * What is open, PER LENS. See `LensPlace` for why this is not one object.
+   *
+   * The three lenses ask three questions, and a reader pressing Explore is
+   * changing the question rather than carrying an answer across. One shared
+   * work pane meant an AMZN workspace opened from the feed was still there
+   * under Explore, relabelled "Back to Explore", pointing at a field the
+   * reader had never been in.
+   */
+  const [at, setAt] = useState<Record<NextLens, LensPlace>>(resume.at)
+  const here = at[lens]
+  const selected = here.selected
+  const workMode = here.workMode
+  const splitOpen = here.splitOpen
+  /*
+   * Writes land on the lens the reader is standing in, read at call time
+   * rather than captured. A handler built for one lens and pressed after a
+   * switch must act on the lens on screen.
+   */
+  const setHere = useCallback((patch: Partial<LensPlace>) => {
+    setAt(prev => ({ ...prev, [lens]: { ...prev[lens], ...patch } }))
+  }, [lens])
+  const closeHere = useCallback(() => {
+    setHere({ selected: null, workMode: null, splitOpen: false })
+  }, [setHere])
   /* Not remembered. See `./place` -- a reader should not have to dismiss a
      full-screen article to get their Dashboard back. */
   const [article, setArticle] = useState<Extract<ExploreOpen, { do: 'article' }> | null>(null)
@@ -186,8 +208,8 @@ export function DashboardNext() {
    * captured in a closure that ran once is the previous place, not this one.
    */
   useEffect(() => {
-    writePlace(owner, { lens, selected, workMode, splitOpen })
-  }, [owner, lens, selected, workMode, splitOpen])
+    writePlace(owner, { lens, at })
+  }, [owner, lens, at])
   const resolvePrompt = usePromptResolve()
   /* `markIdeasViewed` is deliberately not called here: `IdeasExplore` already
      records it when the feed settles, and a second caller in the shell would
@@ -203,11 +225,9 @@ export function DashboardNext() {
   const openWorkspace = useCallback((
     selection: IdeasSelection, entry: AttentionEntry | null, mode: Progression['mode'] | null,
   ) => {
-    setSelected({ selection, entry })
-    setWorkMode(mode)
-    setSplitOpen(true)
+    setHere({ selected: { selection, entry }, workMode: mode, splitOpen: true })
     markSignalWorked()
-  }, [markSignalWorked])
+  }, [setHere, markSignalWorked])
 
   /* Resolving an Explore preview, never for drawing. A memo over the shared
      candidate pool, so this fetches nothing. */
@@ -388,7 +408,7 @@ export function DashboardNext() {
                      the bar's own buttons read, so the two labels are one
                      string. */
                   backTo={LENSES.find(m => m.key === lens)?.label ?? 'Dashboard'}
-                  onBack={() => { setSelected(null); setWorkMode(null); setSplitOpen(false) }}
+                  onBack={closeHere}
                 />
               </div>
             )}
@@ -456,8 +476,10 @@ export function DashboardNext() {
                 }}
                 onSelectionInvalid={() => {
                   if (selected?.selection.origin !== 'ideas') return
-                  setSelected(null)
-                  setWorkMode(null)
+                  /* The pane stays OPEN and loses its subject, which is what
+                     this handler always did: the reader changed the feed's
+                     context and their candidate is no longer in it. */
+                  setHere({ selected: null, workMode: null })
                 }}
               />
             </div>
@@ -468,7 +490,7 @@ export function DashboardNext() {
                 selection={selected?.selection ?? null}
                 entry={selected?.entry ?? null}
                 mode={workMode}
-                onClose={() => { setSelected(null); setWorkMode(null); setSplitOpen(false) }}
+                onClose={closeHere}
               />
             </div>
           )}

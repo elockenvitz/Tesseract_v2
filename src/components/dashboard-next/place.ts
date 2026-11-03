@@ -42,11 +42,40 @@ import type { Progression } from '../../lib/desktop-ideas/progression'
 
 export type NextLens = 'feed' | 'explore' | 'portfolio'
 
-export type DashboardNextPlace = {
-  lens: NextLens
+/**
+ * What a reader was doing INSIDE one lens.
+ *
+ * ── Why this is per lens and was not ─────────────────────────────────────
+ *
+ * One `selected` / `workMode` / `splitOpen` was shared by all three, so the
+ * work pane was a property of the SHELL rather than of the lens. Reported:
+ * open a finding from Ideas, press Explore, and the same asset workspace is
+ * still there.
+ *
+ * Worse than a leftover, it misdescribed itself. The way back reads "Back
+ * to <the lens you are standing in>", so an AMZN workspace opened from the
+ * feed relabelled itself "Back to Explore" the moment the reader pressed
+ * Explore, and pressing it dropped them into a field they had never been
+ * in. The shell was claiming the reader had got there from somewhere they
+ * had not.
+ *
+ * The three lenses are three questions -- what deserves attention, what
+ * might be interesting, how the books are doing -- and a reader moving
+ * between them is changing the question, not carrying an answer across.
+ * Each keeps its own open object, so switching away and back returns the
+ * reader to where they left that lens, and switching to a lens they have
+ * not opened anything in shows that lens's field.
+ */
+export type LensPlace = {
   selected: { selection: IdeasSelection; entry: AttentionEntry | null } | null
   workMode: Progression['mode'] | null
   splitOpen: boolean
+}
+
+export type DashboardNextPlace = {
+  lens: NextLens
+  /** One per lens. See {@link LensPlace}. */
+  at: Record<NextLens, LensPlace>
 }
 
 /*
@@ -70,8 +99,12 @@ export type DashboardNextPlace = {
  * The Ideas lens, nothing selected. What a reader gets on a first open, on a
  * reload, and after another reader has been signed in.
  */
+/** A lens with nothing open in it. */
+export const NO_LENS_PLACE: LensPlace = { selected: null, workMode: null, splitOpen: false }
+
 export const NO_PLACE: DashboardNextPlace = {
-  lens: 'feed', selected: null, workMode: null, splitOpen: false,
+  lens: 'feed',
+  at: { feed: NO_LENS_PLACE, explore: NO_LENS_PLACE, portfolio: NO_LENS_PLACE },
 }
 
 /**

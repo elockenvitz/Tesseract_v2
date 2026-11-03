@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { NO_PLACE, forgetPlace, readPlace, writePlace, type DashboardNextPlace } from '../place'
+import {
+  NO_PLACE, NO_LENS_PLACE, forgetPlace, readPlace, writePlace,
+  type DashboardNextPlace, type LensPlace, type NextLens,
+} from '../place'
 
 /**
  * The Dashboard keeping its place across a tab switch.
@@ -24,14 +27,31 @@ const src = (rel: string) => readFileSync(join(process.cwd(), 'src', rel), 'utf8
 const ME = 'user-1'
 const SOMEONE_ELSE = 'user-2'
 
-const place = (over: Partial<DashboardNextPlace> = {}): DashboardNextPlace => ({
-  lens: 'explore',
+/*
+ * ── The place became per lens, and these had to follow ──────────────────
+ *
+ * It held ONE `selected` / `workMode` / `splitOpen` for the whole shell, so
+ * these cases asserted them at the top level. The work pane was therefore a
+ * property of the shell rather than of the lens, which is the defect: open a
+ * finding from Ideas, press Explore, and the same asset workspace is still
+ * there -- relabelled "Back to Explore", pointing at a field the reader has
+ * never been in.
+ *
+ * The claims every case made are unchanged; what moved is where in the place
+ * they live, and one case is ADDED for the thing that was wrong.
+ */
+const open = (key: string): LensPlace => ({
   selected: {
-    selection: { key: 'k1', family: 'conviction', assetId: 'a-1', symbol: 'AMZN' } as never,
+    selection: { key, family: 'conviction', assetId: 'a-1', symbol: 'AMZN' } as never,
     entry: null,
   },
   workMode: null,
   splitOpen: true,
+})
+
+const place = (over: Partial<DashboardNextPlace> = {}): DashboardNextPlace => ({
+  lens: 'explore',
+  at: { feed: NO_LENS_PLACE, explore: open('k1'), portfolio: NO_LENS_PLACE },
   ...over,
 })
 
@@ -42,16 +62,46 @@ describe('the Dashboard keeps where the reader was', () => {
     writePlace(ME, place())
     const back = readPlace(ME)
     expect(back.lens).toBe('explore')
-    expect(back.splitOpen).toBe(true)
-    expect(back.selected?.selection.key).toBe('k1')
+    expect(back.at.explore.splitOpen).toBe(true)
+    expect(back.at.explore.selected?.selection.key).toBe('k1')
+  })
+
+  /**
+   * THE case this shape exists for.
+   *
+   * Reported: "when i am in asset workspace in ideas and then select explore,
+   * i am still in asset workspace". One shared work pane made that inevitable
+   * -- and the way back names the lens the reader is standing in, so the
+   * workspace relabelled itself "Back to Explore" and offered a route into a
+   * field the reader had never opened.
+   *
+   * Each lens keeps its own open object, so a reader switching away and back
+   * returns to where they left THAT lens, and a lens they have opened nothing
+   * in shows its field.
+   */
+  it('never hands one lens the object another lens had open', () => {
+    writePlace(ME, {
+      lens: 'feed',
+      at: { feed: open('from-ideas'), explore: NO_LENS_PLACE, portfolio: open('a-holding') },
+    })
+    const back = readPlace(ME)
+    expect(back.at.feed.selected?.selection.key).toBe('from-ideas')
+    // Explore was never opened and stays empty, rather than inheriting the
+    // feed's workspace the moment the reader presses it.
+    expect(back.at.explore).toEqual(NO_LENS_PLACE)
+    expect(back.at.explore.splitOpen).toBe(false)
+    // And the book keeps its own, which is a different object again.
+    expect(back.at.portfolio.selected?.selection.key).toBe('a-holding')
   })
 
   /** A first open, which must not inherit anything. */
   it('starts on Ideas with nothing selected when there is nothing to resume', () => {
     expect(readPlace(ME)).toEqual(NO_PLACE)
     expect(NO_PLACE.lens).toBe('feed')
-    expect(NO_PLACE.splitOpen).toBe(false)
-    expect(NO_PLACE.selected).toBeNull()
+    for (const k of ['feed', 'explore', 'portfolio'] as NextLens[]) {
+      expect(NO_PLACE.at[k].splitOpen, k).toBe(false)
+      expect(NO_PLACE.at[k].selected, k).toBeNull()
+    }
   })
 
   /**
@@ -69,7 +119,8 @@ describe('the Dashboard keeps where the reader was', () => {
     writePlace(ME, place({ lens: 'portfolio' }))
     const back = readPlace(ME)
     expect(back.lens).toBe('portfolio')
-    expect(Object.keys(back).sort()).toEqual(['lens', 'selected', 'splitOpen', 'workMode'])
+    expect(Object.keys(back).sort()).toEqual(['at', 'lens'])
+    expect(Object.keys(back.at).sort()).toEqual(['explore', 'feed', 'portfolio'])
   })
 
   /**
@@ -109,9 +160,15 @@ describe('the shell actually uses the store', () => {
     const f = file()
     expect(f).toMatch(/readPlace\(owner\)/)
     expect(f).toMatch(/useState<NextLens>\(resume\.lens\)/)
-    expect(f).toMatch(/useState<[^\n]*>\(resume\.selected\)/)
-    expect(f).toMatch(/useState<Progression\['mode'\] \| null>\(resume\.workMode\)/)
-    expect(f).toMatch(/useState\(resume\.splitOpen\)/)
+    /* One record, not three top-level pieces. The three used to be separate
+       `useState`s, which is what made the work pane a property of the shell
+       instead of the lens. */
+    expect(f).toMatch(/useState<Record<NextLens, LensPlace>>\(resume\.at\)/)
+    expect(f).toMatch(/const here = at\[lens\]/)
+    /* Writes land on the lens on screen, read at call time: a handler built
+       for one lens and pressed after a switch must act on the current one. */
+    expect(f).toMatch(/setAt\(prev => \(\{ \.\.\.prev, \[lens\]: \{ \.\.\.prev\[lens\], \.\.\.patch \} \}\)\)/)
+    expect(f).toMatch(/\}, \[lens\]\)/)
     // And the latch is NOT seeded: see the case above for why that costs the
     // reader queries on a surface they did not come back to.
     expect(f).toMatch(/const seenPortfolio = useRef\(false\)/)
@@ -119,10 +176,10 @@ describe('the shell actually uses the store', () => {
 
   it('writes the place whenever any part of it changes', () => {
     const f = file()
-    expect(f).toMatch(/writePlace\(owner, \{ lens, selected, workMode, splitOpen \}\)/)
+    expect(f).toMatch(/writePlace\(owner, \{ lens, at \}\)/)
     // Every value it writes is also a dependency, or the store holds a stale
     // place and the restore is worse than no restore at all.
-    expect(f).toMatch(/\[owner, lens, selected, workMode, splitOpen\]/)
+    expect(f).toMatch(/\[owner, lens, at\]/)
   })
 
   /**
