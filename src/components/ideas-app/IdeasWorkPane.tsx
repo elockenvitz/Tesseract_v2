@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
+import { clsx } from 'clsx'
 import { Lightbulb } from 'lucide-react'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
 import { PromptDetailView } from '../thoughts/PromptDetailView'
 import { IdeaDetail } from '../ideas-v2/IdeaDetail'
 import { AssetWorkspacePane } from '../asset-v2/AssetWorkspace'
+import { ArticleReader } from '../mobile/ArticleReader'
+import { ideaRowFromFeedItem } from '../../lib/desktop-ideas/from-feed'
 import { useTradeIdeaWorkspace } from '../../hooks/useTradeIdeaWorkspace'
 import { assetFocusFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
 import type { Progression } from '../../lib/desktop-ideas/progression'
@@ -120,7 +123,11 @@ export function IdeasWorkPane({
         A fork, and a deliberate one: the band appears only where nothing
         below can hold it.
       */}
-      {!selection.assetId && (
+      {/* A story is excluded as well, and for the same reason as an asset:
+          the surface below opens with the headline and the source in type the
+          reader can actually read, so a strip repeating them in 10px over the
+          top of it is the two-top-panes fault in a third place. */}
+      {!selection.assetId && selection.family !== 'story' && (
         <div className="shrink-0 border-b border-gray-200 px-4 py-1 dark:border-gray-700">
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
@@ -155,7 +162,15 @@ export function IdeasWorkPane({
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <WorkSurface selection={selection} onClose={onClose} mode={mode} />
+        {/* Keyed on the selection, so the leg a pair is open at is dropped
+            when a different candidate arrives. Remounting also resets the
+            surfaces below, which is what opening another object means. */}
+        <WorkSurface
+          key={selection.key}
+          selection={selection}
+          onClose={onClose}
+          mode={mode}
+        />
       </div>
     </div>
   )
@@ -166,6 +181,60 @@ function WorkSurface({ selection, onClose, mode }: {
   onClose: () => void
   mode: Progression['mode'] | null
 }) {
+  /**
+   * Which name the reader is working, where the candidate names more than one.
+   *
+   * Only a pair ever has a second, and only a pair ever changes this. It is
+   * local to the pane on purpose: which leg is on screen is not an identity
+   * the feed, the lens memory or the host has any reason to know, and putting
+   * it in the selection would make going from the long side to the short side
+   * look like opening a different card.
+   *
+   * Reset by `selection.key` through the `key` prop this component is given,
+   * so opening a second pair never lands on the first one's leg.
+   */
+  const [leg, setLeg] = useState<string | null>(null)
+
+  /**
+   * A story: the words first, the name's workspace under them.
+   *
+   * Before the post branch because a story is not a post -- it is somebody
+   * else's reporting about a name the desk owns, and it arrives from Explore
+   * rather than from a producer.
+   *
+   * `desk` is deliberately NOT passed to the reader when an asset follows it.
+   * That panel exists to give a blocked story somewhere useful to go on a
+   * phone; here the somewhere useful is already rendered directly beneath it,
+   * and drawing both would state the position twice and offer a button that
+   * scrolls to what is already on screen.
+   */
+  if (selection.family === 'story' && selection.story) {
+    return (
+      <div className="flex flex-col">
+        <ArticleReader
+          embedded
+          open
+          url={selection.story.url}
+          fallbackTitle={selection.story.title ?? undefined}
+          fallbackSource={selection.story.source ?? undefined}
+          desk={selection.assetId ? null : deskOf(selection)}
+          onClose={onClose}
+        />
+        {selection.assetId && (
+          <div className="border-t border-gray-200 dark:border-gray-800">
+            <AssetWorkspacePane
+              asset={{ id: selection.assetId, symbol: selection.symbol }}
+              focus="overview"
+              issue={selection.why.headline}
+              origin="ideas"
+              why={{ headline: selection.why.headline, reason: selection.why.reason }}
+            />
+          </div>
+        )}
+      </div>
+    )
+  }
+
   /*
    * Posts route by their own feed type. Every surface below already exists and
    * is already used elsewhere — this is routing, not new work surfaces.
@@ -177,14 +246,47 @@ function WorkSurface({ selection, onClose, mode }: {
     if (selection.postType === 'thought') {
       return <QuickThoughtDetailPanel quickThoughtId={selection.objectId} onClose={onClose} embedded />
     }
-    if (selection.postType === 'trade_idea') return <TradeIdeaSurface selection={selection} mode={mode} />
-    return (
-      <NotYet
-        what={`A work surface for a ${selection.postType ?? 'post'}`}
-        why="This post family has no dedicated work surface yet."
-      />
-    )
+    /**
+     * A trade idea, but only where the row can actually carry one.
+     *
+     * ── The dead end this removes ───────────────────────────────────────
+     *
+     * `postKindOf` calls a PAIR TRADE a trade idea, deliberately and
+     * correctly: a pair is a proposed position with a direction and a size,
+     * and the alternative it was fixed from was calling it a thought.
+     * `ideaRowFromFeedItem` accepts only `trade_idea`, equally correctly:
+     * `IdeaRow` has one `assetId` and one `direction`, and a pair has two of
+     * each, so projecting one onto it would publish half a trade as the whole
+     * of it.
+     *
+     * Both right, and between them every pair in the feed reached
+     * `TradeIdeaSurface`, got null, and printed "Its underlying row is no
+     * longer in the loaded feed" -- which was not true. The row was in the
+     * feed; it was in `selection.item`; it simply is not that shape.
+     *
+     * MEASURED on the live field: "Long MCD / Short CMG" in The Homler Fund,
+     * the only unexecuted pair in the pool, opened to that sentence.
+     *
+     * So the branch now asks whether the row projects, rather than whether
+     * the reader called it a trade, and anything that does not falls through
+     * to the name it is about.
+     */
+    if (selection.postType === 'trade_idea' && selection.item && ideaRowFromFeedItem(selection.item)) {
+      return <TradeIdeaSurface selection={selection} mode={mode} />
+    }
   }
+
+  /**
+   * A pair, shown whole, with either side workable.
+   *
+   * The asset page below answers for ONE name. On a pair that is half the
+   * proposal, and the half is chosen by which leg happened to be long -- so
+   * the structure is stated above it and every leg is a way in. Nothing is
+   * summarised and nothing is inferred: these are the legs the feed row
+   * carries, on the sides it puts them.
+   */
+  const legs = selection.legs ?? null
+  const openLeg = (legs?.some(l => l.assetId === leg) ? leg : null) ?? selection.assetId
 
   /*
    * Every machine-derived family here is an ASSET-level finding, and the
@@ -193,31 +295,46 @@ function WorkSurface({ selection, onClose, mode }: {
    * finding is about — a target argument lands on research, a sizing argument
    * on the position, a case-versus-price gap on the framework.
    *
+   * A post that has no surface of its own now lands here too, rather than on
+   * a sentence saying so. A thesis update, a note, a message and a pair are
+   * all somebody writing about a NAME, and the name's own workspace is a
+   * truthful answer to "what do I know about this and what can I do now" --
+   * which is the question this pane exists to answer. The one thing it must
+   * not do is claim to be the post itself, which is why a pair states its
+   * structure above the page rather than letting one leg stand for both.
+   *
    * `AssetWorkspacePane` already takes an `issue`, which is how the attention
    * event travels in with the reader. `openAsset` was rejected: it dispatches
    * a tab and would eject them from Ideas entirely, which is the flow this
    * application exists to replace.
    */
-  if (selection.assetId) {
+  if (openLeg) {
     return (
-      <AssetWorkspacePane
-        asset={{ id: selection.assetId, symbol: selection.symbol }}
-        focus={assetFocusFor(selection.family)}
-        portfolioId={selection.portfolioId}
-        portfolioName={selection.portfolioName}
-        issue={selection.why.headline}
-        origin="ideas"
-        /*
-         * The explanation goes INTO that header rather than above it.
-         *
-         * This pane used to draw it as a band of its own -- a ticker, a
-         * headline and a reason with a bottom border -- directly over a
-         * header that draws its own ticker. Two top panes, and the header
-         * also printed "Opened from Ideas · <the finding>", so the same
-         * sentence appeared twice within eighty pixels.
-         */
-        why={{ headline: selection.why.headline, reason: selection.why.reason }}
-      />
+      <div className="flex flex-col">
+        {legs && legs.length > 1 && (
+          <LegRail legs={legs} open={openLeg} onPick={setLeg} />
+        )}
+        <AssetWorkspacePane
+          /* The leg the reader picked, or the one the card's entity named. */
+          key={openLeg}
+          asset={{ id: openLeg, symbol: symbolOf(legs, openLeg) ?? selection.symbol }}
+          focus={assetFocusFor(selection.family)}
+          portfolioId={selection.portfolioId}
+          portfolioName={selection.portfolioName}
+          issue={selection.why.headline}
+          origin="ideas"
+          /*
+           * The explanation goes INTO that header rather than above it.
+           *
+           * This pane used to draw it as a band of its own -- a ticker, a
+           * headline and a reason with a bottom border -- directly over a
+           * header that draws its own ticker. Two top panes, and the header
+           * also printed "Opened from Ideas · <the finding>", so the same
+           * sentence appeared twice within eighty pixels.
+           */
+          why={{ headline: selection.why.headline, reason: selection.why.reason }}
+        />
+      </div>
     )
   }
 
@@ -226,6 +343,59 @@ function WorkSurface({ selection, onClose, mode }: {
       what={`A work surface for ${FAMILY_LABEL[selection.family] ?? selection.family}`}
       why="This finding does not name an asset, so there is no underlying object to open. Its attention tile is still useful; the work surface is not."
     />
+  )
+}
+
+/** The symbol a leg carries, so the header names the leg and not the card. */
+function symbolOf(legs: IdeasSelection['legs'], assetId: string): string | null {
+  return legs?.find(l => l.assetId === assetId)?.symbol ?? null
+}
+
+/** A story's desk block, for a story with no asset record behind it. */
+function deskOf(selection: IdeasSelection) {
+  return selection.symbol
+    ? { symbol: selection.symbol, assetId: selection.assetId, holding: null }
+    : null
+}
+
+/**
+ * Both sides of a pair, above the page that answers for one of them.
+ *
+ * Long before short, in the order the row carries, so the rail reads as the
+ * expression the author proposed rather than as a set of names. The open leg
+ * is marked rather than removed: a reader needs to see which half of their
+ * own pair they are looking at.
+ */
+function LegRail({ legs, open, onPick }: {
+  legs: NonNullable<IdeasSelection['legs']>
+  open: string
+  onPick: (assetId: string) => void
+}) {
+  return (
+    <div className="shrink-0 border-b border-gray-200 px-4 py-2 dark:border-gray-700">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+        Both sides of this trade
+      </p>
+      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+        {legs.map(l => (
+          <button
+            key={l.assetId}
+            type="button"
+            onClick={() => onPick(l.assetId)}
+            aria-current={l.assetId === open}
+            className={clsx(
+              'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
+              l.assetId === open
+                ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-950/40 dark:text-blue-300'
+                : 'border-gray-200 text-gray-600 hover:border-gray-400 dark:border-gray-700 dark:text-gray-300',
+            )}
+          >
+            <span className="uppercase tracking-wide text-gray-400">{l.side}</span>
+            {l.symbol ?? 'this name'}
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 

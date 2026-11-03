@@ -7,12 +7,10 @@ import { PortfolioWorkspace } from '../portfolio-v2/PortfolioWorkspace'
 import { IdeasWorkPane } from '../ideas-app/IdeasWorkPane'
 import { BackToSection } from '../desktop/BackToSection'
 import { StartHereBand } from './StartHereBand'
-import { ArticleReader } from '../mobile/ArticleReader'
 import { useDesktopAttentionFeed, type AttentionEntry, type AttentionInclude } from '../../hooks/useDesktopAttentionFeed'
-import { selectionFor, selectionForPosition, type IdeasSelection } from '../../lib/desktop-ideas/selection'
+import { selectionFor, selectionForPosition, selectionForStory, type IdeasSelection } from '../../lib/desktop-ideas/selection'
 import { exploreOpen, type ExploreOpen } from '../../lib/desktop-ideas/explore-open'
 import type { ExploreItem } from '../../lib/mobile/explore-item'
-import { openAsset } from '../../lib/desktop-asset/navigate'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import type { DashboardFocusTarget } from '../../lib/dashboard/focus'
@@ -242,9 +240,6 @@ export function DashboardNext() {
   const closeHere = useCallback(() => {
     setHere({ selected: null, workMode: null, splitOpen: false })
   }, [setHere])
-  /* Not remembered. See `./place` -- a reader should not have to dismiss a
-     full-screen article to get their Dashboard back. */
-  const [article, setArticle] = useState<Extract<ExploreOpen, { do: 'article' }> | null>(null)
   /*
    * The node the feed portals its filter rail into, in this bar's right-hand
    * end. State rather than a ref, because the child needs to RE-RENDER once
@@ -317,7 +312,9 @@ export function DashboardNext() {
       openWorkspace(open.selection, null, null)
       return
     }
-    if (open.do === 'article') { setArticle(open); return }
+    /* The story goes in the pane, like everything else a tile opens. It used
+       to take the whole screen as an overlay; see `selectionForStory`. */
+    if (open.do === 'article') { openWorkspace(selectionForStory(open), null, null); return }
     if (open.do === 'navigate') {
       window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: open.target }))
       return
@@ -632,19 +629,6 @@ export function DashboardNext() {
         </div>
       </div>
 
-      {article && (
-        <ArticleReader
-          open
-          url={article.url}
-          fallbackTitle={article.title ?? undefined}
-          fallbackSource={article.source ?? undefined}
-          desk={article.desk}
-          onClose={() => setArticle(null)}
-          onOpenAsset={(assetId, symbol) => {
-            if (assetId) openAsset({ assetId, symbol })
-          }}
-        />
-      )}
     </div>
   )
 }

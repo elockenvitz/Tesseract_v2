@@ -5,11 +5,9 @@ import { IdeasExplore } from './IdeasExplore'
 import { IdeasExploreBrowse } from './IdeasExploreBrowse'
 import { IdeasWorkPane } from './IdeasWorkPane'
 import { BackToSection } from '../desktop/BackToSection'
-import { ArticleReader } from '../mobile/ArticleReader'
 import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
-import { selectionFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
-import { exploreOpen, type ExploreOpen } from '../../lib/desktop-ideas/explore-open'
-import { openAsset } from '../../lib/desktop-asset/navigate'
+import { selectionFor, selectionForStory, type IdeasSelection } from '../../lib/desktop-ideas/selection'
+import { exploreOpen } from '../../lib/desktop-ideas/explore-open'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import { usePromptResolve } from '../../hooks/usePromptResolve'
@@ -151,15 +149,6 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
    */
   const resolver = useDesktopAttentionFeed('all')
 
-  /**
-   * The open story, if any.
-   *
-   * A story is read, not worked on, and `resolveExploreItem` has said so since
-   * it was written. It gets the reader the product already has rather than a
-   * second one, and deliberately NOT the workspace — putting an article there
-   * for the sake of consistency would make the workspace a browser.
-   */
-  const [article, setArticle] = useState<Extract<ExploreOpen, { do: 'article' }> | null>(null)
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-900">
@@ -272,7 +261,21 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
                 openWorkspace(open.selection, null, null)
                 return
               }
-              if (open.do === 'article') { setArticle(open); return }
+              /*
+               * The story opens in the workspace, not over it.
+               *
+               * This used to read "a story is read, not worked on ... putting
+               * an article there for the sake of consistency would make the
+               * workspace a browser", and the overlay followed from it. The
+               * reader overruled it with the case it missed: a story here is
+               * surfaced because the desk owns the name, so the question it
+               * raises is whether the case still holds -- and the overlay hid
+               * the case to show the story. See `selectionForStory`.
+               */
+              if (open.do === 'article') {
+                openWorkspace(selectionForStory(open), null, null)
+                return
+              }
               if (open.do === 'navigate') {
                 /*
                  * The shell's own tab channel — the same descriptor `openAsset`
@@ -360,24 +363,6 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
         </div>
       </div>
 
-      {/* Portalled and full-screen, over whichever mode the reader was in. The
-          same component the phone uses — its directory is historical, it holds
-          no phone-specific layout, and a second reader would be a second
-          answer to a question this product has already answered. */}
-      {article && (
-        <ArticleReader
-          open
-          url={article.url}
-          fallbackTitle={article.title ?? undefined}
-          fallbackSource={article.source ?? undefined}
-          desk={article.desk}
-          onClose={() => setArticle(null)}
-          /* The route the story's own tile would have taken. */
-          onOpenAsset={(assetId, symbol) => {
-            if (assetId) openAsset({ assetId, symbol })
-          }}
-        />
-      )}
     </div>
   )
 }

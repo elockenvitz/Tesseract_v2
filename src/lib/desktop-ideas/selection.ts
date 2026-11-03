@@ -44,7 +44,13 @@ export interface IdeasSelection {
    * about. Like `'explore'` it is a family the router can route, NOT a second
    * selection type.
    */
-  family: AttentionEntry['family'] | 'explore' | 'portfolio'
+  /**
+   * `'story'` is the third value no producer emits: a news story opened from
+   * an Explore tile. It is a thing to READ rather than a finding, so it is the
+   * one family whose surface is not the asset page alone -- the words come
+   * first and the name's workspace follows them. See `selectionForStory`.
+   */
+  family: AttentionEntry['family'] | 'explore' | 'portfolio' | 'story'
   /**
    * Which surface the reader was on when they selected this.
    *
@@ -85,6 +91,31 @@ export interface IdeasSelection {
   symbol: string | null
   portfolioId: string | null
   portfolioName: string | null
+  /**
+   * Where to read the story, for `family === 'story'` only.
+   *
+   * Identity, like everything else here: the URL is what the reader is being
+   * shown and the title and source are what the tile already said about it.
+   * The words themselves are fetched by the surface, never carried.
+   */
+  story?: { url: string; title: string | null; source: string | null } | null
+  /**
+   * The names a PAIR proposes, where the candidate is one.
+   *
+   * ── Why a selection has to carry this ───────────────────────────────────
+   *
+   * A pair trade is a relationship between two names, and `assetId` holds
+   * exactly one of them -- the first long leg, because that is the asset the
+   * card's entity resolved to. Routing on `assetId` alone therefore answers
+   * "Long MCD / Short CMG" with a page about MCD and never mentions that the
+   * other half exists, which is the flattening this product's own rules
+   * forbid. The legs travel so the surface can show the whole structure and
+   * let the reader work either side of it.
+   *
+   * Identity only: which names, and which side each is on. No prices, no
+   * sizes, no words.
+   */
+  legs?: readonly { assetId: string; symbol: string | null; side: 'long' | 'short' }[] | null
   /**
    * Why this surfaced, carried so the workspace is entered FROM an attention
    * event rather than arrived at cold.
@@ -226,6 +257,87 @@ export function selectionForPosition(t: DashboardFocusTarget): IdeasSelection {
   }
 }
 
+/**
+ * A news story, as a selection.
+ *
+ * ── Why a story is a selection now, and was not before ────────────────────
+ *
+ * It used to open `ArticleReader` as a full-screen overlay over the whole
+ * Dashboard, and the reasoning for that was written down: "a story is read,
+ * not worked on ... putting an article in the workspace for the sake of
+ * consistency would make the workspace a browser."
+ *
+ * Overridden, by the reader, with the case the original reasoning missed. A
+ * story in this product is not a story in a newspaper: it is surfaced because
+ * the desk owns the name, and the question it raises is "does this change the
+ * case". Answering that means the story and the case on screen together. The
+ * overlay guaranteed the opposite -- it covered the feed, the book and the
+ * workspace, and the only way back to any of them was to dismiss the story.
+ *
+ * And the "browser" it was guarding against does not appear: the pane holds
+ * one story at a time, with no history, no address bar and no second link.
+ *
+ * ── Which asset ──────────────────────────────────────────────────────────
+ *
+ * The desk's, where the resolver found one. That is the name the story was
+ * surfaced FOR -- the one the reader holds -- and not a name parsed out of
+ * the headline. Where there is none, the selection carries no asset and the
+ * surface is the story alone, which is the honest whole of what is known.
+ */
+export function selectionForStory(a: {
+  url: string
+  title: string | null
+  source: string | null
+  desk: { symbol: string; assetId: string | null } | null
+}): IdeasSelection {
+  return {
+    family: 'story',
+    origin: 'explore',
+    /* The URL is the story's identity. Two tiles pointing at one story are
+       one selection, which is what the reader would expect of them. */
+    key: `story:${a.url}`,
+    objectId: null,
+    postType: null,
+    item: null,
+    assetId: a.desk?.assetId ?? null,
+    symbol: a.desk?.symbol ?? null,
+    portfolioId: null,
+    portfolioName: null,
+    story: { url: a.url, title: a.title, source: a.source },
+    why: {
+      headline: a.title ?? 'This story',
+      reason: a.source,
+      occurredAt: null,
+    },
+  }
+}
+
+/** A leg as the feed carries it. Only the asset join is read. */
+type FeedLeg = { asset?: { id?: string | null; symbol?: string | null } | null }
+
+/**
+ * The legs of a pair, from the feed row that holds them.
+ *
+ * `long_legs` and `short_legs` are what `useIdeasFeed` builds a `pair_trade`
+ * item out of, and it has already dropped any leg whose asset join came back
+ * empty. A leg with no asset id is dropped again here rather than carried as
+ * a name with nothing behind it, because every id on a selection is routed on.
+ */
+function legsOf(item: ScoredFeedItem | null): IdeasSelection['legs'] {
+  const row = item as unknown as { long_legs?: FeedLeg[]; short_legs?: FeedLeg[] } | null
+  if (!row) return null
+  const out: { assetId: string; symbol: string | null; side: 'long' | 'short' }[] = []
+  const take = (legs: FeedLeg[] | undefined, side: 'long' | 'short') => {
+    for (const l of legs ?? []) {
+      const id = l?.asset?.id
+      if (id) out.push({ assetId: id, symbol: l.asset?.symbol ?? null, side })
+    }
+  }
+  take(row.long_legs, 'long')
+  take(row.short_legs, 'short')
+  return out.length ? out : null
+}
+
 export function selectionFor(entry: AttentionEntry): IdeasSelection {
   const card = entry.card
   const book = (card as unknown as { books?: { id?: string; name?: string }[] }).books?.[0]
@@ -237,6 +349,8 @@ export function selectionFor(entry: AttentionEntry): IdeasSelection {
     objectId: entry.family === 'post' ? entry.item?.id ?? null : null,
     postType: entry.family === 'post' ? postTypeOf(entry.item) : null,
     item: entry.family === 'post' ? entry.item : null,
+    /* Only a pair has them, and `legsOf` returns null for everything else. */
+    legs: entry.family === 'post' ? legsOf(entry.item) : null,
     assetId: card.entity?.kind === 'asset' ? card.entity.id : null,
     symbol: card.entity?.ticker ?? null,
     portfolioId: book?.id ?? null,
