@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Compass, LayoutDashboard, Lightbulb, Scale } from 'lucide-react'
 import { IdeasExplore } from '../ideas-app/IdeasExplore'
@@ -15,6 +15,7 @@ import type { ExploreItem } from '../../lib/mobile/explore-item'
 import { openAsset } from '../../lib/desktop-asset/navigate'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import type { Progression } from '../../lib/desktop-ideas/progression'
+import type { DashboardFocusTarget } from '../../lib/dashboard/focus'
 import { usePromptResolve } from '../../hooks/usePromptResolve'
 import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
 /*
@@ -127,6 +128,44 @@ const LENSES: { key: NextLens; label: string; hint: string; icon: typeof Lightbu
 /** Where the divider falls: after the lenses that read the feed. */
 const FEED_LENSES = 2
 
+/**
+ * The three browse surfaces, memoised FOR THIS SHELL.
+ *
+ * ── What was measured ─────────────────────────────────────────────────────
+ *
+ * In the running app at 1920, with a `longtask` observer across a lens press
+ * and 400ms after it, on the live Dashboard (83 feed cards, 151 Explore
+ * tiles, a 22-line book):
+ *
+ *   Ideas <-> Explore   one 159ms task, first paint 167-200ms after the click
+ *   Portfolio <-> any   one 96-99ms task
+ *
+ * A frame is 16ms, so that is ten dropped frames on a press that changes one
+ * `hidden` class. Reported as flickering when flipping back and forth.
+ *
+ * The click handler itself measured 1-2ms and forcing layout straight after
+ * it measured 0ms, so none of it was the browser: it was React re-rendering
+ * all three surfaces because a lens change changed something they were
+ * handed. Three somethings, in fact -- the per-lens selection, the handler
+ * identities, and the rail host node -- each fixed at its source above and
+ * each commented where it was.
+ *
+ * `memo` is what turns those fixes into a skipped render. Applied HERE, at
+ * the call site, rather than by wrapping the components' own exports: this
+ * shell is the only caller that keeps all three mounted at once and flips
+ * between them, and `IdeasApp` must not inherit a memo it did not ask for.
+ *
+ * It is not a correctness mechanism. Every prop below is a primitive, a
+ * module constant, a value from a memo, or a `useCallback` with no lens in
+ * it, so a surface whose input genuinely changes still re-renders. If a
+ * future prop is written inline in the JSX this silently stops working
+ * rather than going wrong, which is why `dashboard-next.test.tsx` pins the
+ * prop shapes.
+ */
+const Feed = memo(IdeasExplore)
+const Explore = memo(IdeasExploreBrowse)
+const Book = memo(PortfolioWorkspace)
+
 export function DashboardNext() {
   /*
    * ── The place survives the tab switch ───────────────────────────────────
@@ -182,10 +221,24 @@ export function DashboardNext() {
    * Writes land on the lens the reader is standing in, read at call time
    * rather than captured. A handler built for one lens and pressed after a
    * switch must act on the lens on screen.
+   *
+   * ── Why the lens comes from a ref and not from the closure ──────────────
+   *
+   * This was `useCallback(..., [lens])`, which did the same thing and gave
+   * every handler built on it A NEW IDENTITY ON EVERY LENS CHANGE. That is
+   * what made flipping lenses cost a full re-render of all three browse
+   * surfaces: measured in the running app, one 159ms task per press, with
+   * first paint 167-200ms after it. The click itself was 1-2ms.
+   *
+   * A ref read inside the updater is the same rule stated in a way that does
+   * not churn: the handler never captures a lens at all, so there is nothing
+   * for a switch to invalidate.
    */
+  const lensNow = useRef(lens)
+  lensNow.current = lens
   const setHere = useCallback((patch: Partial<LensPlace>) => {
-    setAt(prev => ({ ...prev, [lens]: { ...prev[lens], ...patch } }))
-  }, [lens])
+    setAt(prev => ({ ...prev, [lensNow.current]: { ...prev[lensNow.current], ...patch } }))
+  }, [])
   const closeHere = useCallback(() => {
     setHere({ selected: null, workMode: null, splitOpen: false })
   }, [setHere])
@@ -273,8 +326,12 @@ export function DashboardNext() {
   }, [openWorkspace])
 
   /* The same thing a card click does, so Start here and the card it was
-     derived from cannot land in different places. */
-  const openEntry = (entry: AttentionEntry) => {
+     derived from cannot land in different places.
+
+     `useCallback` for the same reason as `openWorkspace`: the feed below is
+     memoised now, and a handler rebuilt on every render would re-render all
+     83 of its cards on every lens press. */
+  const openEntry = useCallback((entry: AttentionEntry) => {
     if (entry.family === 'ready_to_revisit') {
       const target = entry.card.actions?.primary?.route?.idea?.tradeQueueItemId
       if (target) {
@@ -283,7 +340,57 @@ export function DashboardNext() {
       }
     }
     openWorkspace(selectionFor(entry), entry, null)
-  }
+  }, [openWorkspace])
+
+  /* The band above the cards, built from the entries the feed is drawing. */
+  const feedLead = useCallback(
+    (entries: AttentionEntry[]) => <StartHereBand entries={entries} onOpen={openEntry} />,
+    [openEntry],
+  )
+
+  /*
+   * `resolvePrompt.mutate`, NOT `resolvePrompt`.
+   *
+   * The mutation RESULT is a new object on every render of this component, so
+   * depending on it gave this handler a new identity on every lens press and
+   * re-rendered the memoised feed -- all 83 cards -- to change one `hidden`
+   * class. Measured with a render counter in the running app: two feed
+   * renders per press, which the switch to `.mutate` takes to zero.
+   * `mutate` itself is stable for the life of the mutation.
+   */
+  const resolveTags = resolvePrompt.mutate
+  const onFeedProgress = useCallback((entry: AttentionEntry, progression: Progression) => {
+    if (progression.mode.kind === 'prompt_resolve') {
+      const item = entry.item as unknown as { tags?: string[] | null } | null
+      resolveTags({ promptId: entry.item!.id, tags: item?.tags ?? [] })
+      return
+    }
+    openWorkspace(selectionFor(entry), entry, progression.mode)
+  }, [openWorkspace, resolveTags])
+
+  /**
+   * The feed's own candidate is no longer in the feed's own set.
+   *
+   * Acts on `feed` by name rather than on "here", and reads the place inside
+   * the updater rather than from the render that built this handler. Both for
+   * the same reason: this fires from the feed, which stays mounted while the
+   * reader is in another lens, and it must neither clear that other lens's
+   * place nor make this handler's identity depend on which lens is on screen.
+   *
+   * The pane stays OPEN and loses its subject, which is what this handler
+   * always did: the reader changed the feed's context and their candidate is
+   * no longer in it.
+   */
+  const onFeedSelectionInvalid = useCallback(() => {
+    setAt(prev => (prev.feed.selected?.selection.origin === 'ideas'
+      ? { ...prev, feed: { ...prev.feed, selected: null, workMode: null } }
+      : prev))
+  }, [])
+
+  const openPosition = useCallback(
+    (target: DashboardFocusTarget) => openWorkspace(selectionForPosition(target), null, null),
+    [openWorkspace],
+  )
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-900">
@@ -345,14 +452,23 @@ export function DashboardNext() {
           the component whose state they are. `ml-auto` is the right-hand end
           of the bar, which is where a filter belongs beside a mode switch.
 
-          Keyed on the lens so the node is REPLACED rather than reused when
-          the reader leaves the feed: React removes a portal's children with
-          its host, and reusing one node across lenses would leave the feed's
-          chips sitting over the book.
+          HIDDEN off the feed, not unmounted -- and that is a change with a
+          measurement behind it. It was `{lens === 'feed' && <div …>}`, so the
+          host node was destroyed and rebuilt on every press, `railHost` went
+          null and back, and the feed re-rendered all 83 of its cards each
+          time because one of its props had genuinely changed. That was part
+          of the 159ms-per-press task.
+
+          `display: none` keeps the node, so the portal keeps its children and
+          the prop never moves. The original reason for unmounting still holds
+          and is still met: React removes a portal's children with its host,
+          and a host reused ACROSS lenses would leave the feed's chips sitting
+          over the book. Hidden, they sit over nothing.
         */}
-        {lens === 'feed' && (
-          <div ref={setRailHost} className="ml-auto flex min-w-0 items-center" />
-        )}
+        <div
+          ref={setRailHost}
+          className={clsx('ml-auto flex min-w-0 items-center', lens !== 'feed' && 'hidden')}
+        />
       </header>
 
       <div className="min-h-0 flex-1">
@@ -439,8 +555,8 @@ export function DashboardNext() {
                    All three wrappers below carry the same pair. */
                 className={clsx('min-h-0 flex-1', lens !== 'portfolio' && 'hidden')}
               >
-                <PortfolioWorkspace
-                  onOpenPosition={target => openWorkspace(selectionForPosition(target), null, null)}
+                <Book
+                  onOpenPosition={openPosition}
                   /*
                     Which line the workspace beside this column belongs to.
 
@@ -459,8 +575,18 @@ export function DashboardNext() {
               </div>
             )}
             <div className={clsx('min-h-0 flex-1', lens !== 'explore' && 'hidden')}>
-              <IdeasExploreBrowse
-                selectedKey={selected?.selection.key ?? null}
+              <Explore
+                /*
+                  EXPLORE's own selection, not the lens the reader happens to
+                  be standing in. `selected` is `at[lens]`, so this field used
+                  to be handed the Ideas feed's key whenever the reader was in
+                  Ideas -- a key it can never match, so nothing looked wrong,
+                  and a prop that moved on every press, so everything
+                  re-rendered. Now that a selection also decides which tiles
+                  collapse, handing a field another lens's selection would be
+                  a visible fault and not only a cost.
+                */
+                selectedKey={at.explore.selected?.selection.key ?? null}
                 resolve={resolveExplore}
                 onOpen={onExploreOpen}
               />
@@ -470,31 +596,26 @@ export function DashboardNext() {
                 are three lenses in it, the old one would draw the feed
                 underneath the book. */}
             <div className={clsx('min-h-0 flex-1', lens !== 'feed' && 'hidden')}>
-              <IdeasExplore
-                selectedKey={selected?.selection.key ?? null}
+              <Feed
+                /* The FEED's own selection. See the note on Explore's: these
+                   read `selected`, which is whichever lens is on screen, so
+                   each field was handed another lens's key on every press. */
+                selectedKey={at.feed.selected?.selection.key ?? null}
                 include={INCLUDE}
                 /* Its filters draw in this shell's own bar, not in a second
                    band under it. See the node in the header. */
                 railHost={railHost}
                 /* The band is handed the entries this feed is drawing, so the
-                   instructions and the cards are one list in one order. */
-                lead={entries => <StartHereBand entries={entries} onOpen={openEntry} />}
+                   instructions and the cards are one list in one order.
+
+                   Every callback below is hoisted and memoised rather than
+                   written inline. This field is `memo`'d now, and one inline
+                   arrow is enough to re-render all 83 of its cards on every
+                   lens press -- which is what it was doing. */
+                lead={feedLead}
                 onSelect={openEntry}
-                onProgress={(entry, progression) => {
-                  if (progression.mode.kind === 'prompt_resolve') {
-                    const item = entry.item as unknown as { tags?: string[] | null } | null
-                    resolvePrompt.mutate({ promptId: entry.item!.id, tags: item?.tags ?? [] })
-                    return
-                  }
-                  openWorkspace(selectionFor(entry), entry, progression.mode)
-                }}
-                onSelectionInvalid={() => {
-                  if (selected?.selection.origin !== 'ideas') return
-                  /* The pane stays OPEN and loses its subject, which is what
-                     this handler always did: the reader changed the feed's
-                     context and their candidate is no longer in it. */
-                  setHere({ selected: null, workMode: null })
-                }}
+                onProgress={onFeedProgress}
+                onSelectionInvalid={onFeedSelectionInvalid}
               />
             </div>
           </div>

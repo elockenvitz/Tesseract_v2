@@ -165,10 +165,32 @@ describe('the shell actually uses the store', () => {
        instead of the lens. */
     expect(f).toMatch(/useState<Record<NextLens, LensPlace>>\(resume\.at\)/)
     expect(f).toMatch(/const here = at\[lens\]/)
-    /* Writes land on the lens on screen, read at call time: a handler built
-       for one lens and pressed after a switch must act on the current one. */
-    expect(f).toMatch(/setAt\(prev => \(\{ \.\.\.prev, \[lens\]: \{ \.\.\.prev\[lens\], \.\.\.patch \} \}\)\)/)
-    expect(f).toMatch(/\}, \[lens\]\)/)
+    /*
+     * Writes land on the lens on screen, read at call time: a handler built
+     * for one lens and pressed after a switch must act on the current one.
+     *
+     * ── Why this stopped reading `[lens]` ───────────────────────────────
+     *
+     * It pinned `setAt(prev => ({ ...prev, [lens]: ... }))` with a `[lens]`
+     * dependency, which is the same rule and the expensive spelling of it:
+     * every handler built on `setHere` got a new identity on every lens
+     * change, and the three browse surfaces therefore re-rendered on every
+     * press. Measured in the running app: one 159ms task per press against a
+     * 1-2ms click, and that was what the flipping flicker was.
+     *
+     * The ref is the same rule with nothing for a switch to invalidate, and
+     * it is STRICTER about the property this case exists to protect: the
+     * closure cannot capture a lens at all, so there is no version of this
+     * handler that could act on a stale one.
+     */
+    expect(f).toMatch(/const lensNow = useRef\(lens\)/)
+    expect(f).toMatch(/lensNow\.current = lens/)
+    expect(f).toMatch(
+      /setAt\(prev => \(\{ \.\.\.prev, \[lensNow\.current\]: \{ \.\.\.prev\[lensNow\.current\], \.\.\.patch \} \}\)\)/,
+    )
+    /* And no lens in the dependency list, which is the whole point. */
+    const setHere = f.slice(f.indexOf('const setHere ='))
+    expect(setHere.slice(0, setHere.indexOf('\n  const'))).toMatch(/\}, \[\]\)/)
     // And the latch is NOT seeded: see the case above for why that costs the
     // reader queries on a surface they did not come back to.
     expect(f).toMatch(/const seenPortfolio = useRef\(false\)/)

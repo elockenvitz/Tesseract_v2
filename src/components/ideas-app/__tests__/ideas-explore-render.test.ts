@@ -104,13 +104,58 @@ describe('every prop handed to a tile is stable across an unrelated render', () 
 describe('the shell holds the two callbacks stable', () => {
   it('passes named callbacks, not inline arrows, to the field', () => {
     const src = bare(SHELL)
-    const start = src.indexOf('<IdeasExploreBrowse')
+    /*
+     * `<Explore`, not `<IdeasExploreBrowse`. The shell wraps all three browse
+     * surfaces in `memo` at module scope -- see the note there, and the
+     * 159ms-per-lens-press measurement behind it -- so the element in the
+     * JSX is the memoised alias. The import is still the component.
+     */
+    expect(src).toContain('const Explore = memo(IdeasExploreBrowse)')
+    /* `<Explore` followed by whitespace: a bare `indexOf` matches the type
+       `Extract<ExploreOpen, …>` first and slices the wrong region. */
+    const start = src.search(/<Explore\s/)
     expect(start).toBeGreaterThan(-1)
     const el = src.slice(start, src.indexOf('/>', start))
     expect(el).toContain('resolve={resolveExplore}')
     expect(el).toContain('onOpen={onExploreOpen}')
     // An arrow here is the thing that made memoising the tile pointless.
     expect(el).not.toContain('=>')
+    /* And the field is handed EXPLORE's own selection. `selected` is
+       `at[lens]`, so this used to be the Ideas feed's key whenever the reader
+       was in Ideas: a key Explore can never match, which looked like nothing
+       and moved on every press. */
+    expect(el).toContain("selectedKey={at.explore.selected?.selection.key ?? null}")
+  })
+
+  /**
+   * And the feed's callbacks are hoisted too, for the same reason.
+   *
+   * This case is new with the memo: `IdeasExplore` draws 83 cards and builds a
+   * preview set for each, and it was handed four inline arrows -- `lead`,
+   * `onProgress`, `onSelectionInvalid` and an `onSelect` that was a plain
+   * function declaration rather than a `useCallback`. Any one of them is
+   * enough to re-render the whole feed on every lens press.
+   */
+  it('passes named callbacks to the feed as well', () => {
+    const src = bare(SHELL)
+    expect(src).toContain('const Feed = memo(IdeasExplore)')
+    const start = src.search(/<Feed\s/)
+    expect(start).toBeGreaterThan(-1)
+    const el = src.slice(start, src.indexOf('/>', start))
+    expect(el).not.toContain('=>')
+    expect(el).toContain('lead={feedLead}')
+    expect(el).toContain('onSelect={openEntry}')
+    expect(el).toContain('onProgress={onFeedProgress}')
+    expect(el).toContain('onSelectionInvalid={onFeedSelectionInvalid}')
+    expect(el).toContain('selectedKey={at.feed.selected?.selection.key ?? null}')
+    for (const name of ['openEntry', 'feedLead', 'onFeedProgress', 'onFeedSelectionInvalid']) {
+      expect(src).toMatch(new RegExp(`const ${name} = useCallback\\(`))
+    }
+    /* `onFeedSelectionInvalid` reads the place inside the updater rather than
+       from the render that built it, so it needs no dependency and cannot
+       clear a lens the reader has since left. */
+    const invalid = src.slice(src.indexOf('const onFeedSelectionInvalid = useCallback('))
+    expect(invalid.slice(0, invalid.indexOf('\n  const'))).toMatch(/\}, \[\]\)/)
   })
 
   it('memoises resolve on the candidate pool, which is what it reads', () => {
@@ -193,12 +238,35 @@ describe('the feed puts its filters in the host bar', () => {
     expect(src).toContain('railHost={railHost}')
   })
 
-  it('removes the host with the lens, so the chips cannot outlive the feed', () => {
+  /**
+   * The chips still cannot outlive the feed, and the node no longer churns.
+   *
+   * ── Why this assertion changed shape ──────────────────────────────────
+   *
+   * It read "the node is inside the feed-lens guard, not a permanent slot",
+   * pinning `{lens === 'feed' && (<div ref={setRailHost} …>)}`. The property
+   * it was protecting is real: React removes a portal's children with their
+   * host, and a host reused ACROSS lenses would leave the feed's chips
+   * sitting over the book.
+   *
+   * Unmounting is not the only way to meet it, and it was an expensive one.
+   * The node was destroyed and rebuilt on every press, so `railHost` went
+   * null and back and the feed re-rendered all 83 of its cards each time --
+   * part of the 159ms-per-press task measured in the running app.
+   *
+   * `display: none` keeps the node, so the prop never moves, and hidden
+   * chips sit over nothing. So the rule is now asserted as it was always
+   * meant: the host is only ever VISIBLE on the feed.
+   */
+  it('shows the host only on the feed, so the chips cannot sit over the book', () => {
     const src = bare(SHELL)
     const i = src.indexOf('ref={setRailHost}')
     expect(i).toBeGreaterThan(-1)
-    // The node is inside the feed-lens guard, not a permanent slot.
-    expect(src.slice(0, i)).toMatch(/\{lens === 'feed' && \([\s\S]{0,200}$/)
+    const el = src.slice(i, src.indexOf('/>', i))
+    expect(el).toMatch(/lens !== 'feed' && 'hidden'/)
+    /* And it is NOT behind a mount guard any more, which is what made the
+       prop churn. */
+    expect(src.slice(0, i)).not.toMatch(/\{lens === 'feed' && \([\s\S]{0,200}$/)
   })
 
   it('opens Curate into the page from the right-hand end of the bar', () => {
