@@ -374,6 +374,46 @@
   }
   .gallery-region > [data-size] {
     grid-column: span 1 / span 1;
+
+    /* ── Why the off-screen tiles do not get laid out ────────────────────
+       Opening a tile takes this region from `w-full` to `max-w-[26rem]`
+       and from 12 tracks to 1 (see the note at `.gallery-host`). Pressing
+       "Back to ..." takes it the other way. Either way EVERY tile is a new
+       width, so the browser re-runs each one's internal flex, text
+       measurement and chart sizing -- 151 of them on this book -- in one
+       task the main thread cannot interrupt.
+
+       Measured before: 62ms, twice, on each direction. A frame is 16ms, so
+       that is the hitch that was reported as "a little hitchy". The React
+       half was already fixed (the gallery memo); what remains is browser
+       layout, and the only way to make layout cheaper is to give it less
+       to do.
+
+       `content-visibility: auto` does that: a tile outside the scrollport
+       skips its subtree entirely and contributes only the size below. Ten
+       or so tiles are on screen, so about 93% of the work goes away.
+
+       It is cheap here specifically because every tile is ALREADY
+       `position: relative` + `overflow: hidden` (see `DesktopTile`). The
+       `contain: layout style paint` this implies therefore grants the
+       browser nothing a tile had not already promised, so nothing that
+       used to paint outside a tile can start being clipped. Do not copy
+       this onto a surface whose children escape their box.
+
+       `auto 300px`: the `auto` keyword is the load-bearing half -- the
+       browser stores each tile's real height after it has been on screen
+       once and uses that from then on, so the scrollbar settles instead of
+       drifting. 300px is only the first guess for a tile never yet seen,
+       measured over this book at 12 tracks: compact p50 248, large 291,
+       medium 303, hero 356, the whole range 245 to 356. A guess inside a
+       111px band cannot move the scroll height far.
+
+       NOT a height and not a cap: an on-screen tile renders at its natural
+       height exactly as before. A `max-height` was tried on these tiles and
+       clipped real captions; that note is above, and this is not a second
+       attempt at it. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 300px;
   }
   /* 34rem is two tiles at the ~16rem a preview needs to stay a preview. */
   @container (min-width: 34rem) {
