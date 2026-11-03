@@ -95,10 +95,30 @@ export interface PortfolioWorkspaceProps {
    * fact.
    */
   onOpenPosition?: (target: DashboardFocusTarget) => void
+  /**
+   * Which holding the host has open BESIDE this book.
+   *
+   * ── Not `focusObjectId`, and not `selectedAssetId` ───────────────────────
+   *
+   * Both of those mean "stop drawing the book and draw this position's detail
+   * pane instead". That is the deck's expand-in-place seam and it is right
+   * for the deck. It is wrong for a host that puts the workspace in the other
+   * half of the screen, because then this half has no book left to go back
+   * to.
+   *
+   * This prop says the opposite: keep drawing the book, and say which line is
+   * the one being worked. The lens answers in the only vocabulary a gallery
+   * has -- the tile's size and its selected ring -- and the chosen line keeps
+   * its full card while the rest drop to `compact`.
+   *
+   * Absent by default, so the deck and the Portfolio tab draw exactly what
+   * they drew before.
+   */
+  openAssetId?: string | null
 }
 
 export function PortfolioWorkspace({
-  selectedPortfolioId, selectedAssetId, focusObjectId, onOpenPosition,
+  selectedPortfolioId, selectedAssetId, focusObjectId, onOpenPosition, openAssetId = null,
 }: PortfolioWorkspaceProps = {}) {
   const { portfolios, isLoading: listLoading } = usePortfolioList()
   const [portfolioId, setPortfolioId] = useState<string | null>(selectedPortfolioId ?? null)
@@ -123,6 +143,29 @@ export function PortfolioWorkspace({
 
   useEffect(() => { if (selectedPortfolioId) setPortfolioId(selectedPortfolioId) }, [selectedPortfolioId])
   useEffect(() => { if (selectedAssetId) setAssetId(selectedAssetId) }, [selectedAssetId])
+
+  /**
+   * Bring the open line into view.
+   *
+   * Reported: "when I opened the card workspace, the left hand pane was not
+   * focused on that tile, it was still at the top." The press happens at full
+   * width, where the line can be twenty rows down a packed gallery; the
+   * column then narrows to a single rail and every tile above becomes its own
+   * row, so the one that was under the cursor is far outside the scrollport.
+   *
+   * Found by `data-selected`, which `DesktopTile` already sets, rather than
+   * by threading a ref through the tile. `block: 'nearest'` scrolls the least
+   * possible distance, so a line already on screen does not move.
+   *
+   * `scrollIntoView?.()` because jsdom does not implement it, and a suite
+   * that mounts this lens must not take an error boundary over a scroll.
+   */
+  const host = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!openAssetId) return
+    const chosen = host.current?.querySelector('[data-selected="true"]')
+    if (chosen instanceof HTMLElement) chosen.scrollIntoView?.({ block: 'nearest' })
+  }, [openAssetId])
 
   const portfolio = portfolios.find(p => p.id === activeBookId) ?? null
   const { book, isLoading: bookLoading } = useBook(activeBookId)
@@ -305,6 +348,7 @@ export function PortfolioWorkspace({
        * is the one element that is never remounted, so the grid re-flows in
        * place and the reader's scroll does not move.
        */
+      ref={host}
       className={clsx('gallery-host h-full overflow-y-auto pb-10', GALLERY_GROUND)}
       data-testid="portfolio-lens"
     >
@@ -338,9 +382,25 @@ export function PortfolioWorkspace({
                 ? benchmark.rows.find(a => a.assetId === r.position.assetId) ?? null
                 : null
             }
-            // `comparePositions` already ranks the book by how much the
-            // framework has come apart, weighted by size. Room follows it.
-            size={sizeByRank(i, rows.length)}
+            /*
+             * `comparePositions` already ranks the book by how much the
+             * framework has come apart, weighted by size. Room follows it --
+             * EXCEPT where the host has one line open beside the book, and
+             * then the open line is the one that gets the room.
+             *
+             * `compact` is the bottom rung of the same ladder, not a new
+             * rendering mode: a label, a ticker, one line. Twenty-two of them
+             * in a 26rem rail is a list the reader can scan for the next name,
+             * which is what the rail is for; twenty-two full cards pushed the
+             * one they had just opened off the screen.
+             */
+            size={openAssetId && r.position.assetId !== openAssetId
+              ? 'compact'
+              : sizeByRank(i, rows.length)}
+            /* The ring, so the rail says which line the workspace belongs to.
+               `DesktopTile` draws it and sets `data-selected`, which is also
+               what the scroll effect above finds. */
+            selected={!!openAssetId && r.position.assetId === openAssetId}
             onOpen={() => open(r.position, r.frame)}
             closesIn={fieldCloses.get(r.position.symbol ?? '')}
           />
@@ -909,13 +969,15 @@ function PortfolioSelector({
  * which is the honest answer to why the tile is there.
  */
 function PositionTile({
-  position, frame, maxWeight, weights, size, activeWeight, onOpen, closesIn,
+  position, frame, maxWeight, weights, size, selected = false, activeWeight, onOpen, closesIn,
 }: {
   position: Position
   frame: PositionFrame
   maxWeight: number
   weights: number[]
   size: TileSize
+  /** True for the one line the host has open beside the book. */
+  selected?: boolean
   /** Book minus index for this name, where a benchmark file is loaded. */
   activeWeight: ActiveWeight | null
   /** The book being viewed, named beside the weight in the corner. */
@@ -960,6 +1022,7 @@ function PositionTile({
       // this gallery that should be visible from across the room.
       tone={tone}
       size={size}
+      selected={selected}
       onOpen={onOpen}
       /*
         The corner states the WEIGHT, not the market value.

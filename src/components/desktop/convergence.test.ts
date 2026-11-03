@@ -432,11 +432,37 @@ describe('browse, then engage: one mode at a time', () => {
      * be off, so no lens acquires a ring by inheritance.
      */
     expect(shell).toMatch(/selected = false/)
+    /*
+     * ── And why the list of callers shrank by one ────────────────────────
+     *
+     * This looped over all four workspace lenses. The premise above is the
+     * test: a ring is wrong where "the moment a tile is opened its gallery is
+     * gone", because then it marks a tile against a pane that does not exist.
+     *
+     * That stopped being true of Portfolio. The Dashboard now holds the book
+     * in the left column with the asset workspace open beside it -- the same
+     * arrangement that always justified Explore's ring -- so "which line is
+     * the pane about" is a real question on this surface too, and it was
+     * reported as one: the rail did not say which tile had been opened and
+     * did not scroll to it.
+     *
+     * Research and Decisions are unchanged: both still replace their gallery
+     * with the workspace, so a ring there would still mark nothing. The ban
+     * holds for them, and the default stays off, so no lens acquires a ring
+     * by inheritance.
+     */
     for (const f of ALL_BROWSE) {
+      if (f === 'components/portfolio-v2/PortfolioWorkspace.tsx') continue
       /* The lookbehind keeps `aria-selected={...}` out of it: that is a
          listbox option announcing itself, not a tile wearing a ring. */
       expect(code(f)).not.toMatch(/(?<![\w-])selected=\{/)
     }
+    /* Portfolio's ring is gated on the host having said a line is open
+       BESIDE the book, not on the lens's own selection -- which is the prop
+       that replaces the book with a detail pane. */
+    const bookCode = code('components/portfolio-v2/PortfolioWorkspace.tsx')
+    expect(bookCode).toMatch(/selected=\{!!openAssetId && /)
+    expect(bookCode).toMatch(/openAssetId\?: string \| null/)
   })
 })
 
@@ -940,7 +966,27 @@ describe('size is importance, colour is condition', () => {
       'components/research-v2/ResearchWorkspace.tsx',
       'components/portfolio-v2/PortfolioWorkspace.tsx',
     ]) {
-      expect(src(f)).toMatch(/size=\{sizeByRank(WithRhythm)?\(i, /)
+      /*
+       * The regex gained a lead-in, and the reason is worth recording rather
+       * than widening quietly.
+       *
+       * It was anchored at `size={sizeByRank(i, `. Portfolio's call is now a
+       * conditional: a line the host has open BESIDE the book keeps the size
+       * its rank earned, and every other line drops to `compact` so the rail
+       * is a list the reader can scan instead of twenty-two full cards
+       * pushing the opened one off the screen.
+       *
+       * That is not the rule this case protects. The rule is that size comes
+       * from POSITION and never from what a card has to draw, and a
+       * selection is neither -- it is the reader pointing at a row. What must
+       * still hold is that the rank is what the size is computed from, which
+       * is what this now asserts.
+       */
+      expect(src(f)).toMatch(/size=\{[\s\S]{0,200}?sizeByRank(WithRhythm)?\(i, /)
+      /* And nothing about the item itself reaches the size. */
+      const call = src(f).slice(src(f).indexOf('size={'))
+      expect(call.slice(0, call.indexOf('}') + 1))
+        .not.toMatch(/tone|ladder|closes|chart|weightPct/)
     }
     // And the rhythm itself is positional: no item field reaches it.
     const shell = src('components/desktop/DesktopTile.tsx')
@@ -1994,7 +2040,11 @@ describe('a handoff never promises what is not there', () => {
      * falling through to it while one is in flight is the same class of
      * mistake told in words instead of pixels.
      */
-    expect(body).toContain('if (bookLoading || framesPending || !book) {')
+    /* The closes joined this gate, which is why the string changed. They
+       decide each line's framework verdict now and the verdict decides its
+       RANK, so painting before they land would order the book by the upload's
+       prices and re-order it under the reader's cursor. */
+    expect(body).toContain('if (bookLoading || framesPending || closesPending || !book) {')
 
     /*
      * And the panels carry no top margin of their own. A margin inside the

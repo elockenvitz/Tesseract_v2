@@ -441,6 +441,20 @@ export function DashboardNext() {
               >
                 <PortfolioWorkspace
                   onOpenPosition={target => openWorkspace(selectionForPosition(target), null, null)}
+                  /*
+                    Which line the workspace beside this column belongs to.
+
+                    Read from `at.portfolio` and NOT from `here`: this lens
+                    stays mounted while the reader is in the feed, so handing
+                    it the feed's selection would mark a line in a book
+                    nobody is looking at -- and `./place` is the whole reason
+                    those two are different objects now.
+
+                    Not `selectedAssetId` or `focusObjectId`: both of those
+                    mean "replace the book with this position's detail pane",
+                    which is the deck's seam. See `openAssetId`.
+                  */
+                  openAssetId={at.portfolio.selected?.selection.assetId ?? null}
                 />
               </div>
             )}

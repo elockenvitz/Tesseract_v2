@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Compass, X } from 'lucide-react'
 import { GALLERY_GROUND } from '../../lib/ui/surface'
@@ -129,6 +129,35 @@ export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
 }) {
   const [category, setCategory] = useState<string | null>(null)
   const { items, isLoading, missing } = useDesktopExplore()
+  const host = useRef<HTMLDivElement | null>(null)
+
+  /**
+   * Bring the chosen tile into view.
+   *
+   * Reported: the left-hand pane stayed at the top of the field, showing a
+   * tile the reader had not picked. The press happens at full width, where
+   * the tile may be three rows from the bottom of a 145-tile field; the
+   * column then narrows to a single rail and every tile above it becomes its
+   * own row, so the one that was under the cursor is far outside the
+   * scrollport.
+   *
+   * Found by `data-selected`, which `DesktopTile` already sets, rather than
+   * by threading a ref through two memoised components -- a ref prop would
+   * change identity per render and is exactly what `ideas-explore-render`
+   * exists to keep out of this loop.
+   *
+   * `block: 'nearest'` scrolls the least possible distance, so a tile already
+   * on screen does not move, and the effect is keyed on the KEY so a rerank
+   * of the same selection does not re-scroll the reader.
+   *
+   * `scrollIntoView?.()` because jsdom does not implement it, and a suite
+   * that mounts this field must not take an error boundary over a scroll.
+   */
+  useEffect(() => {
+    if (!selectedKey) return
+    const chosen = host.current?.querySelector('[data-selected="true"]')
+    if (chosen instanceof HTMLElement) chosen.scrollIntoView?.({ block: 'nearest' })
+  }, [selectedKey])
 
   const shown = useMemo(
     () => (category ? items.filter(c => c.item.category === category) : items)
@@ -236,7 +265,7 @@ export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
      * from the same fact: this element is never unmounted or replaced — only
      * its width changes — so the grid re-flows and the scroll does not move.
      */
-    <div className={clsx('gallery-host h-full overflow-y-auto', GALLERY_GROUND)}>
+    <div ref={host} className={clsx('gallery-host h-full overflow-y-auto', GALLERY_GROUND)}>
       <DesktopGallery
         title="Explore"
         region
@@ -278,7 +307,27 @@ export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
           <ExploreTile
             key={o.item.id}
             o={o}
-            size={sizes[i]}
+            /*
+             * ── Size follows the selection, where there is one ────────────
+             *
+             * A selection is what opens the workspace, which takes this field
+             * down to a ~26rem rail. At that width 145 tiles at their own
+             * sizes pushed the ONE the reader had chosen off the screen, and
+             * the chosen tile was no bigger than the rest. Reported as
+             * wanting the selected card expanded and the others left as
+             * truncated summaries.
+             *
+             * `compact` is not a new rendering mode: it is the bottom rung of
+             * the ladder every tile in this product already draws at, which
+             * is a label, a ticker, a line and nothing else. The chosen tile
+             * keeps the size its own content earned.
+             *
+             * With nothing selected this is `sizes[i]` for every tile, so the
+             * full-width field is exactly what it was.
+             */
+            size={selectedKey != null && !isSelected(opens[i], selectedKey)
+              ? 'compact'
+              : sizes[i]}
             open={opens[i]}
             closes={o.item.symbol ? closes.map.get(o.item.symbol) ?? NO_CLOSES : NO_CLOSES}
             year={o.item.symbol ? yearRanges.get(o.item.symbol) ?? null : null}

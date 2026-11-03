@@ -407,6 +407,50 @@ describe('a position expands into the deck, in place', () => {
     expect(onOpenPosition.mock.calls[0][0].issue).toBe('Above bull case')
   })
 
+  /**
+   * The rail says which line is open, and drops the rest to one line each.
+   *
+   * ── The report ──────────────────────────────────────────────────────────
+   *
+   * "When I opened the card workspace, the left hand pane was not focused on
+   * that tile, it was still at the top. Can we make it so that if I have a
+   * card selected, that card is expanded in the left hand pane but if not
+   * selected it just shows the truncated summary."
+   *
+   * The press happens at full width and the column then narrows to a ~26rem
+   * rail, so twenty-two full cards pushed the one just opened off the screen
+   * and nothing on any of them said which one it was.
+   *
+   * `openAssetId` is deliberately not `selectedAssetId` or `focusObjectId`:
+   * those two replace the book with a detail pane, which is right for the
+   * deck and leaves a host that put the workspace beside the book with no
+   * book to go back to.
+   */
+  it('expands the open line and drops the rest to one line each', () => {
+    render(<PortfolioWorkspace selectedPortfolioId="p1" openAssetId="a-2" onOpenPosition={vi.fn()} />)
+    const tiles = screen.getAllByTestId('position-tile')
+    expect(tiles).toHaveLength(2)
+
+    const chosen = tiles.find(t => t.dataset.selected === 'true')!
+    expect(chosen).toBeTruthy()
+    expect(chosen.textContent).toMatch(/BBB/)
+    expect(chosen.dataset.size).not.toBe('compact')
+
+    const rest = tiles.filter(t => t !== chosen)
+    expect(rest).toHaveLength(1)
+    expect(rest[0].dataset.selected).toBeUndefined()
+    expect(rest[0].dataset.size).toBe('compact')
+  })
+
+  /* And the book drawn with nothing open beside it is untouched: no ring, and
+     the sizes are the ones the rank earned. */
+  it('rings nothing and demotes nothing while no line is open', () => {
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tiles = screen.getAllByTestId('position-tile')
+    expect(tiles.some(t => t.dataset.selected === 'true')).toBe(false)
+    expect(tiles.every(t => t.dataset.size === 'compact')).toBe(false)
+  })
+
   it('does not also dispatch to the deck when a host took it', async () => {
     const user = userEvent.setup()
     render(<PortfolioWorkspace selectedPortfolioId="p1" onOpenPosition={vi.fn()} />)

@@ -171,6 +171,71 @@ describe('the field is still Explore\'s field', () => {
     )
     expect(screen.getByTestId('opportunity-tile').dataset.selected).toBe('true')
   })
+
+  /**
+   * And the tiles the reader did NOT pick become one line each.
+   *
+   * ── The report ──────────────────────────────────────────────────────────
+   *
+   * "Can we make it so that if I have a card selected, that card is expanded
+   * in the left hand pane but if not selected it just shows the truncated
+   * summary."
+   *
+   * The press happens at full width; selecting is what opens the workspace,
+   * which takes this field down to a ~26rem rail. At that width the other 144
+   * tiles at their own sizes pushed the one just opened off the screen
+   * entirely, and the chosen tile was no bigger than any of them.
+   *
+   * `compact` is the bottom rung of the ladder every tile in this product
+   * already draws at, so nothing new renders: a label, a ticker, a line.
+   */
+  it('drops the tiles the reader did not pick to one line each', () => {
+    const items = [
+      composed({ id: 'r1', symbol: 'AMZN' }),
+      composed({ id: 'r2', symbol: 'MSFT' }),
+      composed({ id: 'r3', symbol: 'JNJ' }),
+    ]
+    /* Only `r2` resolves to the open selection; `isSelected` compares the
+       resolved selection's key, so the other two cannot match. The chosen one
+       is deliberately NOT the first: the leading tile is the one the emphasis
+       budget sizes largest, so it is the one whose demotion is visible. */
+    const resolve = (item: ExploreItem) =>
+      (item.id === 'r2' ? WORK : { do: 'work', selection: { key: 'other' } } as ExploreOpen)
+
+    /*
+     * Measured as a DIFFERENCE, not against a literal.
+     *
+     * Asserting "the others are compact" alone passes whenever their own
+     * content happened to earn `compact` anyway, which on a three-tile
+     * fixture it does -- that version of this case passed with the rule
+     * removed. What has to hold is that the selection CHANGED them, so the
+     * field is rendered both ways and the two readings are compared.
+     */
+    explore.items = items
+    const loose = render(
+      <IdeasExploreBrowse resolve={resolve} onOpen={() => {}} />,
+    )
+    const before = screen.getAllByTestId('opportunity-tile').map(t => t.dataset.size)
+    loose.unmount()
+
+    explore.items = items
+    render(
+      <IdeasExploreBrowse resolve={resolve} onOpen={() => {}} selectedKey="k1" />,
+    )
+    const tiles = screen.getAllByTestId('opportunity-tile')
+    expect(tiles).toHaveLength(3)
+
+    /* The chosen tile keeps the size its own content earned. */
+    const chosen = tiles.find(t => t.dataset.selected === 'true')!
+    expect(chosen).toBeTruthy()
+    expect(chosen.dataset.size).toBe(before[1])
+
+    /* Every other tile is one line, and at least one of them was not before,
+       which is what makes this case observe the rule rather than the fixture. */
+    const rest = tiles.filter(t => t !== chosen)
+    for (const t of rest) expect(t.dataset.size).toBe('compact')
+    expect(before.filter((_, i) => i !== 1).some(s => s !== 'compact')).toBe(true)
+  })
 })
 
 describe('one tile, and columns from the pane', () => {

@@ -184,6 +184,8 @@ export function IdeasExplore({
   const feed = useDesktopAttentionFeed(lens, { facets, include })
   const { markIdeasViewed } = usePilotOnboarding()
   const listRef = useRef<HTMLDivElement | null>(null)
+  /** The chosen card's own node, for the scroll effect below. */
+  const chosenTile = useRef<HTMLDivElement | null>(null)
 
   /**
    * What the reader has asked the feed to show.
@@ -300,6 +302,27 @@ export function IdeasExplore({
     listRef.current?.scrollTo({ top: 0 })
     if (selectedKey && !entries.some(e => e.key === selectedKey)) onSelectionInvalid?.()
   }, [contextKey, feed.isLoading, entries, selectedKey, onSelectionInvalid])
+
+  /**
+   * Bring the chosen card into view.
+   *
+   * Reported: opening a card left the left-hand pane sitting at the top of the
+   * list, showing a card the reader had not picked. The press happens at full
+   * width, where the card may be the fortieth row; the column then narrows to
+   * a rail and every row above it gets taller, so the one that was under the
+   * cursor is nowhere near the scrollport any more.
+   *
+   * `block: 'nearest'` scrolls the minimum distance, so a card already on
+   * screen does not move at all. Keyed on the KEY rather than the node, so
+   * re-ranking the same selection does not re-scroll the reader.
+   *
+   * `scrollIntoView?.()` because jsdom does not implement it, and a suite
+   * that mounts this feed must not take an error boundary over a scroll.
+   */
+  useEffect(() => {
+    if (!selectedKey) return
+    chosenTile.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [selectedKey])
 
   return (
     /*
@@ -538,9 +561,32 @@ export function IdeasExplore({
                the prose layout switches on it and the aside renders on it.
                Neither needs the descriptor, so neither gets one. */
             const preview = panes.length > 0
+            /*
+             * ── Which card is drawn in full, and which as a line ──────────
+             *
+             * This list is drawn at two widths: the whole surface, and a
+             * ~26rem rail beside an open workspace. A selection is what opens
+             * that workspace, so `selectedKey` IS the signal that the list is
+             * now a rail.
+             *
+             * It used to collapse the SELECTED card and leave the other forty
+             * in full, which is the wrong way round: the reader is working one
+             * name, and the forty they are not working were pushing it off the
+             * screen. Reported as wanting the selected card expanded and the
+             * rest left as a truncated summary.
+             *
+             * With nothing selected the list is the whole surface and every
+             * card is full, exactly as the Ideas tab has always drawn it.
+             */
+            const chosen = selectedKey === entry.key
+            const summarised = selectedKey != null && !chosen
             return (
             <div
               key={entry.key}
+              /* The one card to bring into view. See the effect that reads it:
+                 opening a name from the fortieth row left the rail sitting at
+                 the top, showing the reader a card they had not picked. */
+              ref={chosen ? chosenTile : undefined}
               // The card contract owns its own internal height on a phone. Here
               // it sits in normal flow at a readable measure, so the feed
               // scrolls as one column rather than as a stack of viewports.
@@ -606,11 +652,11 @@ export function IdeasExplore({
                 // Restrained: a ring, not a fill. The card's own severity rail
                 // already uses colour, and a selected state that competes with
                 // it would make every list look alarming.
-                selectedKey === entry.key ? CARD_EDGE_SELECTED : CARD_EDGE,
+                chosen ? CARD_EDGE_SELECTED : CARD_EDGE,
               )}
             >
-              {selectedKey === entry.key ? (
-                <SelectedSummary card={entry.card} />
+              {summarised ? (
+                <CardSummary card={entry.card} />
               ) : (
               <div
                 /* `feed-tile-prose` caps the READING measure when there is no
@@ -693,7 +739,10 @@ export function IdeasExplore({
               )}
               </div>
               )}
-              {selectedKey !== entry.key && (() => {
+              {/* Not under a one-line summary: the progression button is the
+                  card's next step, and a rail of forty rows each carrying one
+                  is a column of buttons rather than a list of findings. */}
+              {!summarised && (() => {
                 /*
                  * One compact progression control, and only where the
                  * destination differs from what the tile already does.
@@ -752,40 +801,43 @@ export function IdeasExplore({
 }
 
 /**
- * The selected tile, collapsed.
+ * A tile the reader has not opened, as one row.
  *
- * ── Why it collapses at all ───────────────────────────────────────────────
+ * ── What this used to be, and why it was turned around ───────────────────
  *
- * Its full workspace is open two inches to the right. Leaving the carousel,
- * the ladder and the action row on the tile would put two independently
- * interactive copies of the same object on screen, which is the thing the
- * tile/workspace division exists to prevent — and the second copy is the one
- * with less room.
+ * It was `SelectedSummary`: the SELECTED tile collapsed to a line while every
+ * other tile kept its full preview. The reasoning recorded here was that the
+ * open item's workspace is two inches to the right, so a second interactive
+ * copy of it on the tile is the duplication the tile/workspace division
+ * exists to prevent, and that a reader must still be able to scan past the
+ * open item to something more interesting.
  *
- * ── What survives ─────────────────────────────────────────────────────────
+ * The first half is still true -- which is why the chosen tile does not draw
+ * its carousel beside its own workspace -- but the second half was answered
+ * at the wrong width. Selecting opens the workspace, which takes this list
+ * down to a ~26rem rail, and in that rail forty full cards pushed the ONE the
+ * reader had chosen off the screen entirely. Reported as: the left pane was
+ * not focused on the tile I opened, and it would be cleaner if the selected
+ * card were expanded and the rest were truncated summaries.
  *
- * Everything needed to remember WHY this row is the one open: the family, the
- * headline, the number the claim turns on, and the provenance line. Nothing
- * that would duplicate the workspace.
+ * So the collapse moved to the tiles the reader is not working, and the
+ * chosen one keeps its full card.
  *
- * ── Only this tile ────────────────────────────────────────────────────────
+ * ── What survives the collapse ───────────────────────────────────────────
  *
- * Every other tile keeps its full preview. A reader must still be able to scan
- * past the open item to something more interesting and switch to it, which is
- * the whole point of a persistent feed; reducing the list to text rows because
- * a workspace happens to be open would defeat it.
+ * Everything needed to decide whether to switch to this row instead: the
+ * family, the headline at two lines, the number the claim turns on, and the
+ * provenance line. Nothing that would need a second click to be read.
  *
- * ── Height ────────────────────────────────────────────────────────────────
+ * ── And with nothing selected ────────────────────────────────────────────
  *
- * `min-h` matches the collapsed card's natural height rather than the full
- * one, and the transition is a swap rather than an animated collapse. A tile
- * shrinking under the cursor is what moves everything below it; a swap changes
- * one row's height once, at the moment of a deliberate click, which is when a
- * reader expects the layout to respond.
+ * Nothing collapses. The list is the whole surface and every card is drawn in
+ * full, which is how the Ideas tab -- no workspace, no rail -- draws it
+ * always.
  */
-function SelectedSummary({ card }: { card: SignalCard }) {
+function CardSummary({ card }: { card: SignalCard }) {
   return (
-    <div className="flex min-h-[5.5rem] items-start gap-3 px-4 py-3">
+    <div className="flex items-start gap-3 px-4 py-2.5">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
           <span>{card.surface}</span>
@@ -796,18 +848,21 @@ function SelectedSummary({ card }: { card: SignalCard }) {
             </>
           )}
         </div>
-        <p className="mt-1 text-sm font-semibold leading-snug text-gray-900 dark:text-white">
+        {/* Two lines at most. A rail of forty rows is a list the reader is
+            scanning for one name, and a four-line headline in it is a card
+            pretending it was not collapsed. */}
+        <p className="mt-1 line-clamp-2 text-[13px] font-semibold leading-snug text-gray-900 dark:text-white">
           {card.headline}
         </p>
         {card.provenance?.reason && (
-          <p className="mt-1 truncate text-[11px] text-gray-500 dark:text-gray-400">
+          <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">
             {card.provenance.reason}
           </p>
         )}
       </div>
       {card.metric && (
         <div className="shrink-0 text-right">
-          <p className="text-sm font-bold tabular-nums text-gray-900 dark:text-white">
+          <p className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
             {card.metric.value}
           </p>
           {card.metric.label && (
@@ -815,9 +870,6 @@ function SelectedSummary({ card }: { card: SignalCard }) {
           )}
         </div>
       )}
-      <span className="mt-0.5 shrink-0 rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
-        Open
-      </span>
     </div>
   )
 }
