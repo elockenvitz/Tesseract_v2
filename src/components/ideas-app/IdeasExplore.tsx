@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { clsx } from 'clsx'
 import {
   CARD_SURFACE, CARD_EDGE, CARD_EDGE_SELECTED, CARD_HOVER, GALLERY_GROUND,
@@ -284,10 +284,26 @@ export function IdeasExplore({
           app header is z-30 and above, so nothing is covered that matters. */}
       <div className={clsx(FEED_MEASURE, 'rail-pad relative z-20 shrink-0 border-b border-gray-200 bg-white px-6 pt-5 dark:border-gray-700 dark:bg-gray-900')}>
         {/* Lens rail. Persistent, because it is the primary control. */}
-        <div className="flex items-center gap-1.5 pb-3">
-          {IDEA_LENSES.map(l => (
+        <div className="flex flex-wrap items-center gap-1.5 pb-3">
+          {IDEA_LENSES.map((l, i) => (
+            <Fragment key={l.key}>
+            {/*
+              A hairline where the question changes.
+
+              The rail asks two things and used to ask only the first. The
+              chips before the rule are POST KINDS -- what somebody wrote.
+              The chips after it are FINDINGS -- what the system noticed, and
+              what the desk put up. One flat row gave a reader no way to tell
+              that "Thoughts" and "Case vs price" come from different places.
+
+              Driven off the spec's own `group`, not off an index: a divider
+              hard-coded at position four silently lands on the wrong side of
+              itself the first time a lens is added.
+            */}
+            {i > 0 && IDEA_LENSES[i - 1].group !== l.group && (
+              <span className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden />
+            )}
             <button
-              key={l.key}
               onClick={() => {
                 setLens(l.key)
                 // Leaving Trade Ideas drops its filters with it. They are not
@@ -303,6 +319,7 @@ export function IdeasExplore({
             >
               {l.label}
             </button>
+            </Fragment>
           ))}
 
           {/*

@@ -11,6 +11,7 @@ import { briefClassFor } from '../lib/signals/brief-class'
 import { matchesFeedFacets } from '../lib/signals/facet-match'
 import { lensSpec, type IdeaLens } from '../lib/desktop-ideas/lens'
 import { useDesktopCandidates } from './useDesktopCandidates'
+import { useAuth } from './useAuth'
 import { EMPTY_FILTER, useFeedFacets, type FeedFacets, type FeedFilter } from './mobile/useFeedFacets'
 import type { SignalCard } from '../lib/signals/contract'
 import type { ScoredFeedItem } from './ideas/types'
@@ -229,8 +230,57 @@ function isPrompt(item: ScoredFeedItem): boolean {
  * honest placement — coercing a stale target into one of them to make a lens
  * look fuller is the same error as faking facet metadata.
  */
-function inLens(entry: AttentionEntry, lens: IdeaLens): boolean {
+/**
+ * Exported for its test, and only for that.
+ *
+ * Nothing outside this module calls it. It is exported because the two
+ * mistakes it can make are both silent: a lens that admits the wrong
+ * candidates looks like a thin feed, and a lens that admits none looks like
+ * an honest empty state. The author half of this function shipped reading a
+ * column that does not exist at this layer and answered empty for every
+ * reader, which is indistinguishable from "nobody has posted" unless
+ * something asserts the opposite case directly.
+ */
+export function inLens(entry: AttentionEntry, lens: IdeaLens, viewerId: string | null): boolean {
   if (lens === 'all') return true
+  const spec = lensSpec(lens)
+
+  /*
+   * ── The signal band ──────────────────────────────────────────────────────
+   *
+   * Checked before the post gate below, because these lenses select exactly
+   * what that gate drops. A machine-derived candidate used to appear under
+   * All and under nothing else, which was honest while every other lens was
+   * a post type -- it is not honest now that four of them are findings.
+   *
+   * Matched on the CARD's own type, not on `entry.family`: the family is the
+   * producer, and `research` alone emits two types that answer different
+   * questions. The card's type is what its eyebrow prints, so the chip and
+   * the pill beneath it cannot disagree.
+   */
+  if (spec.cardTypes) return spec.cardTypes.includes(entry.card.type)
+
+  /*
+   * From the team: every post type, narrowed by author.
+   *
+   * A null viewer is a reader whose identity has not resolved yet, and the
+   * answer then is NOTHING rather than everything. Showing the reader their
+   * own posts under a chip that says "from the team" for the half second
+   * before auth lands is a wrong answer; an empty lens that fills in is a
+   * slow one.
+   */
+  if (spec.othersOnly) {
+    if (entry.family !== 'post' || !entry.item) return false
+    /* `author.id`, not a `user_id` column. The feed item is the JOINED shape
+       the Ideas hooks return -- `BaseIdeaItem.author` is the profile, and the
+       row's own owning column never reaches this layer. Reading `user_id`
+       here yields undefined on every post, so the lens answers empty for
+       everyone, which is how this was caught: zero rows against a feed with
+       posts in it. */
+    const author = entry.item.author?.id ?? null
+    return !!viewerId && !!author && author !== viewerId
+  }
+
   /*
    * `ready_to_revisit` appears under `all` and under no other lens, and
    * that is a decision rather than a side effect.
@@ -253,7 +303,7 @@ function inLens(entry: AttentionEntry, lens: IdeaLens): boolean {
   const item = entry.item
   if (lens === 'prompts') return item.type === 'quick_thought' && isPrompt(item)
   if (lens === 'thoughts') return (item.type === 'quick_thought' && !isPrompt(item)) || item.type === 'note'
-  const types = lensSpec(lens).types
+  const types = spec.types
   return !types || types.includes(item.type)
 }
 
@@ -310,6 +360,15 @@ export function useDesktopAttentionFeed(
   opts: { facets?: FeedFilter; include?: AttentionInclude } = {},
 ) {
   const pool = useDesktopCandidates()
+  /*
+   * Who is reading, for the one lens that narrows by author.
+   *
+   * No query: `useAuth` is the session already held by the app shell. Every
+   * other lens ignores it, and `inLens` treats an unresolved identity as "not
+   * yet" rather than as "everyone" -- see the note there.
+   */
+  const { user } = useAuth()
+  const viewerId = user?.id ?? null
   const facets = opts.facets ?? EMPTY_FILTER
   const include = opts.include
   // One query set for every parked-work card on the page, not one per card.
@@ -468,11 +527,11 @@ export function useDesktopAttentionFeed(
   const entries = useMemo(
     () => orderAttention(
       built
-        .filter(e => inLens(e, lens))
+        .filter(e => inLens(e, lens, viewerId))
         .filter(e => matchesFeedFacets(factsFor(e.card, bySymbol), facets)),
       Date.now(),
     ),
-    [built, lens, facets, bySymbol],
+    [built, lens, viewerId, facets, bySymbol],
   )
 
   return {
