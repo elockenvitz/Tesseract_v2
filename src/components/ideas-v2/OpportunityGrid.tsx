@@ -33,7 +33,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
-  DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
+  DesktopGallery, DesktopTile, TileState, TileIdentity, TileClaim, TileStats,
   TileAction, GallerySkeleton, useGalleryNarrow, type TileSize,
 } from '../desktop/DesktopTile'
 import { TilePriceChart } from '../desktop/TilePriceChart'
@@ -662,11 +662,20 @@ export function OpportunityTile({
         {/* What raised this, in the shared vocabulary. A generated opportunity
             says so here rather than dressing itself as an authored idea. */}
         <TileState tone={toneFor(o)}>{label ?? OPPORTUNITY_LABEL[o.kind]}</TileState>
-        {metric?.value && (
-          <TileFigure strong={metric.direction === 'bad'}>
-            {metric.value}
-          </TileFigure>
-        )}
+        {/*
+          The figure LEFT the eyebrow. See `TileStats`.
+
+          It was a `TileFigure` pill here, beside the label, which put the
+          tile's one quantity at 11px on the same line as the word naming the
+          lens that raised the card -- and dropped `metric.label`, so the
+          number arrived with nothing saying what it counted. Two facts
+          competing for one 10px line, one of them silently truncated to
+          nothing.
+
+          It now sits below the claim it supports, at a size that reads across
+          the field, with its key under it. The eyebrow goes back to being one
+          word.
+        */}
       </>}
       context={context ? <span data-testid="opportunity-why">{context}</span> : undefined}
       actions={<>
@@ -693,9 +702,56 @@ export function OpportunityTile({
         subject={tileSubject(item)}
       />
 
-      {/* The adapter's own sentence. Never re-derived here: the producer knows
-          why it raised the candidate and this lens does not. */}
-      <TileReason>{item.title}</TileReason>
+      {/*
+        The adapter's own sentence. Never re-derived here: the producer knows
+        why it raised the candidate and this lens does not.
+
+        ── Why this is a CLAIM and not a REASON ──────────────────────────────
+
+        It was `TileReason`, which is 11px, grey-700 and clamped to two lines.
+        That primitive's own header calls itself a caption: "one
+        system-generated sentence explaining why an object surfaced". On the
+        four workspace lenses that is exactly right, because the tile's
+        content is a position or a decision and the sentence is a footnote to
+        it.
+
+        Explore is the other way round. The sentence IS the tile's content --
+        "Not held, and trading below every case the desk wrote" is the finding,
+        and the ticker above it is only who it is about. Set at 11px and
+        clamped to two lines it was the quietest thing on a card whose whole
+        purpose is to deliver it, which is what the field was reporting when
+        it read as a page of labels.
+
+        `TileClaim` is the same ladder as the identity (17/15/13/12, full ink,
+        stepped by size) and it had NO callers -- it was written for this and
+        never wired to anything. So this is not a new type scale on the field;
+        it is the one that was already there, used.
+
+        The author-versus-machine distinction the two primitives were drawn on
+        is the wrong axis for this surface. The axis that matters here is
+        whether the sentence is the content of the tile or a note beneath it.
+        `TileReason` keeps its three callers and its meaning; nothing else
+        moves.
+      */}
+      <TileClaim size={scale}>{item.title}</TileClaim>
+
+      {/* The figures that frame the claim, with their keys. One today, because
+          one is what the adapters supply; the row is plural because a finding
+          is. See `TileStats`. */}
+      {metric?.value && (
+        <TileStats
+          size={scale}
+          stats={[{
+            value: metric.value,
+            /* `metric.label` is what the figure counts. Where an adapter has
+               not written one, the figure says what it is and the key would
+               be a guess, so there is no key rather than an invented one. */
+            key: metric.label ?? '',
+            tone: metric.direction === 'bad' ? 'critical'
+              : metric.direction === 'good' ? 'info' : 'neutral',
+          }]}
+        />
+      )}
 
       {panels.length > 0 && (
         /* `flex-1` and `min-h-0`: the picture is what takes a row's spare

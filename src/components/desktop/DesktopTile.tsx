@@ -1092,7 +1092,30 @@ export function TileIdentity({
     <div className="flex min-w-0 items-baseline gap-2">
       {lead && (
         <span className={clsx(
-          'font-black leading-none tracking-[-0.03em]',
+          /*
+           * ── The ticker had no ink of its own ──────────────────────────────
+           *
+           * This set weight, leading and tracking and no colour, so the
+           * largest word on every tile INHERITED whatever the card passed
+           * down. Measured on the live field: `rgb(0, 0, 0)`, pure black,
+           * while every other ink on the same card is `gray-900` (#111827)
+           * for the claim, `gray-700` for the body and `gray-500` for the
+           * name beside it. So the one element a reader fixes on first was
+           * the only one outside the palette, and 14 points darker than the
+           * text under it.
+           *
+           * Nobody chose that; it is what no declaration resolves to. Stating
+           * it puts the ticker on the same ramp as the sentence beneath it,
+           * which is the whole of the difference between a card that reads as
+           * typeset and one that reads as default.
+           *
+           * ── And 900 was a weight above the one that was wanted ───────────
+           *
+           * `font-black` at 30px in pure black is heavier than anything else
+           * in the product. 800 keeps the ticker unmistakably the lead
+           * without it being the loudest ink on a page of twelve cards.
+           */
+          'font-extrabold leading-none tracking-[-0.035em] text-gray-900 dark:text-gray-50',
           // A subject is words, not a ticker: it wraps and it is not shouted
           // at a ticker's weight. `truncate` keeps a long book name on a line.
           symbol ? null : 'min-w-0 truncate font-semibold',
@@ -1209,13 +1232,120 @@ export function TileClaim({
   return (
     <p className={clsx(
       'text-gray-900 dark:text-gray-100',
-      size === 'hero' ? 'line-clamp-5 text-[17px] leading-[1.5]'
-        : size === 'large' ? 'line-clamp-4 text-[15px] leading-[1.5]'
-        : size === 'medium' ? 'line-clamp-3 text-[13px] leading-[1.5]'
+      /*
+       * ── The clamp was written for a thesis and is used by a finding ──────
+       *
+       * This ladder allowed 5 lines at hero and 4 at large. At 17px/1.5 that
+       * is 127px of a single sentence, and the primitive had no callers when
+       * it was written, so nothing had ever tested it.
+       *
+       * Its first real caller is Explore's finding sentence, which is one
+       * clause -- "Not held, and trading below every case the desk wrote" --
+       * except where the adapter hands over a news headline, and those run
+       * long: "Stock Market Today, Nov. 2: CoreWeave Slides on Debt Concerns
+       * After CrowdStrike Partnership" is four lines at 15px in a span-4
+       * cell.
+       *
+       * Measured on the live field when this replaced the 11px caption: large
+       * tiles went p50 291 -> 346 and the field's tallest tile 356 -> 392.
+       * 356 is not an arbitrary number -- it is where the heights landed
+       * after the "way too big/tall" report, and the note above `.gallery-
+       * region` records what buying it back cost. Giving a headline a fifth
+       * line is not worth 36px on every card in its row, because the row
+       * stretches to its tallest member.
+       *
+       * So the SIZE stays -- that was the whole point, the sentence was
+       * whispered at 11px -- and the line budget comes down one step at each
+       * rank. A sentence longer than that is the workspace's to show, one
+       * press away, which is what every other clamp on this tile assumes.
+       *
+       * Leading drops to 1.45 with it: 1.5 is a reading measure for a
+       * paragraph and this is three lines in a card.
+       */
+      size === 'hero' ? 'line-clamp-3 text-[17px] leading-[1.45]'
+        : size === 'large' ? 'line-clamp-3 text-[15px] leading-[1.45]'
+        : size === 'medium' ? 'line-clamp-3 text-[13px] leading-[1.45]'
         : 'line-clamp-2 text-[12px] leading-[1.45]',
     )}>
       {children}
     </p>
+  )
+}
+
+/**
+ * The figures that frame the finding, on one row, each under its own key.
+ *
+ * ── Why a row and not a pill ──────────────────────────────────────────────
+ *
+ * A finding is rarely one number. "Trading below every case" is three facts
+ * standing together -- where it is, where the floor was, and the distance
+ * between them -- and a reader checks the third against the first two. Put
+ * one of them in the eyebrow as a pill and the other two nowhere, and the
+ * tile states a conclusion the reader cannot audit.
+ *
+ * So: the figures sit together, below the claim they support, large enough to
+ * read across a field, each with the small uppercase key that says what it
+ * counts.
+ *
+ * ── The key was already there and already discarded ───────────────────────
+ *
+ * `ExploreItem.metric` has been `{ value, label, direction }` for as long as
+ * it has existed. The tile rendered `metric.value` in a `TileFigure` on the
+ * eyebrow and dropped `metric.label` on the floor, so a field of figures
+ * carried no units: "14.2", "288", "+34%" with nothing saying of what, since
+ * the eyebrow beside them was spent on the lens that raised the card. This
+ * renders the pair.
+ *
+ * ── Takes a list, fed one ─────────────────────────────────────────────────
+ *
+ * The shape is plural because the finding is, and because the adapters are
+ * where the other figures have to come from -- a bear case, a book weight, a
+ * horizon. Today every caller has exactly one to give and passes one. Nothing
+ * here invents a second: an absent figure is absent, and a tile with one fact
+ * draws one fact rather than padding the row out to look fuller than the
+ * record is.
+ */
+export function TileStats({
+  stats, size = 'compact',
+}: {
+  stats: readonly { value: React.ReactNode; key: React.ReactNode; tone?: SemanticTone }[]
+  size?: TileSize
+}) {
+  if (stats.length === 0) return null
+  const big = size === 'hero' || size === 'large'
+  return (
+    <div
+      data-testid="tile-stats"
+      /* `gap-x-5` at the top of the ladder and `gap-x-4` below: the figures
+         have to read as separate facts rather than one long number, and
+         tabular digits sit tighter than the eye expects. Wraps, because three
+         figures and a long key do not fit a compact cell on one line and the
+         alternative is a horizontal scrollbar inside a card. */
+      className={clsx('flex min-w-0 flex-wrap', big ? 'gap-x-5 gap-y-2' : 'gap-x-4 gap-y-1.5')}
+    >
+      {stats.map((s, i) => (
+        <div key={i} className="min-w-0">
+          <div className={clsx(
+            /* Mono and tabular, which is the one place this product's figures
+               have always been set -- the horizon chips and the axis labels
+               already are. A proportional digit in a column of digits is what
+               made "14.2 %" read with a space in it. */
+            'font-mono font-bold leading-[1.15] tabular-nums tracking-[-0.02em]',
+            big ? 'text-[19px]' : size === 'medium' ? 'text-[17px]' : 'text-[15px]',
+            s.tone === 'critical'
+              ? 'text-rose-700 dark:text-rose-400'
+              : s.tone === 'info'
+                ? 'text-emerald-700 dark:text-emerald-400'
+                : 'text-gray-900 dark:text-gray-50',
+          )}>
+            {s.value}
+          </div>
+          <div className="mt-0.5 text-[9.5px] font-bold uppercase leading-tight tracking-[0.09em] text-gray-400 dark:text-gray-500">
+            {s.key}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 

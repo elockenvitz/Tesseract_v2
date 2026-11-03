@@ -102,25 +102,49 @@ describe('a wide tile with two pictures pages between them', () => {
     expect(screen.getByRole('button', { name: '1M' })).toBeTruthy()
   })
 
-  it('gives the eyebrow its figure back when the bar that stated it pages away', () => {
+  /*
+   * ── The figure moved; the rule it is under did not ────────────────────
+   *
+   * This case was written against `tile-figure`, an 11px pill in the eyebrow
+   * beside the lens name. The figure now renders in `tile-stats`, below the
+   * claim, at a size that reads across the field and with the `metric.label`
+   * the pill discarded -- the prototype's shape, and the reason is in
+   * `TileStats`.
+   *
+   * The RULE is untouched and is what these two cases exist for: a quantity
+   * is not printed twice on one tile. While the bar states it the row is
+   * suppressed; page the bar away and the row comes back. Only the testid and
+   * the place changed, so the cases are rewritten rather than dropped.
+   *
+   * Note what the old assertion would have become. `queryByTestId('tile-
+   * figure')` returns null now whatever the tile does, so the second case
+   * below would have gone on PASSING while checking nothing at all -- it did,
+   * in the run that caught the first one. A suppression test that cannot
+   * observe the thing it suppresses is the defect class this repo keeps
+   * finding, so both are moved together.
+   */
+  it('gives the figure row back when the bar that stated it pages away', () => {
     render(<OpportunityTile o={AMZN()} size="hero" onOpen={() => {}} />)
-    /* Scoped to the eyebrow, because "+38%" IS on the tile while the bar is
+    /* Scoped to the row, because "+38%" IS on the tile while the bar is
        showing -- the bar prints it, captioned "above your range". The rule is
        that it is not said twice, not that it is absent. */
-    expect(screen.queryByTestId('tile-figure')).toBeNull()
+    expect(screen.queryByTestId('tile-stats')).toBeNull()
     expect(screen.getByText('above your range')).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: 'Show the price' }))
-    expect(screen.getByTestId('tile-figure').textContent).toBe('+38%')
+    expect(screen.getByTestId('tile-stats').textContent).toContain('+38%')
   })
 
   it('pages back', () => {
     render(<OpportunityTile o={AMZN()} size="hero" onOpen={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'Show the price' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Show the finding' }))
+    /* The row is up at this point, which is what makes the next assertion
+       mean something: it has to GO, not merely be absent throughout. */
+    expect(screen.getByTestId('tile-stats')).toBeTruthy()
 
+    fireEvent.click(screen.getByRole('button', { name: 'Show the finding' }))
     expect(screen.getByTestId('opportunity-visual').dataset.panel).toBe('scenario_range')
-    expect(screen.queryByTestId('tile-figure')).toBeNull()
+    expect(screen.queryByTestId('tile-stats')).toBeNull()
   })
 })
 
