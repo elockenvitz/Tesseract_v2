@@ -342,13 +342,16 @@ describe('the standing conclusion is shown back, and can be replaced', () => {
    * -- so what it asserts is still "no button is dead", stated for a bar that
    * now has three live buttons rather than two.
    *
-   * `ListRowExpansion` keeps the old rule and the old assertion, deliberately:
-   * it was not part of the report and changing it is a separate change.
+   * BOTH surfaces, now. The list row kept the old rule for one commit and
+   * then followed, because the row and the bar offering the same three answers
+   * with different rules about taking them back is the fork this component was
+   * extracted to prevent.
    */
   it('leaves every answer pressable, the standing one included', () => {
     expect(detail).toContain('disabled={reviewPending}')
     expect(detail).not.toMatch(/disabled=\{reviewPending \|\| standing\}/)
-    expect(row).toContain('disabled={review.isPending || standing}')
+    expect(row).toContain('disabled={review.isPending}')
+    expect(row).not.toMatch(/disabled=\{review\.isPending \|\| standing\}/)
     for (const body of [detail, row]) expect(body).toContain('aria-pressed={standing}')
   })
 
@@ -363,9 +366,12 @@ describe('the standing conclusion is shown back, and can be replaced', () => {
   it('clears the standing answer when the reader presses it again', () => {
     expect(detail).toContain('clear: clearReview')
     expect(detail).toMatch(/standing \? clearReview\(\) : recordReview\(choice\.outcome\)/)
+    expect(row).toMatch(/standing \? review\.clear\(\) : review\.record\(outcome\)/)
     // Said in words too: `aria-pressed` tells a screen reader this toggles,
     // and nothing else on the button says so to anyone else.
-    expect(detail).toMatch(/title=\{standing \? '[^']*clear[^']*' : undefined\}/)
+    for (const body of [detail, row]) {
+      expect(body).toMatch(/title=\{standing \? '[^']*clear[^']*' : undefined\}/)
+    }
   })
 
   /*

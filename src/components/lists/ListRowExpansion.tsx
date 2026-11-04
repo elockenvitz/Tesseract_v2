@@ -691,6 +691,15 @@ export function ListRowExpansion({
    * remount, it is marked on the button that holds it, and the other two stay
    * live: pressing one records a correction, and the newest conclusion is the
    * one every consumer reads.
+   *
+   * ── And the standing one is pressable too, which clears it ──────────────
+   *
+   * It used to be locked, on the reasoning that pressing it would write a
+   * second identical event and read as if nothing had happened. True of a
+   * repeat, and it left the reader able to swap their answer for one of the
+   * other two but never able to get back to not having one. `clear()` writes
+   * a newer `cleared` event, so pressing the filled button is neither a
+   * repeat nor a no-op. Same change as the research bar, for the same report.
    */
   const reviewGroup = (
     <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
@@ -701,15 +710,19 @@ export function ListRowExpansion({
             key={outcome}
             aria-pressed={standing}
             data-slot={`list-review-${outcome}`}
-            onClick={() => review.record(outcome)}
-            // Pressing the answer already on the record writes a second
-            // identical event and looks like nothing happened. The other two
-            // are the correction path and stay live.
-            disabled={review.isPending || standing}
+            // `aria-pressed` already tells a screen reader this toggles; the
+            // title is what tells everyone else, because a filled button that
+            // clears on click is not guessable from its colour.
+            title={standing ? 'Press again to clear this answer' : undefined}
+            onClick={() => (standing ? review.clear() : review.record(outcome))}
+            // Only while a write is travelling, and then for all three at
+            // once -- so the dimming says "wait" rather than "this one does
+            // not apply".
+            disabled={review.isPending}
             className={clsx(
               'px-2 py-1 text-[11.5px] font-semibold rounded-md transition-colors flex-shrink-0',
               standing
-                ? 'bg-gray-900 text-white ring-2 ring-gray-900/20 cursor-default dark:bg-gray-100 dark:text-gray-900 dark:ring-white/25'
+                ? 'bg-gray-900 text-white ring-2 ring-gray-900/20 hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:ring-white/25 dark:hover:bg-white'
                 : 'text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700',
               review.isPending && 'opacity-50 cursor-wait',
             )}

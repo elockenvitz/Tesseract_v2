@@ -45,6 +45,10 @@ const hooks = vi.hoisted(() => ({
   ratingWrites: [] as any[],
   /** Every `thesis.reviewed` outcome recorded, in order. */
   reviews: [] as any[],
+  /** How many times the answer was taken back. Separate from `reviews`
+   *  because a clear and a verdict are different writes, and a row that
+   *  routed a clear through `record` would look identical in one list. */
+  clears: 0,
   reviewDone: false,
   /** The standing conclusion, as `useCurrentThesisConclusion` hands it over. */
   reviewStanding: null as null | { outcome: string; occurredAt: string; byMe: boolean },
@@ -82,6 +86,9 @@ vi.mock('../../../hooks/useContributions', () => ({
 vi.mock('../../../hooks/useThesisReview', () => ({
   useRecordThesisReview: () => ({
     record: (outcome: string) => hooks.reviews.push(outcome),
+    /* Taking the answer back. Its own seam in the hook, so a row that reached
+       the clear by passing a verdict-shaped string would not satisfy this. */
+    clear: () => { hooks.clears += 1 },
     isPending: false,
     isDone: hooks.reviewDone,
     error: null,
@@ -231,6 +238,7 @@ beforeEach(() => {
   hooks.updates = []
   hooks.ratingWrites = []
   hooks.reviews = []
+  hooks.clears = 0
   hooks.reviewDone = false
   hooks.reviewStanding = null
   hooks.reviewPendingOutcome = null
@@ -885,9 +893,20 @@ describe('reviewing evidence is recorded, not just linked', () => {
    * it is the only way to correct the first.
    *
    * The standing conclusion is read from the event log now, so it survives
-   * the remount, and every answer but that one stays pressable.
+   * the remount, and every answer stays pressable.
+   *
+   * ── Re-pointed once more: the standing one is live too ──────────────────
+   *
+   * It asserted `toBeDisabled()` on the filled button, which was the rule for
+   * one commit: pressing it would have written a duplicate event. That left
+   * the reader able to swap their answer but never able to return to not
+   * having one, and that is what was reported. Pressing it now CLEARS it, so
+   * the button is enabled and carries a title saying what it does.
+   *
+   * The subject never changed -- no button on this row is dead -- so the case
+   * is still that, stated for three live buttons rather than two.
    */
-  it('shows the standing verdict and still offers the other two', () => {
+  it('shows the standing verdict and leaves all three pressable', () => {
     unread()
     hooks.reviewStanding = { outcome: 'holds', occurredAt: new Date().toISOString(), byMe: true }
     renderRow({ onOpenAsset: () => {} })
@@ -900,10 +919,39 @@ describe('reviewing evidence is recorded, not just linked', () => {
 
     const standing = screen.getByText('Still holds')
     expect(standing).toHaveAttribute('aria-pressed', 'true')
-    expect(standing).toBeDisabled()
-    // The correction path: the other two are live.
-    expect(screen.getByText('Changed')).toBeEnabled()
-    expect(screen.getByText('Needs work')).toBeEnabled()
+    expect(standing).toBeEnabled()
+    expect(standing).toHaveAttribute('title', 'Press again to clear this answer')
+    // The correction path: the other two are live, and say nothing about
+    // clearing, because pressing either of them records a verdict.
+    for (const label of ['Changed', 'Needs work']) {
+      expect(screen.getByText(label)).toBeEnabled()
+      expect(screen.getByText(label)).not.toHaveAttribute('title')
+    }
+  })
+
+  /*
+   * And pressing it takes the answer off the record rather than re-writing it.
+   *
+   * The pair for the case above: a row that merely un-disabled the filled
+   * button would send a duplicate event, which is the exact no-op the lock
+   * existed to prevent. So the handler that runs is asserted, not just the
+   * button's state.
+   */
+  it('clears the standing verdict when the reader presses it again', async () => {
+    unread()
+    hooks.reviewStanding = { outcome: 'holds', occurredAt: new Date().toISOString(), byMe: true }
+    renderRow({ onOpenAsset: () => {} })
+
+    await userEvent.click(screen.getByText('Still holds'))
+    expect(hooks.clears).toBe(1)
+    // Nothing was recorded: a clear that went through `record` would be the
+    // duplicate event the lock existed to prevent.
+    expect(hooks.reviews).toEqual([])
+
+    // A different answer is still a verdict, not a clear.
+    await userEvent.click(screen.getByText('Changed'))
+    expect(hooks.reviews).toEqual(['changed'])
+    expect(hooks.clears).toBe(1)
   })
 
   /*
