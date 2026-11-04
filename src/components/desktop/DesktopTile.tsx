@@ -798,19 +798,9 @@ export function sizeByRecency(index: number): TileSize {
  * duplicate-verb problem this model exists to avoid.
  */
 export function DesktopTile({
-  onOpen, eyebrow, tone = 'neutral', size = 'compact', scale, flow = 'ranked',
+  onOpen, eyebrow, tone = 'neutral', size = 'compact', flow = 'ranked',
   testId, dataAttrs, context, actions, inert = false, selected = false, children,
 }: {
-  /**
-   * How large to DRAW, where that differs from how many tracks to span.
-   *
-   * They are the same thing in a wide mosaic and defaults to `size` for every
-   * caller that has not thought about it. They come apart in a one-column
-   * region, where every cell is the same width whatever its rank, and a
-   * hero's padding, shelf and display type are all sized for a card twice as
-   * wide as the one it is in. See `useGalleryNarrow`.
-   */
-  scale?: TileSize
   onOpen: () => void
   /**
    * This tile has nothing to open, and must not look as though it does.
@@ -892,9 +882,6 @@ export function DesktopTile({
     onOpen()
   }
 
-  /* Span by rank, draw by width. Identical unless a caller says otherwise. */
-  const drawAt = scale ?? size
-
   /* See `GalleryRegionContext`: in region mode `data-size` already carries
      the span, and the breakpoint classes below it cannot win. */
   const inRegion = useContext(GalleryRegionContext)
@@ -955,7 +942,13 @@ export function DesktopTile({
         */
         /* `relative`: the action overlay is positioned against the CARD, not
            against the shelf it used to live in. See `TileActions`. */
-        'group relative flex min-w-0 flex-col overflow-hidden text-left',
+        /*
+         * `desktop-tile` carries no styling of its own. It is the handle the
+         * ONE-COLUMN RUNG in `index.css` hangs off, and it is a class rather
+         * than the `data-size` attribute because that attribute says which
+         * rung the tile is on and the rung is exactly what gets overridden.
+         */
+        'desktop-tile group relative flex min-w-0 flex-col overflow-hidden text-left',
         CARD_SURFACE,
         !inert && 'cursor-pointer',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
@@ -1002,20 +995,41 @@ export function DesktopTile({
          * at `p-4`/`p-3` and are not what the reader was looking at.
          */
         /*
-         * `drawAt`, not `size`: in a one-column region the rank still picks
-         * the span but every cell is the same width, so a hero's frame there
-         * is a hero's frame around a compact card. See `scale` above.
+         * ── The rank draws the frame; WIDTH used to redraw it in React ─────
+         *
+         * In a one-column region every cell is the same width whatever its
+         * rank, so a hero's frame there is a hero's frame around a compact
+         * card. That was right, and it was done by handing every tile a
+         * second size through context and re-rendering the field whenever the
+         * column changed shape.
+         *
+         * MEASURED on Explore at 1920 with 145 tiles, opening and closing the
+         * workspace: 289 of the ~543 DOM mutations per transition were tiles
+         * rewriting their own type and padding -- `text-[30px]` to
+         * `text-[17px]`, `line-clamp-3 text-[17px]` to `line-clamp-2
+         * text-[15px]` -- on a field where about six are on screen. Long
+         * tasks of 68, 73, 68 and 98ms came with them, against a 16ms frame.
+         *
+         * Pinning that signal off, with the re-render left in place, took
+         * every long task to ZERO. So the cost was never React's reconcile;
+         * it was the writes and the style invalidation they cause. The rung
+         * therefore moves to `index.css`, where the browser restyles the few
+         * tiles it has actually rendered and skips the rest.
+         *
+         * `tile-frame` is that rung's handle. The classes here are the WIDE
+         * values and stay the single source for them.
          */
-        drawAt === 'hero' ? 'gap-3 p-4' : drawAt === 'large' ? 'gap-3 p-4'
-          : drawAt === 'medium' ? 'gap-2 p-4' : 'gap-1.5 p-3',
+        'tile-frame',
+        size === 'hero' ? 'gap-3 p-4' : size === 'large' ? 'gap-3 p-4'
+          : size === 'medium' ? 'gap-2 p-4' : 'gap-1.5 p-3',
       )}>
         <div className="flex flex-wrap items-center gap-1.5">
           {eyebrow}
         </div>
         {children}
-        {context && <TileShelf size={drawAt} context={context} />}
+        {context && <TileShelf size={size} context={context} />}
       </div>
-      {actions && <TileActions size={drawAt}>{actions}</TileActions>}
+      {actions && <TileActions size={size}>{actions}</TileActions>}
     </div>
   )
 }
@@ -1106,7 +1120,7 @@ export function TileShelf({
     <div
       data-testid="tile-shelf"
       className={clsx(
-        'relative mt-auto shrink-0 border-t border-gray-200 pt-1.5 dark:border-white/10',
+        'tile-shelf relative mt-auto shrink-0 border-t border-gray-200 pt-1.5 dark:border-white/10',
         SHELF_H[size],
       )}
     >
@@ -1154,7 +1168,7 @@ export function TileActions({ size, children }: { size: TileSize; children: Reac
     <div
       data-testid="tile-shelf-actions"
       className={clsx(
-        'pointer-events-none absolute right-0 top-0 z-10 flex flex-wrap items-center justify-end gap-1.5',
+        'tile-actions pointer-events-none absolute right-0 top-0 z-10 flex flex-wrap items-center justify-end gap-1.5',
         size === 'hero' ? 'px-4 pb-5 pt-3' : size === 'compact' ? 'px-2 pb-4 pt-2' : 'px-3 pb-5 pt-2.5',
         'bg-gradient-to-b from-white via-white via-70% to-transparent dark:from-[#161d2a] dark:via-[#161d2a]',
         'opacity-0 transition-opacity duration-150',
@@ -1317,7 +1331,8 @@ export function TileIdentity({
            * in the product. 800 keeps the ticker unmistakably the lead
            * without it being the loudest ink on a page of twelve cards.
            */
-          'font-extrabold leading-none tracking-[-0.035em] text-gray-900 dark:text-gray-50',
+          /* `tile-display`: the one-column rung in `index.css`. */
+          'tile-display font-extrabold leading-none tracking-[-0.035em] text-gray-900 dark:text-gray-50',
           // A subject is words, not a ticker: it wraps and it is not shouted
           // at a ticker's weight. `truncate` keeps a long book name on a line.
           symbol ? null : 'min-w-0 truncate font-semibold',
@@ -1326,7 +1341,7 @@ export function TileIdentity({
       )}
       {name && (
         <span className={clsx(
-          'min-w-0 truncate font-medium text-gray-500',
+          'tile-beside min-w-0 truncate font-medium text-gray-500',
           TILE_BESIDE[size],
         )}>{name}</span>
       )}
@@ -1433,7 +1448,9 @@ export function TileClaim({
 }: { children: React.ReactNode; size?: TileSize }) {
   return (
     <p className={clsx(
-      'text-gray-900 dark:text-gray-100',
+      /* `tile-claim`: the one-column rung in `index.css` takes both the size
+         and the line budget down a step. */
+      'tile-claim text-gray-900 dark:text-gray-100',
       /*
        * ── The clamp was written for a thesis and is used by a finding ──────
        *
@@ -1549,7 +1566,7 @@ export function TileStats({
          tabular digits sit tighter than the eye expects. Wraps, because three
          figures and a long key do not fit a compact cell on one line and the
          alternative is a horizontal scrollbar inside a card. */
-      className={clsx('flex min-w-0 flex-wrap', big ? 'gap-x-5 gap-y-2' : 'gap-x-4 gap-y-1.5')}
+      className={clsx('tile-stats flex min-w-0 flex-wrap', big ? 'gap-x-5 gap-y-2' : 'gap-x-4 gap-y-1.5')}
     >
       {stats.map((s, i) => (
         <div key={i} className="min-w-0">
@@ -1558,7 +1575,7 @@ export function TileStats({
                have always been set -- the horizon chips and the axis labels
                already are. A proportional digit in a column of digits is what
                made "14.2 %" read with a space in it. */
-            'font-mono font-bold leading-[1.15] tabular-nums tracking-[-0.02em]',
+            'tile-figure font-mono font-bold leading-[1.15] tabular-nums tracking-[-0.02em]',
             big ? 'text-[19px]' : size === 'medium' ? 'text-[17px]' : 'text-[15px]',
             s.tone === 'critical'
               ? 'text-rose-700 dark:text-rose-400'

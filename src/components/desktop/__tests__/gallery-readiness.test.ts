@@ -396,8 +396,17 @@ describe('a stretched tile has somewhere to put the height', () => {
      *
      * Anchored on the part that is load-bearing, with the slice proven to
      * have moved before anything is asserted about it.
+     *
+     * ── And it drifted again, the same way ────────────────────────────────
+     *
+     * `desktop-tile` went on the front of that string when the one-column
+     * type rung moved into `index.css` and needed a handle to hang off. The
+     * `expect(i).toBeGreaterThan(-1)` above is what turned a silent pass back
+     * into a failure, which is the whole reason it is there. Anchored on
+     * `group relative flex` without the quote, so a further class in front of
+     * it does not break this a third time.
      */
-    const i = tile.indexOf("'group relative flex")
+    const i = tile.indexOf('group relative flex')
     expect(i).toBeGreaterThan(-1)
     expect(tile.slice(i, i + 160)).not.toContain('h-full')
   })

@@ -414,13 +414,27 @@ export function OpportunityTile({
    * too large" the reader reported with the AMZN Decisions card as the
    * example.
    *
-   * So `scale` collapses to compact when the region is one column, and `size`
-   * is still what goes out as `data-size`. Rank keeps the emphasis it can
-   * still carry in a list, which is the order.
+   * So the tile collapses to the compact rung when the region is one column,
+   * and `size` is still what goes out as `data-size`. Rank keeps the emphasis
+   * it can still carry in a list, which is the order.
+   *
+   * ── That collapse is CSS now, except for the chart ──────────────────────
+   *
+   * It used to be a second `TileSize` handed down through context, which
+   * re-wrote the type and padding classes of all 145 tiles whenever the
+   * column changed shape. MEASURED: 289 mutations and a 68-98ms long task per
+   * transition; pinning the signal off took every long task to zero. The
+   * rung lives in `index.css` now -- see `.tile-frame` there -- so the
+   * browser restyles the handful of tiles it has rendered and skips the rest.
+   *
+   * `narrow` survives for ONE thing: the plot's height is a number that goes
+   * into an SVG, not a class, so CSS cannot reach it. That is a single inline
+   * style per tile rather than five class rewrites, and it is the only reason
+   * this component still reads the context.
    */
   const narrow = useGalleryNarrow()
-  const scale: TileSize = narrow ? 'compact' : size
-  const big = scale === 'hero' || scale === 'large'
+  const drawsBig = size === 'hero' || size === 'large'
+  const big = !narrow && drawsBig
 
   /*
    * The three verbs the authored field had, restored on the shared shelf.
@@ -517,7 +531,7 @@ export function OpportunityTile({
      own box in `fill` mode, so a shorter plot is a shorter plot and not a
      cropped one. 150 -> 112 and 120 -> 98 keep both above the ~92px a narrow
      tile has always drawn legibly. */
-  const chartHeight = scale === 'hero' ? 112 : big ? 98 : 92
+  const chartHeight = !narrow && size === 'hero' ? 112 : big ? 98 : 92
   /* The carousel's box, sized to the taller panel. The chart is it: the
      archetypes are a bar and two labels and none of them reaches 120px. The
      ladder, the plot and the caption are what `height` covers, plus the
@@ -654,7 +668,6 @@ export function OpportunityTile({
       dataAttrs={{ 'data-kind': o.kind, 'data-subtype': item.subtype }}
       tone={toneFor(o)}
       size={size}
-      scale={scale}
       onOpen={onOpen}
       inert={inert}
       selected={selected}
@@ -695,7 +708,7 @@ export function OpportunityTile({
       <TileIdentity
         symbol={item.symbol ?? null}
         name={item.companyName ?? null}
-        size={scale}
+        size={size}
         /* What the card is about when it is about no name. See `tileSubject`:
            this slot used to draw a bare em dash, which is the most prominent
            line on the tile spent saying nothing. */
@@ -733,14 +746,14 @@ export function OpportunityTile({
         `TileReason` keeps its three callers and its meaning; nothing else
         moves.
       */}
-      <TileClaim size={scale}>{item.title}</TileClaim>
+      <TileClaim size={size}>{item.title}</TileClaim>
 
       {/* The figures that frame the claim, with their keys. One today, because
           one is what the adapters supply; the row is plural because a finding
           is. See `TileStats`. */}
       {metric?.value && (
         <TileStats
-          size={scale}
+          size={size}
           stats={[{
             value: metric.value,
             /* `metric.label` is what the figure counts. Where an adapter has
@@ -759,8 +772,11 @@ export function OpportunityTile({
            and this is the element that wants the difference -- everything
            above it (identity, the reason sentence) is as tall as its text and
            the pager below is fixed. Without `min-h-0` a flex child refuses to
-           shrink past its content and the tile would overflow its row. */
-        <div className={clsx('flex min-h-0 min-w-0 flex-1 flex-col', big ? 'mt-3' : 'mt-2')}>
+           shrink past its content and the tile would overflow its row.
+
+           `tile-body`: the gap above the picture is part of the one-column
+           rung in `index.css`, so it reads the RANK and not `narrow`. */
+        <div className={clsx('tile-body flex min-h-0 min-w-0 flex-1 flex-col', drawsBig ? 'mt-3' : 'mt-2')}>
           {/*
             One panel's worth of room, whichever panel is showing.
 

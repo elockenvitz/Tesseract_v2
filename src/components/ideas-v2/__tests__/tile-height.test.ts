@@ -73,18 +73,19 @@ describe('a wide tile spends less of its height on the picture', () => {
   /*
    * ── Re-pointed, and the reason kept ──────────────────────────────────────
    *
-   * The padding rule read `size === 'hero' ?`. It reads `drawAt === 'hero' ?`
-   * now, because the tile's rank and the scale it DRAWS at came apart: in a
-   * one-column rail every cell is the same width whatever its rank, so a
-   * hero's frame there is a hero's frame around a compact card. `size` still
-   * picks the span; `drawAt` picks the frame. See `narrow-rail-scale`.
+   * The padding rule read `size === 'hero' ?`, then `drawAt === 'hero' ?`
+   * while the rank and the scale the tile DREW at were two React values, and
+   * it reads `size` again now that the one-column step down is CSS. Both
+   * re-pointings were anchor drift, not a change of subject, and the anchor
+   * is `'tile-frame',` this time: that is the handle the rung in `index.css`
+   * selects on, so it cannot move without this rule moving with it.
    *
    * The subject is untouched -- the hero's frame is `gap-3 p-4` and not the
    * `gap-4 p-5` it was, and the other three sizes are still distinct.
    */
   it('trims the hero frame rather than banking the space', () => {
     const tile = read(TILE)
-    const at = tile.indexOf("drawAt === 'hero' ?")
+    const at = tile.indexOf("'tile-frame',")
     expect(at).toBeGreaterThan(-1)
     const rule = tile.slice(at, at + 160)
     expect(rule).not.toMatch(/'gap-4 p-5'/)

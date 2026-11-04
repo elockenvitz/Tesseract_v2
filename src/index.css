@@ -451,6 +451,69 @@
     content-visibility: auto;
     contain-intrinsic-size: auto 300px;
   }
+  /* ── The one-column rung ─────────────────────────────────────────────────
+
+     In a one-column region every cell is the same width whatever its rank, so
+     a hero's display type, claim, figures, frame and shelf are all sized for
+     a card twice as wide as the one they are in. The tile has to draw itself
+     smaller there, and the WIDE values are the ones in `DesktopTile.tsx` --
+     this block only states the step down.
+
+     It used to be a second `TileSize` handed to every tile through React
+     context. MEASURED on Explore at 1920 with 145 tiles, opening and closing
+     the asset workspace: 289 of ~543 DOM mutations per transition were tiles
+     rewriting these exact classes, with long tasks of 68, 73, 68 and 98ms
+     against a 16ms frame. Pinning the signal off -- leaving the re-render in
+     place -- took every long task to ZERO, so the cost was the writes and the
+     style invalidation they cause, not React.
+
+     As CSS the browser does this work for the tiles it has actually rendered.
+     The rest are `content-visibility: auto` (see above) and are skipped, so
+     the ~6 tiles on screen restyle instead of 145.
+
+     `not (min-width: 34rem)` rather than `max-width`, so this is the exact
+     complement of the two-track query below and no width can match both or
+     neither. The query subject is `.gallery-host`, the same container those
+     use.
+
+     Specificity: three classes (0,3,0) beats any Tailwind utility (0,1,0), so
+     the step down wins without `!important`. Values are the `compact` rung of
+     the tables in `DesktopTile.tsx`; `convergence.test.ts` pins them to it. */
+  @container not (min-width: 34rem) {
+    .gallery-region > .desktop-tile .tile-frame {
+      gap: 0.375rem;
+      padding: 0.75rem;
+    }
+    .gallery-region > .desktop-tile .tile-display {
+      font-size: 17px;
+    }
+    .gallery-region > .desktop-tile .tile-beside {
+      font-size: 11px;
+    }
+    /* Two lines, not three: `compact` buys the size with ~6px of height
+       rather than with a third line. */
+    .gallery-region > .desktop-tile .tile-claim {
+      font-size: 15px;
+      -webkit-line-clamp: 2;
+    }
+    .gallery-region > .desktop-tile .tile-figure {
+      font-size: 15px;
+    }
+    .gallery-region > .desktop-tile .tile-stats {
+      column-gap: 1rem;
+      row-gap: 0.375rem;
+    }
+    .gallery-region > .desktop-tile .tile-shelf {
+      height: 26px;
+    }
+    .gallery-region > .desktop-tile .tile-actions {
+      padding: 0.5rem 0.5rem 1rem;
+    }
+    .gallery-region > .desktop-tile .tile-body {
+      margin-top: 0.5rem;
+    }
+  }
+
   /* 34rem is two tiles at the ~16rem a preview needs to stay a preview. */
   @container (min-width: 34rem) {
     .gallery-region {
