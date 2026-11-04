@@ -279,7 +279,7 @@ export function PositionDetailPane({
                   <div className="flex flex-col gap-3.5">
                     {core.map(s => (
                       <div key={s.section}>
-                        <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
+                        <div className="text-[11px] font-bold uppercase tracking-widest text-gray-500">
                           {SECTION_LABEL[s.section] ?? s.section}
                         </div>
                         <p className="mt-1 line-clamp-4 max-w-[74ch] text-[13px] leading-[1.6] text-gray-900 dark:text-gray-100">
@@ -385,7 +385,7 @@ export function PositionDetailPane({
                 {position.asOf && <Row k="Book as of" v={new Date(position.asOf).toLocaleDateString()} />}
               </div>
               {!pnl && !position.isCash && (
-                <p className="mt-2 text-[10px] text-gray-500">
+                <p className="mt-2 text-[11px] text-gray-500">
                   No average cost on file, so no unrealised figure.
                 </p>
               )}
@@ -395,7 +395,7 @@ export function PositionDetailPane({
               <DesktopSection title="Outstanding idea">
                 <div className="flex flex-wrap items-baseline gap-2">
                   <span className={clsx(
-                    'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-wider',
+                    'rounded-full border px-2 py-[3px] text-[11px] font-bold uppercase tracking-wider',
                     // An outstanding decision is work, not a break.
                     TONE_PILL[frame.liveIdea.awaitingDecision ? 'review' : 'neutral'],
                   )}>
@@ -422,7 +422,7 @@ export function PositionDetailPane({
                   <ArrowUpRight className="h-3 w-3" />
                 </button>
                 {role !== 'pm' && frame.liveIdea.awaitingDecision && (
-                  <p className="mt-1 text-[10px] text-gray-500">
+                  <p className="mt-1 text-[11px] text-gray-500">
                     Only a portfolio manager on this book can record the decision.
                   </p>
                 )}
@@ -441,7 +441,7 @@ export function PositionDetailPane({
                     </div>
                   ))}
                 </div>
-                <p className="mt-2 text-[10px] text-gray-500">
+                <p className="mt-2 text-[11px] text-gray-500">
                   Share counts only. A weight belongs to a book's own market value, so
                   this book's percentage is not shown against another book's name.
                 </p>

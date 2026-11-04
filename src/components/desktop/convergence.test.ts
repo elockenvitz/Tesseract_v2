@@ -2852,10 +2852,16 @@ describe('no lens pane offers an overflow control with nothing behind it', () =>
  *
  * Two files: the asset workspace, which is what was reported, and the
  * grammar it shares with Ideas, Research, Portfolio and Decisions, whose
- * primitives all four inherit. Those four panes still carry 25 sub-11px
- * literals of their own and are deliberately NOT in this list -- lifting
- * them is its own change, and listing them here would make this gate red on
- * work nobody has done yet.
+ * primitives all four inherit.
+ *
+ * Those four panes carried 25 sub-11px literals of their own and were
+ * deliberately NOT in this list, because listing them would make this gate
+ * red on work nobody had done yet. The FLOOR half of that work is done and
+ * has its own gate below. The step half is not: between them the four still
+ * set 11.5, 12, 12.5, 14, 21 and 26, which is 40 literals whose mapping onto
+ * the four steps is a judgement per site rather than a substitution -- 14 is
+ * between two steps, and 26 could be a lead figure or a headline. They stay
+ * out of `SCALED` until that is decided.
  */
 describe('the asset workspace and the grammar it shares are on one type scale', () => {
   const SCALED = [
@@ -2883,6 +2889,48 @@ describe('the asset workspace and the grammar it shares are on one type scale', 
   it.each(SCALED)('%s draws every size from the agreed steps', file => {
     const sizes = [...src(file).matchAll(/text-\[(\d+)px\]/g)].map(m => Number(m[1]))
     expect([...new Set(sizes)].filter(n => !STEPS.includes(n))).toEqual([])
+  })
+
+  /**
+   * The four sibling panes clear the FLOOR, which is the half that was
+   * reported.
+   *
+   * ── Why a separate list and a weaker claim ────────────────────────────
+   *
+   * The scope note above says these four were held out so this gate would not
+   * be red on undone work. Holding them out entirely is also how 25 sub-11px
+   * literals survived a pass that fixed exactly that defect two files away: a
+   * reader moving from an Ideas card at an 11px floor into any of these four
+   * panes still met 9px and 10px type on a wider surface.
+   *
+   * The floor is mechanical -- 9 and 10 both mean "smaller than the smallest
+   * role", and both become 11 -- so it is gated now. The STEP set is not,
+   * because these four still set 11.5, 12, 12.5, 14, 21 and 26, and mapping
+   * those is a judgement per site: 14 sits between two steps and 26 could be
+   * a lead figure or a headline. A gate that asserted the steps here would be
+   * red on a decision nobody has made.
+   *
+   * Stated as its own case rather than by widening `SCALED`, so the
+   * difference between "no type below the floor" and "every size has a role"
+   * stays visible and the second one does not look finished.
+   *
+   * The match also catches a FRACTIONAL size, which the `(\d+)` above does
+   * not: `text-[10.5px]` is below the floor and would have passed an
+   * integer-only pattern silently.
+   */
+  const FLOOR_ONLY = [
+    'components/ideas-v2/IdeaDetail.tsx',
+    'components/research-v2/ResearchDetail.tsx',
+    'components/portfolio-v2/PositionDetail.tsx',
+    'components/decisions-v2/DecisionDetail.tsx',
+  ]
+
+  it.each(FLOOR_ONLY)('%s sets nothing below the 11px floor', file => {
+    const sizes = [...src(file).matchAll(/text-\[([\d.]+)px\]/g)].map(m => Number(m[1]))
+    /* Non-vacuity: a file that sets no explicit size satisfies any claim
+       about the sizes it sets. The smallest of these four sets 18. */
+    expect(sizes.length).toBeGreaterThanOrEqual(15)
+    expect(sizes.filter(n => n < 11)).toEqual([])
   })
 
   /*

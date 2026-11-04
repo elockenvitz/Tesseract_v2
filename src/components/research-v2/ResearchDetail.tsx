@@ -230,7 +230,7 @@ export function ResearchDetail({
             <span
               data-testid="detail-state"
               className={clsx(
-                'text-[9px] font-bold uppercase tracking-widest',
+                'text-[11px] font-bold uppercase tracking-widest',
                 TONE_INK[STATE_TONE[stateOf(subject)]],
               )}
             >
@@ -538,15 +538,15 @@ export function ResearchDetail({
                   className="border-l-2 border-gray-200 pl-3.5 dark:border-white/10"
                 >
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400">
                       {SECTION_LABEL[sec.section] ?? sec.section}
                     </span>
                     {!(CORE_SECTIONS as readonly string[]).includes(sec.section) && (
-                      <span className="rounded bg-gray-100 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-white/[0.07] dark:text-gray-400">
+                      <span className="rounded bg-gray-100 px-1.5 py-px text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-white/[0.07] dark:text-gray-400">
                         supporting
                       </span>
                     )}
-                    <span className="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-gray-400 dark:text-gray-500">
+                    <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
                       {sec.authorName ? `${sec.authorName} · ` : ''}
                       {new Date(sec.updatedAt).toLocaleDateString()}
                     </span>
@@ -578,7 +578,7 @@ export function ResearchDetail({
               panel that outranks the case. Implementation debt should not be
               the loudest thing in an investment workspace. */}
           {state === 'stale' && (
-            <p className="mt-3 text-[10px] text-gray-500">
+            <p className="mt-3 text-[11px] text-gray-500">
               Saving a section is what moves the thesis date; there is no
               separate &ldquo;reviewed, no change&rdquo; record.
             </p>
@@ -631,7 +631,7 @@ export function ResearchDetail({
                 <div className="flex flex-col gap-2">
                   {newEvidence.map(e => <EvidenceRow key={e.id} item={e} isNew />)}
                 </div>
-                <p className="mt-2.5 text-[10px] text-gray-500">
+                <p className="mt-2.5 text-[11px] text-gray-500">
                   Dated after {caseDate.sinceThe.replace(/^since /, '')}. Whether each supports or
                   challenges it is not recorded — that is the review.
                 </p>
@@ -709,7 +709,7 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
         <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-gray-900 dark:text-gray-100">
           {item.title || 'Untitled note'}
         </span>
-        <span className="shrink-0 font-mono text-[10px] tabular-nums text-gray-400 dark:text-gray-500">
+        <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
           {new Date(item.createdAt).toLocaleDateString()}
         </span>
       </div>
@@ -721,7 +721,7 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
         </p>
       )}
       {item.authorName && (
-        <div className="mt-1 text-[10px] text-gray-400 dark:text-gray-500">{item.authorName}</div>
+        <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{item.authorName}</div>
       )}
     </div>
   )
@@ -758,7 +758,7 @@ function SinceReview({
       data-testid="since-review"
       className="mb-8 border-b border-gray-200 pb-6 dark:border-white/10"
     >
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
         {capitalize(caseDate.sinceThe)}
       </h3>
       <div className="mt-3 flex flex-wrap items-baseline gap-x-10 gap-y-4">
@@ -802,7 +802,7 @@ function Fact({
       )}>
         {value}
       </div>
-      <div className="mt-1.5 text-[10px] uppercase tracking-wider text-gray-500">{label}</div>
+      <div className="mt-1.5 text-[11px] uppercase tracking-wider text-gray-500">{label}</div>
     </div>
   )
 }

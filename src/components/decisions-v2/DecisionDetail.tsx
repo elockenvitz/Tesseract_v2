@@ -110,7 +110,7 @@ export function DecisionDetailPane({
               </span>
             )}
             <span className={clsx(
-              'rounded-full border px-2 py-[3px] text-[10px] font-bold uppercase tracking-wider',
+              'rounded-full border px-2 py-[3px] text-[11px] font-bold uppercase tracking-wider',
               OUTCOME_CHIP[kind],
             )}>
               {OUTCOME_LABEL[kind]}
@@ -119,7 +119,7 @@ export function DecisionDetailPane({
               <span className="text-[11px] text-gray-500">{statusDetail(d)}</span>
             )}
             {d.portfolioName && (
-              <span className="rounded-full bg-gray-100 px-2 py-[2px] text-[10px] font-semibold text-gray-600 dark:bg-white/10 dark:text-gray-300">
+              <span className="rounded-full bg-gray-100 px-2 py-[2px] text-[11px] font-semibold text-gray-600 dark:bg-white/10 dark:text-gray-300">
                 {d.portfolioName}
               </span>
             )}
@@ -250,7 +250,7 @@ export function DecisionDetailPane({
             ) : (
               <div className="rounded-xl border border-dashed border-gray-300 px-4 py-2.5 dark:border-white/15">
                 <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
+                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500">
                     Decision record
                   </span>
                   <span className="text-[12px] text-gray-600 dark:text-gray-400">
@@ -292,7 +292,7 @@ export function DecisionDetailPane({
                 {/* The absence is still the finding, but it is a footnote now.
                     As a four-line paragraph it was the most prominent thing in
                     the column it was qualifying. */}
-                <p className="mt-2.5 border-t border-gray-200 pt-2 text-[10px] leading-snug text-gray-400 dark:border-white/10 dark:text-gray-500">
+                <p className="mt-2.5 border-t border-gray-200 pt-2 text-[11px] leading-snug text-gray-400 dark:border-white/10 dark:text-gray-500">
                   Historical framework not captured: thesis · target · scenarios · research state
                 </p>
               </DesktopModule>
@@ -317,7 +317,7 @@ export function DecisionDetailPane({
                     } />
                   )}
                 </dl>
-                <p className="mt-3 border-t border-gray-200 pt-2.5 text-[10px] text-gray-500 dark:border-white/10">
+                <p className="mt-3 border-t border-gray-200 pt-2.5 text-[11px] text-gray-500 dark:border-white/10">
                   Everything in this column is the state right now, not the state
                   when the decision was made.
                 </p>
@@ -369,7 +369,7 @@ export function DecisionDetailPane({
               {/* Decision and execution are separate facts and are never
                   presented as the same event. */}
               {d.execution && !d.execution.completedAt && (
-                <p className="mt-2 text-[10px] text-gray-500">
+                <p className="mt-2 text-[11px] text-gray-500">
                   An execution exists but has not completed
                   {d.execution.status ? ` (${d.execution.status})` : ''}.
                 </p>
@@ -428,7 +428,7 @@ function ProposalNote({ decision, compact }: { decision: DecisionRecord; compact
       'border-t border-gray-200 dark:border-white/10',
       compact ? 'mt-2 pt-2' : 'mt-4 pt-3',
     )}>
-      <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
+      <div className="text-[11px] font-bold uppercase tracking-widest text-gray-500">
         Why it was proposed
       </div>
       <p className={clsx(
@@ -437,7 +437,7 @@ function ProposalNote({ decision, compact }: { decision: DecisionRecord; compact
       )}>
         “{d.contextNote}”
       </p>
-      <div className="mt-1 text-[10px] text-gray-500">
+      <div className="mt-1 text-[11px] text-gray-500">
         Submitted by {d.requestedByName ?? 'a requester'}
         {d.requestedAt && ` · ${new Date(d.requestedAt).toLocaleDateString()}`}
         {' — the proposal rationale, not the decider’s'}

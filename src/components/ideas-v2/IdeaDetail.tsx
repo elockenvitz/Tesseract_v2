@@ -493,7 +493,7 @@ export function IdeaDetail({
                     />
                   </div>
                 )}
-                <p className="mt-2.5 text-[10px] text-gray-500">
+                <p className="mt-2.5 text-[11px] text-gray-500">
                   {idea.portfolioName ? `${idea.portfolioName}. ` : ''}
                   No policy limit is recorded for this position.
                 </p>
@@ -554,7 +554,7 @@ export function IdeaDetail({
 function Kv({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">{label}</div>
       <div className="mt-0.5 font-mono text-[14px] font-semibold tabular-nums">{value}</div>
     </div>
   )
