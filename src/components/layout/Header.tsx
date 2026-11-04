@@ -567,7 +567,27 @@ export function Header({
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
                       { id: 'today', title: 'Dashboard', type: 'today', icon: Sun, color: 'text-blue-600', bg: 'bg-blue-50' },
-                      { id: 'ideas', title: 'Ideas', type: 'ideas', icon: Lightbulb, color: 'text-purple-600', bg: 'bg-purple-50' },
+                      /*
+                        AND "IDEAS" WAS HERE, FOR THE SAME REASON AS THE THREE
+                        ABOVE.
+
+                        `DashboardNext` carries Ideas and Explore as its two
+                        lenses, behind one bar, and "Dashboard" above opens it.
+                        So this was a door onto a lens of the surface the entry
+                        beside it already opened -- the duplicate-door case the
+                        note at the top of this menu removed `research-v2`,
+                        `portfolio-v2` and `decisions-v2` for.
+
+                        The `ideas` tab type still exists and still renders:
+                        saved sessions and deep links carry it, and
+                        `IdeasAppPage` mounts on it exactly as before. This
+                        removes a door, not a surface.
+
+                        Global search's own `ideas` entry goes with it, for the
+                        same reason and in the same commit. Unlike the three
+                        above, Ideas WAS listed there, so leaving it would have
+                        left the second door standing and made this half a fix.
+                      */
                       /*
                         A THIRD ENTRY WAS HERE, AND IT DECIDED.
 

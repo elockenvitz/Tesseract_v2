@@ -190,12 +190,27 @@ describe('the home it became has one door and no back-references', () => {
     expect(code).not.toMatch(/<DashboardShell initialLens="today" \/>/)
   })
 
-  it('keeps the Dashboard and Ideas entries it was added beside', () => {
+  /*
+   * ── And then Ideas left too, which this case had to say instead ─────────
+   *
+   * It was "keeps the Dashboard and Ideas entries it was added beside", there
+   * to prove that removing "Dashboard (new)" did not take its neighbours with
+   * it. Ideas has since gone on its own merits: `DashboardNext` holds Ideas
+   * and Explore as its two lenses and "Dashboard" opens it, so the entry was a
+   * door onto a lens of the surface beside it.
+   *
+   * What the case is FOR survives: a removal from this menu must take exactly
+   * the entry it meant to. So it now pins the count, which is the assertion
+   * that catches a third entry vanishing by accident as well as a fourth
+   * appearing. The duplicate-door rule itself is guarded in
+   * `convergence.test.ts`.
+   */
+  it('leaves exactly one door in the group, and it is the Dashboard', () => {
     const header = src('components/layout/Header.tsx')
     const group = header.slice(header.indexOf('>Decision OS<'))
     const launcher = group.slice(0, group.indexOf(']'))
     expect(launcher).toContain("type: 'today'")
-    expect(launcher).toContain("type: 'ideas'")
+    expect(launcher.match(/\{ id: '/g)).toHaveLength(1)
   })
 
   /**

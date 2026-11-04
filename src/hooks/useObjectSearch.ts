@@ -41,7 +41,14 @@ export const STATIC_PAGES = [
     and landed them on the newer, legacy one. The drawer's Ideas row was
     repointed for exactly this reason; search still held the old id.
   */
-  { id: CANONICAL_HOME_TAB.id, title: 'Dashboard', type: 'page' as const, subtitle: 'Home dashboard overview', keywords: ['home', 'main', 'overview', 'ideas', 'dashboard'] },
+  /*
+    The Ideas keywords moved ONTO this row when the separate `ideas` row below
+    was removed. `DashboardNext` carries Ideas and Explore as its two lenses,
+    so a reader typing "explore" or "screening" wants this surface -- and a
+    search term that found a door we removed, finding nothing instead, is the
+    half-fix the launcher comment warns about.
+  */
+  { id: CANONICAL_HOME_TAB.id, title: 'Dashboard', type: 'page' as const, subtitle: 'Attention feed and Explore', keywords: ['home', 'main', 'overview', 'dashboard', 'ideas', 'opportunities', 'screening', 'explore', 'attention'] },
   { id: 'assets-list', title: 'Assets', type: 'page' as const, subtitle: 'Browse all assets', keywords: ['stocks', 'securities', 'holdings'] },
   { id: 'portfolios-list', title: 'Portfolios', type: 'page' as const, subtitle: 'Manage portfolios', keywords: ['funds', 'accounts'] },
   { id: 'themes-list', title: 'Themes', type: 'page' as const, subtitle: 'Investment themes', keywords: ['sectors', 'categories'] },
@@ -56,7 +63,9 @@ export const STATIC_PAGES = [
   { id: 'trade-book', title: 'Trade Book', type: 'page' as const, subtitle: 'Accepted trades and execution tracking', keywords: ['accepted', 'execution', 'book', 'commitment', 'trading', 'plans', 'approvals'] },
   { id: 'charting', title: 'Charting', type: 'page' as const, subtitle: 'Technical charts', keywords: ['charts', 'technical', 'graphs', 'price'] },
   { id: 'asset-allocation', title: 'Asset Allocation', type: 'page' as const, subtitle: 'Portfolio allocation analysis', keywords: ['allocation', 'weights', 'rebalance'] },
-  { id: 'ideas', title: 'Ideas', type: 'page' as const, subtitle: 'Attention feed and Explore', keywords: ['ideas', 'opportunities', 'screening', 'explore', 'attention'] },
+  /* `ideas` is retired as a DOOR. Its two lenses are the Dashboard's, so its
+     row and its keywords are on the Dashboard entry above. The tab type still
+     exists and still renders for a saved session or a deep link. */
   { id: 'outcomes', title: 'Outcomes', type: 'page' as const, subtitle: 'Decisions and results', keywords: ['decisions', 'execution', 'results', 'approved', 'trades'] },
   /* My Priorities is retired. Its question — what needs me now — is Today's,
      and the attention keywords that used to find it now do. */

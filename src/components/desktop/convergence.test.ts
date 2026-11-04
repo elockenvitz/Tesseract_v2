@@ -885,13 +885,71 @@ describe('one Dashboard, five lenses', () => {
      */
     const group = header.slice(header.indexOf('>Decision OS<'))
     const launcher = group.slice(0, group.indexOf(']'))
-    for (const t of ['research-v2', 'portfolio-v2', 'decisions-v2', 'ideas-v2']) {
+    /*
+     * `ideas` joined this list, and for exactly the stated reason. The two
+     * remaining entries were "two genuinely different surfaces: the Dashboard
+     * shell, and the standalone Ideas application" -- true while Dashboard
+     * opened `DashboardShell`. `DashboardNext` carries Ideas and Explore as
+     * its two lenses, and "Dashboard" opens it, so Ideas became a door onto a
+     * lens of the surface beside it. The subject of this case is unchanged;
+     * one more type now falls under it.
+     */
+    for (const t of ['research-v2', 'portfolio-v2', 'decisions-v2', 'ideas-v2', 'ideas']) {
       expect(launcher).not.toContain(`type: '${t}'`)
     }
-    // And the two that remain are two genuinely different surfaces: the
-    // Dashboard shell, and the standalone Ideas application.
+    // One door, onto the one surface that holds the lenses.
     expect(launcher).toContain("type: 'today'")
-    expect(launcher).toContain("type: 'ideas'")
+    expect(launcher.match(/type: '/g)).toHaveLength(1)
+  })
+
+  /*
+   * ── The other doors onto Ideas, which the menu's own note warned about ──
+   *
+   * The note above this group says the three lenses it removed were safe to
+   * remove because "global search never offered these three ... so this menu
+   * was the single duplicate door and there is no second one left behind".
+   * Ideas was not like that: it had THREE doors. Removing one and leaving the
+   * others is the half-fix that note describes, so each is asserted by name,
+   * following `priorities-removed`'s shape.
+   *
+   * The tab TYPE is deliberately not asserted absent anywhere. A saved
+   * session, a deep link, `legacy-tab-aliases` and `AttentionPage`'s thought
+   * link all still carry `type: 'ideas'` and must still render. What must not
+   * exist is a control that OFFERS it beside the Dashboard that contains it.
+   */
+  it('leaves no second door onto Ideas anywhere else either', () => {
+    // The command palette: its row is gone and its keywords moved onto the
+    // Dashboard row, so the terms that used to find it still find the surface.
+    const search = src('hooks/useObjectSearch.ts')
+    expect(search).not.toMatch(/\{ id: 'ideas', title: 'Ideas'/)
+    const home = search.slice(search.indexOf("title: 'Dashboard'"))
+    const row = home.slice(0, home.indexOf('},') + 1)
+    for (const k of ['ideas', 'explore', 'screening', 'attention', 'opportunities']) {
+      expect(row).toContain(`'${k}'`)
+    }
+
+    /*
+     * The new tab's "Go to" grid, which is RE-POINTED and not emptied. It has
+     * no Dashboard row of its own, so deleting the Ideas row would have left a
+     * new tab with no route to the feed -- a surface removed rather than a
+     * door, which is the opposite of the intent. The description is unchanged
+     * because it is still what the reader gets.
+     */
+    const blank = src('components/tabs/BlankTab.tsx')
+    /* Comments stripped: the re-pointed row names the type it moved away from,
+       so matching the raw file fails on the note rather than on the code --
+       the same shape `AnchoredPriceChart` and `DashboardPage` both paid for. */
+    const blankCode = blank.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    expect(blankCode).not.toMatch(/type: 'ideas'/)
+    expect(blankCode).toMatch(/type: 'today'/)
+    expect(blankCode).toContain('What deserves attention, and what to explore')
+
+    /* The phone was already right, and stays asserted so it cannot drift back:
+       its `ideas` surface is registered so a restored tab renders, and is
+       `inNav: false` because the drawer's Home row lands on the same feed. */
+    const mobile = src('lib/mobile/mobile-surfaces.ts')
+    const entry = mobile.slice(mobile.indexOf("type: 'ideas', title: 'Ideas'"))
+    expect(entry.slice(0, entry.indexOf('},'))).toContain('inNav: false')
   })
 
   it('keeps saved v2 sessions renderable, without migrating them', () => {
@@ -1127,9 +1185,11 @@ describe('the launcher names the product, not the build', () => {
    * What survives of the original intent is the part about naming: whatever
    * the menu does list, it lists under the product's name.
    */
+  /* `title: 'Ideas'` dropped with the entry, for the reason recorded in
+     "gives a lens no second door in the app menu". The naming rule is what
+     this case is for, and the one entry left still obeys it. */
   it('names what it lists after the product', () => {
     expect(header).toContain("title: 'Dashboard'")
-    expect(header).toContain("title: 'Ideas'")
   })
 
   it('no longer shows build-stage labels', () => {
