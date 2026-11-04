@@ -476,40 +476,68 @@
      neither. The query subject is `.gallery-host`, the same container those
      use.
 
-     Specificity: three classes (0,3,0) beats any Tailwind utility (0,1,0), so
-     the step down wins without `!important`. Values are the `compact` rung of
-     the tables in `DesktopTile.tsx`; `convergence.test.ts` pins them to it. */
+     ── Except the one tile the reader chose ──────────────────────────────
+
+     `:not([data-selected])`. The rail EXISTS because a selection opened the
+     workspace, and `IdeasExploreBrowse` drops every unchosen tile to
+     `compact` for exactly that reason, saying in its own note that "the
+     chosen tile keeps the size its own content earned". It did not. This
+     block reached every tile in the region including that one, so the
+     chosen card was restyled to the compact rung's 17px display, 15px
+     two-line claim, 26px shelf and `p-3` frame -- the same values the 144
+     tiles around it were given. A hero and a compact drew identically, and
+     the feature that was asked for could not be seen on the surface it was
+     asked for.
+
+     Width is not what "expanded" can mean here: one column means one width.
+     What it means is the chosen tile's own rank -- its display type, its
+     third claim line, its taller shelf -- which is what this exemption
+     returns. Nothing about the tile's SPAN changes; `.gallery-region >
+     [data-size]` still gives every cell one track.
+
+     Safe at this width by the rung's own measurements, recorded above: a
+     rail cell is 376px, the widest value any rank sets here is a 30px
+     display figure and a 17px claim, and the note on `.tile-claim` in
+     `DesktopTile.tsx` states that 15px is what the prototype uses for its
+     full-width tiles and that neither width is tight. One tile is exempt,
+     so the height argument the rung was written for -- a row stretching to
+     its tallest member -- does not apply: in one column there is no row.
+
+     Specificity: four compound selectors (0,4,0) beats any Tailwind utility
+     (0,1,0), so the step down still wins without `!important`. Values are the
+     `compact` rung of the tables in `DesktopTile.tsx`; `convergence.test.ts`
+     pins them to it. */
   @container not (min-width: 34rem) {
-    .gallery-region > .desktop-tile .tile-frame {
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-frame {
       gap: 0.375rem;
       padding: 0.75rem;
     }
-    .gallery-region > .desktop-tile .tile-display {
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-display {
       font-size: 17px;
     }
-    .gallery-region > .desktop-tile .tile-beside {
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-beside {
       font-size: 11px;
     }
     /* Two lines, not three: `compact` buys the size with ~6px of height
        rather than with a third line. */
-    .gallery-region > .desktop-tile .tile-claim {
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-claim {
       font-size: 15px;
       -webkit-line-clamp: 2;
     }
-    .gallery-region > .desktop-tile .tile-figure {
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-figure {
       font-size: 15px;
     }
-    .gallery-region > .desktop-tile .tile-stats {
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-stats {
       column-gap: 1rem;
       row-gap: 0.375rem;
     }
-    .gallery-region > .desktop-tile .tile-shelf {
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-shelf {
       height: 26px;
     }
-    .gallery-region > .desktop-tile .tile-actions {
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-actions {
       padding: 0.5rem 0.5rem 1rem;
     }
-    .gallery-region > .desktop-tile .tile-body {
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-body {
       margin-top: 0.5rem;
     }
   }

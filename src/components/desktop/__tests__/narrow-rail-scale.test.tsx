@@ -190,16 +190,69 @@ describe('the rung is scoped and specific enough to win', () => {
     expect(rung()).not.toMatch(/max-width/)
   })
 
-  it('selects three classes, so it outranks the utilities it overrides', () => {
+  it('selects enough to outrank the utilities it overrides', () => {
     /* A Tailwind utility is one class (0,1,0). Every selector here is
-       `.gallery-region > .desktop-tile .tile-*` (0,3,0) and wins without
-       `!important`. Weakened to a bare `.tile-*` the utility wins instead and
-       the rail silently stops collapsing. */
+       `.gallery-region > .desktop-tile:not([data-selected]) .tile-*` (0,4,0)
+       and wins without `!important`. Weakened to a bare `.tile-*` the utility
+       wins instead and the rail silently stops collapsing. */
     for (const sel of rung().match(/\.tile-[a-z]+(?=\s*[,{])/g) ?? []) {
       const line = rung().slice(0, rung().indexOf(sel) + sel.length)
       const own = line.slice(line.lastIndexOf('}') + 1)
       expect(own, `${sel} is not scoped to a region tile`).toContain('.gallery-region > .desktop-tile')
     }
+  })
+
+  /**
+   * The rung spares the one tile the reader chose.
+   *
+   * ── The defect ────────────────────────────────────────────────────────
+   *
+   * The rail only exists because a selection opened the workspace, and
+   * `IdeasExploreBrowse` drops every UNCHOSEN tile to `compact` for exactly
+   * that reason, its own note saying "the chosen tile keeps the size its own
+   * content earned". It did not: this rung reached every tile in the region,
+   * so the chosen card was restyled to the same 17px display, 15px two-line
+   * claim and 26px shelf as the 144 around it. A hero and a compact drew
+   * identically, and the feature could not be seen on the surface it was
+   * asked for.
+   *
+   * MEASURED on Explore with the workspace open: the chosen tile's
+   * `.tile-display` computed to 17px and its `.tile-claim` to 15px with a
+   * 2-line clamp, which are `compact`'s values, while its `data-size` said
+   * `medium`.
+   *
+   * ── Why both halves are asserted here ─────────────────────────────────
+   *
+   * The exemption is split across two languages that cannot see each other:
+   * the type and spacing are CSS, and the plot height is a number bound for
+   * an SVG. Exempting one and not the other gives the chosen tile its rank's
+   * type with the rail's plot, or the reverse, and neither is visible in a
+   * jsdom render. So the CSS half is pinned here and the React half in
+   * `keeps the width signal for the plot` below, and this case also pins the
+   * ATTRIBUTE the selector depends on -- without it the `:not()` matches
+   * everything and the exemption is a no-op that still reads correct.
+   */
+  it('spares the chosen tile, and selects on an attribute the tile really sets', () => {
+    const selectors = rung().match(/\.gallery-region > \.desktop-tile[^\s]*/g) ?? []
+    /* Non-vacuity: nine rules, which is the count the scoping case above
+       independently expects. A rung that stopped selecting would satisfy an
+       "every selector is exempt" claim trivially. */
+    expect(selectors.length).toBe(9)
+    for (const sel of selectors) {
+      expect(sel, 'a rung rule still reaches the chosen tile').toBe(
+        '.gallery-region > .desktop-tile:not([data-selected])',
+      )
+    }
+    /* The attribute is set on the SAME element the rung selects, and only
+       when the tile is selected -- `undefined` and not `'false'`, or
+       `:not([data-selected])` would never match and the rung would stop
+       collapsing the field it was written for. */
+    const tile = src('components/desktop/DesktopTile.tsx')
+    expect(tile).toMatch(/data-selected=\{selected \? 'true' : undefined\}/)
+    /* And the field actually decides it per tile, rather than handing every
+       tile the selected key. */
+    expect(src('components/ideas-app/IdeasExploreBrowse.tsx'))
+      .toMatch(/selected=\{isSelected\(opens\[i\], selectedKey\)\}/)
   })
 
   it('only applies inside a region gallery', () => {
@@ -270,8 +323,21 @@ describe('the opportunity tile no longer re-typesets itself in React', () => {
      * per tile instead of five class rewrites.
      */
     expect(f()).toMatch(/const narrow = useGalleryNarrow\(\)/)
-    expect(f()).toMatch(/const chartHeight = !narrow && size === 'hero' \? 112 : big \? 98 : 92/)
-    expect(f()).toMatch(/const big = !narrow && drawsBig/)
+    /*
+     * Re-pointed from `!narrow` to `!railed`, which is `narrow && !selected`.
+     * The subject is unchanged -- the plot is still the one thing the width
+     * signal survives for -- but the collapse now spares the chosen tile, so
+     * both consumers read the exemption and not the raw signal. Pinning
+     * `!narrow` here is what would let the CSS half be exempted and the plot
+     * half quietly not be, which is the drift this case exists to catch.
+     */
+    expect(f()).toMatch(/const railed = narrow && !selected/)
+    expect(f()).toMatch(/const chartHeight = !railed && size === 'hero' \? 112 : big \? 98 : 92/)
+    expect(f()).toMatch(/const big = !railed && drawsBig/)
+    /* And nothing else reads the raw signal, which is the half a grep would
+       otherwise miss: one `!narrow` left behind is one rank that still
+       collapses on the tile the reader chose. */
+    expect(f().match(/!narrow\b/g)).toBeNull()
     // The frame gap reads the RANK, because the rung takes it down in CSS.
     expect(f()).toMatch(/'tile-body flex min-h-0 min-w-0 flex-1 flex-col', drawsBig \? 'mt-3' : 'mt-2'/)
   })

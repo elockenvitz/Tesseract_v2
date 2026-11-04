@@ -433,8 +433,22 @@ export function OpportunityTile({
    * this component still reads the context.
    */
   const narrow = useGalleryNarrow()
+  /*
+   * ── Except the tile the reader chose ──────────────────────────────────
+   *
+   * The rail only exists because a selection opened the workspace, and the
+   * field drops every OTHER tile to `compact` for exactly that reason. So
+   * the chosen tile is exempt from the collapse, here and in the CSS rung
+   * (`:not([data-selected])` in `index.css`) -- without both halves it keeps
+   * its rank's type and loses its rank's plot, or the reverse.
+   *
+   * Only ever one tile, so this does not give the width signal back its
+   * cost: the measurement that moved the rung into CSS was 289 mutations
+   * across 145 tiles, and this is one of them.
+   */
+  const railed = narrow && !selected
   const drawsBig = size === 'hero' || size === 'large'
-  const big = !narrow && drawsBig
+  const big = !railed && drawsBig
 
   /*
    * The three verbs the authored field had, restored on the shared shelf.
@@ -531,7 +545,7 @@ export function OpportunityTile({
      own box in `fill` mode, so a shorter plot is a shorter plot and not a
      cropped one. 150 -> 112 and 120 -> 98 keep both above the ~92px a narrow
      tile has always drawn legibly. */
-  const chartHeight = !narrow && size === 'hero' ? 112 : big ? 98 : 92
+  const chartHeight = !railed && size === 'hero' ? 112 : big ? 98 : 92
   /* The carousel's box, sized to the taller panel. The chart is it: the
      archetypes are a bar and two labels and none of them reaches 120px. The
      ladder, the plot and the caption are what `height` covers, plus the
