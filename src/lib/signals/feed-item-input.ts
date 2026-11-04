@@ -52,6 +52,45 @@ export interface FeedItemLike {
   target_price?: number | string | null
   conviction?: string | null
   time_horizon?: string | null
+  /**
+   * pair_trade only. The row's own shape, not the builder's.
+   *
+   * `useIdeasFeed` emits `{ id, action, asset: { symbol } }` per leg and the
+   * builder reads `l.symbol`, so the two have to be translated. That is what
+   * this mapper is for, and it is the field it was missing.
+   */
+  long_legs?: FeedLegLike[] | null
+  short_legs?: FeedLegLike[] | null
+}
+
+/** One leg, as either shell's row carries it. Both shapes are tolerated
+ *  because production holds rows written by both. */
+export interface FeedLegLike {
+  asset?: { symbol?: string | null } | null
+  symbol?: string | null
+}
+
+/**
+ * The legs, reshaped to what the builder reads.
+ *
+ * ── Why this is here and not in a shell ──────────────────────────────────
+ *
+ * It WAS in a shell. `MobileDashboard` fixed exactly this translation inline,
+ * with a note saying every leg "resolved to undefined and the headline fell
+ * back to 'proposed a pair trade' with both sides blank -- reported as pair
+ * tiles not showing their legs". This mapper was written to be the one place
+ * that glue lives, and it never learned the field, so the desktop feed kept
+ * the defect the phone had fixed: every pair card read "Pair trade from
+ * <name>" and the branch that says "Long MCD / Short CMG" was unreachable.
+ *
+ * Which is precisely the drift this module's own header warns about -- "the
+ * two shells would agree about the builder and drift about what they fed it".
+ * One exported function, so there is nothing left to copy.
+ */
+export function feedPairLegs(legs: FeedLegLike[] | null | undefined): { symbol: string }[] {
+  return (legs ?? [])
+    .map(l => ({ symbol: String(l?.asset?.symbol ?? l?.symbol ?? '').toUpperCase() }))
+    .filter(l => !!l.symbol)
 }
 
 /** Enrichment the caller resolves, because its source differs per shell. */
@@ -114,5 +153,9 @@ export function feedItemToIdeaInput(
     timeHorizon: item.time_horizon ?? null,
     ladderCaseCount: can.ladderCaseCount ?? 0,
     hasPriceHistory: can.hasPriceHistory ?? false,
+    // Empty for every other type, which is what the builder expects: it only
+    // reads these on the `pair_trade` branch.
+    longLegs: feedPairLegs(item.long_legs),
+    shortLegs: feedPairLegs(item.short_legs),
   }
 }

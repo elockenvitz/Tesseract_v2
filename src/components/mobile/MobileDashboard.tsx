@@ -160,6 +160,7 @@ import { ResearchReader } from './ResearchReader'
 import { CaseChartPane } from '../signals/CaseChartPane'
 import { buildIdeaCard, ideaCardId, ideaCardType } from '../../lib/signals/builders/ideas'
 import { ideaPromptFor } from '../../lib/signals/builders/ideas'
+import { feedPairLegs } from '../../lib/signals/feed-item-input'
 import { ideaShapeFor } from '../../lib/signals/idea-shape'
 import { NO_EVOLUTION, unchangedThesisLine } from '../../lib/signals/idea-evolution'
 import { useIdeaEvolution } from '../../hooks/ideas/useIdeaEvolution'
@@ -4790,13 +4791,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    *
    * One place, because the two shapes disagreed silently once already.
    */
-  const pairLegs = useCallback(
-    (legs: any[] | null | undefined): { symbol: string }[] =>
-      (legs ?? [])
-        .map(l => ({ symbol: String(l?.asset?.symbol ?? l?.symbol ?? '').toUpperCase() }))
-        .filter(l => !!l.symbol),
-    [],
-  )
+  /*
+   * The leg reshaper moved to `feed-item-input`, where the rest of this glue
+   * already lived, and this is now the one import rather than a second copy.
+   *
+   * It was fixed HERE, inline, and the shared mapper never learned the field
+   * -- so the desktop feed kept the defect the phone had fixed and every pair
+   * card there read "Pair trade from <name>". Two shells agreeing about the
+   * builder and drifting about what they feed it is the exact failure that
+   * module exists to prevent, and a local copy is how it happened.
+   */
+  const pairLegs = feedPairLegs
 
   /**
    * Idea-side helpers. Kept together so the idea branch reads as one thing.
