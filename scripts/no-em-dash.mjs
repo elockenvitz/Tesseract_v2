@@ -82,7 +82,7 @@ const SRC = join(ROOT, 'src')
 // took ", so" instead. A blind replace would have been wrong in exactly the
 // places a script could not see.
 //
-// The remaining 343 are a genuine long tail: 167 files at one or two each. Not
+// The remaining 342 are a genuine long tail: 167 files at one or two each. Not
 // a backlog to burn down as a task -- the value here is the derivative, the
 // same reasoning `typecheck-cards.mjs` records for its own ceiling. Fix them as
 // you touch the copy, and lower this line when you do.
@@ -90,7 +90,11 @@ const SRC = join(ROOT, 'src')
 // 345 -> 343: the Firm perspective's banner and the personal-valuation notice
 // in AssetTab were both rewritten for the AI-summary merge, and each carried
 // one. Taken while the copy was already being touched, per the rule above.
-const MAX_PROSE_DASHES = 343
+//
+// 343 -> 342: the AI setup notice, rewritten as it moved to the top of the
+// Firm section. It also lost a second button that dispatched the same
+// `openSettings` event as the first.
+const MAX_PROSE_DASHES = 342
 
 /**
  * The floor on how much this scan must actually look at.

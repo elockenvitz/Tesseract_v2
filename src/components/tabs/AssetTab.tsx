@@ -19,6 +19,7 @@ import {
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
 import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
 import { useAuth } from '../../hooks/useAuth'
+import { useAIConfig } from '../../hooks/useAIConfig'
 import { initialResearchView } from '../../lib/desktop-asset/research-view'
 import {
   fetchOneAssetResearch,
@@ -74,7 +75,7 @@ import { contributionSectionsForSlug } from '../../lib/research/contribution-sec
 // DocumentLibrarySection removed — consolidated into KeyReferencesSection
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddToProjectButton } from '../projects/AddToProjectButton'
-import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
+import { ContributionSection, ThesisUnifiedSummary, AISetupNotice, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
 import type { WorkspaceDestination, SignalFocus } from '../../lib/asset-workspace/context'
 import { attentionTarget } from '../../lib/asset-workspace/attention-target'
 import {
@@ -290,6 +291,16 @@ function AssetTabKeyReferencesInline({
 
 export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: AssetTabProps) {
   const { user } = useAuth()
+  /*
+   * Read here, not only inside the synthesis band, because "AI is not set up"
+   * is state about the whole Firm section and its notice belongs at the top of
+   * it beside the read-only banner, not three blocks down where the band that
+   * needs AI happens to sit.
+   *
+   * No extra cost: `useAIConfig` is react-query on a fixed key, so this and
+   * ThesisUnifiedSummary's own call share one cache entry and one request.
+   */
+  const { effectiveConfig: aiConfig } = useAIConfig()
 
   // Mark the "Explore an asset page" step in PilotWelcomeBanner complete
   // on first visit, keyed per (user, org) so opening an asset in one
@@ -4537,6 +4548,26 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     </div>
                   )}
 
+                  {/*
+                    ─── "AI is not set up", at the top with the other banner ───
+
+                    This notice used to live inside the synthesis band, which
+                    after the merge sits in the MIDDLE of this section, between
+                    the aggregated valuation and the attributed record. So the
+                    one thing a reader could act on was the one thing they had
+                    to scroll past two blocks of content to find, while the
+                    band it explained rendered nothing they could use.
+
+                    Turning AI on is state about this whole section, same as
+                    "read-only firm view" directly above, so it belongs in the
+                    same place. The band is passed `unconfigured="deferred"`
+                    and renders nothing: without that it would repeat this
+                    notice AND re-list these contributions underneath, which
+                    `OurViewSummary` at the foot of this branch already does
+                    in full and with attribution.
+                  */}
+                  {!aiConfig.isConfigured && <AISetupNotice />}
+
                   {/* Aggregated Price Targets (Bull/Bear/Base) - only shows when data exists */}
                   <PriceTargetsSummary
                     assetId={asset.id}
@@ -4579,14 +4610,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     renders under a single analyst, but today only the
                     aggregated branch mounts it.
                   */}
-                  <Card padding="md">
-                    <ThesisUnifiedSummary
-                      assetId={asset.id}
-                      viewFilter={researchViewFilter}
-                      contributions={allAssetContributions}
-                      coveringAnalystIds={coveringAnalystIds}
-                    />
-                  </Card>
+                  {/* The CARD is conditional too, not just its contents:
+                      `unconfigured="deferred"` renders null, and a Card around
+                      null is an empty bordered box sitting between the numbers
+                      and the record. Every other state the band can be in
+                      (loading, generating, failed, ready-to-generate) happens
+                      only once AI is configured and does want the Card. */}
+                  {aiConfig.isConfigured && (
+                    <Card padding="md">
+                      <ThesisUnifiedSummary
+                        assetId={asset.id}
+                        viewFilter={researchViewFilter}
+                        contributions={allAssetContributions}
+                        coveringAnalystIds={coveringAnalystIds}
+                        /* Belt and braces with the guard above: the notice is
+                           hoisted to the top of this section and the
+                           attributed record is below, so with AI off this
+                           band has nothing left to add. */
+                        unconfigured="deferred"
+                      />
+                    </Card>
+                  )}
 
                   {/*
                     ─── Firm Research: valuation AND contributor context ───

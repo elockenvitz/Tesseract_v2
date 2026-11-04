@@ -83,6 +83,40 @@ describe('Research presentation: original per-section cards restored', () => {
     expect(ASSET_TAB).toMatch(/useState<'all' \| 'history' \| 'references'>/)
   })
 
+  /**
+   * "AI is not set up" belongs at the top, with the other section banner.
+   *
+   * ── The defect ────────────────────────────────────────────────────────
+   *
+   * The notice lived inside the synthesis band, and after the merge that
+   * band sits in the MIDDLE of the Firm section, between the aggregated
+   * valuation and the attributed record. So the one thing a reader could
+   * act on was two blocks down, under a heading whose content was absent
+   * precisely because the thing it was asking for was not set up.
+   *
+   * Worse, the band's unconfigured arm also rendered `SimpleSummaryView`,
+   * a plain listing of the same contributions that `OurViewSummary`
+   * renders in full and with attribution at the foot of this branch. With
+   * AI off the section listed the same research twice.
+   */
+  it('hoists the AI setup notice to the top of the Firm section', () => {
+    const firmBranch = ASSET_TAB.slice(ASSET_TAB.indexOf('isAggregatedView ?'))
+    const at = (needle: string) => firmBranch.indexOf(needle)
+    expect(at('<AISetupNotice'), 'the setup notice is not in the Firm branch').toBeGreaterThan(-1)
+    /* Above the numbers, which puts it beside the read-only banner rather
+       than where the band that needs AI happens to sit. */
+    expect(at('Read-only firm view')).toBeLessThan(at('<AISetupNotice'))
+    expect(at('<AISetupNotice')).toBeLessThan(at('<PriceTargetsSummary'))
+    // Only when it is actually needed.
+    expect(firmBranch).toMatch(/\{!aiConfig\.isConfigured && <AISetupNotice \/>\}/)
+    /* And the band is told to render nothing, or it repeats this notice and
+       re-lists the contributions OurViewSummary already shows. */
+    expect(firmBranch).toMatch(/unconfigured="deferred"/)
+    /* The Card is conditional too: `deferred` returns null, and a Card
+       wrapped around null is an empty bordered box mid-section. */
+    expect(firmBranch).toMatch(/\{aiConfig\.isConfigured && \(\s*<Card padding="md">/)
+  })
+
   /*
    * The other half of that move: the synthesis has to be SOMEWHERE, and the
    * only place it can be is the branch that answers the same question.
