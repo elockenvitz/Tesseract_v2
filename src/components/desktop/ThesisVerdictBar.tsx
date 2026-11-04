@@ -29,11 +29,13 @@ import { conclusionWords } from '../../lib/memory/thesis-review'
  *   - OUTLINED, not filled. Three filled buttons would each claim to be the
  *     recommended answer, and the product must not nudge an analyst toward
  *     one conclusion about their own thesis.
- *   - The STANDING answer is filled and unpressable -- pressing it would
- *     write a second identical event and read as if nothing happened. Every
- *     other answer stays live, which is the correction path.
- *   - `opacity` is not used to show the standing one is unpressable: it is
- *     the most informative thing on the bar and dimming it would make the
+ *   - The STANDING answer is filled, because it is a fact rather than an
+ *     offer. It was also UNPRESSABLE, on the reasoning that pressing it would
+ *     write a second identical event; that part did not survive -- see
+ *     `VERDICT_SELECTED` -- because it left no way back to unanswered.
+ *     Pressing it clears it now, which is neither a repeat nor a no-op.
+ *   - `opacity` is not used to mark a button as unavailable: the standing one
+ *     is the most informative thing on the bar and dimming it would make the
  *     record quieter than the alternatives to it.
  *   - A FIXED-WIDTH status slot. The sentence measured 272px and appeared,
  *     changed and disappeared under a single click, resizing the bar and
@@ -79,17 +81,32 @@ const VERDICT_TONE: Record<ThesisReviewOutcome, string> = {
     + 'dark:border-rose-900 dark:bg-transparent dark:text-rose-300 dark:hover:bg-rose-950/40',
 }
 
-/** The answer already on the record. Filled, because it is a fact, not an invitation. */
+/**
+ * The answer already on the record. Filled, because it is a fact.
+ *
+ * ── It is pressable again, and `cursor-default` went with that ───────────
+ *
+ * This used to be unpressable, on the reasoning that pressing it would write
+ * a second identical event and read as if nothing had happened. True of a
+ * repeat, and it left no way to say "ignore that, I have not actually decided"
+ * -- the reader could change their answer to one of the other two but never
+ * get back to not having one. Reported as needing to unselect.
+ *
+ * So pressing the standing answer CLEARS it. That is not a repeat and not a
+ * no-op: it writes a newer event that leaves the asset unanswered, which is a
+ * state the record could always hold and the interface could not reach. See
+ * `CONCLUSION_CLEARED`.
+ */
 const VERDICT_SELECTED: Record<ThesisReviewOutcome, string> = {
   holds:
-    'border-emerald-600 bg-emerald-600 text-white cursor-default '
-    + 'dark:border-emerald-500 dark:bg-emerald-600 dark:text-white',
+    'border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700 '
+    + 'dark:border-emerald-500 dark:bg-emerald-600 dark:text-white dark:hover:bg-emerald-700',
   changed:
-    'border-amber-600 bg-amber-600 text-white cursor-default '
-    + 'dark:border-amber-500 dark:bg-amber-600 dark:text-white',
+    'border-amber-600 bg-amber-600 text-white hover:bg-amber-700 '
+    + 'dark:border-amber-500 dark:bg-amber-600 dark:text-white dark:hover:bg-amber-700',
   needs_work:
-    'border-rose-600 bg-rose-600 text-white cursor-default '
-    + 'dark:border-rose-500 dark:bg-rose-600 dark:text-white',
+    'border-rose-600 bg-rose-600 text-white hover:bg-rose-700 '
+    + 'dark:border-rose-500 dark:bg-rose-600 dark:text-white dark:hover:bg-rose-700',
 }
 
 export function ThesisVerdictBar({
@@ -108,7 +125,7 @@ export function ThesisVerdictBar({
   compact?: boolean
 }) {
   const {
-    record: recordReview, isPending: reviewPending, pendingOutcome,
+    record: recordReview, clear: clearReview, isPending: reviewPending, pendingOutcome,
   } = useRecordThesisReview(assetId)
   /*
    * `isDone` is deliberately not read.
@@ -143,13 +160,26 @@ export function ThesisVerdictBar({
               type="button"
               data-slot={`research-review-${choice.outcome}`}
               aria-pressed={standing}
-              onClick={() => recordReview(choice.outcome)}
-              disabled={reviewPending || standing}
+              /* Press the standing answer to take it back. `aria-pressed`
+                 already told a screen reader this is a toggle; the title is
+                 what tells everyone else, because a filled button that clears
+                 on click is not guessable from its colour. */
+              title={standing ? 'Press again to clear this answer' : undefined}
+              onClick={() => (standing ? clearReview() : recordReview(choice.outcome))}
+              disabled={reviewPending}
               className={clsx(
                 'rounded-lg border px-2.5 py-1 text-[13px] font-semibold transition-colors',
+                /* On both branches now. It used to be on the unselected one
+                   only, because the standing button was permanently disabled
+                   and dimming the record would have made it quieter than the
+                   alternatives to it. It is only disabled WHILE A WRITE IS IN
+                   FLIGHT now, which is a different thing and true of all
+                   three at once, so the dimming says "wait" rather than
+                   "this one does not apply". */
+                'disabled:opacity-60',
                 standing
                   ? VERDICT_SELECTED[choice.outcome]
-                  : clsx(VERDICT_TONE[choice.outcome], 'disabled:opacity-60'),
+                  : VERDICT_TONE[choice.outcome],
               )}
             >
               {choice.label}
@@ -168,7 +198,9 @@ export function ThesisVerdictBar({
                 reviewState.outcome, reviewState.occurredAt, reviewState.byMe, new Date(),
               )}
               {' · '}
-              <span className="text-gray-400">change it above</span>
+              {/* Says both ways out, because one of them is new and neither is
+                  visible on the buttons. */}
+              <span className="text-gray-400">change or clear it above</span>
             </>
           ) : (
             <span className="text-gray-400">Not reviewed yet</span>

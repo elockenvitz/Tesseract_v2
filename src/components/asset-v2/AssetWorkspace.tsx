@@ -527,7 +527,39 @@ export function AssetWorkspacePane({
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 dark:bg-[#0b0f16]" data-testid="asset-workspace"
+    /*
+     * ── Neither `h-full` nor `overflow-y-auto`, and both were load-bearing
+     *    the wrong way ───────────────────────────────────────────────────
+     *
+     * Reported: the top header bar scrolls away. It has been
+     * `sticky top-0 z-20` the whole time (see `AssetHeader`), and it never
+     * stuck, for two reasons that both lived on this one line.
+     *
+     * MEASURED live at 1920 with a name open in the work pane:
+     *
+     *     this element      scrollHeight 1169 === clientHeight 1169
+     *     its parent        726px, `min-h-0 flex-1 overflow-y-auto`
+     *
+     * `overflow-y-auto` made this the header's nearest scroll container, so
+     * sticky was scoped to a box that DOES NOT SCROLL -- the real scrollport
+     * is `IdeasWorkPane`'s, one level up. A sticky element pinned to a
+     * scrollport that never moves simply travels with the page.
+     *
+     * And `h-full` would have broken it a second time if the first were
+     * fixed: sticky cannot leave its containing block, so a 726px box around
+     * 1169px of content releases the header a third of the way down.
+     *
+     * So the pane is content-sized and the pane above it owns the scrolling,
+     * which is what was already true in fact. Both call sites are inside that
+     * scroller (`IdeasWorkPane`, two of them, and there are no others), so
+     * nothing loses its scrollbar -- and nothing gains a second one, which a
+     * nested scrollport would have been.
+     *
+     * `min-h-full` rather than nothing: the ground has to reach the bottom of
+     * the scrollport for a short name, and a MINIMUM height lets the box grow
+     * past it, so the header's containing block is still the whole page.
+     */
+    <div className="min-h-full bg-gray-50/60 dark:bg-[#0b0f16]" data-testid="asset-workspace"
          data-focus={activeFocus} data-asset={asset.id}>
       <AssetHeader
         symbol={symbol}

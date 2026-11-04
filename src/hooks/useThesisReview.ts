@@ -15,7 +15,9 @@ import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
-import { latestConclusionByAsset, latestReviewByAsset } from '../lib/memory/thesis-review'
+import {
+  CONCLUSION_CLEARED, latestConclusionByAsset, latestReviewByAsset,
+} from '../lib/memory/thesis-review'
 
 /**
  * What the reader concluded. Only the outcome is stored -- the semantic
@@ -30,6 +32,21 @@ import { latestConclusionByAsset, latestReviewByAsset } from '../lib/memory/thes
  * a person rewriting it changes what it says.
  */
 export type ThesisReviewOutcome = 'holds' | 'changed' | 'needs_work'
+
+/**
+ * What this hook can WRITE, which is one more thing than it can display.
+ *
+ * `CONCLUSION_CLEARED` takes the answer back. `memory_events` is append-only,
+ * so there is nothing to delete: a clear is a newer `thesis.reviewed` event
+ * and "newest wins" leaves the asset unanswered. See the note on the constant
+ * in `lib/memory/thesis-review`.
+ *
+ * Deliberately a separate type from `ThesisReviewOutcome`. Every surface that
+ * paints a verdict keys a `Record<ThesisReviewOutcome, ...>` off those three,
+ * and widening the union would make a cleared asset demand a colour, a label
+ * and a sentence it has no business having.
+ */
+export type ThesisConclusionWrite = ThesisReviewOutcome | typeof CONCLUSION_CLEARED
 
 /** The three, in the order the interface offers them. */
 export const THESIS_REVIEW_OUTCOMES: readonly ThesisReviewOutcome[] =
@@ -203,7 +220,7 @@ export function useRecordThesisReview(assetId: string | null | undefined) {
   const [requestId, setRequestId] = useState(() => crypto.randomUUID())
 
   const mutation = useMutation({
-    mutationFn: async (outcome: ThesisReviewOutcome) => {
+    mutationFn: async (outcome: ThesisConclusionWrite) => {
       if (!assetId || !currentOrgId || !user?.id) throw new Error('Missing asset, org or user')
       const { error } = await supabase.from('memory_events').insert({
         organization_id: currentOrgId,
@@ -243,7 +260,7 @@ export function useRecordThesisReview(assetId: string | null | undefined) {
      * provisional conclusion from a recorded one; the refetch replaces it
      * with the real row, and `onError` puts the previous list back.
      */
-    onMutate: async (outcome: ThesisReviewOutcome) => {
+    onMutate: async (outcome: ThesisConclusionWrite) => {
       const key = [...THESIS_REVIEWS_KEY, 'conclusions', currentOrgId]
       // Stop a refetch already in flight from landing on top of this.
       await queryClient.cancelQueries({ queryKey: key })
@@ -291,8 +308,23 @@ export function useRecordThesisReview(assetId: string | null | undefined) {
     mutation.mutate(outcome)
   }, [mutation])
 
+  /**
+   * Take the answer back.
+   *
+   * Its own function rather than `record('cleared')`, so a caller cannot reach
+   * the clear by passing a verdict-shaped string and a reader of a call site
+   * can see which of the two things is happening. Everything else about the
+   * write is identical, idempotency key included: a double-pressed clear
+   * dedupes server-side exactly as a double-pressed verdict does.
+   */
+  const clear = useCallback(() => {
+    if (mutation.isPending) return
+    mutation.mutate(CONCLUSION_CLEARED)
+  }, [mutation])
+
   return {
     record,
+    clear,
     isPending: mutation.isPending,
     isDone: mutation.isSuccess,
     error: mutation.error,
@@ -309,6 +341,11 @@ export function useRecordThesisReview(assetId: string | null | undefined) {
      *
      * Only read while pending, so a settled mutation never speaks over the
      * record.
+     *
+     * It can be `CONCLUSION_CLEARED`, and a caller comparing it against the
+     * three verdicts then matches none of them -- which is the correct answer
+     * for a clear in flight, and the reason this does not need a case of its
+     * own at the call sites.
      */
     pendingOutcome: mutation.isPending ? (mutation.variables ?? null) : null,
   }

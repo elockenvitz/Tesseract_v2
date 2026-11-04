@@ -1077,4 +1077,54 @@ describe('the header carries the step, the verdict and the tools', () => {
     expect(header.contains(primaryButton())).toBe(true)
     expect(header.querySelector('[data-slot="work-why-toggle"]')).not.toBeNull()
   })
+
+  /**
+   * ── And `sticky top-0` was not enough, which is the real lesson ─────────
+   *
+   * The case above passed for weeks while the header scrolled away in the
+   * running app, because `sticky` is only half the mechanism. The other half
+   * is WHICH box it sticks to: the nearest scrolling ancestor. This pane's
+   * root declared `overflow-y-auto`, so the header was pinned to a box that
+   * never scrolled -- measured live on the running page, `scrollHeight 1169
+   * === clientHeight 1169`. The scrollport was its 726px parent, one level up
+   * in `IdeasWorkPane`, and the header was not attached to that.
+   *
+   * `h-full` was the latent second half of the same fault. Sticky is also
+   * confined to its containing block, so a root capped at the scrollport's
+   * height would release the header about a third of the way down a 1169px
+   * page. `min-h-full` keeps the ground reaching the bottom on a short name
+   * while letting the box grow, which is what a MINIMUM is for.
+   *
+   * jsdom does no layout, so neither of those is observable as a pixel. What
+   * IS observable is the ancestry, and the ancestry is the mechanism: between
+   * the header and the root there must be no second scrollport, or the pin
+   * goes to the wrong box again. That is what this asserts, and it is why the
+   * case above cannot be the only one.
+   */
+  it('scopes the header to the page scroller rather than a box of its own', () => {
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(400) }
+    const { container } = render(
+      <AssetWorkspacePane asset={asset} why={{ headline: 'Stale', reason: null }} />,
+    )
+    const root = container.querySelector('[data-testid="asset-workspace"]')!
+    const header = screen.getByText('AAPL').closest('[class*="sticky"]')!
+    expect(root.contains(header)).toBe(true)
+
+    // Walk the chain the browser walks, header up to and including the root.
+    const chain: Element[] = []
+    for (let el: Element | null = header; el; el = el.parentElement) {
+      chain.push(el)
+      if (el === root) break
+    }
+    expect(chain[chain.length - 1]).toBe(root)
+    for (const el of chain) {
+      expect(el.className).not.toMatch(/\boverflow-(y-)?(auto|scroll)\b/)
+    }
+
+    /* The containing block must be allowed to outgrow the scrollport, so the
+       header stays pinned for the whole page and not just its first screen. */
+    const classes = root.className.split(/\s+/)
+    expect(classes).not.toContain('h-full')
+    expect(classes).toContain('min-h-full')
+  })
 })

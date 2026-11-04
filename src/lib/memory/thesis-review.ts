@@ -68,6 +68,29 @@ export function thesisAgeDays(
  */
 const CLOCK_RESETTING_OUTCOMES: ReadonlySet<string> = new Set(['holds'])
 
+/**
+ * Taking the answer back.
+ *
+ * `memory_events` is append-only, so there is no row to delete and nothing
+ * here rewrites one: unselecting writes a NEWER `thesis.reviewed` event whose
+ * outcome is this, and "newest wins" does the rest. The reader's history stays
+ * intact and readable, which is the whole reason the conclusion is an event
+ * and not a column.
+ *
+ * It is deliberately NOT one of the verdicts. A cleared asset has no standing
+ * conclusion, which is a different state from any of the three answers, and
+ * the three are what the interface offers. `ThesisReviewOutcome` is therefore
+ * still exactly those three everywhere a verdict is DISPLAYED; only the writer
+ * and these two readers know about this one.
+ *
+ * It does not reset the staleness clock, and must not: clearing says nobody
+ * stands behind the case right now, which is the opposite of `holds`. The set
+ * above already excludes it, and the newest-first rule in
+ * `latestReviewByAsset` means a clear after a hold brings the stale flag back,
+ * exactly as a `changed` does.
+ */
+export const CONCLUSION_CLEARED = 'cleared' as const
+
 /** Does this conclusion mean the case is still current? */
 export function resetsStaleClock(outcome: string | null | undefined): boolean {
   // Absent outcome counts. Every review written before outcomes were offered
@@ -180,6 +203,16 @@ export interface ThesisConclusion {
  * Rows with no outcome are skipped. They are pre-outcome reviews and there is
  * no verdict word to display for them -- `resetsStaleClock` still treats them
  * as holds for the clock, which is a different question from what to print.
+ *
+ * ── And a cleared asset is ABSENT, not present with a fourth word ────────
+ *
+ * `CONCLUSION_CLEARED` is how a reader takes their answer back, and the state
+ * it leaves is "unanswered" -- the same state as never having pressed
+ * anything. So the newest-per-asset is resolved FIRST and the clear is dropped
+ * after, in that order: filtering the clears out before comparing dates would
+ * leave the previous verdict standing as the newest one kept, which is the
+ * exact defect `latestReviewByAsset` above documents and fixed. The two halves
+ * of this question stay in the same order.
  */
 export function latestConclusionByAsset(
   rows: ReadonlyArray<{
@@ -196,6 +229,9 @@ export function latestConclusionByAsset(
         outcome: r.outcome, occurredAt: r.occurred_at, actorId: r.actor_id ?? null,
       })
     }
+  }
+  for (const [assetId, conclusion] of out) {
+    if (conclusion.outcome === CONCLUSION_CLEARED) out.delete(assetId)
   }
   return out
 }

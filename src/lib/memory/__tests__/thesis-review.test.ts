@@ -16,7 +16,7 @@ import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
   effectiveThesisDate, thesisAgeDays, latestReviewByAsset,
-  latestConclusionByAsset, conclusionWords,
+  latestConclusionByAsset, conclusionWords, resetsStaleClock, CONCLUSION_CLEARED,
 } from '../thesis-review'
 import { stateOf } from '../../desktop-research/model'
 import { evaluateThesisStale } from '../../../engine/decisionEngine/evaluators/thesisStale'
@@ -208,8 +208,11 @@ describe('all three conclusions are reachable and write the same way', () => {
 
   /* One handler, one payload shape. Three write paths would be three places
      for the event to drift. */
+  /* Re-pointed for the clear: the handler is now a two-way branch, so the
+     literal it looked for moved. The subject is unchanged -- one recorder
+     call, reached by every outcome, rather than a per-verdict handler. */
   it('routes every outcome through the one recorder', () => {
-    expect(detail).toContain('onClick={() => recordReview(choice.outcome)}')
+    expect(detail).toContain('recordReview(choice.outcome)')
     expect(detail.match(/recordReview\(/g)).toHaveLength(1)
   })
 
@@ -323,13 +326,46 @@ describe('the standing conclusion is shown back, and can be replaced', () => {
     expect(row).toContain('data-slot="list-review-standing"')
   })
 
-  /* The standing answer is the only one pressing cannot usefully do. Every
-     other one stays live, which IS the correction path -- a bar that disabled
-     all three after an answer is the defect. */
-  it('leaves every answer but the standing one pressable', () => {
-    expect(detail).toContain('disabled={reviewPending || standing}')
+  /*
+   * ── Re-pointed, because the standing answer is pressable again ──────────
+   *
+   * This used to assert `disabled={reviewPending || standing}` on the research
+   * bar: pressing the standing answer would write a second identical event and
+   * read as if nothing had happened, so it was locked. True of a REPEAT, and
+   * it left no way to say "ignore that, I have not actually decided" -- the
+   * reader could swap their answer for one of the other two and never get back
+   * to not having one. Reported as needing to unselect.
+   *
+   * So the research bar disables all three only WHILE A WRITE IS IN FLIGHT,
+   * and pressing the standing one clears it. The subject of the case has not
+   * changed -- a bar that locks the choice after an answer is still the defect
+   * -- so what it asserts is still "no button is dead", stated for a bar that
+   * now has three live buttons rather than two.
+   *
+   * `ListRowExpansion` keeps the old rule and the old assertion, deliberately:
+   * it was not part of the report and changing it is a separate change.
+   */
+  it('leaves every answer pressable, the standing one included', () => {
+    expect(detail).toContain('disabled={reviewPending}')
+    expect(detail).not.toMatch(/disabled=\{reviewPending \|\| standing\}/)
     expect(row).toContain('disabled={review.isPending || standing}')
     for (const body of [detail, row]) expect(body).toContain('aria-pressed={standing}')
+  })
+
+  /*
+   * And pressing it does the clear, rather than re-writing the same verdict.
+   *
+   * Both halves are asserted. A bar that only drops the `disabled` would make
+   * the standing button write a duplicate event -- which is the exact no-op the
+   * lock existed to prevent -- so the live button and the clear it performs are
+   * one fact, not two.
+   */
+  it('clears the standing answer when the reader presses it again', () => {
+    expect(detail).toContain('clear: clearReview')
+    expect(detail).toMatch(/standing \? clearReview\(\) : recordReview\(choice\.outcome\)/)
+    // Said in words too: `aria-pressed` tells a screen reader this toggles,
+    // and nothing else on the button says so to anyone else.
+    expect(detail).toMatch(/title=\{standing \? '[^']*clear[^']*' : undefined\}/)
   })
 
   /*
@@ -368,6 +404,90 @@ describe('the standing conclusion is shown back, and can be replaced', () => {
     // Always rendered: the empty state says so rather than collapsing.
     expect(detail).toContain('Not reviewed yet')
     expect(detail).not.toMatch(/\) : reviewState \? \(\s*\n\s*<span\s*\n\s*data-slot="research-review-standing"/)
+  })
+
+  /*
+   * ── Taking the answer back ──────────────────────────────────────────────
+   *
+   * The state a reader could not reach: answered-by-accident, with no way to
+   * return to unanswered. `CONCLUSION_CLEARED` is a NEWER event, not a
+   * deletion -- `memory_events` is append-only and the reader's change of mind
+   * is itself worth keeping -- and the asset comes back absent from the
+   * conclusions map, which is the same thing the map says about an asset
+   * nobody has judged.
+   */
+  it('leaves the asset unanswered after a clear', () => {
+    const m = latestConclusionByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(1), outcome: CONCLUSION_CLEARED, actor_id: 'u1' },
+      { subject_id: 'a', occurred_at: daysAgo(9), outcome: 'holds', actor_id: 'u1' },
+    ])
+    expect(m.has('a')).toBe(false)
+    expect(m.get('a')).toBeUndefined()
+  })
+
+  /*
+   * ── And the ORDER is the whole case ─────────────────────────────────────
+   *
+   * Dropping the cleared rows before resolving newest-per-asset would leave
+   * the previous verdict standing as the newest one kept, so a clear would
+   * show the answer it was meant to remove. That is the exact defect
+   * `latestReviewByAsset` documents having fixed, in the other half of the
+   * same question. Proven by the pair: the clear must win when it is newer and
+   * must lose when it is older.
+   */
+  it('lets a verdict written after a clear stand again', () => {
+    const m = latestConclusionByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(9), outcome: CONCLUSION_CLEARED, actor_id: 'u1' },
+      { subject_id: 'a', occurred_at: daysAgo(1), outcome: 'needs_work', actor_id: 'u1' },
+    ])
+    expect(m.get('a')?.outcome).toBe('needs_work')
+  })
+
+  /* One asset's clear is not another's. */
+  it('clears only the asset it was written against', () => {
+    const m = latestConclusionByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(1), outcome: CONCLUSION_CLEARED, actor_id: 'u1' },
+      { subject_id: 'b', occurred_at: daysAgo(1), outcome: 'holds', actor_id: 'u1' },
+    ])
+    expect(m.has('a')).toBe(false)
+    expect(m.get('b')?.outcome).toBe('holds')
+  })
+
+  /*
+   * A clear must not stop the staleness clock, and must bring the flag BACK.
+   *
+   * Clearing says nobody stands behind the case right now, which is the
+   * opposite of `holds`. If `cleared` had been added to the clock-resetting
+   * set -- or if the clock still read the newest HOLD rather than the newest
+   * conclusion -- unselecting would quietly certify the thesis as current.
+   */
+  it('does not stop the staleness clock, and brings the flag back', () => {
+    const m = latestReviewByAsset([
+      { subject_id: 'a', occurred_at: daysAgo(1), payload: { outcome: CONCLUSION_CLEARED } },
+      { subject_id: 'a', occurred_at: daysAgo(9), payload: { outcome: 'holds' } },
+    ])
+    expect(m.has('a')).toBe(false)
+    expect(resetsStaleClock(CONCLUSION_CLEARED)).toBe(false)
+  })
+
+  /*
+   * It is not a fourth verdict, and the interface must not offer it as one.
+   *
+   * Every surface that COLOURS or LABELS a conclusion keys off the three
+   * outcomes; a fourth would need a colour, a word and a place in the row that
+   * nobody has designed. So the clear is reachable only by pressing the
+   * standing answer, and `REVIEW_CHOICES` stays at three.
+   */
+  it('is not offered as a fourth answer', () => {
+    /* Comments stripped first. The bar's own doc block names
+       `CONCLUSION_CLEARED` to explain what pressing the standing answer does,
+       and a bare `not.toMatch` would be broken by the commentary rather than
+       by the code -- the `AnchoredPriceChart` lesson. */
+    const code = detail.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    expect(code).not.toMatch(/CONCLUSION_CLEARED/)
+    expect(code).not.toMatch(/'cleared'/)
+    const choices = code.slice(code.indexOf('REVIEW_CHOICES'))
+    expect(choices.slice(0, choices.indexOf(']')).match(/outcome: '/g)).toHaveLength(3)
   })
 
   /* A correction writes a new event. Nothing deletes or rewrites the old one:
@@ -466,24 +586,36 @@ describe('a review is recorded, not disguised as an edit', () => {
   it('writes every outcome through the same insert', () => {
     const hook = src('hooks/useThesisReview.ts')
     expect(hook.match(/\.insert\(/g)).toHaveLength(1)
-    expect(hook).toContain('mutationFn: async (outcome: ThesisReviewOutcome)')
+    /* `ThesisConclusionWrite` is the three verdicts plus the clear, and the
+       type widened rather than the insert forking: a clear travels through the
+       same row, the same dedupe key and the same policy as a verdict, which is
+       what makes "newest wins" able to see both. */
+    expect(hook).toContain('mutationFn: async (outcome: ThesisConclusionWrite)')
+    expect(hook).toContain('ThesisReviewOutcome | typeof CONCLUSION_CLEARED')
   })
 
   /*
-   * The in-flight guard, still both halves -- but the button's half no longer
-   * latches.
+   * The in-flight guard, still both halves -- and now ONLY in flight.
    *
-   * It asserted `disabled={reviewPending || reviewDone}`, which disabled all
-   * three controls permanently once any answer was taken. That is what made
-   * an accidental press unfixable inside the pane that had just accepted it.
-   * The second clause is now the STANDING answer, so pressing is blocked only
-   * where it would write a duplicate; the two alternatives stay live.
+   * It asserted `disabled={reviewPending || reviewDone}` first, which disabled
+   * all three controls permanently once any answer was taken: that is what
+   * made an accidental press unfixable inside the pane that had just accepted
+   * it. The second clause then became the STANDING answer, which left the
+   * correction path open but no way back to unanswered. It is gone entirely
+   * now -- the standing answer clears instead -- so the only thing that
+   * disables a button is a write already travelling.
+   *
+   * Both guards still matter and both are asserted: a keyboard path can reach
+   * a handler that a disabled button cannot, which is why the hook checks too,
+   * and the clear goes through the same check as the record.
    */
   it('refuses a second submit while one is in flight', () => {
-    expect(src('hooks/useThesisReview.ts')).toContain('if (mutation.isPending) return')
+    const hook = src('hooks/useThesisReview.ts')
+    expect(hook.match(/if \(mutation\.isPending\) return/g)).toHaveLength(2)
     /* The shared bar, for the reason recorded above `all three conclusions`. */
-    expect(src('components/desktop/ThesisVerdictBar.tsx'))
-      .toContain('disabled={reviewPending || standing}')
+    const bar = src('components/desktop/ThesisVerdictBar.tsx')
+    expect(bar).toContain('disabled={reviewPending}')
+    expect(bar).not.toMatch(/disabled=\{reviewPending \|\| (standing|reviewDone)\}/)
   })
 
   /* The displayed date must stay the real one. `daysSinceReview` drives every

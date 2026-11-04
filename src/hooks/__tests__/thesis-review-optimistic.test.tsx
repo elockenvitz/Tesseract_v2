@@ -177,3 +177,85 @@ describe('the standing verdict never falls back to the one being replaced', () =
     open()
   })
 })
+
+/**
+ * Taking the answer back, from the press through to the refetch.
+ *
+ * ── Why this needs a behavioural case and not a source one ───────────────
+ *
+ * The clear travels as `outcome: 'cleared'` through the same insert and the
+ * same optimistic cache write as a verdict, and the thing that turns it into
+ * "unanswered" is `latestConclusionByAsset` dropping it AFTER resolving
+ * newest-per-asset. Three separate pieces have to agree: the writer, the
+ * cache, and the reducer. A source assertion can see that each exists and
+ * still miss them disagreeing -- and the disagreement has a specific shape,
+ * which is the bar snapping back to the verdict the reader just removed the
+ * moment the real rows arrive.
+ */
+describe('pressing the standing answer takes it off the record', () => {
+  it('leaves the asset unanswered from the press through to the refetch', async () => {
+    const { wrapper } = harness()
+    const { result } = renderHook(useReviewBar, { wrapper })
+    await waitFor(() => expect(result.current.current?.outcome).toBe('holds'))
+
+    // Hold the insert open, so the in-flight window is a place to stand.
+    env.release = () => {}
+    act(() => { result.current.recorder.clear() })
+
+    // In flight: already unanswered, not still showing `holds`.
+    await waitFor(() => expect(result.current.current).toBeNull())
+    expect(result.current.recorder.isPending).toBe(true)
+
+    // Let the write land and the refetch run. `holds` must not come back at
+    // any point -- sampled across the settle, because the row that says it is
+    // still in the table and only the reducer's ORDER keeps it quiet.
+    const seen: (string | null | undefined)[] = []
+    const stop = setInterval(() => seen.push(result.current.current?.outcome ?? null), 1)
+    act(() => { env.release?.() })
+    await waitFor(() => expect(result.current.recorder.isPending).toBe(false))
+    await waitFor(() => expect(env.rows[0]?.payload).toEqual({ outcome: 'cleared' }))
+    clearInterval(stop)
+
+    expect(result.current.current).toBeNull()
+    expect(seen).not.toContain('holds')
+  })
+
+  /*
+   * And a verdict after a clear answers again. The pair is the case: a clear
+   * that could not be undone would be a worse trap than the one it fixed.
+   */
+  it('takes a new answer after a clear', async () => {
+    const { wrapper } = harness()
+    const { result } = renderHook(useReviewBar, { wrapper })
+    await waitFor(() => expect(result.current.current?.outcome).toBe('holds'))
+
+    await act(async () => { result.current.recorder.clear() })
+    await waitFor(() => expect(result.current.current).toBeNull())
+
+    await act(async () => { result.current.recorder.record('needs_work') })
+    await waitFor(() => expect(result.current.current?.outcome).toBe('needs_work'))
+    // Three events on the record, nothing deleted: the reader's change of mind
+    // is auditable, which is the reason the conclusion is an event at all.
+    expect(env.rows).toHaveLength(3)
+  })
+
+  /* A failed clear never happened, so the answer must still be on the bar
+     rather than removed from a record that still holds it. */
+  it('puts the answer back when the clear fails', async () => {
+    const { wrapper } = harness()
+    const { result } = renderHook(useReviewBar, { wrapper })
+    await waitFor(() => expect(result.current.current?.outcome).toBe('holds'))
+
+    let open!: () => void
+    env.selectGate = new Promise<void>(r => { open = r })
+    env.insertError = { message: 'permission denied' }
+
+    await act(async () => { result.current.recorder.clear() })
+    await waitFor(() => expect(result.current.recorder.isPending).toBe(false))
+    // Reads are blocked, so this is `onError` and not eventual consistency.
+    expect(result.current.current?.outcome).toBe('holds')
+
+    env.selectGate = null
+    open()
+  })
+})
