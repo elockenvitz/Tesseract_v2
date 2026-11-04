@@ -952,6 +952,63 @@ describe('one Dashboard, five lenses', () => {
     expect(entry.slice(0, entry.indexOf('},'))).toContain('inNav: false')
   })
 
+  /**
+   * ── The retired Dashboard is door-less ON PURPOSE, and stays mounted ────
+   *
+   * `DashboardShell` and `TodayPage` still work and nothing in the product
+   * offers them. That is the end state of retiring the old Dashboard, and it
+   * is an unstable one to leave unrecorded, because it looks like two
+   * different mistakes depending on which way a reader approaches it:
+   *
+   *   a surface with no door   looks like a door somebody forgot to wire, so
+   *                            a later pass helpfully adds a launcher entry
+   *                            and un-retires it
+   *   a surface nothing opens  looks like dead code, so a later pass deletes
+   *                            it and a saved tab or an old link stops
+   *                            resolving
+   *
+   * Both are wrong and this case says so in both directions. Asked for and
+   * agreed: leave them, gate them, decide deletion separately.
+   *
+   * What reaches them: four saved tab types, each mounting the shell on its
+   * own lens, and `TodayPage` only through the shell's own lens bar. No
+   * launcher entry, no palette row, no "Go to" tile.
+   */
+  it('keeps the retired Dashboard reachable only from a saved tab, and still mounted', () => {
+    const page = src('pages/DashboardPage.tsx')
+    /*
+     * Comments stripped up front, for both halves. The arms that moved name
+     * the component they moved away from, so the raw file holds a FIFTH
+     * `<DashboardShell` inside the note recording its removal -- the
+     * guard-breaks-on-its-own-comment shape this repo keeps paying for, and it
+     * broke this case on the first run.
+     */
+    const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    /* MOUNTED. Four arms, one per saved tab type, so a session saved before
+       the retirement still opens the surface it named. */
+    for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
+      expect(code).toContain(`case '${t}':`)
+    }
+    expect(code.match(/<DashboardShell/g)?.length).toBe(4)
+    /* And `TodayPage` still rendered by the shell's own lens bar, which is
+       the only thing left that can reach it. */
+    expect(src('components/dashboard/DashboardShell.tsx'))
+      .toContain("if (l === 'today') return <TodayPage />")
+
+    // DOOR-LESS. The home is the feed, so no arm opens the shell on `today`.
+    expect(code).not.toMatch(/<DashboardShell initialLens="today"/)
+    for (const file of [
+      'components/layout/Header.tsx',
+      'hooks/useObjectSearch.ts',
+      'components/tabs/BlankTab.tsx',
+    ]) {
+      const body = src(file).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+      for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
+        expect(body).not.toContain(`'${t}'`)
+      }
+    }
+  })
+
   it('keeps saved v2 sessions renderable, without migrating them', () => {
     // A session saved last week still holds `ideas-v2` etc. Each mounts the
     // same shell on its own lens, so nothing is rewritten on load and the
