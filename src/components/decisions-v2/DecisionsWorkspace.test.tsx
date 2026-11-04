@@ -134,6 +134,22 @@ vi.mock('../../lib/dashboard/focus', async importOriginal => {
 
 import { DecisionsWorkspace } from './DecisionsWorkspace'
 
+/**
+ * Every explicit type size set inside a rendered region, root included.
+ *
+ * Walks `*` and reads `class` off each node rather than asking the selector
+ * engine for `[class*="text-["]`, which matched nothing under jsdom and made
+ * the two rank assertions below pass while the defect they describe was
+ * sitting in the tree. The pattern takes a fractional size too, so a 10.5px
+ * caption cannot slip under a floor written as 11.
+ */
+function sizesWithin(root: Element): number[] {
+  return [root, ...root.querySelectorAll('*')].flatMap(el =>
+    [...String(el.getAttribute('class') ?? '').matchAll(/text-\[([\d.]+)px\]/g)]
+      .map(m => Number(m[1])),
+  )
+}
+
 const tabEvents: CustomEvent[] = []
 const typedEvents: CustomEvent[] = []
 const onTab = (e: Event) => tabEvents.push(e as CustomEvent)
@@ -1846,9 +1862,25 @@ describe('a system string is never shown as reasoning', () => {
     const why = screen.getByText('Why we decided').closest('section')!
     const quote = within(why).getByText(/i like this idea, makes sense/)
     expect(quote.tagName.toLowerCase()).toBe('blockquote')
-    // Larger than anything else on the page, and unboxed: a border would make
-    // it a panel among panels rather than the reason the record exists.
-    expect(quote.className).toMatch(/text-\[21px\]/)
+    /*
+     * Larger than anything else in its section, and unboxed: a border would
+     * make it a panel among panels rather than the reason the record exists.
+     *
+     * Re-pointed from 21 to 18, which is where the agreed type scale puts
+     * "the section that IS the object". The subject did not change -- the
+     * quote still has to outrank its surroundings -- so the rank is now
+     * asserted directly rather than left implicit behind one magic number.
+     * Pinning 21 alone is why this case went green on a size that belonged
+     * to no role at all.
+     */
+    expect(quote.className).toMatch(/text-\[18px\]/)
+    const sizes = sizesWithin(why)
+    /* Non-vacuity: the first draft of this selected on `[class*="text-["]`,
+       which matched nothing in jsdom and passed happily while a sibling was
+       injected at 20px. A rank assertion with no count behind it is the
+       decoration this repo keeps paying for. */
+    expect(sizes.length).toBeGreaterThan(2)
+    expect(sizes.filter(n => n > 18)).toEqual([])
     expect(why.querySelector('[data-testid="desktop-module"]')).toBeNull()
     expect(screen.queryByText('Decision record')).not.toBeInTheDocument()
   })
@@ -1934,8 +1966,21 @@ describe('what we knew then is kept apart from what is true now', () => {
     const { then } = selected()
     const note = within(then).getByText(/Historical framework not captured/)
     expect(note).toBeInTheDocument()
-    // A footnote, not the loudest thing in the column it qualifies.
-    expect(note.className).toMatch(/text-\[10px\]/)
+    /*
+     * A footnote, not the loudest thing in the column it qualifies.
+     *
+     * Re-pointed from 10 to 11, the floor of the agreed type scale. 10 meant
+     * "smaller than the smallest role", and this case is the reason that
+     * mattered: it was pinning a size the scale had abolished, so the pass
+     * that lifted the four sibling panes off the floor left this red and the
+     * commit reported a green suite it had not re-run. The subject is
+     * quietness, so what is asserted now is that nothing in this column is
+     * smaller -- a claim 10 could never satisfy once 11 was the floor.
+     */
+    expect(note.className).toMatch(/text-\[11px\]/)
+    const sizes = sizesWithin(then)
+    expect(sizes.length).toBeGreaterThan(2)
+    expect(sizes.filter(n => n < 11)).toEqual([])
   })
 
   it('shows a decision-time weight only where the snapshot recorded one', () => {

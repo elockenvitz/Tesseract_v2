@@ -140,7 +140,7 @@ export function IdeaDetail({
         rediscovery this rule exists to prevent.
       */}
       {arrivedFor && (
-        <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-[12px] text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+        <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-[13px] text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
           <span className="font-semibold">Opened from Today:</span> {arrivedFor}
         </div>
       )}
@@ -194,7 +194,7 @@ export function IdeaDetail({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[13px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
             </button>
@@ -208,7 +208,7 @@ export function IdeaDetail({
             <button
               type="button"
               onClick={() => routeToResearch(idea.assetId!, idea.symbol, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               Check the evidence
               <ArrowUpRight className="h-3 w-3 opacity-70" />
@@ -220,7 +220,7 @@ export function IdeaDetail({
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 Team
               </button>
@@ -425,7 +425,7 @@ export function IdeaDetail({
                 />
               </div>
               {idea.proposedWeight != null && detail?.weightPct != null && (
-                <p className="mt-2.5 text-[12px] text-gray-600 dark:text-gray-400">
+                <p className="mt-2.5 text-[13px] text-gray-600 dark:text-gray-400">
                   {idea.proposedWeight > detail.weightPct
                     ? `Adds ${(idea.proposedWeight - detail.weightPct).toFixed(1)}% to the book.`
                     : idea.proposedWeight < detail.weightPct
@@ -446,7 +446,7 @@ export function IdeaDetail({
               */}
               {idea.proposedWeight == null && idea.assetId && (
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <p className="text-[12px] text-gray-500">
+                  <p className="text-[13px] text-gray-500">
                     No size proposed yet.
                   </p>
                   <button
@@ -455,7 +455,7 @@ export function IdeaDetail({
                     onClick={() => dispatchDecisionAction(
                       'OPEN_TRADE_LAB_SIMULATION', { assetId: idea.assetId },
                     )}
-                    className="rounded-md border border-gray-300 px-2.5 py-1 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
                   >
                     Size it in Trade Lab
                   </button>
@@ -503,7 +503,7 @@ export function IdeaDetail({
             {/* One number and one sentence. It was a bordered card. */}
             {detail?.researchCount ? (
               <DesktopSection title="Research">
-                <p className="text-[12px] text-gray-700 dark:text-gray-300">
+                <p className="text-[13px] text-gray-700 dark:text-gray-300">
                   <span className="font-mono text-[15px] font-semibold">{detail.researchCount}</span>
                   {' '}linked document{detail.researchCount === 1 ? '' : 's'} on this name.
                 </p>
@@ -555,7 +555,7 @@ function Kv({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <div className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">{label}</div>
-      <div className="mt-0.5 font-mono text-[14px] font-semibold tabular-nums">{value}</div>
+      <div className="mt-0.5 font-mono text-[13px] font-semibold tabular-nums">{value}</div>
     </div>
   )
 }

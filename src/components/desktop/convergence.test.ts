@@ -2905,89 +2905,104 @@ describe('no lens pane offers an overflow control with nothing behind it', () =>
  *   13  rows, controls, secondary prose
  *   11  eyebrows, small-caps labels, meta, captions
  *
- * ── Scope, stated so it is not mistaken for coverage ─────────────────────
+ * ── Scope ────────────────────────────────────────────────────────────────
  *
- * Two files: the asset workspace, which is what was reported, and the
- * grammar it shares with Ideas, Research, Portfolio and Decisions, whose
- * primitives all four inherit.
+ * Seven files: the asset workspace, which is what was reported, the grammar
+ * it shares, and the four sibling panes that inherit that grammar's
+ * primitives -- Ideas, Research, Portfolio and Decisions.
  *
- * Those four panes carried 25 sub-11px literals of their own and were
- * deliberately NOT in this list, because listing them would make this gate
- * red on work nobody had done yet. The FLOOR half of that work is done and
- * has its own gate below. The step half is not: between them the four still
- * set 11.5, 12, 12.5, 14, 21 and 26, which is 40 literals whose mapping onto
- * the four steps is a judgement per site rather than a substitution -- 14 is
- * between two steps, and 26 could be a lead figure or a headline. They stay
- * out of `SCALED` until that is decided.
+ * The four arrived in two passes, and the split is worth keeping on the
+ * record because it is the shape this kind of work takes. They were held out
+ * of the first pass entirely, which is also how 25 sub-11px literals of
+ * their own survived a pass that fixed exactly that defect two files away: a
+ * reader moving from an Ideas card at an 11px floor into any of these four
+ * panes still met 9px and 10px type on a surface six times wider.
+ *
+ * The FLOOR was mechanical -- 9 and 10 both mean "smaller than the smallest
+ * role", and both become 11 -- so it went first, under a weaker gate that
+ * asserted only the minimum. The STEP set could not go with it: the four
+ * still set 11.5, 12, 12.5, 14, 21 and 26, and mapping 40 literals onto four
+ * named roles is a judgement per site rather than a substitution.
+ *
+ * ── The judgements, so the next reader is not re-deriving them ───────────
+ *
+ * Every one was read off the grammar in `DesktopModule.tsx`, not invented
+ * here, which is the only reason they are defensible:
+ *
+ *   12, 12.5  -> 13   30 of the 40. Every site is an action button, a `li`
+ *                     or `dl` row, or secondary prose. The grammar sets all
+ *                     three at 13: `DeepLink`, `Exists`, `DesktopNote`.
+ *   11.5      -> 11   The clamped preview line of a research row, whose own
+ *                     sibling author line was already 11. A caption.
+ *   14        -> 15   Twice: a thesis section's body and a decision's
+ *                     narrative sentence. Both are running text somebody
+ *                     wrote, at 80ch and 84ch respectively.
+ *   14        -> 13   Once, and the one that is NOT prose: Ideas' `Kv`
+ *                     value. 20 would have been `DesktopStat`'s figure step,
+ *                     but Kv restates figures the header already shows at
+ *                     20, so the context column would have shouted over the
+ *                     header it supports. A row value is 13.
+ *   21        -> 18   Portfolio's gap headline, and Decisions' two
+ *                     blockquotes. All three are the section that IS the
+ *                     object, each in a `lead` DesktopSection.
+ *   26        -> 30   Research's `Fact`, which is `Metric` by another name --
+ *                     a tabular figure over an 11px label. `Metric` is
+ *                     `lead ? 30 : 20`, so `Fact` is too, which also moved
+ *                     its non-lead arm off 18. 18 is a prose step; a figure
+ *                     drawn on it is how the scale got ambiguous.
  */
 describe('the asset workspace and the grammar it shares are on one type scale', () => {
-  const SCALED = [
-    'components/asset-v2/AssetWorkspace.tsx',
-    'components/desktop/DesktopModule.tsx',
+  /*
+   * Every file on the scale, with the number of size literals it must still
+   * be setting for a claim about its sizes to mean anything.
+   *
+   * One table rather than the two lists this had while the panes were only
+   * at the floor, because all seven now make the SAME claim and a second
+   * list would read as a second, weaker standard. The per-file minimum is
+   * what the two lists were really carrying: the verdict bar legitimately
+   * sets three literals, the four panes set fifteen or more, and a single
+   * floor of 3 would let a pane that stopped setting sizes pass.
+   */
+  const SCALED: [string, number][] = [
+    ['components/asset-v2/AssetWorkspace.tsx', 3],
+    ['components/desktop/DesktopModule.tsx', 3],
     /* The verdict bar rides this pane's context line and was the last 12px
        step left on it: a question and its three answers, which are a row and
        its controls, not captions. Its only other host is ResearchDetail,
        the same width. */
-    'components/desktop/ThesisVerdictBar.tsx',
+    ['components/desktop/ThesisVerdictBar.tsx', 3],
+    ['components/ideas-v2/IdeaDetail.tsx', 15],
+    ['components/research-v2/ResearchDetail.tsx', 15],
+    ['components/portfolio-v2/PositionDetail.tsx', 15],
+    ['components/decisions-v2/DecisionDetail.tsx', 15],
   ]
   /* Body steps plus the figures: DesktopStat and a supporting Metric at 20,
      a lead Metric at 30, the ticker at 32. */
   const STEPS = [11, 13, 15, 18, 20, 30, 32]
 
-  it.each(SCALED)('%s sets nothing below the 11px floor', file => {
-    const sizes = [...src(file).matchAll(/text-\[(\d+)px\]/g)].map(m => Number(m[1]))
-    /* Non-vacuity: a file that sets no explicit size satisfies any claim
-       about the sizes it sets. Three rather than more, because the verdict
-       bar legitimately sets only three. */
-    expect(sizes.length).toBeGreaterThanOrEqual(3)
-    expect(sizes.filter(n => n < 11)).toEqual([])
-  })
-
-  it.each(SCALED)('%s draws every size from the agreed steps', file => {
-    const sizes = [...src(file).matchAll(/text-\[(\d+)px\]/g)].map(m => Number(m[1]))
-    expect([...new Set(sizes)].filter(n => !STEPS.includes(n))).toEqual([])
-  })
-
-  /**
-   * The four sibling panes clear the FLOOR, which is the half that was
-   * reported.
-   *
-   * ── Why a separate list and a weaker claim ────────────────────────────
-   *
-   * The scope note above says these four were held out so this gate would not
-   * be red on undone work. Holding them out entirely is also how 25 sub-11px
-   * literals survived a pass that fixed exactly that defect two files away: a
-   * reader moving from an Ideas card at an 11px floor into any of these four
-   * panes still met 9px and 10px type on a wider surface.
-   *
-   * The floor is mechanical -- 9 and 10 both mean "smaller than the smallest
-   * role", and both become 11 -- so it is gated now. The STEP set is not,
-   * because these four still set 11.5, 12, 12.5, 14, 21 and 26, and mapping
-   * those is a judgement per site: 14 sits between two steps and 26 could be
-   * a lead figure or a headline. A gate that asserted the steps here would be
-   * red on a decision nobody has made.
-   *
-   * Stated as its own case rather than by widening `SCALED`, so the
-   * difference between "no type below the floor" and "every size has a role"
-   * stays visible and the second one does not look finished.
-   *
-   * The match also catches a FRACTIONAL size, which the `(\d+)` above does
-   * not: `text-[10.5px]` is below the floor and would have passed an
-   * integer-only pattern silently.
+  /*
+   * `[\d.]+`, not `\d+`. The floor gate the four panes were under used the
+   * fractional pattern and the step gate used the integer one, and the
+   * fractional one is simply correct for both: `text-[10.5px]` is below the
+   * floor and `text-[12.5px]` is off the steps, and an integer-only match
+   * passes both silently. Two of the 40 literals fixed above were 12.5 and
+   * 11.5, so this is not hypothetical.
    */
-  const FLOOR_ONLY = [
-    'components/ideas-v2/IdeaDetail.tsx',
-    'components/research-v2/ResearchDetail.tsx',
-    'components/portfolio-v2/PositionDetail.tsx',
-    'components/decisions-v2/DecisionDetail.tsx',
-  ]
+  const sizesIn = (file: string) =>
+    [...src(file).matchAll(/text-\[([\d.]+)px\]/g)].map(m => Number(m[1]))
 
-  it.each(FLOOR_ONLY)('%s sets nothing below the 11px floor', file => {
-    const sizes = [...src(file).matchAll(/text-\[([\d.]+)px\]/g)].map(m => Number(m[1]))
+  it.each(SCALED)('%s sets nothing below the 11px floor', (file, min) => {
+    const sizes = sizesIn(file)
     /* Non-vacuity: a file that sets no explicit size satisfies any claim
-       about the sizes it sets. The smallest of these four sets 18. */
-    expect(sizes.length).toBeGreaterThanOrEqual(15)
+       about the sizes it sets. */
+    expect(sizes.length).toBeGreaterThanOrEqual(min)
     expect(sizes.filter(n => n < 11)).toEqual([])
+  })
+
+  it.each(SCALED)('%s draws every size from the agreed steps', (file, min) => {
+    const sizes = sizesIn(file)
+    expect(sizes.length).toBeGreaterThanOrEqual(min)
+    expect([...new Set(sizes)].filter(n => !STEPS.includes(n))).toEqual([])
   })
 
   /*

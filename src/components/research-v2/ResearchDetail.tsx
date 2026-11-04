@@ -193,7 +193,7 @@ export function ResearchDetail({
   return (
     <div ref={root} data-testid="research-detail" className="pb-12">
       {arrivedFor && (
-        <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-[12px] text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+        <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-[13px] text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
           <span className="font-semibold">
             Opened from {ORIGIN_LABEL[arrivedFrom ?? ''] ?? 'another surface'}:
           </span>{' '}
@@ -354,7 +354,7 @@ export function ResearchDetail({
               <button
                 type="button"
                 onClick={() => openIdeaDetail(detail.liveIdea!.id)}
-                className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 {detail.liveIdea.action
                   ? `Open the ${detail.liveIdea.action} idea`
@@ -366,7 +366,7 @@ export function ResearchDetail({
               <button
                 type="button"
                 onClick={() => askAI(target)}
-                className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+                className="rounded-md px-3 py-2 text-[13px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
               >
                 Ask AI
               </button>
@@ -398,7 +398,7 @@ export function ResearchDetail({
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 <MessageSquare className="h-3.5 w-3.5 opacity-70" />
                 Discuss
@@ -551,11 +551,11 @@ export function ResearchDetail({
                       {new Date(sec.updatedAt).toLocaleDateString()}
                     </span>
                   </div>
-                  <p className="mt-1.5 max-w-[80ch] whitespace-pre-line text-[14px] leading-[1.65] text-gray-800 dark:text-gray-200">
+                  <p className="mt-1.5 max-w-[80ch] whitespace-pre-line text-[15px] leading-[1.65] text-gray-800 dark:text-gray-200">
                     {sec.content || <span className="italic text-gray-400">Empty.</span>}
                   </p>
                   {sec.supportingDetail && (
-                    <p className="mt-2 max-w-[80ch] text-[12.5px] leading-relaxed text-gray-600 dark:text-gray-400">
+                    <p className="mt-2 max-w-[80ch] text-[13px] leading-relaxed text-gray-600 dark:text-gray-400">
                       {sec.supportingDetail}
                     </p>
                   )}
@@ -563,7 +563,7 @@ export function ResearchDetail({
               ))}
             </div>
           ) : (
-            <p className="text-[12px] text-gray-600 dark:text-gray-400">
+            <p className="text-[13px] text-gray-600 dark:text-gray-400">
               No thesis on file for {subject.symbol ?? 'this name'} yet.
               {subject.evidenceCount > 0 && ` ${subject.evidenceCount} research item${subject.evidenceCount === 1 ? '' : 's'} exist${subject.evidenceCount === 1 ? 's' : ''} against it.`}
             </p>
@@ -706,7 +706,7 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
         : 'border-b border-gray-100 pb-2.5 last:border-0 last:pb-0 dark:border-white/[0.06]',
     )}>
       <div className="flex items-baseline gap-2">
-        <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-gray-900 dark:text-gray-100">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-900 dark:text-gray-100">
           {item.title || 'Untitled note'}
         </span>
         <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
@@ -716,7 +716,7 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
       {/* Notes are stored as rich text; the shared stripper is what every
           other preview in the app uses, so this reads the same everywhere. */}
       {preview && (
-        <p className="mt-1 line-clamp-2 text-[11.5px] leading-[1.5] text-gray-600 dark:text-gray-400">
+        <p className="mt-1 line-clamp-2 text-[11px] leading-[1.5] text-gray-600 dark:text-gray-400">
           {preview}
         </p>
       )}
@@ -782,7 +782,7 @@ function SinceReview({
         )}
       </div>
       {arrivals === 0 && (
-        <p className="mt-3 text-[12px] text-gray-500">
+        <p className="mt-3 text-[13px] text-gray-500">
           No new research {caseDate.sinceThe}. The thesis is simply due a look.
         </p>
       )}
@@ -797,7 +797,7 @@ function Fact({
     <div>
       <div className={clsx(
         'font-semibold leading-none tabular-nums tracking-tight',
-        lead ? 'text-[26px]' : 'text-[18px]',
+        lead ? 'text-[30px]' : 'text-[20px]',
         tone === 'review' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100',
       )}>
         {value}

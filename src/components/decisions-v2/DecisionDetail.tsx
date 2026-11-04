@@ -130,7 +130,7 @@ export function DecisionDetailPane({
             inside it rather than being repeated in a corner block, in At the
             decision and again in the chronology before the reader reaches
             anything substantive. */}
-        <p className="mt-2.5 max-w-[84ch] text-[14px] leading-relaxed text-gray-800 dark:text-gray-200">
+        <p className="mt-2.5 max-w-[84ch] text-[15px] leading-relaxed text-gray-800 dark:text-gray-200">
           {summaryOf(d)}
           {can.actorAndDate && (
             <span className="text-gray-500">
@@ -155,7 +155,7 @@ export function DecisionDetailPane({
             <button
               type="button"
               onClick={() => openIdeaDetail(d.ideaId!)}
-              className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+              className="rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               Open the idea
             </button>
@@ -164,7 +164,7 @@ export function DecisionDetailPane({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[13px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               {/* The count that used to sit here was contextChips.length -- an
                   implementation detail. A reader saw "Ask AI 7" and could not
@@ -178,7 +178,7 @@ export function DecisionDetailPane({
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 Team
               </button>
@@ -225,7 +225,7 @@ export function DecisionDetailPane({
                  actually wrote, and a border around it made it a panel among
                  panels rather than the reason the record exists. */
               <DesktopSection title="Why we decided" lead>
-                <blockquote className="max-w-[62ch] border-l-[3px] border-gray-300 pl-5 text-[21px] font-medium leading-[1.5] tracking-[-0.01em] text-gray-900 dark:border-white/20 dark:text-gray-100">
+                <blockquote className="max-w-[62ch] border-l-[3px] border-gray-300 pl-5 text-[18px] font-medium leading-[1.5] tracking-[-0.01em] text-gray-900 dark:border-white/20 dark:text-gray-100">
                   “{d.decisionNote}”
                 </blockquote>
                 <div className="mt-3 pl-5 text-[11px] text-gray-500">
@@ -238,7 +238,7 @@ export function DecisionDetailPane({
               <DesktopSection title="Why this decision?" lead>
                 <blockquote
                   data-testid="decision-batch-reason"
-                  className="max-w-[62ch] border-l-[3px] border-gray-300 pl-5 text-[21px] font-medium leading-[1.5] tracking-[-0.01em] text-gray-900 dark:border-white/20 dark:text-gray-100"
+                  className="max-w-[62ch] border-l-[3px] border-gray-300 pl-5 text-[18px] font-medium leading-[1.5] tracking-[-0.01em] text-gray-900 dark:border-white/20 dark:text-gray-100"
                 >
                   “{batchReason}”
                 </blockquote>
@@ -253,7 +253,7 @@ export function DecisionDetailPane({
                   <span className="text-[11px] font-bold uppercase tracking-widest text-gray-500">
                     Decision record
                   </span>
-                  <span className="text-[12px] text-gray-600 dark:text-gray-400">
+                  <span className="text-[13px] text-gray-600 dark:text-gray-400">
                     No human rationale was captured.
                   </span>
                   {prov === 'system' && d.decisionNote && (
@@ -275,7 +275,7 @@ export function DecisionDetailPane({
                 together. The cap is the lead column's now, not a magic 1180. */}
             <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
               <DesktopModule title="At the decision" meta={d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : undefined}>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px]">
                   {d.requestedByName && <Row k="Proposed by" v={d.requestedByName} />}
                   {can.requestedSizing && (
                     <Row k="Sizing requested" v={
@@ -298,7 +298,7 @@ export function DecisionDetailPane({
               </DesktopModule>
 
               <DesktopModule title="Today" meta="current state">
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[12px]">
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px]">
                   {detail?.currentPrice != null && <Row k="Price now" v={money(detail.currentPrice)} />}
                   {detail?.currentWeightPct != null && (
                     <Row k="Weight now" v={`${detail.currentWeightPct.toFixed(1)}%`} />
@@ -431,10 +431,10 @@ function ProposalNote({ decision, compact }: { decision: DecisionRecord; compact
       <div className="text-[11px] font-bold uppercase tracking-widest text-gray-500">
         Why it was proposed
       </div>
-      <p className={clsx(
-        'mt-1 max-w-[80ch] leading-relaxed text-gray-700 dark:text-gray-300',
-        compact ? 'text-[12px]' : 'text-[13px]',
-      )}>
+      {/* One size, because the scale has no step between 11 and 13 and this
+          is secondary prose at either density. `compact` still changes the
+          spacing above, which is what it was really for. */}
+      <p className="mt-1 max-w-[80ch] text-[13px] leading-relaxed text-gray-700 dark:text-gray-300">
         “{d.contextNote}”
       </p>
       <div className="mt-1 text-[11px] text-gray-500">
@@ -457,7 +457,7 @@ function Row({ k, v }: { k: string; v: string }) {
 
 function Event({ when, what, strong }: { when: string; what: string; strong?: boolean }) {
   return (
-    <li className="flex items-baseline gap-3 text-[12px]">
+    <li className="flex items-baseline gap-3 text-[13px]">
       <span className="w-[62px] shrink-0 font-mono text-[11px] text-gray-500">
         {new Date(when).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
       </span>

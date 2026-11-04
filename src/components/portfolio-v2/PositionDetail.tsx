@@ -149,12 +149,12 @@ export function PositionDetailPane({
             <span className="truncate text-[13px] font-medium text-gray-500">{position.companyName}</span>
           )}
           {portfolioName && (
-            <span className="text-[12px] text-gray-500">· {portfolioName}</span>
+            <span className="text-[13px] text-gray-500">· {portfolioName}</span>
           )}
         </div>
 
         <h2 className={clsx(
-          'mt-2 text-[21px] font-semibold tracking-[-0.015em]',
+          'mt-2 text-[18px] font-semibold tracking-[-0.015em]',
           toneForGap(gap) === 'critical' ? 'text-rose-700 dark:text-rose-400'
             : toneForGap(gap) === 'review' ? 'text-amber-800 dark:text-amber-400'
             : 'text-gray-900 dark:text-gray-100',
@@ -203,7 +203,7 @@ export function PositionDetailPane({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[13px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
             </button>
@@ -214,7 +214,7 @@ export function PositionDetailPane({
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 Team
               </button>
@@ -251,7 +251,7 @@ export function PositionDetailPane({
               >
                 <FrameworkScale ladder={frame.ladder} spot={spot} />
                 {breakBy && (
-                  <p className="mt-3 text-[12px] text-rose-700 dark:text-rose-400">
+                  <p className="mt-3 text-[13px] text-rose-700 dark:text-rose-400">
                     Spot is <span className="font-semibold">{breakBy.value}</span> {breakBy.label}.
                     The desk wrote that range; price has left it.
                   </p>
@@ -319,7 +319,7 @@ export function PositionDetailPane({
                       <div className={EYEBROW}>What is missing</div>
                       <ul className="mt-1.5 flex flex-col gap-1">
                         {(CORE_SECTIONS as readonly string[]).map(k => (
-                          <li key={k} className="flex items-baseline gap-2 text-[12px]">
+                          <li key={k} className="flex items-baseline gap-2 text-[13px]">
                             <span className="text-gray-800 dark:text-gray-200">
                               {SECTION_LABEL[k] ?? k}
                             </span>
@@ -331,7 +331,7 @@ export function PositionDetailPane({
 
                     <div>
                       <div className={EYEBROW}>What does exist</div>
-                      <ul className="mt-1.5 flex flex-col gap-1 text-[12px]">
+                      <ul className="mt-1.5 flex flex-col gap-1 text-[13px]">
                         <Exists
                           label="Research on file"
                           value={frame.evidenceCount ? `${frame.evidenceCount}` : null}
@@ -401,7 +401,7 @@ export function PositionDetailPane({
                   )}>
                     {frame.liveIdea.action ?? 'idea'}
                   </span>
-                  <span className="text-[12px] text-gray-700 dark:text-gray-300">
+                  <span className="text-[13px] text-gray-700 dark:text-gray-300">
                     {frame.liveIdea.awaitingDecision
                       ? 'Awaiting a decision on this book.'
                       : 'Recorded against this book; no decision outstanding.'}
@@ -433,7 +433,7 @@ export function PositionDetailPane({
               <DesktopSection title="Also held in">
                 <div className="flex flex-col gap-1">
                   {detail.alsoHeldIn.map(o => (
-                    <div key={o.portfolioId} className="flex items-baseline gap-2 text-[12px]">
+                    <div key={o.portfolioId} className="flex items-baseline gap-2 text-[13px]">
                       <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200">{o.portfolioName}</span>
                       <span className="font-mono text-[11px] text-gray-500">
                         {o.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} sh
