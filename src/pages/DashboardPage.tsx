@@ -63,6 +63,7 @@ import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
 import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
 import { CoverageSummaryBanner } from '../components/coverage/CoverageSummaryBanner'
 import { PilotHomeSkeleton } from '../components/pilot/PilotHomeSkeletons'
+import { PilotSkipOnboarding } from '../components/pilot/PilotSkipOnboarding'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotSeeding } from '../hooks/usePilotSeeding'
 import { usePilotEntry } from '../hooks/usePilotEntry'
@@ -1420,6 +1421,21 @@ export function DashboardPage() {
                   />
                 </>
               )}
+              {/*
+                The way out, at BOTH stages and not only at the mission.
+
+                The coverage card is `dismissible={false}` because "not now"
+                there leaves a reader on an empty home, which is right -- and
+                it meant a pilot who already knows the product had nothing to
+                press on their first screen but the one question. This is not
+                a dismiss: it finishes the guide, opens every app and lands
+                them on the full Dashboard. See `PilotSkipOnboarding`.
+
+                Outside the stage checks, so it does not move as the stage
+                changes under it, and after them because it is the quiet
+                option rather than the offer.
+              */}
+              {pilotEntry.stage !== 'loading' && <PilotSkipOnboarding />}
             </div>
           </div>
         ) : (
