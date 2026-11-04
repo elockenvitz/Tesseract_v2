@@ -37,7 +37,7 @@
  * verbs are real, accessible buttons when the reader reaches for them.
  */
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import type { SemanticTone } from '../../lib/semantic-tone'
 import {
@@ -233,6 +233,28 @@ export function useGalleryNarrow(): boolean {
   return useContext(GalleryNarrowContext)
 }
 
+/**
+ * True inside a gallery whose tracks come from a container query.
+ *
+ * ── Why a tile needs to know ─────────────────────────────────────────────
+ *
+ * The `SPAN` table below is viewport breakpoints -- `md:`/`xl:`/`2xl:` -- and
+ * in region mode the span is set instead by `.gallery-region > [data-size]`,
+ * which is a class plus an attribute and therefore outspecifies every one of
+ * them. VERIFIED in the running app: a medium tile carrying `xl:col-span-4`
+ * at a 1841px viewport computes `span 3 / span 3`, which is the container
+ * query's answer. The Tailwind classes are dead there.
+ *
+ * Dead and not free. `narrow` flips when a workspace opens, every tile
+ * re-renders, and each one rewrites a span class that cannot take effect:
+ * MEASURED at 51 of the 540 mutations in a single open, on a field of 145
+ * tiles of which about six are on screen.
+ *
+ * So in region mode the tile emits no span at all and the attribute it has
+ * always carried does the whole job.
+ */
+const GalleryRegionContext = createContext(false)
+
 export function DesktopGallery({
   title, action, note, flow = 'ranked', region = false, children,
 }: {
@@ -270,17 +292,190 @@ export function DesktopGallery({
    */
   const gridRef = useRef<HTMLDivElement | null>(null)
   const [narrow, setNarrow] = useState(false)
+
+  /*
+   * ── Keeping the reader's place when the track count changes ──────────────
+   *
+   * The scroll host is never unmounted, so `scrollTop` survives a workspace
+   * opening -- and `scrollTop` is the wrong thing to preserve. MEASURED on
+   * Explore at 1920 with 145 tiles, opening a tile from a position 30% down
+   * the field:
+   *
+   *     12 tracks -> 1 track   scroll height 12,326 -> 35,380
+   *     1 track -> 12 tracks   scroll height 37,095 -> 11,856,
+   *                            scrollTop 11,246 -> 11,032
+   *
+   * The number barely moved and the reader was thrown about eighty-five
+   * tiles: 30% down a 37,000px field is the bottom of a 11,856px one. That
+   * is the "hitching" -- not a dropped frame, the field arriving somewhere
+   * else -- and it came with a layout shift of 0.826, where anything over
+   * 0.25 is poor.
+   *
+   * A track-count change rewrites the mapping from offset to content, so the
+   * only thing that can survive it is a TILE. The gallery keeps the first
+   * tile crossing the top of the viewport, with its offset inside it, and
+   * puts that same tile back in that same place once the new layout exists.
+   *
+   * This lives here rather than in a lens because the gallery is what owns
+   * the grid and already measures its width; both region lenses (Explore and
+   * the book) get it without either knowing about it.
+   */
+  const hostRef = useRef<HTMLElement | null>(null)
+  const anchorRef = useRef<{ el: Element; offset: number } | null>(null)
+  /*
+   * Shut while a width change is in flight, and load-bearing.
+   *
+   * Narrowing the column moves `scrollTop` by itself -- the browser clamps
+   * and re-anchors against the new content height -- and that fires a
+   * `scroll` event. Without this latch the listener below reads it as the
+   * reader scrolling and re-captures the anchor from the layout we are in
+   * the middle of leaving.
+   *
+   * MEASURED with it removed, closing from three different places in a
+   * 145-tile field: the anchor landed 1,884, 4,082 and 5,966 pixels from
+   * where it left. One earlier trial had come back clean, which is the
+   * whole lesson -- a single pass through a transition this timing-dependent
+   * is not evidence, and every check of it here runs from three positions.
+   */
+  const settlingRef = useRef(false)
+
+  const capture = useCallback(() => {
+    const grid = gridRef.current
+    const host = hostRef.current
+    if (!grid || !host) return
+    const top = host.getBoundingClientRect().top
+    for (const child of grid.children) {
+      const r = child.getBoundingClientRect()
+      /* The first tile not yet fully scrolled past. A tile skipped by
+         `content-visibility` reports height 0 and a bottom at its own top,
+         so it fails this and the search moves on -- which is correct: a tile
+         the browser is not drawing is not the one the reader is looking at. */
+      if (r.height > 0 && r.bottom > top + 1) {
+        anchorRef.current = { el: child, offset: r.top - top }
+        return
+      }
+    }
+    anchorRef.current = null
+  }, [])
+
+  const restore = useCallback(() => {
+    const a = anchorRef.current
+    const host = hostRef.current
+    if (!a || !host || !host.contains(a.el)) return
+    /*
+     * A chosen tile outranks the reader's place, and already owns the scroll.
+     *
+     * Opening a tile is the one width change where the reader has named
+     * something, and `IdeasExploreBrowse` scrolls that tile into the rail for
+     * exactly the reason this anchor exists -- the tile pressed at full width
+     * is otherwise far outside a single-column scrollport. Restoring the
+     * anchor there would drag them back off the thing they just opened.
+     *
+     * Closing has no such tile, which is where the field was being thrown:
+     * MEASURED at 145 tiles, scrollTop 11,246 of 37,095 becoming 11,032 of
+     * 11,856 -- 30% down the field becoming the bottom of it.
+     */
+    if (host.querySelector('[data-selected="true"]')) return
+    const delta = (a.el.getBoundingClientRect().top - host.getBoundingClientRect().top) - a.offset
+    /* Sub-pixel noise is not a jump, and writing scrollTop for it would
+       fight the reader's own scrolling. */
+    if (Math.abs(delta) > 1) host.scrollTop += delta
+  }, [])
+
+  /**
+   * Restore until the field stops moving under it, then unlatch.
+   *
+   * One restore is not enough, and the reason is the same mechanism that
+   * makes this field affordable: the tiles ABOVE the anchor are skipped by
+   * `content-visibility: auto` and claim `contain-intrinsic-size` rather
+   * than a real height, so the anchor's position keeps being corrected as
+   * they render. MEASURED with a single restore, closing from three places
+   * in a 145-tile field: 119, 255 and 515 pixels out, and a different set of
+   * numbers on the next run -- which is what an estimate settling looks like.
+   *
+   * Bounded, and stops as soon as two frames agree, so a field that settles
+   * at once costs two frames and nothing converges forever. The latch is
+   * held across the whole window: every one of these frames writes
+   * `scrollTop`, and each write fires the scroll event the capture must not
+   * read.
+   *
+   * ── What this does NOT fix, measured ─────────────────────────────────────
+   *
+   * Two frames of quiet inside ten is a floor, not a convergence proof. Over
+   * four closes from different places: 0, 0, 0 and 234px out. Widening the
+   * window to three quiet frames inside twenty made it WORSE -- 461, 383,
+   * 282, 0 -- because the restore then chases a field that is still
+   * rendering rather than letting it land.
+   *
+   * The residual is not this loop's to solve. It is the estimate above the
+   * anchor: every skipped tile claims `contain-intrinsic-size: auto 300px`,
+   * whose remembered height was measured at the OTHER track count, so the
+   * content above the anchor is the wrong length until those tiles render.
+   * The fix for that is an honest per-size intrinsic height in each
+   * container-query block, and it is its own change.
+   */
+  const settle = useCallback(() => {
+    let frames = 0
+    let quiet = 0
+    const step = () => {
+      const before = hostRef.current?.scrollTop ?? 0
+      restore()
+      quiet = (hostRef.current?.scrollTop ?? 0) === before ? quiet + 1 : 0
+      if (quiet < 2 && ++frames < 10) requestAnimationFrame(step)
+      else requestAnimationFrame(() => { settlingRef.current = false })
+    }
+    requestAnimationFrame(step)
+  }, [restore])
+
   useEffect(() => {
     const el = gridRef.current
     if (!region || !el || typeof ResizeObserver === 'undefined') return
+    hostRef.current = el.closest('.gallery-host') as HTMLElement | null
     const read = (w: number) => setNarrow(w > 0 && w < GALLERY_TWO_TRACK_PX)
-    read(el.getBoundingClientRect().width)
+    let width = el.getBoundingClientRect().width
+    read(width)
+    capture()
+
+    const host = hostRef.current
+    let queued = false
+    const onScroll = () => {
+      if (settlingRef.current || queued) return
+      queued = true
+      requestAnimationFrame(() => { queued = false; capture() })
+    }
+    host?.addEventListener('scroll', onScroll, { passive: true })
+
     const ro = new ResizeObserver(entries => {
-      for (const e of entries) read(e.contentRect.width)
+      for (const e of entries) {
+        const w = e.contentRect.width
+        const moved = Math.abs(w - width) > 1
+        width = w
+        read(w)
+        if (!moved) continue
+        /*
+         * Resize steps run before scroll steps in the same frame, so setting
+         * the latch here is what keeps the reflow's own scroll event from
+         * being read as the reader's.
+         *
+         * Out of the observer callback before touching scrollTop: writing it
+         * from inside one is how a resize loop starts. The rAF also lands
+         * after the layout this resize produced, which is the layout the
+         * anchor has to be measured against. The nested rAF covers the
+         * scroll event our own write fires, one frame later again.
+         */
+        settlingRef.current = true
+        settle()
+      }
     })
     ro.observe(el)
-    return () => ro.disconnect()
-  }, [region])
+    return () => { ro.disconnect(); host?.removeEventListener('scroll', onScroll) }
+  }, [region, capture, settle])
+
+  /* The width change and the scale change are two layouts, not one: the
+     resize reflows the grid, and `narrow` then redraws every tile at a
+     different scale, which moves the anchor again. This catches the second,
+     synchronously, before the reader sees the frame. */
+  useLayoutEffect(() => { if (region) restore() }, [narrow, region, restore])
 
   return (
     <div data-testid="desktop-gallery" data-flow={flow} data-narrow={narrow ? 'true' : undefined} className="px-6 pb-10 pt-5">
@@ -376,9 +571,11 @@ export function DesktopGallery({
           gridAutoFlow: flow === 'packed' ? 'row dense' : 'row',
         }}
       >
-        <GalleryNarrowContext.Provider value={narrow}>
-          {children}
-        </GalleryNarrowContext.Provider>
+        <GalleryRegionContext.Provider value={region}>
+          <GalleryNarrowContext.Provider value={narrow}>
+            {children}
+          </GalleryNarrowContext.Provider>
+        </GalleryRegionContext.Provider>
       </div>
     </div>
   )
@@ -502,10 +699,11 @@ export function GallerySkeleton({
             <div
               key={i}
               /* The span rule in region mode selects on this, exactly as it
-                 does on a real tile. */
+                 does on a real tile -- and the breakpoint classes are left
+                 off there for the same reason they are on a real tile. */
               data-size={s}
               className={clsx(
-                SPAN[flow][s],
+                !region && SPAN[flow][s],
                 heightOf(s),
                 'animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]',
               )}
@@ -697,6 +895,10 @@ export function DesktopTile({
   /* Span by rank, draw by width. Identical unless a caller says otherwise. */
   const drawAt = scale ?? size
 
+  /* See `GalleryRegionContext`: in region mode `data-size` already carries
+     the span, and the breakpoint classes below it cannot win. */
+  const inRegion = useContext(GalleryRegionContext)
+
   return (
     <div
       role="group"
@@ -735,7 +937,7 @@ export function DesktopTile({
         convergence now includes the one surface that was outside it.
       */
       className={clsx(
-        SPAN[flow][size],
+        !inRegion && SPAN[flow][size],
         /*
           `group` is what the shelf's cross-fade hangs off.
 
