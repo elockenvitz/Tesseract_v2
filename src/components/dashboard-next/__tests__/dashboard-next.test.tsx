@@ -120,11 +120,26 @@ describe('Start here', () => {
   })
 })
 
-describe('the trial tab is isolated', () => {
+/**
+ * ── This block was `the trial tab is isolated` ───────────────────────────
+ *
+ * The isolation was the promise that trying this could not damage the two
+ * surfaces the reader relied on, and the trial is over: it won, so `today`
+ * renders `DashboardNext`, the launcher's "Dashboard (new)" door is gone, and
+ * `dashboard-next` is a compatibility type for saved sessions.
+ *
+ * Most of these cases outlive that. `DashboardShell` and `IdeasApp` still
+ * must not reach into this directory -- the page does the mounting, and an
+ * import the other way would make the retired shell depend on its
+ * replacement. The door case is the one whose subject inverted, and it is
+ * rewritten below rather than dropped.
+ */
+describe('the home it became has one door and no back-references', () => {
   it('is not imported by the Dashboard or the Ideas application', () => {
     /*
-     * The promise made to the reader is that trying this cannot damage the
-     * two surfaces they rely on. These are the two shells those tabs mount.
+     * The two shells the other tab types mount. Neither may reach into this
+     * directory: `research-v2` and `decisions-v2` still mount `DashboardShell`
+     * and must keep working without the surface that replaced it.
      */
     for (const f of ['components/ideas-app/IdeasApp.tsx', 'components/dashboard/DashboardShell.tsx']) {
       expect(src(f)).not.toContain('dashboard-next')
@@ -141,19 +156,38 @@ describe('the trial tab is isolated', () => {
     expect(src('components/ideas-app/IdeasApp.tsx')).not.toContain('StartHereBand')
   })
 
-  it('has exactly one door, and it is not a lens', () => {
+  it('has exactly one door, and it is the Dashboard', () => {
     const header = src('components/layout/Header.tsx')
     const group = header.slice(header.indexOf('>Decision OS<'))
     const launcher = group.slice(0, group.indexOf(']'))
     /*
-     * One entry, so this is a surface rather than the duplicate door the
-     * convergence suite removed for Research, Portfolio and Decisions.
+     * This case used to require exactly ONE `dashboard-next` entry here,
+     * because the trial needed its own door beside the Dashboard. Now that
+     * "Dashboard" opens the same surface, that entry IS the duplicate door
+     * the note at the top of this menu removed three others for -- so the
+     * assertion inverts and the subject does not.
      */
-    expect(launcher.match(/type: 'dashboard-next'/g)).toHaveLength(1)
-    /* And the tab it opens still renders, from one place. */
+    expect(launcher).not.toContain("type: 'dashboard-next'")
+    expect(launcher.match(/type: 'today'/g)).toHaveLength(1)
+
     const page = src('pages/DashboardPage.tsx')
+    /* The compatibility type still resolves from one place, so a saved trial
+       tab lands on the surface it named and not on the blank default. */
     expect(page.match(/case 'dashboard-next':/g)).toHaveLength(1)
-    expect(page).toContain('<DashboardNext />')
+    /* Three mounts: the `today` arm, the compatibility arm, and the fallback
+       `renderDashboardContent` serves a bad deep link. Counted, because the
+       fallback was the one that silently kept the retired shell alive. */
+    expect(page.match(/<DashboardNext \/>/g)).toHaveLength(3)
+    /*
+     * Comments stripped first. The arms that moved explain what they moved
+     * FROM, by name, so the page's own commentary contains this string and
+     * matching the raw file fails on the note rather than on the code -- the
+     * same guard-breaks-on-its-own-comment shape `AnchoredPriceChart`'s type
+     * case already paid for once.
+     */
+    const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    expect(code).toMatch(/<DashboardNext \/>/)
+    expect(code).not.toMatch(/<DashboardShell initialLens="today" \/>/)
   })
 
   it('keeps the Dashboard and Ideas entries it was added beside', () => {

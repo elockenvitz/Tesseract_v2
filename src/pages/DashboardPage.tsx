@@ -1429,8 +1429,26 @@ export function DashboardPage() {
            * steps writes `graduated` through an optimistic mutation — so the
            * full Dashboard appears on the same tick the mission finishes, with
            * no reload.
+           *
+           * ── The trial won, so this IS the Dashboard ────────────────────
+           *
+           * `DashboardNext` was built in a tab of its own because deciding
+           * that the Dashboard is the feed is a large claim to make about
+           * somebody's home screen, and a reader cannot decide it without
+           * being able to open both and go back. That is decided. The
+           * canonical home type renders it, the "Dashboard (new)" door in the
+           * launcher is gone, and `dashboard-next` below is a compatibility
+           * type pointing here.
+           *
+           * What this retires with it: `DashboardShell`'s `today`, `research`
+           * and `decisions` lenses had no door but this one. Today's content
+           * is in the feed as card types -- that is what `INCLUDE` in
+           * `DashboardNext` asks for -- and Research and Decisions are not,
+           * so they are now reachable only through a saved `research-v2` or
+           * `decisions-v2` tab. The shell itself is untouched and still
+           * mounts for those types; retiring IT is a separate decision.
            */
-          <DashboardShell initialLens="today" />
+          <DashboardNext />
         )
       /*
        * Ideas — the standalone application.
@@ -1456,12 +1474,18 @@ export function DashboardPage() {
       case 'ideas':
         return isMobile ? renderDashboardContent() : <IdeasApp selectedIdeaId={activeTab.data?.selectedIdeaId ?? null} />
       /*
-       * The Dashboard rebuilt as the feed, under trial in its own tab.
+       * `dashboard-next` is a COMPATIBILITY tab type now, not a trial.
        *
-       * Deliberately a separate type rather than a flag on `today`: a reader
-       * trying it must be able to go back to the Dashboard they know in the
-       * same session, and a flag would have replaced it. Nothing else routes
-       * here, so reverting is deleting this arm.
+       * It was the Dashboard rebuilt as the feed, in a tab of its own so a
+       * reader could open both and go back. That decided in its favour, so
+       * `today` renders `DashboardNext` above and the launcher's second door
+       * is gone. Saved sessions and deep links still carry this type, and it
+       * still means what it always meant, so it resolves to the same surface
+       * rather than to a blank.
+       *
+       * NOT an alias of `today`'s whole arm: a pilot's first run belongs to
+       * the canonical home type, and a restored trial tab is not where a
+       * pilot should meet the mission for the first time.
        *
        * On a phone this resolves to the phone's own feed, like `today` and
        * `ideas` do, because the phone already IS this design and mounting a
@@ -1761,11 +1785,16 @@ export function DashboardPage() {
      * no walkthrough and no telemetry. A pilot now learns the real Dashboard
      * with the mission module on it, which is the whole point.
      *
-     * `today` rather than a blank: the callers of this function include the
+     * The HOME rather than a blank: the callers of this function include the
      * no-active-tab and unknown-type fallbacks, and a fallback that renders
      * nothing is how a reader lands on an empty page after a bad deep link.
+     *
+     * And the home is the feed now -- see the `today` arm. This was
+     * `<DashboardShell initialLens="today" />`; leaving it would have made a
+     * legacy `dashboard` tab and a bad deep link the only two ways left to
+     * open the retired Dashboard, which is the opposite of retiring it.
      */
-    return <DashboardShell initialLens="today" />
+    return <DashboardNext />
   }
 
   // Hold a minimal loading state during an org switch until pilot detection

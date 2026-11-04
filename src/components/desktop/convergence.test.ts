@@ -903,23 +903,40 @@ describe('one Dashboard, five lenses', () => {
       expect(page).toContain(`case '${t}':`)
     }
     /*
-     * `today` mounts the shell on its own lens. Asserted as a mount rather
-     * than as the exact next line: a pilot now gets the same shell with the
-     * Get Started checklist and the first-session coverage prompt layered
-     * above it, so the case arm is a branch and the adjacency no longer holds.
-     * What matters is that both arms end at this shell and this lens.
+     * ── What `today` mounts, and why this case was re-pointed ─────────────
+     *
+     * This read `<DashboardShell initialLens="today" />`, exactly once, on
+     * the arm that is not the pilot first run. The subject was never that
+     * particular component: it was that the canonical home type mounts the
+     * HOME on the home lens, on one arm, with the pilot mission on the other
+     * INSTEAD of layered over it.
+     *
+     * The home is `DashboardNext` now. It was built in a tab of its own
+     * because deciding that the Dashboard is the feed is a large claim to
+     * make about somebody's home screen; that decided in its favour, so the
+     * launcher's "Dashboard (new)" door is gone and `dashboard-next` is a
+     * compatibility type. Re-pointed rather than dropped, because the two
+     * things that can still go wrong here are unchanged: two mounts on one
+     * arm, or the mission layered instead of substituted.
      */
     const todayArm = page.slice(page.indexOf("case 'today':"), page.indexOf("case 'ideas':"))
-    /*
-     * One mount, on the arm that is not the pilot first run. An incomplete
-     * pilot gets the mission INSTEAD of the Dashboard rather than on top of
-     * it — layering meant the lens bar and every lens query sat under the
-     * guidance — and `effectiveIsPilot` is already `hasGraduated ? false :
-     * isPilot`, so the shell returns the moment the mission completes.
-     */
-    expect(todayArm.match(/<DashboardShell initialLens="today" \/>/g)).toHaveLength(1)
+    expect(todayArm.match(/<DashboardNext \/>/g)).toHaveLength(1)
+    /* And the shell is GONE from this arm rather than merely outranked by a
+       branch above it, which is what "retired" has to mean. */
+    expect(todayArm).not.toMatch(/<DashboardShell/)
     expect(todayArm).toContain('pilotMode.effectiveIsPilot')
     expect(todayArm).toContain('PilotWelcomeBanner')
+    /*
+     * The launcher has ONE Dashboard door. A second entry opening the same
+     * surface is the duplication the note at the top of that menu removed
+     * three other entries for.
+     */
+    const header = src('components/layout/Header.tsx')
+    expect(header).not.toContain("type: 'dashboard-next'")
+    expect(header).toContain("title: 'Dashboard', type: 'today'")
+    /* The compatibility type still resolves, so a saved trial tab does not
+       land on the blank default. */
+    expect(page).toContain("case 'dashboard-next':")
     const tabs = src('components/layout/TabManager.tsx')
     for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
       expect(tabs).toContain(t)

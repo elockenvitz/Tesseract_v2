@@ -23,6 +23,18 @@ vi.mock('../../components/dashboard/DashboardShell', () => ({
   DashboardShell: ({ initialLens }: { initialLens: string }) => <div data-testid="dashboard-shell" data-lens={initialLens} />,
   LENS_FOR_TAB: {},
 }))
+/*
+ * The desktop home is `DashboardNext` now, and it is not this suite's
+ * subject -- the subject is the pilot gate on the four lens tab types, which
+ * still mount `DashboardShell`. Stubbed because the real one pulls its own
+ * hook tree in behind it (the react-query mock below has `useQuery` only, so
+ * the first `useMutation` inside it takes the whole render down), and given a
+ * sentinel rather than `null` so a case that accidentally renders the home
+ * says so instead of asserting against an empty tree.
+ */
+vi.mock('../../components/dashboard-next/DashboardNext', () => ({
+  DashboardNext: () => <div data-testid="desktop-home" />,
+}))
 vi.mock('../../components/dashboard/PilotWelcomeBanner', () => ({ PilotWelcomeBanner: () => <div data-testid="pilot-home" /> }))
 vi.mock('../../components/coverage/CoverageSummaryBanner', () => ({ CoverageSummaryBanner: () => null }))
 vi.mock('../../components/coverage/FirstSessionCoveragePrompt', () => ({ FirstSessionCoveragePrompt: () => null }))
