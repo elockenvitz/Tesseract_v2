@@ -127,6 +127,97 @@ describe('the resolver still decides what a tile is', () => {
   })
 })
 
+/**
+ * The chosen tile is MARKED, and the mark is what brings it into view.
+ *
+ * ── Why this needed a case of its own ────────────────────────────────────
+ *
+ * Two features hang off one attribute and nothing asserted it existed.
+ * `IdeasExploreBrowse` scrolls the chosen tile into the rail by querying
+ * `[data-selected="true"]`, deliberately rather than threading a ref through
+ * two memoised components. `DesktopTile`'s own scroll-anchor restore consults
+ * the same attribute to decide that a chosen tile outranks the reader's place.
+ *
+ * So the attribute is a contract between three files, and the only thing
+ * setting it is a `selected` prop threaded through four hops:
+ * `IdeasApp`/`DashboardNext` -> `IdeasExploreBrowse` -> `OpportunityTile` ->
+ * `DesktopTile`. A break at any hop is SILENT: nothing looks wrong, the field
+ * simply stays where it was and shows a tile the reader did not pick, which is
+ * what was reported.
+ *
+ * Asserted on the attribute rather than on the scroll, because jsdom performs
+ * no layout and `scrollIntoView` is not implemented -- the component calls it
+ * optionally for that reason. What is observable, and what the whole chain
+ * exists to produce, is the mark.
+ */
+describe('the chosen tile carries the mark the scroll is found by', () => {
+  it('marks exactly the tile whose selection key matches', () => {
+    explore.items = [
+      composed({ id: 'k1', symbol: 'MSFT' }),
+      composed({ id: 'k2', symbol: 'NKE' }),
+    ]
+    const { container } = render(
+      <IdeasExploreBrowse
+        /* Each tile resolves to a work-open on its OWN key, which is what the
+           real resolver does; a shared key would mark both and hide a break. */
+        resolve={item => ({ do: 'work', selection: { key: item.dedupeKey } } as never)}
+        onOpen={() => {}}
+        selectedKey="k2"
+      />,
+    )
+    const marked = container.querySelectorAll('[data-selected="true"]')
+    expect(marked).toHaveLength(1)
+    expect(marked[0].textContent).toContain('NKE')
+  })
+
+  it('marks nothing before the reader has chosen', () => {
+    explore.items = [composed({ id: 'k1', symbol: 'MSFT' })]
+    const { container } = render(
+      <IdeasExploreBrowse resolve={() => WORK} onOpen={() => {}} selectedKey={null} />,
+    )
+    expect(container.querySelector('[data-selected="true"]')).toBeNull()
+  })
+
+  /*
+   * A tile with nothing behind it is never the chosen one. `isSelected`
+   * requires `do === 'work'`, so a key that happens to collide with an inert
+   * tile's id must not mark it -- the reader cannot have opened it.
+   */
+  it('never marks a tile that has nothing to open', () => {
+    explore.items = [composed({ id: 'k1', symbol: 'MSFT' })]
+    const { container } = render(
+      <IdeasExploreBrowse
+        resolve={() => ({ do: 'none', why: 'k1: nothing behind it' })}
+        onOpen={() => {}}
+        selectedKey="k1"
+      />,
+    )
+    expect(container.querySelector('[data-selected="true"]')).toBeNull()
+  })
+
+  /* The other two halves of the contract, by name, so a rename on either side
+     cannot quietly leave the mark unread. */
+  it('is read by both the scroll and the tile\'s own anchor restore', () => {
+    expect(src('components/ideas-app/IdeasExploreBrowse.tsx'))
+      .toContain('querySelector(\'[data-selected="true"]\')')
+    expect(src('components/desktop/DesktopTile.tsx'))
+      .toContain('querySelector(\'[data-selected="true"]\')')
+    // And the prop that sets it survives every hop.
+    expect(src('components/ideas-v2/OpportunityGrid.tsx')).toContain('selected={selected}')
+    expect(src('components/desktop/DesktopTile.tsx'))
+      .toContain("data-selected={selected ? 'true' : undefined}")
+  })
+
+  /* Both shells hand the field its OWN selection. `DashboardNext` used to pass
+     the lens the reader was standing in, so Explore received the Ideas feed's
+     key -- one it can never match, which marks nothing and looks like nothing
+     is wrong. */
+  it('is given a selection by both shells that mount the field', () => {
+    expect(src('components/ideas-app/IdeasApp.tsx')).toMatch(/selectedKey=\{/)
+    expect(src('components/dashboard-next/DashboardNext.tsx')).toMatch(/selectedKey=\{/)
+  })
+})
+
 describe('the field is still Explore\'s field', () => {
   it('admits the candidates the Ideas lens excludes', () => {
     /*
