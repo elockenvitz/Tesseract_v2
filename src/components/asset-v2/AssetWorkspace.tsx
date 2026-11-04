@@ -1087,7 +1087,21 @@ function Row({ k, v, tone }: { k: string; v: string; tone?: 'up' | 'down' }) {
 
 function Skeleton() {
   return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
+    /*
+     * Same ground as the loaded page, and for the same reason.
+     *
+     * This carried `h-full overflow-y-auto`, which is what broke the real
+     * page's sticky header: it declares a scrollport on a box that does not
+     * scroll, and the pane's actual scroller is `IdeasWorkPane`'s one level
+     * up. Here it had no header to strand, so nothing looked wrong -- but a
+     * second scrollport inside the real one means that while the skeleton is
+     * up the reader's wheel can land on the wrong box, and the loaded page
+     * then replaces a scrolled inner element with an unscrolled outer one.
+     *
+     * `min-h-full` for the loaded page's reason too: the ground reaches the
+     * bottom of the scrollport while the box may grow past it.
+     */
+    <div className="min-h-full bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
       <div className="h-9 w-48 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
       <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.62fr)_minmax(300px,1fr)]">
         <div className="h-72 animate-pulse rounded-xl bg-gray-200/70 dark:bg-white/[0.06]" />

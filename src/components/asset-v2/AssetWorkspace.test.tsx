@@ -33,6 +33,8 @@ const BASE: AssetWorkspaceData = {
 }
 
 let data: AssetWorkspaceData = BASE
+/** Flipped by the one case that needs the skeleton, reset in `beforeEach`. */
+let loading = false
 const readFor: { assetId: string | null; focus: string }[] = []
 
 vi.mock('../../hooks/useAssetWorkspace', async importOriginal => {
@@ -41,7 +43,7 @@ vi.mock('../../hooks/useAssetWorkspace', async importOriginal => {
     ...actual,
     useAssetWorkspace: (assetId: string | null, _symbol: string | null, focus: string) => {
       readFor.push({ assetId, focus })
-      return { data, isLoading: false, error: null }
+      return { data, isLoading: loading, error: null }
     },
   }
 })
@@ -153,6 +155,7 @@ Object.defineProperty(Element.prototype, 'scrollIntoView', {
 
 beforeEach(() => {
   data = { ...BASE }
+  loading = false
   readFor.length = 0
   editorFor.length = 0
   scrolledTo.length = 0
@@ -1124,6 +1127,38 @@ describe('the header carries the step, the verdict and the tools', () => {
     /* The containing block must be allowed to outgrow the scrollport, so the
        header stays pinned for the whole page and not just its first screen. */
     const classes = root.className.split(/\s+/)
+    expect(classes).not.toContain('h-full')
+    expect(classes).toContain('min-h-full')
+  })
+
+  /**
+   * ── And the loading state, which had the same fault with no symptom ─────
+   *
+   * `Skeleton` carried the identical `h-full overflow-y-auto`. It has no
+   * header to strand, so nothing looked wrong -- but it is a second
+   * scrollport inside the real one for as long as the fetch takes, which
+   * means the reader's wheel can land on the wrong box and the loaded page
+   * then replaces a scrolled inner element with an unscrolled outer one.
+   *
+   * Asserted with the SAME chain walk as the loaded page, not a weaker check
+   * on the class string, because the question is identical: does anything
+   * between this subtree and its scroller claim to scroll?
+   */
+  it('gives the loading state the same ground, with no scrollport of its own', () => {
+    loading = true
+    const { container } = render(
+      <AssetWorkspacePane asset={asset} why={{ headline: 'Stale', reason: null }} />,
+    )
+    const ground = container.firstElementChild as HTMLElement
+    expect(ground).not.toBeNull()
+    // It IS the skeleton and not the loaded page, or this asserts the wrong box.
+    expect(container.querySelector('[data-testid="asset-workspace"]')).toBeNull()
+    expect(ground.querySelector('.animate-pulse')).not.toBeNull()
+
+    for (const el of [ground, ...Array.from(ground.querySelectorAll('*'))]) {
+      expect(el.className.toString()).not.toMatch(/\boverflow-(y-)?(auto|scroll)\b/)
+    }
+    const classes = ground.className.split(/\s+/)
     expect(classes).not.toContain('h-full')
     expect(classes).toContain('min-h-full')
   })
