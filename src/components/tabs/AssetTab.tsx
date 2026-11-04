@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, Activity, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3, GitBranch, CheckCircle2, RotateCcw, Play } from 'lucide-react'
+/* `Sparkles` is gone with the "AI summary" read mode: the only remaining
+   sparkles on this page belong to ThesisUnifiedSummary, which draws its own. */
+import { Target, FileText, Plus, Calendar, User, Users, Activity, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3, GitBranch, CheckCircle2, RotateCcw, Play } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   buildAudienceOptions,
@@ -506,7 +508,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * on the first render and `initialResearchView` settles it there and then:
    * `ProtectedRoute` renders this tree only once `user` is non-null. The
    * earlier version deferred to the resolver below regardless, so every asset
-   * open painted the Organization case and swapped it for My Research ~70ms
+   * open painted the Firm case and swapped it for My Research ~70ms
    * later — the page visibly flipping between two different cases.
    *
    * UNRESOLVED survives for the case that genuinely needs it: no reader at
@@ -518,7 +520,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * A persisted perspective is deliberately NOT restored: a stale "Firm"
    * preference must never strand the reader on a read-only view. Within a
    * mounted session the choice persists in React state (sub-tab switches do
-   * not remount), so a deliberate Organization switch is kept while
+   * not remount), so a deliberate Firm switch is kept while
    * navigating.
    *
    * The seed is taken once, at mount — hence the ref. The rules themselves
@@ -593,10 +595,30 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       focusWorkSection(null)
     })
   }, [focusWorkSection])
-  // Thesis view mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline
-  const [thesisViewMode, setThesisViewMode] = useState<'all' | 'summary' | 'history' | 'references'>(() => {
+  /*
+   * Thesis read mode: 'all' is the case itself, 'history' its timeline,
+   * 'references' the key-reference surface.
+   *
+   * ── 'summary' is gone, and why ─────────────────────────────────────────
+   *
+   * It was an AI synthesis of the three core sections offered as a fourth
+   * read mode, and it answered the same question the Firm perspective does,
+   * from the same contributions: what does the desk think. Two controls on
+   * two different axes (which analyst, and how to read them) both landing on
+   * one answer, so a reader had to find out by pressing that the firm's
+   * numbers were in one and the firm's argument in the other.
+   *
+   * The synthesis now renders inside the Firm view, above the attributed
+   * detail and below the aggregated valuation it never had. Nothing was
+   * removed: see the Firm branch in the Research body.
+   *
+   * A tab persisted before this carries 'summary', which has no button and
+   * no branch any more, so it migrates to 'all' instead of restoring blank.
+   */
+  const [thesisViewMode, setThesisViewMode] = useState<'all' | 'history' | 'references'>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.thesisViewMode || 'all'
+    const saved: unknown = savedState?.thesisViewMode
+    return saved === 'all' || saved === 'history' || saved === 'references' ? saved : 'all'
   })
   const goToThesisMode = useCallback((next: typeof thesisViewMode) => {
     requestUnsavedNavigation(() => setThesisViewMode(next))
@@ -987,8 +1009,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     setActiveSubPage('research')
     // The rating anchor only exists in the Individual "All" view branch
     // (thesisViewMode='all' + researchViewFilter !== 'aggregated'). If a
-    // saved state restored 'summary' / 'history' / 'references', the
-    // anchor isn't in the DOM at all. Force 'all' so the field renders.
+    // saved state restored 'history' or 'references', the anchor isn't in
+    // the DOM at all. Force 'all' so the field renders.
     setThesisViewMode('all')
     // Rating + Price Targets live in the Forecasts section, keyed
     // 'outcomes' for collapsed state. Force-expand so the anchor
@@ -4123,7 +4145,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 // Pills mode for 5 or fewer analysts
                 <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
                   {/* UX2 Phase 1 — two explicit perspectives: My Research (your
-                      editable case, the default landing) and Organization (the
+                      editable case, the default landing) and Firm (the
                       read-only, permission-aware firm view). Other analysts'
                       views remain reachable as pills to the right. */}
                   {user?.id && (
@@ -4149,21 +4171,29 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     )}
                   >
                     {/*
-                      "Firm valuation", not "Our View".
+                      "Firm", which is the scope this actually is.
 
-                      The contributor summary moved to the Snapshot, but this
-                      SELECTOR was left untouched — so the authenticated app
-                      still offered "Our View (All Analysts)" over a pane that
-                      no longer contains any analyst's words. The label
-                      promised prose and delivered numbers.
+                      Two earlier labels were each true of the pane at the
+                      time and wrong once it changed. "Our View (All
+                      Analysts)" survived the contributor summary moving to
+                      the Snapshot, so it promised prose over a pane holding
+                      only numbers. "Organization (firm valuation)" then
+                      described numbers, and the pane has since taken the
+                      words back: the attributed per-field detail, and now the
+                      synthesis that used to be its own read mode.
 
-                      Nothing is deleted: the pane still renders the aggregated
-                      price targets and the rating consensus, each from its own
-                      existing panel, and every contributor and section is intact
-                      on the Snapshot and in each analyst's own document.
+                      "Firm" is the one name that stays true, because it names
+                      WHOSE view this is rather than what happens to be
+                      rendered. It is also the word the rest of the product
+                      already uses for this scope -- visibility is
+                      team | division | firm, and `ratingViewScope` has said
+                      `{ type: 'firm' }` for this branch all along. "Team"
+                      would have read as the NARROWEST of those three while
+                      showing the widest, which is the collision that picked
+                      this word.
                     */}
                     <Users className="w-3.5 h-3.5" />
-                    Organization
+                    Firm
                   </button>
                   {researchAnalysts.filter(a => a.id !== user?.id).map(analyst => {
                     const isCurrentUser = analyst.id === user?.id
@@ -4204,7 +4234,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-200"
                 >
                   {user?.id && <option value={user.id}>My Research</option>}
-                  <option value="aggregated">Organization (firm valuation)</option>
+                  {/* Same name as the pill above, which is the other arm of
+                      this one control. "(firm valuation)" is dropped: the
+                      branch is no longer only numbers. */}
+                  <option value="aggregated">Firm</option>
                   {researchAnalysts.filter(a => a.id !== user?.id).map(analyst => {
                     const roleTag = analyst.isCovering
                       ? analyst.role === 'primary' ? '★ ' : '☆ '
@@ -4271,19 +4304,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       sections" described the renderer. */}
                   <span className="hidden xl:inline">Investment Case</span>
                 </button>
-                <button
-                  onClick={() => goToThesisMode('summary')}
-                  className={clsx(
-                    'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
-                    thesisViewMode === 'summary'
-                      ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                  )}
-                  title="AI summary"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span className="hidden xl:inline">AI summary</span>
-                </button>
+                {/* "AI summary" stood here. It is now a band inside the Firm
+                    perspective, not a read mode, because it answered the same
+                    question that perspective does and this row is about HOW to
+                    read a case, not WHOSE. Three buttons, one axis. */}
                 <button
                   onClick={() => goToThesisMode('history')}
                   className={clsx(
@@ -4434,17 +4458,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {activeMode === 'research' && (
           <div className="space-y-3 min-h-full">
 
-            {thesisViewMode === 'summary' ? (
-              /* AI Summary View - shows unified summary */
-              <Card padding="md">
-                <ThesisUnifiedSummary
-                  assetId={asset.id}
-                  viewFilter={researchViewFilter}
-                  contributions={allAssetContributions}
-                  coveringAnalystIds={coveringAnalystIds}
-                />
-              </Card>
-            ) : thesisViewMode === 'history' ? (
+            {thesisViewMode === 'history' ? (
               /* History View - shows timeline instead of full layout */
               <Card padding="md">
                 <ThesisHistoryView
@@ -4494,15 +4508,23 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </Card>
               ) : (
                 <div className="space-y-3">
-                  {/* UX2 Phase 1 — Organization is read-only (attributed firm
-                      research + aggregated valuation). "Edit my research" is the
-                      clearly-visible way back to the reader's own editable case.
-                      Perspective (what you're viewing) stays distinct from
-                      contribution visibility (who can see what you publish). */}
+                  {/* UX2 Phase 1 — the Firm perspective is read-only (aggregated
+                      valuation + synthesis + attributed research). "Edit my
+                      research" is the clearly-visible way back to the reader's
+                      own editable case. Perspective (what you're viewing) stays
+                      distinct from contribution visibility (who can see what you
+                      publish).
+
+                      The copy says "nobody wrote this" because nobody did: the
+                      numbers are computed, the synthesis is generated, and the
+                      words below are each still their own author's. Read as a
+                      firm-authored conclusion it would be an unattributed view
+                      in a product whose premise is that every view has an
+                      author. */}
                   {user?.id && (
                     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
                       <span className="text-sm text-gray-500 dark:text-gray-400">
-                        Read-only firm view — attributed research and aggregated valuation, not a firm-authored conclusion.
+                        Read-only firm view: aggregated valuation, a generated synthesis, and each analyst's own research. Not a firm-authored conclusion.
                       </span>
                       <button
                         type="button"
@@ -4523,6 +4545,48 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
                   {/* Aggregated Forecasts Summary - shows ratings, estimates when data exists */}
                   <FirmConsensusPanel assetId={asset.id} />
+
+                  {/*
+                    ─── The synthesis, which used to be its own read mode ───
+
+                    This was the "AI summary" button, a fourth entry in the
+                    read-mode row beside Investment Case / History / Key
+                    references. It renders the executive summary, the sentiment
+                    split, where the desk agrees and disagrees, and a per
+                    analyst comparison -- which is the firm's perspective, the
+                    aggregate and the individual views. Exactly what THIS
+                    branch is for, from the same `allAssetContributions`.
+
+                    So it was not a second feature, it was this one reached by
+                    a different button, and the split was the worst possible
+                    one: the firm's numbers in the perspective, the firm's
+                    argument in the read mode, and no way to see both at once.
+
+                    Order is deliberate, and it is "computed, then generated,
+                    then written":
+                      PriceTargetsSummary / FirmConsensusPanel  computed
+                      ThesisUnifiedSummary                      generated
+                      OurViewSummary                            written
+
+                    The generated band sits in the middle because it is a
+                    reading OF the words below it and must not be mistaken for
+                    the numbers above it. It carries its own `generatedAt` and
+                    staleness, and when AI is not configured it falls back to a
+                    plain listing of the contributions and says so, so this
+                    branch does not go blank for a firm that never set AI up.
+
+                    It takes `viewFilter` and so stays correct if this ever
+                    renders under a single analyst, but today only the
+                    aggregated branch mounts it.
+                  */}
+                  <Card padding="md">
+                    <ThesisUnifiedSummary
+                      assetId={asset.id}
+                      viewFilter={researchViewFilter}
+                      contributions={allAssetContributions}
+                      coveringAnalystIds={coveringAnalystIds}
+                    />
+                  </Card>
 
                   {/*
                     ─── Firm Research: valuation AND contributor context ───
@@ -4549,6 +4613,23 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     visibility controls are untouched; they live in the
                     individual view this branch never renders. Choosing an
                     analyst opens their full, editable research in place.
+
+                    ── Why this survives the synthesis above it ──────────────
+
+                    The two look redundant and are not. `ourViewFields` is
+                    derived from `displayedFieldsBySection`, so this lists
+                    every visible prose field of whatever case template the
+                    firm configured. The synthesis reads three hardcoded
+                    sections only -- thesis, where_different, risks_to_thesis
+                    (see `sectionLabels` in `useThesisAnalysis`). A firm with
+                    custom fields has research the synthesis cannot see, and
+                    dropping this would have silently hidden it.
+
+                    They also differ in kind: that band is one generated
+                    reading of the core argument, this is the complete
+                    attributed record. Deleting the record would leave only
+                    the model's account of it, with nothing to check it
+                    against.
                   */}
                   <OurViewSummary
                     contributions={allAssetContributions}
@@ -4618,12 +4699,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     {!collapsedSections.outcomes && (
                       <div className="border-t border-gray-100 px-5 py-2 space-y-3 dark:border-gray-800">
                         {/* UX2 P2 — keep the reader's personal valuation visibly
-                            distinct from the firm consensus (which lives in
-                            Organization). Shown only on the reader's own view. */}
+                            distinct from the firm consensus (which lives in the
+                            Firm perspective). Shown only on the reader's own
+                            view. */}
                         {isViewingOwnThesisTab && (
                           <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
                             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                            Your rating, price target and estimates — personal, not the firm consensus. The aggregated firm view is under Organization.
+                            Your rating, price target and estimates are personal, not the firm consensus. The aggregated firm view is under Firm.
                           </p>
                         )}
                         {section.fields

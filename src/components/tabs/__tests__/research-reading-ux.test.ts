@@ -20,24 +20,46 @@ const codeOf = (s: string) =>
 const ASSET_TAB = codeOf(readFileSync(resolve(SRC, 'components/tabs/AssetTab.tsx'), 'utf8'))
 const CONTRIB = codeOf(readFileSync(resolve(SRC, 'components/contributions/ContributionSection.tsx'), 'utf8'))
 
-describe('UX1c-1: the four Research modes are clearly labelled', () => {
+describe('UX1c-1: the three Research modes are clearly labelled', () => {
   it('each read-mode carries a visible text label, not just an icon tooltip', () => {
     // Pin the visible <span> label, not the title="" attribute — the old
     // icon-only buttons already had the titles, so asserting the bare text
     // would pass vacuously. The label lives in a `hidden xl:inline` span.
     // "All sections" became "Investment Case" in Lane A: it names the thing
     // being read rather than describing the renderer.
-    for (const label of ['Investment Case', 'AI summary', 'History', 'Key references']) {
+    //
+    // Was four. "AI summary" is no longer a read mode: it read the same
+    // contributions as the Firm perspective and answered that perspective's
+    // question from the other axis (this row is HOW to read a case, the pills
+    // are WHOSE), so it moved into the Firm branch beside the aggregated
+    // valuation it never had. ux2-phase2 pins where it landed and its order
+    // among the computed and written blocks.
+    for (const label of ['Investment Case', 'History', 'Key references']) {
       expect(ASSET_TAB, `visible label "${label}" should be rendered`).toContain(`>${label}</span>`)
     }
+    expect(ASSET_TAB, 'AI summary is no longer a read mode').not.toContain('>AI summary</span>')
   })
 
-  it('offers the two-mode perspective selector (UX2 P1: My Research / Organization)', () => {
-    // UX2 Phase 1 renamed the "Firm valuation" pill to "Organization" and added
-    // an explicit "My Research" pill; the aggregated destination is unchanged.
-    expect(ASSET_TAB).toContain('Organization')
+  it('offers the two-mode perspective selector (My Research / Firm)', () => {
+    // UX2 Phase 1 renamed the "Firm valuation" pill to "Organization"; it is
+    // now "Firm". Two earlier names were each true of the pane when written and
+    // wrong once it changed, so this one names WHOSE view it is rather than
+    // what happens to be in it. It is also the word the rest of the product
+    // uses for this scope: visibility is team | division | firm, and
+    // `ratingViewScope` has returned `{ type: 'firm' }` for this branch all
+    // along. "Team" was rejected because it is the NARROWEST of those three
+    // and this view is the widest.
     expect(ASSET_TAB).toContain('>My Research<')
+    expect(ASSET_TAB).toMatch(/<Users className="w-3\.5 h-3\.5" \/>\s*Firm\s*<\/button>/)
+    expect(ASSET_TAB).toContain('<option value="aggregated">Firm</option>')
+    // The destination is unchanged: only the label moved, so a persisted tab
+    // state and every `researchViewFilter` consumer still see 'aggregated'.
     expect(ASSET_TAB).toMatch(/chooseResearchView\('aggregated'\)/)
+    expect(ASSET_TAB).toMatch(/const isAggregatedView = researchViewFilter === 'aggregated'/)
+    // Both arms of one control say the same word. The pill shows at <= 5
+    // analysts and the <option> above it, so a rename of one alone leaves the
+    // product calling the same perspective two things by headcount.
+    expect(ASSET_TAB).not.toContain('Organization (firm valuation)')
   })
 })
 

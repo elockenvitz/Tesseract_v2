@@ -131,13 +131,21 @@ describe('the toolbar wiring', () => {
     expect(TAB).not.toMatch(/All sections/)
   })
 
-  it('keeps all four view modes as visible, differentiated controls', () => {
+  it('keeps all three view modes as visible, differentiated controls', () => {
     // The modes are the primary navigation on this bar; collapsing them into a
     // dropdown would be a reduction in discoverability, not in clutter.
-    for (const mode of ['all', 'summary', 'history', 'references']) {
+    //
+    // Was four. 'summary' was an AI synthesis of the three core sections, and
+    // it read the same `allAssetContributions` as the Firm perspective and
+    // answered that perspective's question -- so it was this bar's axis (HOW
+    // to read a case) landing on the pills' axis (WHOSE). It now renders
+    // inside the Firm branch; ux2-phase2 pins that it is there and where it
+    // sits among the computed and written blocks.
+    for (const mode of ['all', 'history', 'references']) {
       expect(TAB).toMatch(new RegExp(`goToThesisMode\\('${mode}'\\)`))
     }
     expect(TAB).toMatch(/thesisViewMode === 'all'/)
+    expect(TAB, 'summary is no longer a read mode').not.toMatch(/goToThesisMode\('summary'\)/)
   })
 
   it('moves the layout and export actions off the bar and into the menu', () => {
@@ -192,10 +200,26 @@ describe('the toolbar wiring', () => {
     expect(BAR.indexOf('ViewWarningIndicator')).toBeLessThan(BAR.indexOf("goToThesisMode('all')"))
   })
 
-  it('persists the view mode across assets, unchanged by this lane', () => {
+  it('persists the view mode across assets, and migrates the mode that was retired', () => {
     // Sub-page and mode continuity is approved behaviour and must survive.
     expect(TAB).toMatch(/thesisViewMode,/)
-    expect(TAB).toMatch(/savedState\?\.thesisViewMode \|\| 'all'/)
+    /*
+     * Was `savedState?.thesisViewMode || 'all'`, which took any saved string.
+     * That is now unsafe rather than merely loose: a tab persisted before
+     * 'summary' was retired still carries it, and restoring it would select a
+     * mode with no button to leave it by and no branch to render -- a reader
+     * stranded on an empty pane by their own saved session.
+     *
+     * So the read narrows to the live union and anything else falls to 'all'.
+     * Pinned as the narrowing rather than the old passthrough, because the
+     * passthrough is exactly the defect.
+     */
+    expect(TAB).toMatch(/const saved: unknown = savedState\?\.thesisViewMode/)
+    expect(TAB).toMatch(
+      /saved === 'all' \|\| saved === 'history' \|\| saved === 'references' \? saved : 'all'/,
+    )
+    expect(TAB, 'an unvalidated passthrough would restore the retired mode')
+      .not.toMatch(/savedState\?\.thesisViewMode \|\| 'all'/)
   })
 
   it('leaves exactly one divider in the bar, where two used to sit', () => {

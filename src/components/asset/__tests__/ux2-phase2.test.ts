@@ -53,10 +53,55 @@ describe('Research presentation: original per-section cards restored', () => {
     expect(ASSET_TAB).toMatch(/isViewingOwnThesisTab && \([\s\S]{0,400}personal, not the firm consensus/)
   })
 
-  it('preserves the Research read-modes (AI summary / History / Key references)', () => {
-    for (const label of ['AI summary', 'History', 'Key references']) {
+  /*
+   * Re-pointed, not deleted. This read `['AI summary', 'History', 'Key
+   * references']`.
+   *
+   * "AI summary" is no longer a read mode. It rendered the executive summary,
+   * the sentiment split, the agreement and disagreement and a per-analyst
+   * comparison -- the firm's perspective, its aggregate and its individual
+   * views -- from the same `allAssetContributions` the Firm perspective reads.
+   * So it answered that perspective's question from a control on the other
+   * axis: this row is HOW to read a case, the pills are WHOSE. The split put
+   * the firm's numbers in one and the firm's argument in the other with no way
+   * to see both.
+   *
+   * The synthesis moved into the Firm branch rather than going away, so the
+   * subject here is still "every read mode carries a visible label" and the
+   * count is now three.
+   */
+  it('preserves the Research read-modes (Investment Case / History / Key references)', () => {
+    for (const label of ['Investment Case', 'History', 'Key references']) {
       expect(ASSET_TAB).toContain(`>${label}</span>`)
     }
+    /* Gone as a mode: no button, no branch, and no member in the union a
+       persisted tab is narrowed to. A leftover `'summary'` arm would restore
+       a mode with nothing to leave it by. */
+    expect(ASSET_TAB).not.toContain('>AI summary</span>')
+    expect(ASSET_TAB).not.toMatch(/thesisViewMode === 'summary'/)
+    expect(ASSET_TAB).not.toMatch(/goToThesisMode\('summary'\)/)
+    expect(ASSET_TAB).toMatch(/useState<'all' \| 'history' \| 'references'>/)
+  })
+
+  /*
+   * The other half of that move: the synthesis has to be SOMEWHERE, and the
+   * only place it can be is the branch that answers the same question.
+   *
+   * Without this, deleting the button alone satisfies the case above while
+   * removing the feature outright, which is the failure the pair exists to
+   * catch.
+   */
+  it('renders the synthesis inside the Firm perspective, between the numbers and the words', () => {
+    const firmBranch = ASSET_TAB.slice(ASSET_TAB.indexOf('isAggregatedView ?'))
+    const at = (needle: string) => firmBranch.indexOf(needle)
+    expect(at('<PriceTargetsSummary'), 'no aggregated price targets').toBeGreaterThan(-1)
+    expect(at('<ThesisUnifiedSummary'), 'the synthesis is not in the Firm branch').toBeGreaterThan(-1)
+    expect(at('<OurViewSummary'), 'no attributed per-field record').toBeGreaterThan(-1)
+    /* Computed, then generated, then written. The generated band must not sit
+       above the numbers (where it reads as one of them) or below the record
+       (where the record it summarises has already been read). */
+    expect(at('<PriceTargetsSummary')).toBeLessThan(at('<ThesisUnifiedSummary'))
+    expect(at('<ThesisUnifiedSummary')).toBeLessThan(at('<OurViewSummary'))
   })
 
   it('does NOT invent section-linked evidence (no per-section evidence source)', () => {

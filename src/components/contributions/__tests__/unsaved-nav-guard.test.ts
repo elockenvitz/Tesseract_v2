@@ -110,10 +110,28 @@ describe('UX1c-2b: in-tab navigation is routed through the guard', () => {
      */
   })
 
-  it('the four read-mode buttons use the guarded helper', () => {
-    for (const mode of ['all', 'summary', 'history', 'references']) {
+  /*
+   * Was four modes, including 'summary'.
+   *
+   * 'summary' was an AI synthesis of the three core sections offered as a
+   * read mode, and it read the same contributions as the Firm perspective and
+   * answered that perspective's question -- this row is HOW to read a case,
+   * the perspective pills are WHOSE. It now renders inside the Firm branch,
+   * which needs no guard of its own: switching perspective already routes
+   * through `chooseResearchView`, and the synthesis is a band in a branch
+   * rather than a destination anyone navigates to.
+   *
+   * The subject is unchanged: every read-mode button goes through the guard,
+   * so unsaved work cannot be walked away from. The count is three.
+   */
+  it('the three read-mode buttons use the guarded helper', () => {
+    for (const mode of ['all', 'history', 'references']) {
       expect(ASSET_TAB, `read-mode button for ${mode}`).toContain(`goToThesisMode('${mode}')`)
     }
+    /* And the retired mode left no unguarded caller behind: a stray
+       `setThesisViewMode('summary')` would bypass the guard entirely. */
+    expect(ASSET_TAB).not.toContain("goToThesisMode('summary')")
+    expect(ASSET_TAB).not.toContain("setThesisViewMode('summary')")
   })
 })
 

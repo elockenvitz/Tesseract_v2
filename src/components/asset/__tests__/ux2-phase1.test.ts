@@ -37,17 +37,30 @@ describe('UX2 P1: perspective — My Research is the fresh-visit default', () =>
     expect(ASSET_TAB).not.toMatch(/const mine = user\?\.id && researchAnalysts\.some/)
   })
 
-  it('offers explicit My Research and Organization perspectives', () => {
+  // Re-pointed from 'Organization' to 'Firm'. Phase 1 named this pill
+  // "Organization (firm valuation)", which described what the pane held at the
+  // time: only numbers. The pane has since taken the words back (the
+  // attributed per-field record, and now the synthesis that used to be its own
+  // read mode), so the label names WHOSE view it is instead. "Firm" is also
+  // the product's existing word for this scope -- visibility is
+  // team | division | firm -- and "Team" would have named the narrowest of the
+  // three while showing the widest.
+  it('offers explicit My Research and Firm perspectives', () => {
     expect(ASSET_TAB).toContain('>My Research<') // the pill
     expect(ASSET_TAB).toMatch(/chooseResearchView\(user\.id\)/)
-    expect(ASSET_TAB).toContain('Organization')
+    expect(ASSET_TAB).toMatch(/<Users className="w-3\.5 h-3\.5" \/>\s*Firm\s*<\/button>/)
     // self is not duplicated as an analyst pill
     expect(ASSET_TAB).toMatch(/researchAnalysts\.filter\(a => a\.id !== user\?\.id\)/)
   })
 
-  it('Organization is read-only with a clearly-visible Edit my research action', () => {
+  it('the Firm perspective is read-only with a clearly-visible Edit my research action', () => {
     expect(ASSET_TAB).toContain('Edit my research')
     expect(ASSET_TAB).toMatch(/Read-only firm view/)
+    // The banner now names all three layers, because the middle one is
+    // generated and a reader must not take it for the computed numbers above
+    // it or for somebody's authored view below it.
+    expect(ASSET_TAB).toMatch(/aggregated valuation, a generated synthesis, and each analyst's own research/)
+    expect(ASSET_TAB).toMatch(/Not a firm-authored conclusion/)
   })
 })
 
