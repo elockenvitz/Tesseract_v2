@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 // BarChart3 and MessageSquare went with the Chart and Discussion tabs: the
 // chart is a band of Overview and needs no nav icon, and Discussion is gone.
-import { FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, X, Search, Trash2, MoreVertical, Archive, ArchiveRestore, Repeat, ChevronDown, Layers } from 'lucide-react'
+import { FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, X, Search, Trash2, MoreVertical, Archive, ArchiveRestore, Repeat, ChevronDown, ChevronUp, Layers } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -11,6 +11,11 @@ import { ThemeNoteEditor } from '../notes/ThemeNoteEditorUnified'
 import { AddAssetToThemeModal } from '../themes/AddAssetToThemeModal'
 import { ThemeIndexChart } from '../themes/ThemeIndexChart'
 import { ThemeActivityFeed } from '../themes/ThemeActivityFeed'
+import { ThemeContextStrip } from '../themes/ThemeContextStrip'
+/* The Asset page's scoped visual language, opted into rather than copied, so
+   the two workspaces cannot drift to two palettes. Everything in it lives
+   under `.ux2-scope`, so importing it changes nothing elsewhere. */
+import '../asset/asset-ux2.css'
 import { ThemeHeldPositions } from '../themes/overview/ThemeHeldPositions'
 import { ThemeNotesDigest } from '../themes/overview/ThemeNotesDigest'
 import { ThemeResearchTab } from '../themes/research/ThemeResearchTab'
@@ -168,6 +173,11 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
     if (isThemeReadMode(saved?.themeResearchRead)) return saved.themeResearchRead
     return themeReadModeOf(saved?.activeTab) ?? 'thesis'
   })
+
+  /* Collapsing the band hides the context strip and keeps identity, Share,
+     the overflow and the tabs: the Asset page's compact working bar. Not
+     persisted, same as there -- it is a per-sitting posture, not a setting. */
+  const [headerCollapsed, setHeaderCollapsed] = useState(false)
 
   const [showNoteEditor, setShowNoteEditor] = useState(() => {
     const savedState = TabStateManager.loadTabState(theme.id)
@@ -810,8 +820,42 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   )
 
   return (
-    <div className="space-y-6">
-      {/* Theme Header */}
+    /*
+     * ── The same shell as the Asset page ─────────────────────────────────
+     *
+     * This page used to be a `space-y-6` stack with the nav and content
+     * inside a `<Card>`, which is why it never looked like the Asset page
+     * however closely the controls inside it were matched: the Asset page is
+     * a full-bleed workspace with a floating identity band, a sticky header
+     * and ONE scrollport under it, and this was a card sitting in a padded
+     * document.
+     *
+     * `ux2-scope` is the Asset page's scoped visual language
+     * (`asset/asset-ux2.css`): the band surface, its hairline and shadow, the
+     * ink levels, the strip dividers. It is opted into here rather than
+     * copied, so the two pages cannot drift to two palettes. Nothing outside
+     * a `.ux2-scope` root is affected, which is what that file's own note
+     * asks for.
+     *
+     * The negative margins cancel Layout's content padding, which is
+     * `px-3 py-4 sm:px-6 sm:py-6 lg:px-8`. They are written per breakpoint
+     * rather than as the Asset page's flat `-mx-8 -my-6`, because that
+     * over-pulls by 20px at phone width, and unlike the Asset page this one
+     * has no separate mobile shell to hide it.
+     */
+    <div className="theme-ux2 ux2-scope flex flex-col bg-gray-50 dark:bg-gray-900 -mx-3 -my-4 sm:-mx-6 sm:-my-6 lg:-mx-8 h-[calc(100%+32px)] sm:h-[calc(100%+48px)] overflow-hidden">
+      {/* Sticky header: identity band + mode nav, both out of the scroll. */}
+      <div className="flex-shrink-0 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-3 sm:px-6 lg:px-8 pt-4 space-y-2 shadow-sm">
+      {/* The identity band. Same treatment as `AssetWorkspaceHeader`: a solid
+          surface floating over the grey content, meeting the tab bar with no
+          gutter (-mt-4 pulls it up over the header's pt-4).
+
+          Its CONTENTS are unchanged -- the swatch, click-to-rename, the type
+          badge, the lifecycle pill, the description, Share and the overflow
+          menu, and the phone's `showThemeMeta` disclosure all behave exactly
+          as before. Only the surface they sit on is new, which is the whole
+          point: this is a chrome pass, not a rewrite of the header. */}
+      <div className="ux2-band -mx-3 sm:-mx-6 lg:-mx-8 -mt-4 px-3 sm:px-6 lg:px-8 pt-4 pb-3 space-y-3">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 flex-1 min-w-0">
           {/* Color swatch — display-only. Color is derived from
@@ -993,7 +1037,43 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               </div>
             )}
           </div>
+
+          {/* Collapse, in the band itself rather than on the page, exactly
+              where the Asset page puts it. Collapsed keeps identity, Share,
+              the overflow and the tabs below: a compact working bar. */}
+          <button
+            type="button"
+            onClick={() => setHeaderCollapsed(v => !v)}
+            aria-expanded={!headerCollapsed}
+            aria-label={headerCollapsed ? 'Show theme context' : 'Hide theme context'}
+            title={headerCollapsed ? 'Show theme context' : 'Hide theme context'}
+            className="hidden sm:inline-flex items-center justify-center h-9 w-9 rounded-lg text-[color:var(--ux2-ink-2)] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
+          >
+            {headerCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          </button>
         </div>
+      </div>
+
+      {/* The context strip. Phone-hidden rather than squeezed: five facts in
+          a 390px row is five truncated facts, and `showThemeMeta` already
+          carries the theme's details at that width. */}
+      {!headerCollapsed && (
+        <div className="hidden sm:block">
+          <ThemeContextStrip
+            themeId={theme.id}
+            assetIds={themeAssetIds}
+            noteCount={notes?.length ?? 0}
+            /* A cell names a fact; this is where the page resolves it. The
+               Asset strip's own comment records what happens when the cell
+               names a page instead: its Research cells landed wherever
+               Research was last scrolled to. */
+            onJump={({ mode, read }) => {
+              setActiveMode(mode)
+              if (read) setResearchRead(read)
+            }}
+          />
+        </div>
+      )}
       </div>
 
       {isMobileViewport && (
@@ -1028,16 +1108,17 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         </BottomSheet>
       )}
 
-      {/* Tabular System */}
-      <Card padding="none">
-        {/* Tab Navigation */}
+        {/* Mode nav. In the sticky header now, not inside a Card: the Asset
+            page's modes sit on the header's bottom edge and the active one is
+            a white tab joined to the content below it. A bordered Card put a
+            second frame around the whole workspace. */}
         <div className="border-b border-gray-200 dark:border-gray-700">
           {/*
-            Three modes, asking one question: am I orienting, reading, or
-            working. This was six peer sections, which asked the reader to
-            know which FEATURE held the thing they wanted.
+            Four modes, asking one question: am I orienting, looking at the
+            names, reading, or working. This was six peer sections, which
+            asked the reader to know which FEATURE held the thing they wanted.
 
-            The phone picker stays. Three fit a 390px row, so overflow is no
+            The phone picker stays. Four fit a 390px row, so overflow is no
             longer the reason for it, but it is the accepted treatment on this
             and on Portfolio, and a picker that names the current mode in
             words beats three truncated icons. Desktop keeps the tab row.
@@ -1074,32 +1155,42 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               />
             </div>
           ) : (
-          <nav className="flex gap-4 sm:gap-8 px-3 sm:px-6 overflow-x-auto no-scrollbar" aria-label="Tabs">
+          <nav className="flex space-x-1 overflow-x-auto no-scrollbar" aria-label="Theme modes">
             {/* One list, both controls. The six literal buttons that stood
                 here could disagree with the phone picker beside them, which
                 is exactly what the note above this nav warned about and then
                 did anyway. Four modes still fit a 390px screen, so the
-                overflow the picker exists for is close to moot. */}
+                overflow the picker exists for is close to moot.
+
+                The styling is the Asset page's, not a second treatment: the
+                active mode is a white tab with a top-and-sides border and
+                `-mb-px`, so it sits ON the header's bottom edge and joins the
+                content below instead of underlining a word above it. */}
             {THEME_MODES.map(mode => {
               const Icon = MODE_ICON[mode]
+              const current = activeMode === mode
               return (
                 <button
                   key={mode}
                   onClick={() => setActiveMode(mode)}
-                  aria-current={activeMode === mode ? 'page' : undefined}
-                  className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    activeMode === mode
-                      ? 'border-primary-500 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-                  }`}
+                  aria-current={current ? 'page' : undefined}
+                  className={clsx(
+                    'shrink-0 whitespace-nowrap px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+                    current
+                      ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
+                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400',
+                  )}
                 >
                   <div className="flex items-center space-x-2">
                     <Icon className="h-4 w-4" />
                     <span>{THEME_MODE_LABEL[mode]}</span>
                     {mode === 'assets' && relatedAssets && relatedAssets.length > 0 && (
-                      <Badge variant="default" size="sm">
+                      /* The same count pill shape the Asset page's Work tab
+                         uses, rather than this page's generic Badge, so the
+                         two navs do not differ by a border radius. */
+                      <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center dark:bg-purple-900/60 dark:text-purple-200">
                         {relatedAssets.length}
-                      </Badge>
+                      </span>
                     )}
                   </div>
                 </button>
@@ -1108,9 +1199,11 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
           </nav>
           )}
         </div>
+      </div>
 
-        {/* Tab Content */}
-        <div className="p-3 sm:p-6">
+      {/* ONE scrollport under the sticky header, as on the Asset page. The
+          header, the band and the nav stay put; only this moves. */}
+      <div className="flex-1 overflow-auto px-3 sm:px-6 lg:px-8 py-4">
           {activeMode === 'research' && (
             <ThemeResearchTab
               themeId={theme.id}
@@ -1305,8 +1398,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             <ThemeProcessesPanel themeId={theme.id} />
           )}
 
-        </div>
-      </Card>
+      </div>
 
       {/* Add Asset Modal */}
       <AddAssetToThemeModal

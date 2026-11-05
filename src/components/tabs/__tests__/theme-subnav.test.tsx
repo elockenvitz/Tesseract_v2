@@ -192,7 +192,13 @@ describe('every one of the six old sections still has a surface', () => {
     walk(resolve(__dirname, '../../..'))
 
     expect(hits, `still referenced by: ${hits.join(', ')}`).toEqual([])
-  })
+  },
+  /* 30s, not the 5s default. This reads every .ts/.tsx under src -- about two
+     thousand files -- and inside the full guard it does that while several
+     hundred other test files are running, where it overran 5s and failed the
+     whole guard with "Test timed out" rather than with a finding. The scan IS
+     the test, so the budget moves rather than the scope. */
+  30_000)
 })
 
 describe('the phone gets the accepted picker, not a new primitive', () => {
@@ -252,9 +258,39 @@ describe('the desktop row reads the same list the picker does', () => {
     expect(nav.match(/<button/g) ?? []).toHaveLength(1)
   })
 
-  it('keeps its icons and active underline', () => {
-    expect(source).toContain('border-b-2 font-medium text-sm transition-colors')
-    expect(source).toContain('border-primary-500 text-primary-600')
+  it('draws the Asset page\'s joined tab, not an underlined word', () => {
+    /* This pinned `border-b-2` + `border-primary-500`, which was an UNDERLINE
+       nav. It is replaced rather than deleted: the claim it was making (the
+       active mode is visibly distinct, and the row keeps its icons) is still
+       the right claim, and the markup it named is now the Asset page's --
+       a white tab with a top-and-sides border and `-mb-px`, so the active
+       mode sits on the header's bottom edge and joins the content under it.
+
+       The exact classes are asserted because "looks like the Asset page" is
+       the requirement, and the only way two files look alike is by saying the
+       same thing. The matching strings in AssetTab are checked below. */
+    const at = code.indexOf('<nav className=')
+    const nav = code.slice(at, code.indexOf('</nav>', at))
+
+    expect(nav).toContain('rounded-t-lg')
+    expect(nav).toContain('-mb-px')
+    expect(nav).toContain('border-t border-l border-r border-gray-200')
+    expect(nav, 'the row lost its icons').toContain('<Icon className="h-4 w-4" />')
+    expect(nav, 'still an underline nav').not.toContain('border-b-2')
+  })
+
+  it('is the Asset page\'s nav markup, not a lookalike', () => {
+    /* Two files can only match by saying the same thing, and the way they
+       drift is one of them being restyled alone. These are the exact strings
+       that make the tab a tab in both. */
+    const assetTab = readFileSync(resolve(__dirname, '../AssetTab.tsx'), 'utf8')
+    for (const shared of [
+      'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+      'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800',
+    ]) {
+      expect(assetTab, `AssetTab no longer has: ${shared}`).toContain(shared)
+      expect(source, `ThemeTab drifted from: ${shared}`).toContain(shared)
+    }
   })
 
   it('says which mode is current to a screen reader, not only in colour', () => {
@@ -300,6 +336,155 @@ describe('the picker reaches every mode with one thumb', () => {
     fireEvent.click(screen.getAllByText('Research')[0])
 
     expect(onChange).toHaveBeenCalledWith('research')
+  })
+})
+
+describe('the page is the same KIND of page as the Asset page', () => {
+  /*
+   * The requirement was "look, feel and functionality must match the Asset
+   * page", and for a long time it did not, however closely the controls
+   * inside it were matched: this was a `space-y-6` stack whose nav and
+   * content lived in a bordered `<Card>`, sitting inside Layout's padded
+   * document. The Asset page is a full-bleed workspace -- a floating identity
+   * band, a sticky header, and ONE scrollport under it.
+   *
+   * These assert the shell, which is the part a reader sees before any
+   * control.
+   */
+  const assetTab = readFileSync(resolve(__dirname, '../AssetTab.tsx'), 'utf8')
+
+  it('opts into the Asset page\'s visual language instead of copying it', () => {
+    /* `ux2-scope` carries the band surface, its hairline and shadow, the ink
+       levels and the strip dividers. Importing it means the two workspaces
+       cannot drift to two palettes; a hand-copied hex would. */
+    expect(source).toContain("import '../asset/asset-ux2.css'")
+    expect(source).toContain('ux2-scope')
+    expect(assetTab, 'AssetTab stopped using the scope').toContain('ux2-scope')
+  })
+
+  it('is a full-bleed workspace, not a card in a padded document', () => {
+    expect(code, 'the nav and content are back inside a Card').not.toMatch(/<Card padding="none">/)
+    expect(code).toContain('flex flex-col bg-gray-50')
+    expect(code, 'no sticky header').toContain('sticky top-0 z-10')
+    expect(code, 'no single scrollport').toContain('flex-1 overflow-auto')
+  })
+
+  it('cancels Layout\'s padding per breakpoint, not with the Asset page\'s flat pull', () => {
+    /* Layout gives a non-full-width tab `px-3 py-4 sm:px-6 sm:py-6 lg:px-8`.
+       The Asset page cancels it with a flat `-mx-8 -my-6`, which over-pulls
+       by 20px at phone width -- it gets away with that because a separate
+       mobile shell takes over there, and this page has none. */
+    expect(code).toContain('-mx-3 -my-4 sm:-mx-6 sm:-my-6 lg:-mx-8')
+    expect(code, 'the Asset page\'s flat pull would clip the phone').not.toContain('-mx-8 -my-6')
+  })
+
+  it('floats the identity band over the content, meeting the tab bar', () => {
+    // -mt-4 pulls the band up over the sticky header's pt-4, so there is no
+    // white gutter between the band and the tabs. Same trick, same reason.
+    expect(code).toContain('ux2-band')
+    expect(code).toContain('-mt-4')
+
+    // The Asset page draws its band in AssetWorkspaceHeader, not AssetTab.
+    const assetBand = readFileSync(
+      resolve(__dirname, '../../asset/AssetWorkspaceHeader.tsx'), 'utf8',
+    )
+    expect(assetBand, 'AssetWorkspaceHeader stopped doing this').toContain('ux2-band -mx-8 -mt-4')
+  })
+
+  it('carries a context strip, collapsible from inside the band', () => {
+    expect(code).toContain('<ThemeContextStrip')
+    expect(code).toContain('headerCollapsed')
+    // Collapsed hides the strip and keeps identity, actions and the tabs.
+    expect(code).toContain('{!headerCollapsed && (')
+  })
+
+  it('has strip cells that name a fact, never a page', () => {
+    /* The Asset strip's own comment records what the other way costs: it used
+       to hand over a sub-page, which is how its Research cells landed
+       wherever Research was last scrolled to. A cell here returns a mode and
+       optionally a read mode; the page resolves it. */
+    const strip = readFileSync(resolve(__dirname, '../../themes/ThemeContextStrip.tsx'), 'utf8')
+    expect(strip).toContain('onJump: (jump: ThemeStripJump) => void')
+    expect(strip, 'a cell is setting page state itself').not.toContain('setActiveMode')
+  })
+
+  it('adds no query path of its own for the strip', () => {
+    /* Every cell reads a hook some mode of this page already calls, under the
+       same key, so one cache entry serves both and the RLS boundary is the
+       one those modes already rely on. A fresh query here would be a second
+       entry free to disagree with the surface it summarises. */
+    const strip = readFileSync(resolve(__dirname, '../../themes/ThemeContextStrip.tsx'), 'utf8')
+    expect(strip, 'the strip is querying directly').not.toContain("from('")
+    for (const hook of ['useThemeWorkflows', 'useThemeContributionsV2', 'useHoldingsForAssets']) {
+      expect(strip, `strip does not read ${hook}`).toContain(hook)
+    }
+  })
+})
+
+describe('the Research bar matches the Asset page\'s', () => {
+  const research = readFileSync(
+    resolve(__dirname, '../../themes/research/ThemeResearchTab.tsx'), 'utf8',
+  )
+  /* Commentary stripped for the label checks. A note explaining that "Our
+     View" was retired contains the string it retired, so prose would satisfy
+     an assertion about what the UI says -- the same trap the suites at the
+     top of this file strip for. */
+  const researchCode = research
+    .split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+  const assetTab = readFileSync(resolve(__dirname, '../AssetTab.tsx'), 'utf8')
+
+  it('is page chrome, not the first item of content', () => {
+    /* It was a rounded, bordered grey card inside the pane. The Asset page's
+       equivalent is a full-width band on the page surface with a bottom
+       hairline, and that is what makes it read as chrome. */
+    expect(research, 'the bar is still a card').not.toContain('rounded-lg bg-gray-50 border border-gray-200 px-3 py-2')
+    expect(research).toContain('border-b border-gray-200')
+    expect(research, 'the bar scrolls away down a long case').toContain('sticky top-0')
+  })
+
+  it('offers the Asset page\'s two perspectives, by its names', () => {
+    /* "Our View" was one label doing two jobs -- the firm's view AND not
+       yours -- and the reader's own case had no pill, only a name among the
+       contributors. "Firm" is also the word the product uses for this scope:
+       visibility is team | division | firm, so "Team" or "Our" would name the
+       narrowest while showing the widest. */
+    expect(researchCode).toContain('My Research')
+    expect(researchCode).toContain('Firm')
+    expect(researchCode, '"Our View" is back').not.toContain('Our View')
+
+    expect(assetTab, 'AssetTab renamed its perspectives').toContain('My Research')
+  })
+
+  it('splits the reader out of the contributor list, as the Asset bar does', () => {
+    // One of these is editable and four are not; that asymmetry is the point.
+    expect(research).toContain('selfAnalyst')
+    expect(research).toContain('otherAnalysts')
+  })
+
+  it('separates whose-view from how-to-read with one divider', () => {
+    const shared = 'mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700'
+    expect(research).toContain(shared)
+    expect(assetTab, 'AssetTab lost its divider').toContain(shared)
+  })
+
+  it('shows read-mode labels from xl, keeping icons below it', () => {
+    // A narrow desktop keeps three compact icons with titles intact rather
+    // than wrapping the bar. Same breakpoint as the Asset page.
+    expect(research).toContain('hidden xl:inline')
+    expect(research).toContain('title={label}')
+    expect(assetTab).toContain('hidden xl:inline')
+  })
+
+  it('puts the one-shot action behind the Asset page\'s own overflow menu', () => {
+    /* "Manage" was an outlined button at the same weight as the controls that
+       decide how the case is read. The menu is imported, not reimplemented:
+       focus management, Escape, outside click and arrow keys are solved
+       there, and a copy would be a second set of those bugs. */
+    expect(research).toContain("import { ResearchToolbarMenu } from '../../asset/ResearchToolbarMenu'")
+    expect(research).toContain('<ResearchToolbarMenu')
+    expect(research).toContain("label: 'Customize fields'")
+    expect(research, 'the outlined Manage button is back').not.toMatch(/aria-label="Manage fields"/)
   })
 })
 

@@ -1,11 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { useIsMobile } from '../../../hooks/useMediaQuery'
+// `Star` marked the reader's own pill among the contributors; "My Research"
+// is its own perspective now, so there is nothing to mark. `UserPlus` was
+// already unused before this change.
 import {
-  Settings2, Users, Layers, History as HistoryIcon, Link2, Star, UserPlus,
+  Settings2, Users, Layers, History as HistoryIcon, Link2,
 } from 'lucide-react'
 import type { ThemeReadMode } from '../../../lib/theme-workspace/modes'
-import { Button } from '../../ui/Button'
+// `Button` went with the outlined "Manage" control, which is now a menu item.
+import { ResearchToolbarMenu } from '../../asset/ResearchToolbarMenu'
 import {
   ThemeContributionSection,
   type ThemeResearchActiveTab,
@@ -115,6 +119,13 @@ export function ThemeResearchTab({
     return list
   }, [contributors, user?.id])
 
+  /* Split so the bar can offer "My Research" as its own perspective rather
+     than leaving the reader's own case as a name among the contributors. The
+     Asset page's bar is built the same way, and the asymmetry is the point:
+     one of these is editable and the other four are not. */
+  const selfAnalyst = useMemo(() => analysts.find(a => a.isSelf) ?? null, [analysts])
+  const otherAnalysts = useMemo(() => analysts.filter(a => !a.isSelf), [analysts])
+
   // If selected analyst disappears, snap back to aggregated
   useEffect(() => {
     if (viewFilter === 'aggregated') return
@@ -134,9 +145,24 @@ export function ThemeResearchTab({
           unlabelled icons: a stack, a sparkle, a clock and a chain, which is
           not a legible way to offer Summary, Changes and Links. Both are
           pickers now, and the modes carry their names. */}
-      <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
-          {/* Left: analyst pills */}
+      {/* ── The bar, as the Asset page draws it ────────────────────────────
+          It was a rounded, bordered grey card sitting inside the pane. The
+          Asset page's equivalent is a full-width band on the page surface
+          with a bottom hairline, which is what makes it read as page chrome
+          rather than as the first item of content.
+
+          Full-bleed: the negative margins cancel the scrollport's padding,
+          which `ThemeTab` writes per breakpoint. Sticky, so the perspective
+          and read-mode controls stay reachable down a long case -- the Asset
+          page gets that by keeping the bar outside its scrollport; this one
+          is inside the pane that owns it, and `sticky` gets the same result
+          without lifting three controls into the page. */}
+      <div className="-mx-3 sm:-mx-6 lg:-mx-8 -mt-4 mb-3 px-3 sm:px-6 lg:px-8 py-2 sticky top-0 z-[5] bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        {/* flex-wrap lets the perspective (left) and the read/utility controls
+            (right) drop to a second row on narrow widths instead of
+            overflowing, which is what the Asset page's bar does. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          {/* Left: whose research */}
           <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-none flex-wrap">
             <span className="hidden sm:inline text-xs text-gray-400 uppercase tracking-wide font-medium">View</span>
             {isMobileViewport ? (
@@ -146,16 +172,37 @@ export function ThemeResearchTab({
                 onChange={setViewFilter}
                 className="min-w-0"
                 options={[
-                  { value: 'aggregated', label: 'Our View', hint: 'All contributors' },
-                  ...analysts.map(a => ({
-                    value: a.id,
-                    label: a.name,
-                    hint: a.isSelf ? 'You' : undefined,
-                  })),
+                  ...(selfAnalyst ? [{ value: selfAnalyst.id, label: 'My Research' }] : []),
+                  { value: 'aggregated', label: 'Firm', hint: 'All contributors' },
+                  ...otherAnalysts.map(a => ({ value: a.id, label: a.name })),
                 ]}
               />
             ) : analysts.length <= 5 ? (
               <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 dark:bg-gray-800">
+                {/* My Research first, then Firm, then everyone else -- the
+                    Asset page's order and the Asset page's two names.
+
+                    "Our View" is gone. It was one label doing two jobs: it
+                    had to mean both "the firm's view" and "not yours", and
+                    the reader's OWN view had no pill of its own, only a name
+                    among the analysts. Two explicit perspectives is what the
+                    asset case settled on, and "Firm" is the word the rest of
+                    the product uses for this scope -- visibility is
+                    team | division | firm, so "Team" or "Our" would name the
+                    narrowest while showing the widest. */}
+                {selfAnalyst && (
+                  <button
+                    onClick={() => setViewFilter(selfAnalyst.id)}
+                    className={clsx(
+                      'px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
+                      viewFilter === selfAnalyst.id
+                        ? 'bg-primary-600 text-white shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
+                    )}
+                  >
+                    My Research
+                  </button>
+                )}
                 <button
                   onClick={() => setViewFilter('aggregated')}
                   className={clsx(
@@ -166,9 +213,9 @@ export function ThemeResearchTab({
                   )}
                 >
                   <Users className="w-3.5 h-3.5" />
-                  Our View
+                  Firm
                 </button>
-                {analysts.map(a => (
+                {otherAnalysts.map(a => (
                   <button
                     key={a.id}
                     onClick={() => setViewFilter(a.id)}
@@ -176,10 +223,9 @@ export function ThemeResearchTab({
                       'px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
                       viewFilter === a.id
                         ? 'bg-primary-600 text-white shadow-sm'
-                        : a.isSelf ? 'text-primary-600 hover:text-primary-700' : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
+                        : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                     )}
                   >
-                    {a.isSelf && viewFilter !== a.id && <Star className="w-3 h-3 text-primary-500" />}
                     {a.shortName}
                   </button>
                 ))}
@@ -190,15 +236,18 @@ export function ThemeResearchTab({
                 onChange={(e) => setViewFilter(e.target.value)}
                 className="w-full sm:w-auto px-3 h-9 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:text-gray-300 dark:bg-gray-800"
               >
-                <option value="aggregated">Our View (All Contributors)</option>
-                {analysts.map(a => (
+                {/* The same two names as the pills above; this is the other
+                    arm of one control, so they cannot differ. */}
+                {selfAnalyst && <option value={selfAnalyst.id}>My Research</option>}
+                <option value="aggregated">Firm</option>
+                {otherAnalysts.map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
             )}
           </div>
 
-          {/* Right: view mode + manage */}
+          {/* Right: how to read it, then the overflow */}
           <div className="flex items-center gap-2 min-w-0">
             {isMobileViewport ? (
               <OptionPicker
@@ -214,46 +263,82 @@ export function ThemeResearchTab({
                 ]}
               />
             ) : (
-              <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
-                {/* Three, named for what is being read rather than for the
-                    renderer: "All sections" described the renderer and
-                    "Links" described the markup. The asset page made the
-                    same two renames. "Summary" is gone from this row and is
-                    a band of the aggregated perspective instead. */}
-                {([
-                  { mode: 'thesis',  label: 'Thesis',  Icon: Layers,      active: 'text-primary-600' },
-                  { mode: 'changes', label: 'Changes', Icon: HistoryIcon, active: 'text-primary-600' },
-                  { mode: 'notes',   label: 'References', Icon: Link2,     active: 'text-primary-600' },
-                ] as const).map(({ mode, label, Icon, active }) => (
-                  <button
-                    key={mode}
-                    onClick={() => setViewMode(mode)}
-                    className={clsx(
-                      'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors',
-                      viewMode === mode
-                        ? clsx('bg-white shadow-sm dark:bg-gray-800', active)
-                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400',
-                    )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {label}
-                    {mode === 'notes' && referenceCount > 0 && (
-                      <span className="tabular-nums text-[10px] text-gray-400">{referenceCount}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
+              <>
+                {/* One divider, not two, and in the same place the Asset page
+                    puts it: what is to the left is status about THIS view,
+                    what is to the right is how to read it. That is one
+                    boundary. */}
+                <div className="mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
+                <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
+                  {/* Three, named for what is being read rather than for the
+                      renderer: "All sections" described the renderer and
+                      "Links" described the markup. The asset page made the
+                      same two renames. "Summary" is gone from this row and is
+                      a band of the aggregated perspective instead.
+
+                      Sizing and the label breakpoint are the Asset page's:
+                      `px-2 py-1.5 text-sm`, and the words appear from `xl` so
+                      a narrow desktop keeps three compact icons with their
+                      titles intact rather than wrapping the bar. */}
+                  {([
+                    { mode: 'thesis',  label: 'Thesis',     Icon: Layers },
+                    { mode: 'changes', label: 'Changes',    Icon: HistoryIcon },
+                    { mode: 'notes',   label: 'References', Icon: Link2 },
+                  ] as const).map(({ mode, label, Icon }) => (
+                    <button
+                      key={mode}
+                      onClick={() => setViewMode(mode)}
+                      title={label}
+                      className={clsx(
+                        'relative flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+                        viewMode === mode
+                          ? 'bg-white shadow-sm text-primary-600 dark:bg-gray-700 dark:text-primary-400'
+                          : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400',
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span className="hidden xl:inline">{label}</span>
+                      {mode === 'notes' && referenceCount > 0 && (
+                        /* The Asset page's count: a filled blue pill, not a
+                           grey number, so it reads as a quantity of things
+                           waiting rather than as part of the label. */
+                        <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
+                          {referenceCount}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowManager(true)}
+            {/*
+              The overflow.
+
+              "Manage" was an outlined button on the bar, at the same visual
+              weight as the controls that decide how the case is read, for a
+              one-shot action nobody uses twice in a sitting. Behind `⋯` it
+              costs no permanent width and its label is spelled out instead of
+              living in an aria-label.
+
+              It is the Asset page's own `ResearchToolbarMenu`, imported
+              rather than reimplemented: focus management, Escape, outside
+              click and arrow-key movement are already solved there, and a
+              second copy would be a second set of those bugs. Export and
+              Arrange layout are absent because the theme case has neither
+              yet, and the menu hides an unavailable item rather than
+              advertising it disabled.
+            */}
+            <ResearchToolbarMenu
               className="shrink-0"
-              aria-label="Manage fields"
-            >
-              <Settings2 className="w-4 h-4 sm:mr-1" />
-              <span className="hidden sm:inline">Manage</span>
-            </Button>
+              items={[
+                {
+                  key: 'customize',
+                  label: 'Customize fields',
+                  icon: Settings2,
+                  onSelect: () => setShowManager(true),
+                },
+              ]}
+            />
           </div>
         </div>
       </div>
