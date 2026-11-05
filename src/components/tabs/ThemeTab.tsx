@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { BarChart3, FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, X, Search, Trash2, MoreVertical, Archive, ArchiveRestore, MessageSquare, Repeat, ChevronDown } from 'lucide-react'
+// BarChart3 and MessageSquare went with the Chart and Discussion tabs: the
+// chart is a band of Overview and needs no nav icon, and Discussion is gone.
+import { FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, X, Search, Trash2, MoreVertical, Archive, ArchiveRestore, Repeat, ChevronDown } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -8,7 +10,6 @@ import { Badge } from '../ui/Badge'
 import { ThemeNoteEditor } from '../notes/ThemeNoteEditorUnified'
 import { AddAssetToThemeModal } from '../themes/AddAssetToThemeModal'
 import { ThemeIndexChart } from '../themes/ThemeIndexChart'
-import { ThemeDiscussionPanel } from '../themes/ThemeDiscussionPanel'
 import { ThemeResearchTab } from '../themes/research/ThemeResearchTab'
 import { ThemeProcessesPanel } from '../themes/processes/ThemeProcessesPanel'
 import { useHeldAssetIds } from '../../hooks/useHeldAssetIds'
@@ -22,6 +23,10 @@ import { formatDistanceToNow } from 'date-fns'
 import { TabStateManager } from '../../lib/tabStateManager'
 import { getContentPreview } from '../../utils/stripHtml'
 import { OptionPicker } from '../ui/OptionPicker'
+import {
+  THEME_MODES, THEME_MODE_LABEL, themeModeOf, themeReadModeOf, isThemeReadMode,
+  type ThemeMode, type ThemeReadMode,
+} from '../../lib/theme-workspace/modes'
 
 type ThemeLifecycleStatus = 'emerging' | 'active' | 'playing_out' | 'played_out' | 'invalidated'
 
@@ -78,27 +83,85 @@ interface ThemeTabProps {
  * one and not the other — the failure Portfolio's nine tabs were fixed for, one
  * surface over.
  */
-type ThemeSection = 'thesis' | 'chart' | 'related-assets' | 'notes' | 'discussion' | 'processes'
+/*
+ * ── Six peer tabs became three modes ──────────────────────────────────────
+ *
+ * This page had Thesis, Chart, Related Assets, Notes, Discussion and Process
+ * side by side, which is the shape the Asset page was deliberately moved off:
+ * six peers make the reader know which FEATURE holds what they want. The
+ * modes ask whether they are orienting, reading, or working.
+ *
+ * The mapping, the migration off the old persisted values and the reasoning
+ * for three modes rather than four all live in `lib/theme-workspace/modes.ts`,
+ * next to the Asset page's equivalent, because the point of the change is
+ * that the two pages stop being different products.
+ *
+ * What happened to each old tab:
+ *
+ *   Thesis          -> Research, as the first read mode
+ *   Notes           -> Research, as a read mode (the Asset page's
+ *                      "Key references"), not a tab of its own
+ *   Chart           -> a band of Overview: it answers "what is this theme"
+ *   Related Assets  -> a band of Overview, same reason. Kept as the theme's
+ *                      own membership (`theme_assets`) rather than converted
+ *                      to an asset list, which would move org-owned data into
+ *                      `asset_lists` -- documented as NOT org-scoped by
+ *                      design -- for no gain at 20 links across 51 themes.
+ *   Discussion      -> removed. `theme_discussions` held ZERO posts across
+ *                      all 51 themes, so this orphaned nothing.
+ *   Process         -> Work
+ *
+ * The nav is driven off THEME_MODES rather than hand-written buttons. It used
+ * to be six literal <button>s on desktop while the phone picker walked a
+ * table, which is the defect the old note here described and then shipped:
+ * two controls, one list, free to disagree.
+ */
+const MODE_ICON: Record<ThemeMode, typeof FileText> = {
+  overview: TrendingUp,
+  research: FileText,
+  work: Repeat,
+}
 
-const THEME_SECTIONS: { key: ThemeSection; label: string }[] = [
-  { key: 'thesis', label: 'Thesis' },
-  { key: 'chart', label: 'Chart' },
-  { key: 'related-assets', label: 'Related Assets' },
-  { key: 'notes', label: 'Notes' },
-  { key: 'discussion', label: 'Discussion' },
-  { key: 'processes', label: 'Process' },
-]
+/**
+ * The old section key each mode persists itself as.
+ *
+ * One per mode, and each one has to be a key `LEGACY_SECTION_MODE` maps back
+ * to the same mode, or a saved tab reopens somewhere else. The modes test
+ * pins that round trip; this table is the half that lives here because it is
+ * about what this page writes.
+ *
+ * Kept as old keys rather than switching to the mode names so that a build
+ * without this change still reads the state and lands on a real tab.
+ */
+const MODE_LEGACY_KEY: Record<ThemeMode, string> = {
+  overview: 'chart',
+  research: 'thesis',
+  work: 'processes',
+}
 
 export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) {
   const { user } = useAuth()
 
-  // Initialize state from saved tab state
-  const [activeTab, setActiveTab] = useState<ThemeSection>(() => {
-    const savedState = TabStateManager.loadTabState(theme.id)
-    const saved = savedState?.activeTab
-    // Migrate legacy 'outcomes' state to 'thesis'
-    if (saved === 'outcomes') return 'thesis'
-    return saved || 'thesis'
+  /*
+   * A tab persisted before the modes existed holds one of the six old section
+   * keys, so both of these read through the migration rather than trusting
+   * the stored string. `themeModeOf` falls back to Overview for anything it
+   * does not recognise, which is also the right answer for no saved state.
+   *
+   * The read mode is seeded separately because Notes USED to be a tab: a
+   * reader who left the page there has to arrive in Research already on the
+   * notes, or the restructure quietly loses the destination they saved.
+   */
+  const [activeMode, setActiveMode] = useState<ThemeMode>(() =>
+    themeModeOf(TabStateManager.loadTabState(theme.id)?.activeTab),
+  )
+  const [researchRead, setResearchRead] = useState<ThemeReadMode>(() => {
+    const saved = TabStateManager.loadTabState(theme.id)
+    /* Its own key first, then the legacy section, because only a tab saved
+       BEFORE this change can express a read mode through `activeTab` (the
+       Notes tab), and after it the dedicated key is the truth. */
+    if (isThemeReadMode(saved?.themeResearchRead)) return saved.themeResearchRead
+    return themeReadModeOf(saved?.activeTab) ?? 'thesis'
   })
 
   const [showNoteEditor, setShowNoteEditor] = useState(() => {
@@ -118,10 +181,14 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
     setIsTabStateInitialized(true)
   }, [])
 
-  // Handle noteId from navigation (e.g., from dashboard note click)
+  /* Handle noteId from navigation (e.g., from dashboard note click).
+     Notes are a read mode now rather than a tab, so this sets BOTH halves:
+     landing in Research on the thesis would leave the reader looking at the
+     case while the note they clicked sat one control away. */
   useEffect(() => {
     if (theme.noteId && theme.id) {
-      setActiveTab('notes')
+      setActiveMode('research')
+      setResearchRead('notes')
       setShowNoteEditor(true)
       setSelectedNoteId(theme.noteId)
     }
@@ -134,13 +201,27 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
   // Save tab state when it changes
   useEffect(() => {
     if (isTabStateInitialized && theme.id) {
+      /*
+       * Two keys, because the mode and the read mode are two axes.
+       *
+       * `activeTab` keeps carrying an OLD section key, one per mode, so it
+       * still round-trips through `themeModeOf` and a build without this
+       * change reads it and lands somewhere sensible rather than on its
+       * fallback. The read mode goes in its own key.
+       *
+       * Writing the read mode into `activeTab` was the first attempt and was
+       * wrong: 'changes' is not one of the six old sections, so
+       * `themeModeOf('changes')` falls through to 'overview' and a reader who
+       * left the page on the change log came back to the Overview.
+       */
       TabStateManager.saveTabState(theme.id, {
-        activeTab,
+        activeTab: MODE_LEGACY_KEY[activeMode],
+        themeResearchRead: researchRead,
         showNoteEditor,
         selectedNoteId
       })
     }
-  }, [theme.id, activeTab, showNoteEditor, selectedNoteId, isTabStateInitialized])
+  }, [theme.id, activeMode, researchRead, showNoteEditor, selectedNoteId, isTabStateInitialized])
   const [showAddAssetModal, setShowAddAssetModal] = useState(false)
   const [showShareModal, setShowShareModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -614,6 +695,106 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
     return () => document.removeEventListener('mousedown', handleClick)
   }, [showLifecycleDropdown, showMoreMenu, showColorPicker])
 
+  /**
+   * The notes surface, unchanged from when it was its own tab.
+   *
+   * It is built here rather than inline in the JSX because it is no longer a
+   * branch of this component's nav: it is handed to `ThemeResearchTab` as
+   * `notesSlot` and rendered by the read-mode row inside that pane. Keeping
+   * it in this file keeps the note queries, the editor state and the handlers
+   * (`handleNoteClick`, `handleCreateNote`, `handleCloseNoteEditor`) where
+   * they already live, so nothing about how notes behave changed -- only
+   * where the reader finds them.
+   */
+  const notesSurface = showNoteEditor ? (
+    <div className="space-y-4">
+      <div className="flex items-center space-x-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleCloseNoteEditor}
+          className="flex items-center"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Notes
+        </Button>
+      </div>
+      <ThemeNoteEditor
+        themeId={theme.id}
+        themeName={theme.name}
+        selectedNoteId={selectedNoteId ?? undefined}
+        onNoteSelect={handleNoteSelect}
+        onClose={handleCloseNoteEditor}
+      />
+    </div>
+  ) : (
+    <div className="space-y-6">
+      {notes && notes.length > 0 && (
+        <div className="flex items-center justify-between">
+          <Button size="sm" onClick={handleCreateNote}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Note
+          </Button>
+        </div>
+      )}
+      {notes && notes.length > 0 ? (
+        <div className="space-y-4">
+          {notes.map((note) => (
+            <Card
+              key={note.id}
+              padding="sm"
+              className="cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => handleNoteClick(note.id)}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <h4 className="font-semibold text-gray-900 dark:text-white">{note.title}</h4>
+                    {note.note_type && (
+                      <Badge variant="default" size="sm">
+                        {note.note_type}
+                      </Badge>
+                    )}
+                    {note.is_shared && (
+                      <Badge variant="primary" size="sm">
+                        Shared
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600 line-clamp-2 mb-2 dark:text-gray-400">
+                    {getContentPreview(note.content || '', 150)}
+                  </p>
+                  <div className="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
+                    <div className="flex items-center">
+                      <Calendar className="h-3 w-3 mr-1" />
+                      {formatDistanceToNow(new Date(note.updated_at || 0), { addSuffix: true })}
+                    </div>
+                    <div className="flex items-center">
+                      <User className="h-3 w-3 mr-1" />
+                      You
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white">No related notes</h3>
+          <p className="text-gray-500 mb-4 dark:text-gray-400">Create notes to document your research and thoughts about this theme.</p>
+          <Button size="sm" onClick={() => {
+            handleCreateNote()
+          }}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add First Note
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <div className="space-y-6">
       {/* Theme Header */}
@@ -838,19 +1019,18 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
         {/* Tab Navigation */}
         <div className="border-b border-gray-200 dark:border-gray-700">
           {/*
-            Six sections, on a screen that fits two.
+            Three modes, asking one question: am I orienting, reading, or
+            working. This was six peer sections, which asked the reader to
+            know which FEATURE held the thing they wanted.
 
-            The same defect Portfolio had, one surface over: the row is
-            `overflow-x-auto no-scrollbar`, so at 390px most of the sections are
-            off the right edge with the scrollbar that would have hinted at them
-            deliberately hidden, and nothing scrolls the active tab into view.
-            `activeTab` is restored from TabStateManager, so a session that ended
-            on Discussion or Process reopened showing a nav whose highlighted
-            item was off-screen.
+            The phone picker stays. Three fit a 390px row, so overflow is no
+            longer the reason for it, but it is the accepted treatment on this
+            and on Portfolio, and a picker that names the current mode in
+            words beats three truncated icons. Desktop keeps the tab row.
 
-            The treatment is the accepted one, not a second Theme-only
-            primitive: OptionPicker names the current section, lists all six in
-            a bottom sheet, and cannot overflow. Desktop keeps its tab row.
+            The row is still `overflow-x-auto no-scrollbar`. That was the
+            defect when six items could not fit; with three it cannot trigger,
+            and the class is left rather than churned.
           */}
           {isMobileViewport ? (
             <div className="flex items-center px-3 py-1.5">
@@ -858,21 +1038,22 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
 
                   It was `w-full`, which stretched a 28px control across the
                   whole width and read as a large empty dropdown sitting over
-                  the six theme sections — a permanent band that looked like it cost more than
-                  it did. Compact, with the word "Section" dimmed in front of
+                  the theme's modes, a permanent band that looked like it cost
+                  more than it did. Compact, with "Section" dimmed in front of
                   the current one, it reads as a label you can change rather
                   than an empty control. */}
               <OptionPicker
                 label="Theme section"
                 prefix="Section"
-                value={activeTab}
-                onChange={setActiveTab}
-                options={THEME_SECTIONS.map(({ key, label }) => ({
-                  value: key,
-                  label,
-                  // The one count the desktop row carries, kept rather than
-                  // dropped on the phone.
-                  count: key === 'related-assets' && relatedAssets && relatedAssets.length > 0
+                value={activeMode}
+                onChange={setActiveMode}
+                options={THEME_MODES.map(mode => ({
+                  value: mode,
+                  label: THEME_MODE_LABEL[mode],
+                  /* The one count the desktop row carries, kept rather than
+                     dropped on the phone. It moved with Related Assets, which
+                     is now a band of Overview. */
+                  count: mode === 'overview' && relatedAssets && relatedAssets.length > 0
                     ? relatedAssets.length
                     : undefined,
                 }))}
@@ -880,108 +1061,71 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             </div>
           ) : (
           <nav className="flex gap-4 sm:gap-8 px-3 sm:px-6 overflow-x-auto no-scrollbar" aria-label="Tabs">
-            <button
-              onClick={() => setActiveTab('thesis')}
-              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'thesis'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <FileText className="h-4 w-4" />
-                <span>Thesis</span>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('chart')}
-              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'chart'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <BarChart3 className="h-4 w-4" />
-                <span>Chart</span>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('related-assets')}
-              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'related-assets'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <TrendingUp className="h-4 w-4" />
-                <span>Related Assets</span>
-                {relatedAssets && relatedAssets.length > 0 && (
-                  <Badge variant="default" size="sm">
-                    {relatedAssets.length}
-                  </Badge>
-                )}
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('notes')}
-              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'notes'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <FileText className="h-4 w-4" />
-                <span>Notes</span>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('discussion')}
-              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'discussion'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <MessageSquare className="h-4 w-4" />
-                <span>Discussion</span>
-              </div>
-            </button>
-            <button
-              onClick={() => setActiveTab('processes')}
-              className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                activeTab === 'processes'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
-              }`}
-            >
-              <div className="flex items-center space-x-2">
-                <Repeat className="h-4 w-4" />
-                <span>Process</span>
-              </div>
-            </button>
+            {/* One list, both controls. The six literal buttons that stood
+                here could disagree with the phone picker beside them, which
+                is exactly what the note above this nav warned about and then
+                did anyway. Three modes also fit a 390px screen, so the
+                overflow the picker exists for is close to moot. */}
+            {THEME_MODES.map(mode => {
+              const Icon = MODE_ICON[mode]
+              return (
+                <button
+                  key={mode}
+                  onClick={() => setActiveMode(mode)}
+                  aria-current={activeMode === mode ? 'page' : undefined}
+                  className={`shrink-0 whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                    activeMode === mode
+                      ? 'border-primary-500 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:hover:text-gray-200 dark:text-gray-400'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2">
+                    <Icon className="h-4 w-4" />
+                    <span>{THEME_MODE_LABEL[mode]}</span>
+                    {mode === 'overview' && relatedAssets && relatedAssets.length > 0 && (
+                      <Badge variant="default" size="sm">
+                        {relatedAssets.length}
+                      </Badge>
+                    )}
+                  </div>
+                </button>
+              )
+            })}
           </nav>
           )}
         </div>
 
         {/* Tab Content */}
         <div className="p-3 sm:p-6">
-          {activeTab === 'thesis' && (
-            <ThemeResearchTab themeId={theme.id} themeIsPublic={!!theme.is_public} />
-          )}
-
-          {activeTab === 'chart' && (
-            <ThemeIndexChart
-              symbols={themeAssets.map((a: any) => a.symbol).filter(Boolean)}
-              themeName={theme.name}
+          {activeMode === 'research' && (
+            <ThemeResearchTab
+              themeId={theme.id}
+              themeIsPublic={!!theme.is_public}
+              /* Lifted out of the pane so the page can land on a read mode:
+                 a note opened from the dashboard, or a tab saved on the old
+                 Notes section, both have to arrive already on the notes. */
+              readMode={researchRead}
+              onReadModeChange={setResearchRead}
+              notesSlot={notesSurface}
+              notesCount={notes?.length ?? 0}
             />
           )}
 
-          {activeTab === 'related-assets' && (
+          {/* ── Overview: what is this theme, and what is in it ──────────
+              The index chart and the membership were tabs of their own and
+              are bands here. Both answer the orienting question, and neither
+              was worth a trip of its own: the chart is one chart, and
+              `theme_assets` holds 20 rows across all 51 themes.
+
+              The chart is first because it is the theme's state, and the
+              membership below it is what that state is computed FROM: the
+              chart indexes exactly these symbols. */}
+          {activeMode === 'overview' && (
             <div className="space-y-8">
+              <ThemeIndexChart
+                symbols={themeAssets.map((a: any) => a.symbol).filter(Boolean)}
+                themeName={theme.name}
+              />
               {(!relatedAssets || themeAssets.length === 0) ? (
                 <div className="text-center py-12">
                   <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -1081,106 +1225,18 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             </div>
           )}
 
-          {activeTab === 'notes' && (
-            showNoteEditor ? (
-              <div className="space-y-4">
-                <div className="flex items-center space-x-3">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleCloseNoteEditor}
-                    className="flex items-center"
-                  >
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Back to Notes
-                  </Button>
-                </div>
-                <ThemeNoteEditor
-                  themeId={theme.id}
-                  themeName={theme.name}
-                  selectedNoteId={selectedNoteId ?? undefined}
-                  onNoteSelect={handleNoteSelect}
-                  onClose={handleCloseNoteEditor}
-                />
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {notes && notes.length > 0 && (
-                  <div className="flex items-center justify-between">
-                    <Button size="sm" onClick={handleCreateNote}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Note
-                    </Button>
-                  </div>
-                )}
+          {/* Notes are not a branch here any more. The surface is built once
+              as `notesSurface` above and handed to the Research pane as
+              `notesSlot`, because the read-mode row that reveals it lives
+              inside that pane. */}
 
-                {notes && notes.length > 0 ? (
-                  <div className="space-y-4">
-                    {notes.map((note) => (
-                      <Card
-                        key={note.id}
-                        padding="sm"
-                        className="cursor-pointer hover:shadow-md transition-shadow"
-                        onClick={() => handleNoteClick(note.id)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-2 mb-2">
-                              <h4 className="font-semibold text-gray-900 dark:text-white">{note.title}</h4>
-                              {note.note_type && (
-                                <Badge variant="default" size="sm">
-                                  {note.note_type}
-                                </Badge>
-                              )}
-                              {note.is_shared && (
-                                <Badge variant="primary" size="sm">
-                                  Shared
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="text-sm text-gray-600 line-clamp-2 mb-2 dark:text-gray-400">
-                              {getContentPreview(note.content || '', 150)}
-                            </p>
-                            <div className="flex items-center space-x-4 text-xs text-gray-500 dark:text-gray-400">
-                              <div className="flex items-center">
-                                <Calendar className="h-3 w-3 mr-1" />
-                                {formatDistanceToNow(new Date(note.updated_at || 0), { addSuffix: true })}
-                              </div>
-                              <div className="flex items-center">
-                                <User className="h-3 w-3 mr-1" />
-                                You
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">No related notes</h3>
-                    <p className="text-gray-500 mb-4 dark:text-gray-400">Create notes to document your research and thoughts about this theme.</p>
-                    <Button size="sm" onClick={() => {
-                      handleCreateNote()
-                    }}>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add First Note
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )
-          )}
-
-          {activeTab === 'discussion' && (
-            <ThemeDiscussionPanel
-              themeId={theme.id}
-              themeIsPublic={!!theme.is_public}
-            />
-          )}
-
-          {activeTab === 'processes' && (
+          {/* Discussion was a seventh surface for talking about a theme, and
+              `theme_discussions` held ZERO posts across all 51 themes, so
+              nothing is orphaned by removing the way in. The table, its RLS
+              policies, the hook and `ThemeDiscussionPanel` are all left on
+              disk untouched: deleting them is a separate decision, and this
+              change is about the page's shape. */}
+          {activeMode === 'work' && (
             <ThemeProcessesPanel themeId={theme.id} />
           )}
 

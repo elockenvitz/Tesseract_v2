@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { useIsMobile } from '../../../hooks/useMediaQuery'
 import {
-  Settings2, Users, Layers, Sparkles, History as HistoryIcon, Link2, Star, UserPlus,
+  Settings2, Users, Layers, History as HistoryIcon, Link2, Star, UserPlus,
 } from 'lucide-react'
+import type { ThemeReadMode } from '../../../lib/theme-workspace/modes'
 import { Button } from '../../ui/Button'
 import {
   ThemeContributionSection,
@@ -24,9 +25,36 @@ import { useAuth } from '../../../hooks/useAuth'
 interface ThemeResearchTabProps {
   themeId: string
   themeIsPublic: boolean
+  /**
+   * Which read mode is open, owned by `ThemeTab`.
+   *
+   * Lifted out of here because the page has to be able to LAND on one: a note
+   * opened from the dashboard, and a tab persisted on the old Notes section,
+   * both arrive asking for the notes. Local state could not be told, so both
+   * landed on the thesis with the thing they asked for one control away.
+   */
+  readMode: ThemeReadMode
+  onReadModeChange: (next: ThemeReadMode) => void
+  /**
+   * The theme's notes, rendered under References beneath the links.
+   *
+   * A slot rather than a component reference because the notes surface
+   * already exists in `ThemeTab` and carries its own editor state
+   * (`showNoteEditor`, `selectedNoteId`, the dashboard deep link). Passing it
+   * in moves where the reader finds it without rebuilding it, and without
+   * this pane having to own note state it would then have to keep in sync.
+   */
+  notesSlot: React.ReactNode
+  /**
+   * How many notes `notesSlot` holds, for the count in the read-mode row.
+   *
+   * Passed in rather than counted here for the same reason as the slot: the
+   * query lives in `ThemeTab`. Without it the count would say "links" while
+   * the surface below showed links AND notes, which is the kind of number
+   * that quietly stops matching what it is next to.
+   */
+  notesCount: number
 }
-
-type ThesisViewMode = 'all' | 'summary' | 'history' | 'references'
 
 function tabLabel(author: { first_name: string | null; last_name: string | null; email: string | null } | null | undefined, fallback = 'User'): string {
   if (!author) return fallback
@@ -41,18 +69,30 @@ function shortName(author: { first_name: string | null; last_name: string | null
   return author.first_name || author.email?.split('@')[0] || fallback
 }
 
-export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabProps) {
+export function ThemeResearchTab({
+  themeId, themeIsPublic, readMode, onReadModeChange, notesSlot, notesCount,
+}: ThemeResearchTabProps) {
   const { user } = useAuth()
   const { layout, isLoading: layoutLoading } = useThemeResearchLayout()
   const { contributors, isLoading: contribsLoading } = useThemeContributionsV2(themeId)
   const { references } = useThemeKeyReferences(themeId)
+  /* References holds two kinds of thing now: the theme's links and the
+     theme's notes. The count has to be both, or it describes half of what
+     the button opens. */
+  const referenceCount = references.length + notesCount
   const [showManager, setShowManager] = useState(false)
 
   // One control naming the current view, as on the asset case — a row of
   // analyst pills does not survive 390px.
   const isMobileViewport = useIsMobile()
   const [viewFilter, setViewFilter] = useState<ThemeResearchActiveTab>('aggregated')
-  const [viewMode, setViewMode] = useState<ThesisViewMode>('all')
+  /* `viewMode` was local state here with four values, all / summary / history
+     / references. It is now the page's `readMode` with three, because
+     "Summary" merged into the aggregated perspective the same way the asset
+     page's "AI summary" merged into Firm: both answered "what does the desk
+     think" from the same contributions, one on each axis. */
+  const viewMode = readMode
+  const setViewMode = onReadModeChange
 
   // Analyst pills: contributors + current user if not already there
   const analysts = useMemo(() => {
@@ -168,19 +208,22 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
                 align="right"
                 className="min-w-0"
                 options={[
-                  { value: 'all',        label: 'All sections' },
-                  { value: 'summary',    label: 'Summary' },
-                  { value: 'history',    label: 'Changes' },
-                  { value: 'references', label: 'Links', count: references.length },
+                  { value: 'thesis',  label: 'Thesis' },
+                  { value: 'changes', label: 'Changes' },
+                  { value: 'notes',   label: 'References', count: referenceCount },
                 ]}
               />
             ) : (
               <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
+                {/* Three, named for what is being read rather than for the
+                    renderer: "All sections" described the renderer and
+                    "Links" described the markup. The asset page made the
+                    same two renames. "Summary" is gone from this row and is
+                    a band of the aggregated perspective instead. */}
                 {([
-                  { mode: 'all',        label: 'All',      Icon: Layers,       active: 'text-primary-600' },
-                  { mode: 'summary',    label: 'Summary',  Icon: Sparkles,     active: 'text-purple-600' },
-                  { mode: 'history',    label: 'Changes',  Icon: HistoryIcon,  active: 'text-primary-600' },
-                  { mode: 'references', label: 'Links',    Icon: Link2,        active: 'text-primary-600' },
+                  { mode: 'thesis',  label: 'Thesis',  Icon: Layers,      active: 'text-primary-600' },
+                  { mode: 'changes', label: 'Changes', Icon: HistoryIcon, active: 'text-primary-600' },
+                  { mode: 'notes',   label: 'References', Icon: Link2,     active: 'text-primary-600' },
                 ] as const).map(({ mode, label, Icon, active }) => (
                   <button
                     key={mode}
@@ -194,8 +237,8 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
                   >
                     <Icon className="w-4 h-4" />
                     {label}
-                    {mode === 'references' && references.length > 0 && (
-                      <span className="tabular-nums text-[10px] text-gray-400">{references.length}</span>
+                    {mode === 'notes' && referenceCount > 0 && (
+                      <span className="tabular-nums text-[10px] text-gray-400">{referenceCount}</span>
                     )}
                   </button>
                 ))}
@@ -216,18 +259,40 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
       </div>
 
       {/* Content area */}
-      {viewMode === 'summary' ? (
-        <ThemeThesisSummaryView themeId={themeId} viewFilter={viewFilter} />
-      ) : viewMode === 'history' ? (
+      {viewMode === 'changes' ? (
         <ThemeThesisHistoryView themeId={themeId} viewFilter={viewFilter} />
-      ) : viewMode === 'references' ? (
-        <ThemeKeyReferencesSection themeId={themeId} />
+      ) : viewMode === 'notes' ? (
+        /* ── References: the links AND the notes, in one place ───────────
+           Notes was a seventh tab of the page. It is here rather than beside
+           Thesis because a note and a link are the same kind of thing to a
+           reader: the material the case rests on, as opposed to the case.
+
+           Links first because they are one-line rows and the notes surface
+           below opens a full editor; putting the editor above would push
+           the links off the screen whenever a note was open. */
+        <div className="space-y-8">
+          <ThemeKeyReferencesSection themeId={themeId} />
+          {notesSlot}
+        </div>
       ) : layoutLoading || contribsLoading ? (
         <div className="space-y-3">
           {[...Array(2)].map((_, i) => <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse dark:bg-gray-800" />)}
         </div>
       ) : (
-        layout.map(section => (
+        <>
+          {/* ── The synthesis, which used to be its own read mode ────────
+              "Summary" was a fourth button in the row above, and it answered
+              the same question the aggregated perspective does, from the same
+              contributions. The asset page merged its equivalent into Firm
+              for exactly that reason; this is the same merge.
+
+              Only on the aggregated perspective: a synthesis of one named
+              contributor's own writing, shown to them, is a summary of a
+              thing they are already looking at. */}
+          {viewFilter === 'aggregated' && (
+            <ThemeThesisSummaryView themeId={themeId} viewFilter={viewFilter} />
+          )}
+          {layout.map(section => (
           <section key={section.id} className="space-y-2">
             <div className="px-1">
               <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{section.name}</h2>
@@ -257,7 +322,8 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
               )}
             </div>
           </section>
-        ))
+          ))}
+        </>
       )}
 
       {showManager && (

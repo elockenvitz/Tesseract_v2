@@ -92,6 +92,12 @@ export const GATED_DIRS = [
   // button that appears to do nothing — and the three Work sub-pages share
   // one surface, so a missing anchor is a section nobody can reach.
   'src/lib/asset-workspace',
+  // The Theme page's counterpart of the above, plus the migration off its six
+  // old tabs. Gated for the migration: it only ever runs for a reader
+  // returning to a tab a previous build saved, which is the one path nobody
+  // exercises by hand, and a section that maps to no mode lands them on a
+  // blank page with no error anywhere.
+  'src/lib/theme-workspace',
   // Stage-deadline ownership: the conflict target, the tenant filter path and
   // the query keys. Gated because every failure here is silent — a wrong
   // conflict target duplicates rows instead of replacing one, and a filter

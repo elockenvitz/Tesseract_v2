@@ -1,26 +1,36 @@
 /**
- * The Portfolio nav defect, one surface over.
+ * The Theme page's nav: three modes, one list, both controls.
  *
- * ── The defect this pins ──────────────────────────────────────────────────
+ * ── What this suite used to pin, and why it was rewritten ─────────────────
  *
- * Theme's section nav is the same `overflow-x-auto no-scrollbar` row Portfolio
- * had: at 390px most of the six sections sit off the right edge, the scrollbar
- * that would have hinted at them is deliberately hidden, and nothing scrolls
- * the active tab into view. `ThemeTab` restores `activeTab` from
- * `TabStateManager`, so a session that ended on Discussion or Process reopened
- * showing a nav whose highlighted item was off-screen.
+ * It pinned SIX peer sections -- Thesis, Chart, Related Assets, Notes,
+ * Discussion, Process -- and the `OptionPicker` that was added because six
+ * will not fit a 390px row. Those assertions were correct about the page they
+ * described, and the page no longer exists: Theme now has the Asset page's
+ * modes (Overview / Research / Work), Chart and Related Assets are bands of
+ * Overview, Notes is a read mode of Research, and Discussion is gone.
  *
- * The treatment is the accepted one rather than a second Theme-only primitive:
- * `OptionPicker` on a phone, the tab row untouched on desktop. These assertions
- * are deliberately the same shape as `portfolio-subnav.test`, because the claim
- * is that the two surfaces now behave alike.
+ * So the section-list assertions are replaced rather than deleted, and the
+ * claims that outlived the restructure are kept verbatim in shape: the phone
+ * gets the accepted primitive and not a Theme-only one, both controls read ONE
+ * list, every entry is reachable with one thumb, and the theme's identity is
+ * rendered outside the thing the nav switches.
  *
- * ── Why the section list is tested rather than the whole tab ──────────────
+ * Two claims are new, and they are the ones worth having:
  *
- * `ThemeTab` mounts six sections, Supabase, react-query, a chart and a
- * discussion panel. The claims here are about the SECTION LIST — that it is
- * complete, that every entry is reachable, that both controls read one source —
- * so the list is exercised directly and the wiring asserted against the source.
+ *   - Nothing is unreachable. Six sections became three modes, so every one
+ *     of the six has to be somewhere. The modes table says WHERE a saved tab
+ *     lands; this says the surface is actually rendered.
+ *   - The desktop row is generated from THEME_MODES. It used to be six
+ *     literal <button>s beside a picker that walked a table -- two controls
+ *     over one list, free to disagree, which is what the old comment in the
+ *     file warned about and then shipped.
+ *
+ * ── Why the source is read rather than the tab mounted ───────────────────
+ *
+ * `ThemeTab` mounts Supabase, react-query, a chart, a notes editor and the
+ * research pane. The claims here are about the nav's SHAPE, so the shape is
+ * asserted against the source and the picker itself is rendered for real.
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
@@ -29,36 +39,101 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { OptionPicker } from '../../ui/OptionPicker'
+import { THEME_MODES, THEME_MODE_LABEL } from '../../../lib/theme-workspace/modes'
 
 const source = readFileSync(resolve(__dirname, '../ThemeTab.tsx'), 'utf8')
 const portfolio = readFileSync(resolve(__dirname, '../PortfolioTab.tsx'), 'utf8')
+const research = readFileSync(
+  resolve(__dirname, '../../themes/research/ThemeResearchTab.tsx'), 'utf8',
+)
+
+/** The file with its commentary stripped, so prose cannot satisfy an assertion. */
+const code = source
+  .split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
 
 afterEach(cleanup)
 
-/** The section list as the component declares it. */
-const SECTIONS = [...source.matchAll(/\{ key: '([a-z-]+)', label: '([^']+)' \}/g)]
-  .map(m => ({ key: m[1], label: m[2] }))
-
-describe('the section list is complete and single-sourced', () => {
-  it('declares every section the nav used to hand-write', () => {
-    expect(SECTIONS.map(s => s.key)).toEqual([
-      'thesis', 'chart', 'related-assets', 'notes', 'discussion', 'processes',
-    ])
+describe('the nav is three modes, declared once', () => {
+  it('asks which mode, not which feature', () => {
+    expect(THEME_MODES).toEqual(['overview', 'research', 'work'])
   })
 
-  it('has more sections than a phone row can hold', () => {
-    expect(SECTIONS.length).toBeGreaterThanOrEqual(5)
+  it('types the active-mode state from that list', () => {
+    // It was `useState<ThemeSection>`, a union repeated inline. Two places to
+    // add a mode is how one gets forgotten.
+    expect(code).toContain('useState<ThemeMode>(')
   })
 
-  it('names each one exactly once', () => {
-    const labels = SECTIONS.map(s => s.label)
-    expect(labels).toHaveLength(new Set(labels).size)
+  it('no longer declares a six-entry section table', () => {
+    /* The defect this replaces: `THEME_SECTIONS` held the list the phone
+       picker walked, while the desktop row hand-wrote the same six. */
+    expect(code).not.toContain('THEME_SECTIONS')
+    expect(code).not.toContain('ThemeSection')
+  })
+})
+
+describe('every one of the six old sections still has a surface', () => {
+  /* The modes table says where a SAVED tab lands. This says the thing it
+     lands on is rendered, which is the half a mapping cannot prove. */
+
+  it('renders the chart and the membership inside Overview', () => {
+    const at = code.indexOf("activeMode === 'overview'")
+    expect(at, 'no Overview branch').toBeGreaterThan(-1)
+
+    const branch = code.slice(at, code.indexOf("activeMode === 'work'"))
+    expect(branch, 'the chart tab left no band behind').toContain('<ThemeIndexChart')
+    expect(branch, 'related assets left no band behind').toContain('relatedAssets')
   })
 
-  it('types the active-section state from that same list', () => {
-    // It was a repeated inline union. Two places to add a section is how one
-    // gets forgotten.
-    expect(source).toContain('useState<ThemeSection>(() => {')
+  it('renders the research pane, and hands it the notes', () => {
+    const at = code.indexOf('<ThemeResearchTab')
+    expect(at).toBeGreaterThan(-1)
+
+    const el = code.slice(at, code.indexOf('/>', at))
+    expect(el).toContain('readMode={researchRead}')
+    expect(el).toContain('notesSlot={notesSurface}')
+  })
+
+  it('builds the notes surface once, outside the nav', () => {
+    /* It was a seventh branch of this nav. Built as a value instead, so the
+       editor state and the dashboard deep link stay here while the surface
+       renders inside the pane that owns the control revealing it. */
+    expect(code).toContain('const notesSurface =')
+    expect(code).toContain('<ThemeNoteEditor')
+    expect(code).not.toMatch(/activeMode === 'notes'/)
+  })
+
+  it('renders the notes beneath the links, not instead of them', () => {
+    /* Merging the notes into References must not displace what was already
+       there. Both render, links first. */
+    const at = research.indexOf("viewMode === 'notes'")
+    expect(at).toBeGreaterThan(-1)
+
+    const branch = research.slice(at, at + 1200)
+    const links = branch.indexOf('<ThemeKeyReferencesSection')
+    const notes = branch.indexOf('{notesSlot}')
+    expect(links, 'the links surface was dropped').toBeGreaterThan(-1)
+    expect(notes, 'the notes surface is not rendered').toBeGreaterThan(-1)
+    expect(links).toBeLessThan(notes)
+  })
+
+  it('counts both kinds of thing under References', () => {
+    // `references.length` alone would describe half of what the button opens.
+    expect(research).toContain('references.length + notesCount')
+  })
+
+  it('renders the process panel inside Work', () => {
+    const at = code.indexOf("activeMode === 'work'")
+    expect(code.slice(at, at + 300)).toContain('<ThemeProcessesPanel')
+  })
+
+  it('leaves Discussion with no way in, and nothing else referring to it', () => {
+    /* `theme_discussions` held zero posts across all 51 themes, so removing
+       the way in orphans no content. The table, its policies, the hook and
+       the panel are deliberately still on disk. */
+    expect(code).not.toContain('ThemeDiscussionPanel')
+    expect(code).not.toMatch(/activeMode === 'discussion'/)
   })
 })
 
@@ -67,16 +142,16 @@ describe('the phone gets the accepted picker, not a new primitive', () => {
     const at = source.indexOf('{isMobileViewport ? (')
     expect(at).toBeGreaterThan(0)
 
-    const block = source.slice(at, at + 1000)
+    const block = source.slice(at, at + 1400)
     expect(block).toContain('<OptionPicker')
     expect(block).toContain('label="Theme section"')
   })
 
-  it('offers every section, not a shortened list', () => {
+  it('offers every mode, not a shortened list', () => {
     const at = source.indexOf('<OptionPicker')
     const block = source.slice(at, at + 700)
 
-    expect(block).toContain('options={THEME_SECTIONS.map(')
+    expect(block).toContain('options={THEME_MODES.map(')
     expect(block).not.toContain('.slice(')
     expect(block).not.toContain('.filter(')
   })
@@ -85,13 +160,13 @@ describe('the phone gets the accepted picker, not a new primitive', () => {
     const at = source.indexOf('<OptionPicker')
     const block = source.slice(at, at + 700)
 
-    expect(block).toContain('value={activeTab}')
-    expect(block).toContain('onChange={setActiveTab}')
+    expect(block).toContain('value={activeMode}')
+    expect(block).toContain('onChange={setActiveMode}')
   })
 
   it('keeps the one count the desktop row shows', () => {
     const at = source.indexOf('<OptionPicker')
-    expect(source.slice(at, at + 700)).toContain('relatedAssets.length')
+    expect(source.slice(at, at + 900)).toContain('relatedAssets.length')
   })
 
   it('is the same treatment Portfolio uses, not a second implementation', () => {
@@ -107,19 +182,31 @@ describe('the phone gets the accepted picker, not a new primitive', () => {
   })
 })
 
-describe('the desktop nav is untouched', () => {
-  it('keeps the tab row behind the same branch', () => {
-    expect(source).toContain('<nav className="flex gap-4 sm:gap-8 px-3 sm:px-6 overflow-x-auto no-scrollbar" aria-label="Tabs">')
+describe('the desktop row reads the same list the picker does', () => {
+  it('is generated, not hand-written', () => {
+    const at = code.indexOf('<nav className=')
+    expect(at).toBeGreaterThan(-1)
+
+    const nav = code.slice(at, code.indexOf('</nav>', at))
+    expect(nav, 'the desktop row does not walk THEME_MODES').toContain('THEME_MODES.map(')
+    /* Three modes, one `<button>` in the source. More than one means somebody
+       wrote a mode out by hand again. */
+    expect(nav.match(/<button/g) ?? []).toHaveLength(1)
   })
 
   it('keeps its icons and active underline', () => {
     expect(source).toContain('border-b-2 font-medium text-sm transition-colors')
     expect(source).toContain('border-primary-500 text-primary-600')
   })
+
+  it('says which mode is current to a screen reader, not only in colour', () => {
+    const at = code.indexOf('<nav className=')
+    expect(code.slice(at, code.indexOf('</nav>', at))).toContain('aria-current=')
+  })
 })
 
-describe('the picker reaches every section with one thumb', () => {
-  function view(active = 'thesis') {
+describe('the picker reaches every mode with one thumb', () => {
+  function view(active: string = 'overview') {
     cleanup()
     const onChange = vi.fn()
     render(
@@ -127,46 +214,41 @@ describe('the picker reaches every section with one thumb', () => {
         label="Theme section"
         value={active}
         onChange={onChange}
-        options={SECTIONS.map(s => ({ value: s.key, label: s.label }))}
+        options={THEME_MODES.map(m => ({ value: m, label: THEME_MODE_LABEL[m] }))}
         className="w-full"
       />,
     )
     return { onChange }
   }
 
-  it('names the section you are in without opening anything', () => {
-    view('discussion')
-    expect(screen.getByText('Discussion')).toBeTruthy()
+  it('names the mode you are in without opening anything', () => {
+    view('work')
+    expect(screen.getByText('Work')).toBeTruthy()
   })
 
-  it('names a restored section that used to sit off the right edge', () => {
-    view('processes')
-    expect(screen.getByText('Process')).toBeTruthy()
-  })
-
-  it('lists all six once opened', () => {
+  it('lists all three once opened', () => {
     view()
     fireEvent.click(screen.getByRole('button'))
 
-    for (const s of SECTIONS) {
-      expect(screen.getAllByText(s.label).length).toBeGreaterThan(0)
+    for (const mode of THEME_MODES) {
+      expect(screen.getAllByText(THEME_MODE_LABEL[mode]).length).toBeGreaterThan(0)
     }
   })
 
-  it('switches section on a single tap', () => {
+  it('switches mode on a single tap', () => {
     const { onChange } = view()
     fireEvent.click(screen.getByRole('button'))
 
-    fireEvent.click(screen.getAllByText('Related Assets')[0])
+    fireEvent.click(screen.getAllByText('Research')[0])
 
-    expect(onChange).toHaveBeenCalledWith('related-assets')
+    expect(onChange).toHaveBeenCalledWith('research')
   })
 })
 
 describe('theme identity survives the change', () => {
-  it('leaves the header outside the section container', () => {
+  it('leaves the header outside the mode container', () => {
     // The name and its disclosure are rendered before the Card that holds the
-    // nav, so switching section cannot take the theme's name with it.
+    // nav, so switching mode cannot take the theme's name with it.
     expect(source.indexOf('isMobileViewport ? setShowThemeMeta'))
       .toBeLessThan(source.indexOf('label="Theme section"'))
   })
