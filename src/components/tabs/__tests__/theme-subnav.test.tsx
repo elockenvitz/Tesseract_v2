@@ -54,9 +54,9 @@ const code = source
 
 afterEach(cleanup)
 
-describe('the nav is three modes, declared once', () => {
+describe('the nav is four modes, declared once', () => {
   it('asks which mode, not which feature', () => {
-    expect(THEME_MODES).toEqual(['overview', 'research', 'work'])
+    expect(THEME_MODES).toEqual(['overview', 'assets', 'research', 'work'])
   })
 
   it('types the active-mode state from that list', () => {
@@ -77,13 +77,50 @@ describe('every one of the six old sections still has a surface', () => {
   /* The modes table says where a SAVED tab lands. This says the thing it
      lands on is rendered, which is the half a mapping cannot prove. */
 
-  it('renders the chart and the membership inside Overview', () => {
+  it('renders the chart inside Overview, as one band of a digest', () => {
     const at = code.indexOf("activeMode === 'overview'")
     expect(at, 'no Overview branch').toBeGreaterThan(-1)
 
-    const branch = code.slice(at, code.indexOf("activeMode === 'work'"))
+    const branch = code.slice(at, code.indexOf("activeMode === 'assets'"))
     expect(branch, 'the chart tab left no band behind').toContain('<ThemeIndexChart')
-    expect(branch, 'related assets left no band behind').toContain('relatedAssets')
+    expect(branch, 'no held-positions band').toContain('<ThemeHeldPositions')
+    expect(branch, 'no notes digest').toContain('<ThemeNotesDigest')
+    expect(branch, 'no activity band').toContain('<ThemeActivityFeed')
+  })
+
+  it('keeps the roster out of Overview and in its own mode', () => {
+    /* The regression this pins: the roster was a band of Overview for one
+       commit. It is a working table -- selection, bulk remove, its own Add --
+       and under a chart and two digests it was a surface you scrolled past
+       everything else to reach. */
+    const overview = code.slice(
+      code.indexOf("activeMode === 'overview'"),
+      code.indexOf("activeMode === 'assets'"),
+    )
+    expect(overview, 'the roster table is back in Overview').not.toContain('<AssetTableView')
+    expect(overview, 'Overview is editing the roster').not.toContain('setShowAddAssetModal')
+
+    const assets = code.slice(
+      code.indexOf("activeMode === 'assets'"),
+      code.indexOf("activeMode === 'work'"),
+    )
+    expect(assets, 'the roster has no table').toContain('<AssetTableView')
+    expect(assets, 'the roster lost its Add control').toContain('setShowAddAssetModal')
+  })
+
+  it('reads the notes digest off the page\'s own query, not a second one', () => {
+    /* Two queries for one list is two cache entries free to disagree. The
+       digest takes rows; the Research pane's surface takes the same rows. */
+    const at = code.indexOf('<ThemeNotesDigest')
+    const el = code.slice(at, code.indexOf('/>', at))
+    expect(el).toContain('notes={notes}')
+  })
+
+  it('counts the roster on the mode that holds it', () => {
+    // The count followed the table. A badge on Overview would number a
+    // surface Overview no longer shows.
+    expect(code).toContain("mode === 'assets' && relatedAssets")
+    expect(code).not.toContain("mode === 'overview' && relatedAssets")
   })
 
   it('renders the research pane, and hands it the notes', () => {
@@ -210,7 +247,7 @@ describe('the desktop row reads the same list the picker does', () => {
 
     const nav = code.slice(at, code.indexOf('</nav>', at))
     expect(nav, 'the desktop row does not walk THEME_MODES').toContain('THEME_MODES.map(')
-    /* Three modes, one `<button>` in the source. More than one means somebody
+    /* Four modes, one `<button>` in the source. More than one means somebody
        wrote a mode out by hand again. */
     expect(nav.match(/<button/g) ?? []).toHaveLength(1)
   })
@@ -247,7 +284,7 @@ describe('the picker reaches every mode with one thumb', () => {
     expect(screen.getByText('Work')).toBeTruthy()
   })
 
-  it('lists all three once opened', () => {
+  it('lists every mode once opened', () => {
     view()
     fireEvent.click(screen.getByRole('button'))
 

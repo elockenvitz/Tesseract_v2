@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 // BarChart3 and MessageSquare went with the Chart and Discussion tabs: the
 // chart is a band of Overview and needs no nav icon, and Discussion is gone.
-import { FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, X, Search, Trash2, MoreVertical, Archive, ArchiveRestore, Repeat, ChevronDown } from 'lucide-react'
+import { FileText, TrendingUp, Plus, Calendar, User, ArrowLeft, Share2, Users, X, Search, Trash2, MoreVertical, Archive, ArchiveRestore, Repeat, ChevronDown, Layers } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
@@ -10,6 +10,9 @@ import { Badge } from '../ui/Badge'
 import { ThemeNoteEditor } from '../notes/ThemeNoteEditorUnified'
 import { AddAssetToThemeModal } from '../themes/AddAssetToThemeModal'
 import { ThemeIndexChart } from '../themes/ThemeIndexChart'
+import { ThemeActivityFeed } from '../themes/ThemeActivityFeed'
+import { ThemeHeldPositions } from '../themes/overview/ThemeHeldPositions'
+import { ThemeNotesDigest } from '../themes/overview/ThemeNotesDigest'
 import { ThemeResearchTab } from '../themes/research/ThemeResearchTab'
 import { ThemeProcessesPanel } from '../themes/processes/ThemeProcessesPanel'
 import { useHeldAssetIds } from '../../hooks/useHeldAssetIds'
@@ -118,6 +121,7 @@ interface ThemeTabProps {
  */
 const MODE_ICON: Record<ThemeMode, typeof FileText> = {
   overview: TrendingUp,
+  assets: Layers,
   research: FileText,
   work: Repeat,
 }
@@ -135,6 +139,7 @@ const MODE_ICON: Record<ThemeMode, typeof FileText> = {
  */
 const MODE_LEGACY_KEY: Record<ThemeMode, string> = {
   overview: 'chart',
+  assets: 'related-assets',
   research: 'thesis',
   work: 'processes',
 }
@@ -300,6 +305,15 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
     if (!relatedAssets) return []
     return relatedAssets.map((ta: any) => ta.assets).filter(Boolean)
   }, [relatedAssets])
+
+  /* The roster already knows every symbol, so the Overview's held-positions
+     band is given a lookup rather than issuing its own asset query for names
+     this page has in hand. */
+  const symbolOf = useCallback(
+    (assetId: string): string | null =>
+      themeAssets.find((a: any) => a?.id === assetId)?.symbol ?? null,
+    [themeAssets],
+  )
 
   // Map asset ID to theme_asset ID for removal
   const assetToThemeAssetMap = useMemo(() => {
@@ -1052,8 +1066,8 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                   label: THEME_MODE_LABEL[mode],
                   /* The one count the desktop row carries, kept rather than
                      dropped on the phone. It moved with Related Assets, which
-                     is now a band of Overview. */
-                  count: mode === 'overview' && relatedAssets && relatedAssets.length > 0
+                     is on Assets, which is the mode it counts. */
+                  count: mode === 'assets' && relatedAssets && relatedAssets.length > 0
                     ? relatedAssets.length
                     : undefined,
                 }))}
@@ -1064,7 +1078,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             {/* One list, both controls. The six literal buttons that stood
                 here could disagree with the phone picker beside them, which
                 is exactly what the note above this nav warned about and then
-                did anyway. Three modes also fit a 390px screen, so the
+                did anyway. Four modes still fit a 390px screen, so the
                 overflow the picker exists for is close to moot. */}
             {THEME_MODES.map(mode => {
               const Icon = MODE_ICON[mode]
@@ -1082,7 +1096,7 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                   <div className="flex items-center space-x-2">
                     <Icon className="h-4 w-4" />
                     <span>{THEME_MODE_LABEL[mode]}</span>
-                    {mode === 'overview' && relatedAssets && relatedAssets.length > 0 && (
+                    {mode === 'assets' && relatedAssets && relatedAssets.length > 0 && (
                       <Badge variant="default" size="sm">
                         {relatedAssets.length}
                       </Badge>
@@ -1111,21 +1125,72 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             />
           )}
 
-          {/* ── Overview: what is this theme, and what is in it ──────────
-              The index chart and the membership were tabs of their own and
-              are bands here. Both answer the orienting question, and neither
-              was worth a trip of its own: the chart is one chart, and
-              `theme_assets` holds 20 rows across all 51 themes.
+          {/* ── Overview: where this theme stands ───────────────────────────
+              A digest, and nothing else. Four bands, each a few rows deep,
+              each handing off to the mode that owns the detail:
 
-              The chart is first because it is the theme's state, and the
-              membership below it is what that state is computed FROM: the
-              chart indexes exactly these symbols. */}
+                the index chart       what the theme has done
+                held in portfolios    what the firm has at risk in it
+                notes                 what has been written lately
+                activity              what has happened to it
+
+              The roster is NOT here. It was, for one commit, and it was
+              wrong: a sortable table with selection, bulk remove and its own
+              Add control is a working surface, and stacking it under a chart
+              and two digests made it something you scroll past everything
+              else to reach. It is the Assets mode below.
+
+              Nothing on this page is edited. Every row leaves. Two editable
+              copies of one list is the duplication this restructure exists to
+              reduce, not to spread. */}
           {activeMode === 'overview' && (
             <div className="space-y-8">
               <ThemeIndexChart
                 symbols={themeAssets.map((a: any) => a.symbol).filter(Boolean)}
                 themeName={theme.name}
               />
+
+              <ThemeHeldPositions
+                assetIds={themeAssetIds}
+                symbolOf={symbolOf}
+                onViewAll={() => setActiveMode('assets')}
+              />
+
+              <ThemeNotesDigest
+                /* The same rows the Research pane's notes surface reads. A
+                   second query for them under another key would be a second
+                   cache entry free to disagree with the first. */
+                notes={notes}
+                onOpenNote={(noteId) => {
+                  setActiveMode('research')
+                  setResearchRead('notes')
+                  handleNoteClick(noteId)
+                }}
+                onCreateNote={() => {
+                  setActiveMode('research')
+                  setResearchRead('notes')
+                  handleCreateNote()
+                }}
+                onViewAll={() => {
+                  setActiveMode('research')
+                  setResearchRead('notes')
+                }}
+              />
+
+              {/* Built long before this and rendered nowhere until now:
+                  `theme_activity` carries 53 real rows and had no reader. */}
+              <ThemeActivityFeed themeId={theme.id} />
+            </div>
+          )}
+
+          {/* ── Assets: the names in the theme ─────────────────────────────
+              Unchanged from when it was the Related Assets tab, and from the
+              commit that briefly made it a band of Overview: the same table,
+              the same selection and bulk remove, the same Add control beside
+              the list it adds to rather than in the page header. Only the way
+              in moved. */}
+          {activeMode === 'assets' && (
+            <div className="space-y-8">
               {(!relatedAssets || themeAssets.length === 0) ? (
                 <div className="text-center py-12">
                   <TrendingUp className="h-12 w-12 text-gray-400 mx-auto mb-4" />

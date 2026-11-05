@@ -9,7 +9,8 @@
  * thing they want. The modes ask a different question: am I orienting,
  * reading, or working?
  *
- *   Overview   what is this theme, and what is in it
+ *   Overview   where this theme stands right now
+ *   Assets     the names in it
  *   Research   the written case on it
  *   Work       the processes running against it
  *
@@ -17,37 +18,51 @@
  * follows its reasoning deliberately, because the point of the change is that
  * the two pages stop being different products.
  *
- * ── Three modes, not four, and that is not an omission ───────────────────
+ * ── No History, and that is not an omission ──────────────────────────────
  *
- * The Asset page has a fourth, History: what was decided and the capital
+ * The Asset page's fourth mode is History: what was decided and the capital
  * behind it. A theme has no decisions and no capital deployed against it, so
- * there is nothing for that mode to render. A fourth tab would be empty, or
+ * there is nothing for that mode to render. A tab for it would be empty, or
  * would have to be filled by moving the thesis change log out of Research and
  * away from the thing it is a log of.
  *
  * So the change log stays a read mode of Research, and History arrives here
  * only if themes ever gain decisions of their own.
  *
- * ── Two sections were removed outright ───────────────────────────────────
+ * ── Why Assets is its own mode and the chart is not ───────────────────────
  *
- * Chart and Related Assets became bands of Overview rather than tabs: both
- * answer "what is this theme", which is what orienting means.
+ * Both were tabs, and the first pass folded both into Overview as bands. That
+ * was wrong about one of them.
  *
- * Discussion was removed. `theme_discussions` held ZERO posts across all 51
- * themes when this was done, so the tab orphaned nothing; the table, its
- * policies and its triggers have since been dropped too
+ * The roster is a working surface: a sortable table with selection, bulk
+ * remove, a held/watchlist split and its own Add Assets control. Stacked
+ * under a chart and two digests it is a table you have to scroll past
+ * everything else to reach, and its own controls read as controls for the
+ * page. So it is a mode.
+ *
+ * Overview is now a digest and nothing else: where the theme stands (the
+ * index chart), what the firm actually owns of it, what has been written
+ * lately, and what has happened. Each band is a few rows deep and links to
+ * the mode that owns the detail. Nothing is edited there.
+ *
+ * ── One section was removed outright ──────────────────────────────────────
+ *
+ * Discussion. `theme_discussions` held ZERO posts across all 51 themes, so
+ * the tab orphaned nothing, and the table, its policies and its triggers have
+ * since been dropped as well
  * (20261104120000_drop_theme_discussions.sql). Notes stopped being a tab and
  * became the third read mode of Research, which is where the Asset page keeps
  * them ("Key references").
  */
 
-export type ThemeMode = 'overview' | 'research' | 'work'
+export type ThemeMode = 'overview' | 'assets' | 'research' | 'work'
 
-/** Nav order, left to right: orient, read, do. */
-export const THEME_MODES: readonly ThemeMode[] = ['overview', 'research', 'work']
+/** Nav order, left to right: orient, then the names, then read, then do. */
+export const THEME_MODES: readonly ThemeMode[] = ['overview', 'assets', 'research', 'work']
 
 export const THEME_MODE_LABEL: Record<ThemeMode, string> = {
   overview: 'Overview',
+  assets: 'Assets',
   research: 'Research',
   work: 'Work',
 }
@@ -82,7 +97,7 @@ export const LEGACY_SECTION_MODE: Record<string, ThemeMode> = {
   notes: 'research',
   outcomes: 'research',
   chart: 'overview',
-  'related-assets': 'overview',
+  'related-assets': 'assets',
   discussion: 'overview',
   processes: 'work',
 }

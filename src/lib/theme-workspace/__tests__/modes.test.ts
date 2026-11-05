@@ -14,8 +14,12 @@ import {
  */
 
 describe('the modes themselves', () => {
-  it('is three modes, orient then read then do', () => {
-    expect(THEME_MODES).toEqual(['overview', 'research', 'work'])
+  it('is four modes: orient, the names, read, do', () => {
+    /* Assets was folded into Overview in the first pass and pulled back out:
+       the roster is a working table with selection, bulk remove and its own
+       Add control, and under a chart and two digests it was a surface you
+       scrolled past everything else to reach. Overview is a digest only. */
+    expect(THEME_MODES).toEqual(['overview', 'assets', 'research', 'work'])
   })
 
   it('labels every mode, and nothing it does not have', () => {
@@ -54,7 +58,8 @@ describe('every section the page used to persist has somewhere to land', () => {
     ['notes', 'research'],
     ['outcomes', 'research'],
     ['chart', 'overview'],
-    ['related-assets', 'overview'],
+    // Its own mode now, so a reader who saved the roster gets the roster.
+    ['related-assets', 'assets'],
     ['discussion', 'overview'],
     ['processes', 'work'],
   ] as [string, ThemeMode][])('%s lands in %s', (saved, mode) => {
