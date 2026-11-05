@@ -1230,12 +1230,12 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               `notesSlot`, because the read-mode row that reveals it lives
               inside that pane. */}
 
-          {/* Discussion was a seventh surface for talking about a theme, and
-              `theme_discussions` held ZERO posts across all 51 themes, so
-              nothing is orphaned by removing the way in. The table, its RLS
-              policies, the hook and `ThemeDiscussionPanel` are all left on
-              disk untouched: deleting them is a separate decision, and this
-              change is about the page's shape. */}
+          {/* Discussion was a seventh surface for talking about a theme. It
+              held ZERO posts across all 51 themes, so nothing was orphaned by
+              removing it; the panel, the hook and the table are all gone now
+              (20261104120000_drop_theme_discussions.sql, with a rollback
+              beside it that recreates the schema but cannot recreate rows
+              that never existed). */}
           {activeMode === 'work' && (
             <ThemeProcessesPanel themeId={theme.id} />
           )}

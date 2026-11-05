@@ -34,9 +34,11 @@
  * answer "what is this theme", which is what orienting means.
  *
  * Discussion was removed. `theme_discussions` held ZERO posts across all 51
- * themes when this was done, so the tab orphaned nothing. Notes stopped being
- * a tab and became the third read mode of Research, which is where the Asset
- * page keeps them ("Key references").
+ * themes when this was done, so the tab orphaned nothing; the table, its
+ * policies and its triggers have since been dropped too
+ * (20261104120000_drop_theme_discussions.sql). Notes stopped being a tab and
+ * became the third read mode of Research, which is where the Asset page keeps
+ * them ("Key references").
  */
 
 export type ThemeMode = 'overview' | 'research' | 'work'

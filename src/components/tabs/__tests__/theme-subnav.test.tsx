@@ -35,8 +35,8 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
 import { OptionPicker } from '../../ui/OptionPicker'
 import { THEME_MODES, THEME_MODE_LABEL } from '../../../lib/theme-workspace/modes'
@@ -128,12 +128,33 @@ describe('every one of the six old sections still has a surface', () => {
     expect(code.slice(at, at + 300)).toContain('<ThemeProcessesPanel')
   })
 
-  it('leaves Discussion with no way in, and nothing else referring to it', () => {
+  it('leaves no trace of Discussion anywhere', () => {
     /* `theme_discussions` held zero posts across all 51 themes, so removing
-       the way in orphans no content. The table, its policies, the hook and
-       the panel are deliberately still on disk. */
+       it orphaned no content. The panel, the hook and the table are all gone
+       now; this asserts the page does not still reach for any of them. */
     expect(code).not.toContain('ThemeDiscussionPanel')
+    expect(code).not.toContain('useThemeDiscussion')
     expect(code).not.toMatch(/activeMode === 'discussion'/)
+  })
+
+  it('has no file left importing the deleted discussion module', () => {
+    /* The panel and hook are deleted, not merely unreferenced by this page.
+       A dangling import of either is a build failure the unit suite would not
+       necessarily surface, since nothing mounts them. */
+    const hits: string[] = []
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name)
+        if (e.isDirectory()) { walk(p); continue }
+        if (!/\.(ts|tsx)$/.test(e.name)) continue
+        // This file names them in order to assert their absence.
+        if (e.name === 'theme-subnav.test.tsx') continue
+        if (/ThemeDiscussionPanel|useThemeDiscussions/.test(readFileSync(p, 'utf8'))) hits.push(p)
+      }
+    }
+    walk(resolve(__dirname, '../../..'))
+
+    expect(hits, `still referenced by: ${hits.join(', ')}`).toEqual([])
   })
 })
 
