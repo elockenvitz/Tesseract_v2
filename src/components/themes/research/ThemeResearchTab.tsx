@@ -156,8 +156,25 @@ export function ThemeResearchTab({
           and read-mode controls stay reachable down a long case -- the Asset
           page gets that by keeping the bar outside its scrollport; this one
           is inside the pane that owns it, and `sticky` gets the same result
-          without lifting three controls into the page. */}
-      <div className="-mx-3 sm:-mx-6 lg:-mx-8 -mt-4 mb-3 px-3 sm:px-6 lg:px-8 py-2 sticky top-0 z-[5] bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+          without lifting three controls into the page.
+
+          `-top-4`, NOT `top-0`, and that is the whole difference the page
+          was still showing. A sticky element's offset is measured from its
+          scroll container's PADDING box, and `ThemeTab`'s scrollport is
+          `py-4`. With `top-0` the bar was pinned 16px below the nav's
+          hairline -- permanently, at scroll position zero as well -- so the
+          `-mt-4` beside it was overridden and a grey band sat between the
+          active mode tab and the bar. Measured: nav hairline y=298, bar top
+          y=314. The Asset page's bar starts flush on its nav's hairline
+          (286 and 286) because it is OUTSIDE the scrollport and needs no
+          offset at all. `-top-4` cancels that padding, so the bar sits on
+          the hairline statically and stays there while the case scrolls.
+
+          `mb-4` rather than `mb-3`: the Asset page leaves 16px between its
+          bar and the first thing below it (its scrollport's own `py-4`), and
+          the pane's `space-y-3` only contributes 12px. Adjoining margins
+          collapse to the larger, so 16 is what this has to say. */}
+      <div className="-mx-3 sm:-mx-6 lg:-mx-8 -mt-4 mb-4 px-3 sm:px-6 lg:px-8 py-2 sticky -top-4 z-[5] bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
         {/* flex-wrap lets the perspective (left) and the read/utility controls
             (right) drop to a second row on narrow widths instead of
             overflowing, which is what the Asset page's bar does. */}
@@ -257,9 +274,9 @@ export function ThemeResearchTab({
                 align="right"
                 className="min-w-0"
                 options={[
-                  { value: 'thesis',  label: 'Thesis' },
-                  { value: 'changes', label: 'Changes' },
-                  { value: 'notes',   label: 'References', count: referenceCount },
+                  { value: 'thesis',  label: 'Investment Case' },
+                  { value: 'changes', label: 'History' },
+                  { value: 'notes',   label: 'Key references', count: referenceCount },
                 ]}
               />
             ) : (
@@ -270,20 +287,31 @@ export function ThemeResearchTab({
                     boundary. */}
                 <div className="mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
                 <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
-                  {/* Three, named for what is being read rather than for the
-                      renderer: "All sections" described the renderer and
-                      "Links" described the markup. The asset page made the
-                      same two renames. "Summary" is gone from this row and is
-                      a band of the aggregated perspective instead.
+                  {/* Three, with the Asset page's OWN three words, not
+                      near-synonyms of them. They were Thesis / Changes /
+                      References, which named the same three things in a
+                      different vocabulary, and a reader moving between the
+                      two pages had to learn that "Changes" here is "History"
+                      there. One nav, one set of names:
+
+                        Investment Case   the case itself
+                        History           what changed in it, and when
+                        Key references    the material it rests on
+
+                      The persisted keys stay `thesis`/`changes`/`notes`,
+                      because they are written into saved tab state
+                      (`themeResearchRead`) and into `LEGACY_SECTION_MODE`.
+                      Renaming a stored value to tidy a label would strand
+                      every reader who left the page on one.
 
                       Sizing and the label breakpoint are the Asset page's:
                       `px-2 py-1.5 text-sm`, and the words appear from `xl` so
                       a narrow desktop keeps three compact icons with their
                       titles intact rather than wrapping the bar. */}
                   {([
-                    { mode: 'thesis',  label: 'Thesis',     Icon: Layers },
-                    { mode: 'changes', label: 'Changes',    Icon: HistoryIcon },
-                    { mode: 'notes',   label: 'References', Icon: Link2 },
+                    { mode: 'thesis',  label: 'Investment Case', Icon: Layers },
+                    { mode: 'changes', label: 'History',         Icon: HistoryIcon },
+                    { mode: 'notes',   label: 'Key references',  Icon: Link2 },
                   ] as const).map(({ mode, label, Icon }) => (
                     <button
                       key={mode}

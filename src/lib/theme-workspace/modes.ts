@@ -68,9 +68,15 @@ export const THEME_MODE_LABEL: Record<ThemeMode, string> = {
 }
 
 /**
- * How Research is being read. The Asset page's equivalent row is
- * Investment Case / History / Key references; a theme's case is its thesis,
- * so the first is named for that.
+ * How Research is being read.
+ *
+ * The three keys are persisted (`themeResearchRead` in saved tab state, and
+ * the values of `LEGACY_SECTION_MODE`), so they are NOT the labels. The row
+ * shows the Asset page's own three words -- Investment Case, History, Key
+ * references -- because a reader moving between the two pages should not have
+ * to learn that this page's "Changes" is that page's "History". The labels
+ * live in `ThemeResearchTab`; renaming these keys to match them would strand
+ * every reader who left the page on one.
  */
 export type ThemeReadMode = 'thesis' | 'changes' | 'notes'
 

@@ -39,7 +39,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 import { OptionPicker } from '../../ui/OptionPicker'
-import { THEME_MODES, THEME_MODE_LABEL } from '../../../lib/theme-workspace/modes'
+import { THEME_MODES, THEME_MODE_LABEL, THEME_READ_MODES } from '../../../lib/theme-workspace/modes'
 
 const source = readFileSync(resolve(__dirname, '../ThemeTab.tsx'), 'utf8')
 const portfolio = readFileSync(resolve(__dirname, '../PortfolioTab.tsx'), 'utf8')
@@ -440,7 +440,34 @@ describe('the Research bar matches the Asset page\'s', () => {
        hairline, and that is what makes it read as chrome. */
     expect(research, 'the bar is still a card').not.toContain('rounded-lg bg-gray-50 border border-gray-200 px-3 py-2')
     expect(research).toContain('border-b border-gray-200')
-    expect(research, 'the bar scrolls away down a long case').toContain('sticky top-0')
+    expect(research, 'the bar scrolls away down a long case').toContain('sticky')
+  })
+
+  it('starts flush on the nav\'s hairline, not 16px below it', () => {
+    /* This is the gap that was still visible after the chrome pass. A sticky
+       element's offset is measured from its scroll container's PADDING box,
+       and `ThemeTab`'s scrollport is `py-4`, so `sticky top-0` pinned the bar
+       16px under the nav -- at scroll position zero too, which made the
+       `-mt-4` beside it dead and left a grey band between the active mode tab
+       and the bar.
+
+       Measured at 1920 before: nav hairline bottom y=298, bar top y=314.
+       After: 298 and 298, which is the Asset page's own relationship (286 and
+       286 -- its bar is outside the scrollport and needs no offset).
+
+       Asserted as the offset rather than as a pixel, because a pixel cannot
+       be checked without a browser and the offset is the thing that was
+       wrong. */
+    expect(research, 'the bar is pinned to the scrollport padding again').not.toContain('sticky top-0')
+    expect(research).toContain('sticky -top-4')
+    expect(research).toContain('-mt-4')
+
+    /* And 16px below it, which is what the Asset page's scrollport `py-4`
+       leaves between its bar and the first content. The pane's `space-y-3`
+       contributes 12; adjoining margins collapse to the larger, so the bar
+       has to carry the 16. */
+    expect(research, 'the gap below the bar is back to 12px').not.toContain('-mt-4 mb-3')
+    expect(research).toContain('mb-4')
   })
 
   it('offers the Asset page\'s two perspectives, by its names', () => {
@@ -466,6 +493,37 @@ describe('the Research bar matches the Asset page\'s', () => {
     const shared = 'mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700'
     expect(research).toContain(shared)
     expect(assetTab, 'AssetTab lost its divider').toContain(shared)
+  })
+
+  it('names the three read modes with the Asset page\'s own words', () => {
+    /* They were Thesis / Changes / References: the same three things in a
+       second vocabulary, so a reader moving between the pages had to learn
+       that this page's "Changes" is that page's "History".
+
+       Asserted in BOTH directions, as everything else in this block is, so
+       renaming either page alone fails here rather than quietly producing two
+       vocabularies again. */
+    for (const label of ['Investment Case', 'History', 'Key references']) {
+      expect(researchCode, `the theme bar no longer says: ${label}`).toContain(`'${label}'`)
+      expect(assetTab, `AssetTab no longer says: ${label}`).toContain(label)
+    }
+    /* The old names are gone from the markup. Checked against the
+       comment-stripped source because the note above the row explains the
+       rename and therefore contains all three retired words. */
+    for (const retired of ["label: 'Thesis'", "label: 'Changes'", "label: 'References'"]) {
+      expect(researchCode, `an old read-mode label is back: ${retired}`).not.toContain(retired)
+    }
+  })
+
+  it('keeps the persisted read-mode keys, which are not the labels', () => {
+    /* `themeResearchRead` and `LEGACY_SECTION_MODE` store these three
+       strings. Renaming a stored value to match a label would strand every
+       reader who left the page on one, so the keys stay and only the words
+       on screen changed. */
+    expect(THEME_READ_MODES).toEqual(['thesis', 'changes', 'notes'])
+    expect(researchCode).toContain("mode: 'thesis'")
+    expect(researchCode).toContain("mode: 'changes'")
+    expect(researchCode).toContain("mode: 'notes'")
   })
 
   it('shows read-mode labels from xl, keeping icons below it', () => {
