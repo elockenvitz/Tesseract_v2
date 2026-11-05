@@ -386,6 +386,24 @@ export const GATED_DIRS = [
    */
   'src/lib/today',
   /*
+   * The research layer: the layout resolver, the case state, field types and
+   * spans, and now `subject.ts` -- the registry naming which tables an asset's
+   * research page reads and which a theme's does.
+   *
+   * It was deferred by history, in the same pass that ungated `src/lib/today`:
+   * everything not already gated went onto the deferred list that day. The
+   * subject registry is what makes it worth revisiting, because its failure
+   * mode is not a broken screen. A descriptor pointing a theme at an asset
+   * table would read ANOTHER SUBJECT'S rows under the theme's policies, and
+   * every query would keep succeeding. `subject.test.ts` is the only thing
+   * that observes it, and a test that cannot fail the gate is decoration.
+   *
+   * Matched as a subtree, so `src/lib/research/__tests__` comes with it.
+   * Verified before gating: 18 files / 525 tests pass, so this gates a green
+   * directory rather than importing a known failure.
+   */
+  'src/lib/research',
+  /*
    * The Dashboard-as-feed trial's own shell. Two things in it are worth
    * gating and neither announces a failure.
    *
@@ -471,8 +489,9 @@ export const DEFERRED_DIRS = [
   'src/lib/permissions/__tests__',
   'src/lib/portfolio',
   'src/lib/portfolio/__tests__',
-  'src/lib/research',
-  'src/lib/research/__tests__',
+  // 'src/lib/research' and its `__tests__` moved UP to the gated list: the
+  // subject registry's failure mode is reading another subject's rows with
+  // every query still succeeding.
   'src/lib/storage',
   // 'src/lib/today' and its `__tests__` moved UP to the gated list.
   'src/lib/trade-lab',
