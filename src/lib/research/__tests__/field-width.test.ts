@@ -30,6 +30,8 @@ const TAB = strip(read('src/components/tabs/AssetTab.tsx'))
 const CUSTOMIZER = strip(read('src/components/research/AssetPageFieldCustomizer.tsx'))
 const CANVAS = strip(read('src/components/research/ResearchArrange.tsx'))
 const SPANLIB = strip(read('src/lib/research/field-span.ts'))
+/* The field grid's class list, shared with the Theme page's research body. */
+const GRID = strip(read('src/components/research/ResearchSectionCard.tsx'))
 const HOOK = strip(read('src/hooks/useUserAssetPagePreferences.ts'))
 const MANAGER = strip(read('src/components/templates/ResearchFieldsManager.tsx'))
 /* LayoutStatusChip.tsx is not read here any more: what it renders in
@@ -76,10 +78,20 @@ describe('a field carries its own width', () => {
 })
 
 describe('the page draws what the layout says', () => {
+  /*
+   * REWRITTEN. The grid's class list moved out of `AssetTab.tsx` into
+   * `components/research/ResearchSectionCard.tsx` as
+   * `RESEARCH_FIELD_GRID_CLASS`, because the Theme page's research body now
+   * lays its fields out in the same grid and a second copy of the class list
+   * is a second thing to keep in step. Both assertions below read it where it
+   * lives and additionally require that the Asset page still applies it, so
+   * neither can pass with the grid gone from the page.
+   */
   it('lays sections out on twelve columns', () => {
     /* Two columns could only say "a row" or "half a row". Twelve is what
        makes a quarter, a third and two thirds expressible at all. */
-    expect(TAB).toMatch(/grid grid-cols-1 items-start gap-3 .*xl:grid-cols-12/)
+    expect(GRID).toMatch(/grid grid-cols-1 items-start gap-3 .*xl:grid-cols-12/)
+    expect(TAB).toContain('className={RESEARCH_FIELD_GRID_CLASS}')
   })
 
   it('does not stretch a card to the height of the one beside it', () => {
@@ -93,7 +105,8 @@ describe('the page draws what the layout says', () => {
        unrelated single-column grid further down the file already carries
        that class, so the loose version of this assertion passed with the
        fix reverted. Found by injecting exactly that. */
-    expect(TAB).toMatch(/grid grid-cols-1 items-start[^"]*xl:grid-cols-12/)
+    expect(GRID).toMatch(/grid grid-cols-1 items-start[^']*xl:grid-cols-12/)
+    expect(TAB).toContain('className={RESEARCH_FIELD_GRID_CLASS}')
   })
 
   it('gives each field the span it was arranged at', () => {

@@ -869,8 +869,21 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
           </div>
 
           <div className="min-w-0 flex-1">
-            {/* Name row */}
-            <div className="flex items-center gap-3 mb-1 flex-wrap">
+            {/* Name row.
+
+                Name and description on ONE baseline row, which is how the
+                Asset band reads: the ticker, then the company name beside it
+                in muted type. The description was a second line under the
+                name, so the band spent two rows saying what the thing IS
+                while the two pills that say how it is DOING sat up beside the
+                name. Those have moved to the right, next to Share and the
+                overflow, which is where the Asset band keeps everything that
+                is not identity.
+
+                `items-baseline`, not `items-center`: the description is
+                smaller type than the name, and centring it leaves it floating
+                off the name's baseline. */}
+            <div className="flex items-baseline gap-3 flex-wrap">
               {isEditingName ? (
                 <input
                   autoFocus
@@ -907,54 +920,40 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 </button>
               )}
 
-              {/* Theme type: read-only badge (set at creation) */}
-              <span
-                className={clsx(
-                  'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800',
-                  !showThemeMeta && 'hidden sm:inline-flex'
-                )}
-                title="Theme type (set at creation)"
-              >
-                <span className={clsx('w-1.5 h-1.5 rounded-full', currentThemeType.dotColor)} />
-                {currentThemeType.label}
-              </span>
+              {/* The description, beside the name rather than under it.
 
-              {/* Lifecycle status pill — folded into the same reveal as the
-                  type badge and the description. On a phone the header is the
-                  theme's identity; "Active" is a status you go looking for,
-                  not something worth a permanent slot beside the name. */}
-              <div
-                className={clsx('relative', !showThemeMeta && 'hidden sm:block')}
-                ref={lifecycleDropdownRef}
-              >
+                  Still click-to-edit, and still inside the phone's
+                  `showThemeMeta` reveal. `truncate` with a `max-w` so a long
+                  description cannot push the band's right-hand controls off
+                  the row; the whole of it is in the title. A button rather
+                  than a `<p onClick>` because it is a control. */}
+              {isEditingDescription ? (
+                <input
+                  autoFocus
+                  value={descriptionDraft}
+                  onChange={(e) => setDescriptionDraft(e.target.value)}
+                  onBlur={commitDescription}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); commitDescription() }
+                    if (e.key === 'Escape') { setDescriptionDraft(theme.description || ''); setIsEditingDescription(false) }
+                  }}
+                  placeholder="Add a short description..."
+                  className="w-full sm:w-auto sm:min-w-[28ch] text-sm sm:text-base text-gray-700 bg-white border border-primary-400 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-300 dark:text-gray-300 dark:bg-gray-800"
+                />
+              ) : (
                 <button
-                  onClick={() => setShowLifecycleDropdown(s => !s)}
+                  type="button"
+                  onClick={() => setIsEditingDescription(true)}
+                  title={theme.description || 'Click to edit description'}
                   className={clsx(
-                    'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors',
-                    currentLifecycle.pillClass
+                    'min-w-0 max-w-[48ch] truncate text-left text-sm sm:text-base cursor-text hover:bg-gray-50 rounded px-1 -mx-1 dark:hover:bg-gray-800',
+                    !showThemeMeta && 'hidden sm:block',
+                    theme.description ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400 italic'
                   )}
                 >
-                  <span className={clsx('w-1.5 h-1.5 rounded-full', currentLifecycle.dotClass)} />
-                  {currentLifecycle.label}
+                  {theme.description || 'Add a short description...'}
                 </button>
-                {showLifecycleDropdown && (
-                  <div className="absolute left-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
-                    {lifecycleOptions.map(opt => (
-                      <button
-                        key={opt.value}
-                        onClick={() => { handleLifecycleChange(opt.value); setShowLifecycleDropdown(false) }}
-                        className={clsx(
-                          'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
-                          opt.value === (theme.lifecycle_status || 'active') ? 'bg-gray-50 font-medium text-gray-900 dark:text-white dark:bg-gray-900' : 'text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300'
-                        )}
-                      >
-                        <span className={clsx('w-2 h-2 rounded-full', opt.dotClass)} />
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              )}
 
               {theme.is_archived && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700 dark:text-gray-300">
@@ -964,33 +963,6 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
               )}
             </div>
 
-            {/* Description row */}
-            {isEditingDescription ? (
-              <input
-                autoFocus
-                value={descriptionDraft}
-                onChange={(e) => setDescriptionDraft(e.target.value)}
-                onBlur={commitDescription}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); commitDescription() }
-                  if (e.key === 'Escape') { setDescriptionDraft(theme.description || ''); setIsEditingDescription(false) }
-                }}
-                placeholder="Add a short description..."
-                className="w-full text-base text-gray-700 bg-white border border-primary-400 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-primary-300 dark:text-gray-300 dark:bg-gray-800"
-              />
-            ) : (
-              <p
-                className={clsx(
-                  'text-sm sm:text-base cursor-text hover:bg-gray-50 rounded px-1 -mx-1 dark:hover:bg-gray-800',
-                  !showThemeMeta && 'hidden sm:block',
-                  theme.description ? 'text-gray-600 dark:text-gray-400' : 'text-gray-400 italic'
-                )}
-                onClick={() => setIsEditingDescription(true)}
-                title="Click to edit description"
-              >
-                {theme.description || 'Add a short description...'}
-              </p>
-            )}
           </div>
         </div>
 
@@ -1007,6 +979,66 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
             becomes a sheet, because a 48px-wide popover of 32px rows anchored
             to the screen edge is not a touch menu. */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Type and lifecycle, on the RIGHT.
+
+              They were beside the name, which put two pieces of status in the
+              middle of the theme's identity and left the description pushed
+              onto a second line to get out of their way. The Asset band
+              divides the row the same way: what the thing is on the left,
+              everything about its state and everything you can do to it on
+              the right.
+
+              Order is deliberate: type first because it never changes, then
+              lifecycle because it does, then the actions. Both keep the
+              phone's `showThemeMeta` reveal, so at 390px the band is still
+              just the name and the controls. */}
+          <span
+            className={clsx(
+              'inline-flex shrink-0 items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200 dark:border-gray-700 dark:text-gray-300 dark:bg-gray-800',
+              !showThemeMeta && 'hidden sm:inline-flex'
+            )}
+            title="Theme type (set at creation)"
+          >
+            <span className={clsx('w-1.5 h-1.5 rounded-full', currentThemeType.dotColor)} />
+            {currentThemeType.label}
+          </span>
+
+          <div
+            className={clsx('relative shrink-0', !showThemeMeta && 'hidden sm:block')}
+            ref={lifecycleDropdownRef}
+          >
+            <button
+              onClick={() => setShowLifecycleDropdown(s => !s)}
+              className={clsx(
+                'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors',
+                currentLifecycle.pillClass
+              )}
+            >
+              <span className={clsx('w-1.5 h-1.5 rounded-full', currentLifecycle.dotClass)} />
+              {currentLifecycle.label}
+            </button>
+            {showLifecycleDropdown && (
+              /* `right-0`, not `left-0`: the pill now sits near the right
+                 edge of the band, and a menu opening rightwards from there
+                 would hang off the page. */
+              <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 dark:border-gray-700 dark:bg-gray-800">
+                {lifecycleOptions.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => { handleLifecycleChange(opt.value); setShowLifecycleDropdown(false) }}
+                    className={clsx(
+                      'w-full flex items-center gap-2 px-3 py-2 text-left text-sm transition-colors',
+                      opt.value === (theme.lifecycle_status || 'active') ? 'bg-gray-50 font-medium text-gray-900 dark:text-white dark:bg-gray-900' : 'text-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 dark:text-gray-300'
+                    )}
+                  >
+                    <span className={clsx('w-2 h-2 rounded-full', opt.dotClass)} />
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
           <Button
             size="sm"
             variant="outline"

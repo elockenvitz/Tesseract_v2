@@ -20,6 +20,10 @@ const codeOf = (s: string) =>
 
 const ASSET_TAB = codeOf(readFileSync(resolve(SRC, 'components/tabs/AssetTab.tsx'), 'utf8'))
 const CONTRIB = codeOf(readFileSync(resolve(SRC, 'components/contributions/ContributionSection.tsx'), 'utf8'))
+/* The field tile's and the section grid's class lists, shared by the Asset
+   page and the Theme page since they stopped being eleven inline copies. */
+const FIELD_CARD = codeOf(readFileSync(resolve(SRC, 'components/research/ResearchSectionCard.tsx'), 'utf8'))
+const THEME_RESEARCH = codeOf(readFileSync(resolve(SRC, 'components/themes/research/ThemeResearchTab.tsx'), 'utf8'))
 
 describe('Research presentation: original per-section cards restored', () => {
   it('renders each section as a <Card> with alternating shade (not one document container)', () => {
@@ -30,9 +34,33 @@ describe('Research presentation: original per-section cards restored', () => {
     expect(ASSET_TAB).not.toContain('border-t border-gray-200 first:border-t-0')
   })
 
+  /*
+   * REWRITTEN, not deleted, and the rule it protects is unchanged.
+   *
+   * The class list used to be written out inline in `AssetTab.tsx`, eleven
+   * times, once per field render branch, so this assertion read it there. It
+   * now lives in `components/research/ResearchSectionCard.tsx` as
+   * `RESEARCH_FIELD_CARD_CLASS`, because the Theme page's research body draws
+   * the same field tiles and an eleventh inline copy would have been a
+   * twelfth place for the two pages to drift apart. They had already drifted:
+   * the theme case had no tiles at all.
+   *
+   * So the assertion moves to where the classes moved, and gains two it did
+   * not have: that the Asset page still APPLIES the constant (otherwise the
+   * tiles could lose the accent while the constant sat there unused), and
+   * that the Theme page uses the same one. Dropping either would let exactly
+   * the defect this file exists for back in by a different door.
+   */
   it('keeps the blue left-accent + amber hover-highlight on fields (elevated: thin rail)', () => {
-    expect(ASSET_TAB).toContain('border-l-[3px] border-l-blue-500')
-    expect(ASSET_TAB).toContain('hover:border-amber-200 hover:bg-amber-50/30')
+    expect(FIELD_CARD).toContain('border-l-[3px] border-l-blue-500')
+    expect(FIELD_CARD).toContain('hover:border-amber-200 hover:bg-amber-50/30')
+    expect(FIELD_CARD).toContain('RESEARCH_FIELD_CARD_CLASS')
+    expect(ASSET_TAB, 'the Asset page no longer applies the shared field tile')
+      .toContain('className={RESEARCH_FIELD_CARD_CLASS}')
+    /* `className={...}`, not the bare name: the import line alone would
+       satisfy a looser assertion while the grid was gone from the page. */
+    expect(THEME_RESEARCH, 'the Theme page no longer draws the Asset page\'s field grid')
+      .toContain('className={RESEARCH_FIELD_GRID_CLASS}')
   })
 
   it('drops the invented document / quiet / always-on chrome; Edit pencil is hover-reveal again', () => {

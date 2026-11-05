@@ -546,6 +546,102 @@ describe('the Research bar matches the Asset page\'s', () => {
   })
 })
 
+describe('the Research body matches the Asset page\'s', () => {
+  /* Comment-stripped, including JSX comments: this file's prose quotes the
+     Asset page's class names and its read-mode labels, and a suite that let
+     commentary satisfy it would pass with the body reverted. */
+  const researchCode = research
+    .split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+  const assetTab = readFileSync(resolve(__dirname, '../AssetTab.tsx'), 'utf8')
+
+  it('draws a section as the Asset page\'s card, not as a bare heading', () => {
+    /* It was `<h2 class="text-sm font-semibold">` over a `space-y-2` stack:
+       no card, no header band, no shade, so the bar above it matched and
+       everything below it did not. */
+    expect(researchCode).toContain('<ResearchSectionCard')
+    expect(researchCode).toContain('shaded={sectionIdx % 2 === 1}')
+    expect(researchCode, 'the flat heading stack is back')
+      .not.toMatch(/<h2 className="text-sm font-semibold/)
+  })
+
+  it('lays fields out in the Asset page\'s own twelve-column grid', () => {
+    /* The same two components the Asset page uses, not a theme-shaped copy:
+       they fall back to a plain div with no arrange provider mounted, which
+       is what this page is today, and they already honour a saved span for
+       the day a theme can save one. */
+    expect(researchCode).toContain('<ArrangeableFieldGrid')
+    expect(researchCode).toContain('<ArrangeableField')
+    expect(researchCode).toContain('className={RESEARCH_FIELD_GRID_CLASS}')
+    expect(assetTab, 'the Asset page stopped using the grid these share')
+      .toContain('<ArrangeableFieldGrid')
+  })
+
+  it('still folds a section shut, as the Asset page does', () => {
+    expect(researchCode).toContain('collapsedSections')
+    expect(researchCode).toContain('onToggle={() => toggleSection(section.slug)}')
+  })
+
+  it('gives Firm the Asset page\'s three parts, in the Asset page\'s order', () => {
+    /* Notice, then synthesis, then the record. The order is the argument:
+       the generated reading sits between the caveat and the words it is a
+       reading OF, so it cannot be mistaken for either. */
+    const notice = researchCode.indexOf('Read-only firm view')
+    const synthesis = researchCode.indexOf('<ThemeThesisSummaryView')
+    const record = researchCode.indexOf('<OurViewSummary')
+    expect(notice, 'nothing says the Firm view is not yours to edit').toBeGreaterThan(-1)
+    expect(synthesis).toBeGreaterThan(notice)
+    expect(record, 'the attributed record is missing or above the synthesis')
+      .toBeGreaterThan(synthesis)
+    expect(researchCode).toContain('Edit my research')
+  })
+
+  it('uses the Asset page\'s attributed record rather than a theme copy of it', () => {
+    expect(researchCode).toContain("from '../../asset/OurViewSummary'")
+    expect(assetTab).toContain('<OurViewSummary')
+  })
+
+  it('reports on the template, so a firm-added field is not silently omitted', () => {
+    /* The synthesis reads a fixed handful of sections. The record reads the
+       org's own theme template, which is the only one of the two that can
+       show a field the firm added. */
+    expect(researchCode).toContain('fields={ourViewFields}')
+    expect(researchCode).toMatch(/ourViewFields[\s\S]{0,400}layout\.flatMap/)
+  })
+
+  it('says WHICH perspective is empty, not that nothing is written', () => {
+    expect(researchCode).toContain('No team research yet')
+    expect(researchCode, 'the Firm empty state offers no way in')
+      .toContain('Start Your Research')
+  })
+})
+
+describe('the identity band separates what the theme is from how it is doing', () => {
+  it('puts the description beside the name, not on a row of its own', () => {
+    expect(code.indexOf('flex items-baseline gap-3 flex-wrap'))
+      .toBeGreaterThan(-1)
+    expect(code, 'the name row is centred again, so the description cannot sit on its baseline')
+      .not.toContain('flex items-center gap-3 mb-1 flex-wrap')
+  })
+
+  it('puts the type and lifecycle pills on the right, with the actions', () => {
+    const actions = code.indexOf('flex items-center gap-2 shrink-0')
+    expect(actions).toBeGreaterThan(-1)
+    expect(code.indexOf('currentThemeType.dotColor'), 'the type badge is back beside the name')
+      .toBeGreaterThan(actions)
+    expect(code.indexOf('currentLifecycle.dotClass'), 'the lifecycle pill is back beside the name')
+      .toBeGreaterThan(actions)
+    expect(code.indexOf('setShowShareModal(true)')).toBeGreaterThan(actions)
+  })
+
+  it('opens the lifecycle menu leftwards, now that the pill sits at the right edge', () => {
+    expect(code).toMatch(/absolute right-0 top-full mt-1 w-44/)
+    expect(code, 'a menu anchored left from the right edge hangs off the page')
+      .not.toMatch(/absolute left-0 top-full mt-1 w-44/)
+  })
+})
+
 describe('theme identity survives the change', () => {
   it('leaves the header outside the mode container', () => {
     // The name and its disclosure are rendered before the Card that holds the

@@ -140,6 +140,11 @@ import { useViewWarnings } from '../../hooks/useViewWarnings'
 import {
   UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder,
   ResearchArrangeProvider, ResearchArrangeBar, ArrangeableFieldGrid, ArrangeableField,
+  /* The field tile's class list and the section grid's, now shared with the
+     Theme page's research body rather than written out once per field type
+     here. Eleven copies of a class list is eleven chances for the two pages
+     to drift, and they had. See `ResearchSectionCard.tsx`. */
+  RESEARCH_FIELD_CARD_CLASS, RESEARCH_FIELD_GRID_CLASS,
 } from '../research'
 import {
   ChecklistField,
@@ -4760,7 +4765,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Price target field
                             if (fieldType === 'price_target') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                                <div key={field.field_id} id="asset-warning-anchor-targets" className={RESEARCH_FIELD_CARD_CLASS}>
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -4779,7 +4784,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Rating field
                             if (fieldType === 'rating') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                                <div key={field.field_id} id="asset-warning-anchor-rating" className={RESEARCH_FIELD_CARD_CLASS}>
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -4800,7 +4805,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Estimates field
                             if (fieldType === 'estimates') {
                               return (
-                                <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                                <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -4927,7 +4932,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                          quarter-width Investment Thesis — while the long
                          one truncated with "Show more". Each card is now
                          its own content's height. */
-                      className="grid grid-cols-1 items-start gap-3 border-t border-gray-100 px-5 py-2 xl:grid-cols-12 dark:border-gray-800"
+                      className={RESEARCH_FIELD_GRID_CLASS}
                     >
                       {/*
                         While arranging, every section is handed EVERY
@@ -4961,7 +4966,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Checklist field
                           if (fieldType === 'checklist') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -4978,7 +4983,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Metric field
                           if (fieldType === 'metric') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -4995,7 +5000,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Timeline field
                           if (fieldType === 'timeline') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -5012,7 +5017,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Numeric field
                           if (fieldType === 'numeric') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -5029,7 +5034,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Date field
                           if (fieldType === 'date') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -5046,7 +5051,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Rating field - render analyst ratings section
                           if (fieldType === 'rating') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                              <div key={field.field_id} id="asset-warning-anchor-rating" className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -5067,7 +5072,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Estimates field - render analyst estimates section
                           if (fieldType === 'estimates') {
                             return (
-                              <div key={field.field_id} className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -5083,7 +5088,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Price target field - render outcomes container for price targets
                           if (fieldType === 'price_target') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border border-gray-200/80 border-l-[3px] border-l-blue-500 bg-white rounded-xl hover:border-amber-200 hover:bg-amber-50/30 hover:shadow-sm transition-all duration-200 p-4 dark:border-gray-700 dark:bg-gray-800">
+                              <div key={field.field_id} id="asset-warning-anchor-targets" className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
