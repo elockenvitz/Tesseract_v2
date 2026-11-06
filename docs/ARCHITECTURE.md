@@ -77,7 +77,7 @@ two custom linters:
 | Script | What it scans for |
 |---|---|
 | `scripts/tenant-boundary-lint.mjs` | Postgres functions that omit an `organization_id` filter on tables that should always be org-scoped |
-| `scripts/frontend-tenant-lint.mjs` | React/TS code that calls `supabase.from(...)` without an org filter on org-scoped tables |
+| `scripts/frontend-tenant-lint.mjs` | React/TS reads of org-scoped tables that carry no org filter, found by parsing the call chain rather than matching text, so renaming the client does not hide one (see `docs/tenant-lint-baselines.md`) |
 
 Both are wired into `npm run tenant:lint:all`. The frontend linter
 runs in CI once `SUPABASE_*` secrets are provisioned (see
