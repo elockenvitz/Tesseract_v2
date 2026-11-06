@@ -1,0 +1,61 @@
+-- =============================================================================
+-- SECURITY: close the grant that migration A meant to close and did not
+--
+-- Corrects 20261106160000_sec_workflow_structure_rpcs.sql, which is ALREADY
+-- APPLIED to production. That file is deliberately left exactly as it ran; this
+-- is a forward correction, not a rewrite of history.
+--
+-- WHAT WENT WRONG
+--
+-- A created two helpers and intended them to be unreachable from the API. Its
+-- comment says "Neither helper needs to be callable from the API", and it wrote:
+--
+--   REVOKE ALL ON FUNCTION public.assert_workflow_readable(uuid) FROM PUBLIC;
+--   GRANT EXECUTE ON FUNCTION public.assert_workflow_readable(uuid) TO service_role;
+--
+-- That is not enough on this project. pg_default_acl carries, for functions
+-- created in public by postgres:
+--
+--   postgres=X/postgres anon=X/postgres authenticated=X/postgres service_role=X/postgres
+--
+-- so both helpers were born with explicit EXECUTE for anon and authenticated.
+-- REVOKE ALL ... FROM PUBLIC removes the PUBLIC pseudo-role grant and leaves an
+-- explicit per-role grant untouched, and the GRANT to service_role re-granted a
+-- privilege it already had. Measured after A applied:
+--
+--   assert_workflow_readable  anon=can execute  authenticated=can execute
+--   assert_workflow_admin     anon=can execute  authenticated=can execute
+--
+-- WHAT IT EXPOSED
+--
+-- anon gained nothing: auth.uid() is NULL, so the helper raises 28000 at once.
+--
+-- authenticated gained an existence oracle. Any logged-in user, in any of the
+-- 28 organizations, could call a helper with a workflow uuid and tell three
+-- states apart by the error alone:
+--
+--   P0002 'Workflow not found'                        -> no such workflow
+--   42501 'Workflow is not in the current organization' -> exists, another org
+--   42501 'No access to this workflow'                -> exists, own org, no access
+--
+-- No name, no content and no organization identity leak, and nothing can be
+-- written: both helpers are STABLE and only read. Exploiting it requires
+-- already holding a workflow uuid, so the practical reach is small. It is
+-- corrected because it is not what the migration said it would do, and because
+-- the release verification script asserts these two roles cannot execute.
+--
+-- WHY ONLY TWO STATEMENTS
+--
+-- No GRANT is needed. postgres owns both helpers and service_role already holds
+-- EXECUTE from the default privileges, so the intended end state is reached by
+-- removing two grants and nothing else. The four functions that call these
+-- helpers are SECURITY DEFINER owned by postgres, so they reach the helpers as
+-- postgres and are unaffected by any of this.
+--
+-- anon and authenticated are members of no other role (pg_auth_members is empty
+-- for both) and neither helper has a PUBLIC entry in its ACL, so these two
+-- statements remove the only paths that exist.
+-- =============================================================================
+
+REVOKE EXECUTE ON FUNCTION public.assert_workflow_readable(uuid) FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.assert_workflow_admin(uuid) FROM anon, authenticated;

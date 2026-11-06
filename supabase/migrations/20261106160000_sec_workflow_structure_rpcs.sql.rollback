@@ -1,0 +1,471 @@
+-- ============================================================================
+-- ROLLBACK for 20261106160000_sec_workflow_structure_rpcs.sql
+-- ============================================================================
+-- *** APPLYING THIS FILE REOPENS TWO CONFIRMED CROSS-TENANT VULNERABILITIES. ***
+--
+-- It restores the function bodies verbatim as they stood in production on
+-- 2026-11-06 (captured with pg_get_functiondef before any change), which means
+-- it restores:
+--
+--   * copy_workflow_with_unique_name  -- any authenticated user can copy any
+--     other organization's private workflow, with its stage labels, stage
+--     descriptions and automation rules, into their OWN organization, where it
+--     becomes fully readable. Note the restored INSERT omits organization_id
+--     on purpose: that is the original, and the stamp_organization_id trigger
+--     then stamps the CALLER's organization. That omission is the theft.
+--   * activate_template_version       -- any authenticated user can DELETE
+--     every workflow_stages row of any other organization's workflow from a
+--     version uuid alone.
+--   * create_initial_template_version / create_new_template_version -- any
+--     authenticated user can write template versions into another
+--     organization's workflow.
+--
+-- Use it only if the fix breaks legitimate behaviour in production and there
+-- is no time to correct it forward. Prefer a forward fix. If you do roll back,
+-- treat the exposure as live again and re-apply as soon as possible.
+--
+-- The two guard helpers are dropped last, because the restored bodies no
+-- longer reference them. Nothing else in the schema uses them; migration C
+-- (20261106160200) DOES use assert_workflow_admin, so if migration C is
+-- applied, roll C back first or the DROP will fail with a dependency error.
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.copy_workflow_with_unique_name(source_workflow_id uuid, suffix text, target_user_id uuid, copy_progress boolean DEFAULT true)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_source_workflow workflows%ROWTYPE;
+  v_new_workflow_id uuid;
+  v_new_workflow_name text;
+  v_stage record;
+  v_rule record;
+BEGIN
+  -- Get source workflow
+  SELECT * INTO v_source_workflow
+  FROM workflows
+  WHERE id = source_workflow_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Source workflow not found: %', source_workflow_id;
+  END IF;
+
+  -- Generate unique name
+  v_new_workflow_name := generate_unique_workflow_name(
+    v_source_workflow.name,
+    suffix,
+    target_user_id
+  );
+
+  -- Create new workflow ID
+  v_new_workflow_id := gen_random_uuid();
+
+  -- Copy workflow
+  INSERT INTO workflows (
+    id,
+    name,
+    description,
+    color,
+    is_default,
+    is_public,
+    created_by,
+    cadence_days,
+    cadence_timeframe,
+    kickoff_cadence,
+    kickoff_custom_date,
+    created_at,
+    updated_at
+  ) VALUES (
+    v_new_workflow_id,
+    v_new_workflow_name,
+    v_source_workflow.description,
+    v_source_workflow.color,
+    false, -- New workflows are never default
+    false, -- New workflows start as private
+    target_user_id,
+    v_source_workflow.cadence_days,
+    v_source_workflow.cadence_timeframe,
+    v_source_workflow.kickoff_cadence,
+    v_source_workflow.kickoff_custom_date,
+    NOW(),
+    NOW()
+  );
+
+  -- Copy workflow stages
+  FOR v_stage IN
+    SELECT * FROM workflow_stages
+    WHERE workflow_id = source_workflow_id
+    ORDER BY sort_order
+  LOOP
+    INSERT INTO workflow_stages (
+      id,
+      workflow_id,
+      stage_key,
+      stage_label,
+      stage_description,
+      stage_color,
+      stage_icon,
+      sort_order,
+      standard_deadline_days,
+      suggested_priorities,
+      created_at,
+      updated_at
+    ) VALUES (
+      gen_random_uuid(),
+      v_new_workflow_id,
+      v_stage.stage_key,
+      v_stage.stage_label,
+      v_stage.stage_description,
+      v_stage.stage_color,
+      v_stage.stage_icon,
+      v_stage.sort_order,
+      v_stage.standard_deadline_days,
+      v_stage.suggested_priorities,
+      NOW(),
+      NOW()
+    );
+  END LOOP;
+
+  -- Copy automation rules (optional - you may want to exclude these)
+  FOR v_rule IN
+    SELECT * FROM workflow_automation_rules
+    WHERE workflow_id = source_workflow_id
+  LOOP
+    INSERT INTO workflow_automation_rules (
+      id,
+      workflow_id,
+      rule_name,
+      rule_type,
+      condition_type,
+      condition_value,
+      action_type,
+      action_value,
+      is_active,
+      created_by,
+      created_at,
+      updated_at
+    ) VALUES (
+      gen_random_uuid(),
+      v_new_workflow_id,
+      v_rule.rule_name,
+      v_rule.rule_type,
+      v_rule.condition_type,
+      v_rule.condition_value,
+      v_rule.action_type,
+      v_rule.action_value,
+      v_rule.is_active,
+      target_user_id,
+      NOW(),
+      NOW()
+    );
+  END LOOP;
+
+  RETURN v_new_workflow_id;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.activate_template_version(p_version_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_workflow_id UUID;
+  v_version_data RECORD;
+  v_stage JSONB;
+  v_checklist JSONB;
+  v_stage_id UUID;
+BEGIN
+  -- Get the version data (only structural parts: stages and checklists)
+  SELECT
+    workflow_id,
+    stages,
+    checklist_templates
+  INTO v_version_data
+  FROM workflow_template_versions
+  WHERE id = p_version_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Version not found';
+  END IF;
+
+  v_workflow_id := v_version_data.workflow_id;
+
+  -- Deactivate all versions for this workflow
+  UPDATE workflow_template_versions
+  SET is_active = false
+  WHERE workflow_id = v_workflow_id;
+
+  -- Activate the selected version
+  UPDATE workflow_template_versions
+  SET is_active = true
+  WHERE id = p_version_id;
+
+  -- Clear existing stages
+  DELETE FROM workflow_stages
+  WHERE workflow_id = v_workflow_id;
+
+  -- Restore stages from version snapshot
+  FOR v_stage IN SELECT * FROM jsonb_array_elements(v_version_data.stages)
+  LOOP
+    INSERT INTO workflow_stages (
+      workflow_id,
+      stage_key,
+      stage_label,
+      stage_description,
+      stage_color,
+      sort_order,
+      stage_icon
+    )
+    VALUES (
+      v_workflow_id,
+      (v_stage->>'key')::TEXT,
+      (v_stage->>'name')::TEXT,
+      (v_stage->>'description')::TEXT,
+      (v_stage->>'color')::TEXT,
+      (v_stage->>'order_index')::INTEGER,
+      (v_stage->>'icon')::TEXT
+    )
+    RETURNING id INTO v_stage_id;
+  END LOOP;
+
+  -- Clear existing checklist templates
+  DELETE FROM workflow_checklist_templates
+  WHERE workflow_id = v_workflow_id;
+
+  -- Restore checklist templates from version snapshot
+  IF v_version_data.checklist_templates IS NOT NULL THEN
+    FOR v_checklist IN SELECT * FROM jsonb_array_elements(v_version_data.checklist_templates)
+    LOOP
+      INSERT INTO workflow_checklist_templates (
+        workflow_id,
+        stage_id,
+        item_id,
+        item_text,
+        sort_order,
+        is_required
+      )
+      VALUES (
+        v_workflow_id,
+        (v_checklist->>'stage_id')::UUID,
+        (v_checklist->>'item_id')::TEXT,
+        (v_checklist->>'item_text')::TEXT,
+        (v_checklist->>'sort_order')::INTEGER,
+        COALESCE((v_checklist->>'is_required')::BOOLEAN, false)
+      );
+    END LOOP;
+  END IF;
+
+  -- NOTE: Automation rules and universe rules are NOT restored
+  -- They are operational/scoping settings, not structural
+  -- They remain as currently configured on the workflow
+
+  RETURN TRUE;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.create_initial_template_version(p_workflow_id uuid)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_version_id UUID;
+  v_stages JSONB;
+  v_checklists JSONB;
+  v_rules JSONB;
+  v_universe_rules JSONB;
+  v_workflow_creator UUID;
+BEGIN
+  SELECT created_by INTO v_workflow_creator
+  FROM workflows WHERE id = p_workflow_id;
+
+  -- Get current stages INCLUDING checklist_items JSONB
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'stage_key', stage_key,
+      'stage_label', stage_label,
+      'stage_description', stage_description,
+      'stage_color', stage_color,
+      'stage_icon', stage_icon,
+      'sort_order', sort_order,
+      'standard_deadline_days', standard_deadline_days,
+      'checklist_items', COALESCE(checklist_items, '[]'::jsonb)
+    ) ORDER BY sort_order
+  ), '[]'::jsonb)
+  INTO v_stages
+  FROM workflow_stages WHERE workflow_id = p_workflow_id;
+
+  -- Get checklist templates (legacy table - may be empty for wizard-created processes)
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'id', id, 'workflow_id', workflow_id, 'stage_id', stage_id,
+      'item_text', item_text, 'sort_order', sort_order, 'is_required', is_required
+    ) ORDER BY sort_order
+  ), '[]'::jsonb)
+  INTO v_checklists
+  FROM workflow_checklist_templates WHERE workflow_id = p_workflow_id;
+
+  -- Get automation rules
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'id', id, 'workflow_id', workflow_id, 'rule_name', rule_name,
+      'condition_type', condition_type, 'condition_value', condition_value,
+      'action_type', action_type, 'action_value', action_value, 'is_active', is_active
+    ) ORDER BY created_at
+  ), '[]'::jsonb)
+  INTO v_rules
+  FROM workflow_automation_rules WHERE workflow_id = p_workflow_id;
+
+  -- Get universe rules
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'id', id, 'workflow_id', workflow_id, 'rule_type', rule_type,
+      'rule_config', rule_config, 'combination_operator', combination_operator,
+      'sort_order', sort_order, 'is_active', is_active, 'description', description
+    ) ORDER BY sort_order
+  ), '[]'::jsonb)
+  INTO v_universe_rules
+  FROM workflow_universe_rules WHERE workflow_id = p_workflow_id;
+
+  INSERT INTO workflow_template_versions (
+    workflow_id, version_number, major_version, minor_version, version_name, description,
+    stages, checklist_templates, automation_rules, universe_rules, is_active, created_by
+  ) VALUES (
+    p_workflow_id, 100, 1, 0, 'Initial Version', 'Initial template version created automatically',
+    v_stages, v_checklists, v_rules, v_universe_rules, true, v_workflow_creator
+  ) RETURNING id INTO v_version_id;
+
+  RETURN v_version_id;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.create_new_template_version(p_workflow_id uuid, p_version_name text DEFAULT NULL::text, p_description text DEFAULT NULL::text, p_version_type text DEFAULT 'minor'::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_version_id UUID;
+  v_next_version INTEGER;
+  v_last_major INTEGER;
+  v_major_version INTEGER;
+  v_minor_version INTEGER;
+  v_stages JSONB;
+  v_checklists JSONB;
+BEGIN
+  -- Get last major version number to calculate next version
+  SELECT COALESCE(MAX(
+    CASE
+      WHEN version_number < 100 THEN version_number * 100
+      ELSE (version_number / 100) * 100
+    END
+  ), 0)
+  INTO v_last_major
+  FROM workflow_template_versions
+  WHERE workflow_id = p_workflow_id;
+
+  -- Calculate next version number based on type
+  IF p_version_type = 'major' THEN
+    v_next_version := v_last_major + 100;
+    v_major_version := v_next_version / 100;
+    v_minor_version := 0;
+  ELSE
+    SELECT COALESCE(MAX(version_number), 0) + 1
+    INTO v_next_version
+    FROM workflow_template_versions
+    WHERE workflow_id = p_workflow_id;
+
+    IF v_next_version < 100 THEN
+      v_major_version := v_next_version;
+      v_minor_version := 0;
+    ELSE
+      v_major_version := v_next_version / 100;
+      v_minor_version := v_next_version % 100;
+    END IF;
+  END IF;
+
+  -- Get current stages INCLUDING checklist_items JSONB
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'key', stage_key,
+      'stage_key', stage_key,
+      'name', stage_label,
+      'stage_label', stage_label,
+      'description', stage_description,
+      'stage_description', stage_description,
+      'color', stage_color,
+      'stage_color', stage_color,
+      'order_index', sort_order,
+      'sort_order', sort_order,
+      'icon', stage_icon,
+      'stage_icon', stage_icon,
+      'checklist_items', COALESCE(checklist_items, '[]'::jsonb)
+    ) ORDER BY sort_order
+  ), '[]'::jsonb)
+  INTO v_stages
+  FROM workflow_stages
+  WHERE workflow_id = p_workflow_id;
+
+  -- Get current checklist templates (for non-wizard processes that use the templates table)
+  SELECT COALESCE(jsonb_agg(
+    jsonb_build_object(
+      'id', id,
+      'workflow_id', workflow_id,
+      'stage_id', stage_id,
+      'item_id', item_id,
+      'item_text', item_text,
+      'item_type', COALESCE(item_type, 'operational'),
+      'sort_order', sort_order,
+      'is_required', is_required
+    ) ORDER BY sort_order
+  ), '[]'::jsonb)
+  INTO v_checklists
+  FROM workflow_checklist_templates
+  WHERE workflow_id = p_workflow_id;
+
+  -- Deactivate all previous versions
+  UPDATE workflow_template_versions
+  SET is_active = false
+  WHERE workflow_id = p_workflow_id AND is_active = true;
+
+  -- Create new version
+  INSERT INTO workflow_template_versions (
+    workflow_id,
+    version_number,
+    major_version,
+    minor_version,
+    version_name,
+    description,
+    version_type,
+    stages,
+    checklist_templates,
+    automation_rules,
+    is_active,
+    created_by
+  )
+  VALUES (
+    p_workflow_id,
+    v_next_version,
+    v_major_version,
+    v_minor_version,
+    p_version_name,
+    p_description,
+    p_version_type,
+    v_stages,
+    v_checklists,
+    NULL,
+    true,
+    auth.uid()
+  )
+  RETURNING id INTO v_version_id;
+
+  RETURN v_version_id;
+END;
+$function$;
+
+-- Roll migration C back first if it is applied: run_workflow_rule depends on
+-- assert_workflow_admin.
+DROP FUNCTION IF EXISTS public.assert_workflow_admin(uuid);
+DROP FUNCTION IF EXISTS public.assert_workflow_readable(uuid);
