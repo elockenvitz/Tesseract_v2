@@ -337,8 +337,36 @@ $function$;
 
 -- ----------------------------------------------------------------------------
 -- 4. Privileges.
---    PostgreSQL grants EXECUTE to PUBLIC on every new function, so each
---    REVOKE ALL ... FROM PUBLIC below is load-bearing, not cosmetic.
+--
+--    REVOKE ALL ... FROM PUBLIC IS NOT SUFFICIENT ON THIS PROJECT, and an
+--    earlier version of this section assumed it was. Stock PostgreSQL grants
+--    EXECUTE to the PUBLIC pseudo-role on a new function, which a REVOKE FROM
+--    PUBLIC removes. Supabase instead carries a per-role default, measured on
+--    production 2026-11-06:
+--
+--      pg_default_acl, owner postgres, schema public, objtype f:
+--        postgres=X/postgres anon=X/postgres
+--        authenticated=X/postgres service_role=X/postgres
+--
+--    So every function CREATEd in public by postgres is born with an EXPLICIT
+--    EXECUTE grant to anon, and REVOKE ... FROM PUBLIC does not touch an
+--    explicit per-role grant. Only a REVOKE naming anon removes it.
+--
+--    This is not hypothetical. Migration 20261106160000 shipped exactly this
+--    pattern for its two guard helpers, and both reached production executable
+--    by anon and authenticated; 20261106160010 is the correction. The REVOKEs
+--    naming anon below exist so that this migration does not repeat it.
+--
+--    The distinction that matters here: CREATE OR REPLACE on a function that
+--    ALREADY EXISTS keeps that function's current ACL and does not apply the
+--    default privileges at all. recompute_workflow_rule_schedules exists in
+--    production (anon cannot execute it, verified 2026-11-06), so it needs no
+--    anon REVOKE. run_workflow_rule and run_due_workflow_rules do not exist
+--    yet, so they are the two that do.
+--
+--    authenticated EXECUTE is intended and preserved on all three. These are
+--    the frontend's only route to running a rule, and the authority checks are
+--    inside the function bodies, not in the grant.
 --
 --    THE TWO BREAKING REVOKES ARE NOT IN THIS FILE. They live in
 --    20261106160400_sec_automation_revoke_scheduler_execute.sql so that this
@@ -347,13 +375,18 @@ $function$;
 --    DEPLOYMENT section in this file's header.
 -- ----------------------------------------------------------------------------
 
--- Restated at their existing level.
+-- Pre-existing function, restated at its existing level. CREATE OR REPLACE
+-- preserved its ACL, so no anon REVOKE is needed or wanted here.
 REVOKE ALL ON FUNCTION public.recompute_workflow_rule_schedules(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.recompute_workflow_rule_schedules(uuid, uuid) TO authenticated, service_role;
 
--- The new wrappers: the browser's only route to running a rule.
+-- The new wrappers: the browser's only route to running a rule. Newly created,
+-- so each one arrives carrying the anon grant from pg_default_acl and each
+-- needs it removed by name.
 REVOKE ALL ON FUNCTION public.run_workflow_rule(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.run_workflow_rule(uuid) TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.run_workflow_rule(uuid) FROM anon;
 
 REVOKE ALL ON FUNCTION public.run_due_workflow_rules() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.run_due_workflow_rules() TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.run_due_workflow_rules() FROM anon;

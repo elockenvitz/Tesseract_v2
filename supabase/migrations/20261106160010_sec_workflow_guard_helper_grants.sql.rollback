@@ -1,0 +1,21 @@
+-- Rollback for 20261106160010_sec_workflow_guard_helper_grants.sql
+--
+-- READ THIS BEFORE RUNNING IT.
+--
+-- This restores EXECUTE on both guard helpers to anon and authenticated, which
+-- is the state migration A accidentally left behind. Running it reopens the
+-- cross-organization workflow existence oracle described in the forward
+-- migration: any logged-in user can probe a workflow uuid and distinguish
+-- "does not exist" from "exists in another organization".
+--
+-- There is no functional reason to run this. Nothing calls these helpers over
+-- the API. The four workflow functions that use them are SECURITY DEFINER owned
+-- by postgres and reach them regardless of these grants, so restoring the
+-- grants fixes nothing and only widens access.
+--
+-- It exists because every migration in this project is paired with its inverse,
+-- and because an operator who needs to return the database to its exact
+-- post-A state should be able to do so deliberately rather than by hand.
+
+GRANT EXECUTE ON FUNCTION public.assert_workflow_readable(uuid) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.assert_workflow_admin(uuid) TO anon, authenticated;
