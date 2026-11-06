@@ -1,0 +1,54 @@
+-- ============================================================================
+-- ROLLBACK for 20261106160100_sec_list_activity_rpcs.sql
+-- ============================================================================
+-- *** APPLYING THIS FILE REOPENS A CONFIRMED CROSS-TENANT DISCLOSURE. ***
+--
+-- It restores both functions to SECURITY DEFINER with no caller check, which
+-- means any authenticated user can again turn one user uuid into:
+--   * that user's organization's list uuids and per-list activity counts, and
+--   * the activity rows on those lists, including an actor's real name or
+--     email address and the metadata payload (tickers).
+--
+-- Reproduced on production 2026-11-06. There is no legitimate behaviour that
+-- requires this; the forward fix preserved owner and collaborator access in
+-- full (7/7 assertions). Use this file only if the fix is somehow breaking
+-- list surfaces in production and there is no time to correct it forward.
+--
+-- Bodies are verbatim as they stood before the change.
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.get_list_activity_counts(p_user_id uuid)
+ RETURNS TABLE(list_id uuid, update_count bigint, self_count bigint)
+ LANGUAGE sql
+ SECURITY DEFINER
+AS $function$
+  SELECT
+    a.list_id,
+    COUNT(*) FILTER (WHERE a.actor_id IS DISTINCT FROM p_user_id)::bigint AS update_count,
+    COUNT(*) FILTER (WHERE a.actor_id = p_user_id)::bigint AS self_count
+  FROM asset_list_activity a
+  LEFT JOIN asset_list_user_state s ON s.list_id = a.list_id AND s.user_id = p_user_id
+  WHERE a.created_at > COALESCE(s.last_opened_at, '1970-01-01'::timestamptz)
+  GROUP BY a.list_id;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.get_latest_list_activities(p_list_ids uuid[])
+ RETURNS TABLE(list_id uuid, activity_type text, actor_name text, metadata jsonb, created_at timestamp with time zone)
+ LANGUAGE sql
+ SECURITY DEFINER
+AS $function$
+  SELECT DISTINCT ON (a.list_id)
+    a.list_id,
+    a.activity_type::text,
+    COALESCE(
+      NULLIF(TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')), ''),
+      u.email,
+      'Someone'
+    ) as actor_name,
+    a.metadata,
+    a.created_at
+  FROM asset_list_activity a
+  LEFT JOIN users u ON u.id = a.actor_id
+  WHERE a.list_id = ANY(p_list_ids)
+  ORDER BY a.list_id, a.created_at DESC;
+$function$;
