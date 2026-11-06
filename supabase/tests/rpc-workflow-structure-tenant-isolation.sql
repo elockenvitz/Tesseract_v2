@@ -77,9 +77,35 @@
 -- versions yet (v_wf_virgin) and asserts only that the guard lets them
 -- through.
 --
--- SAFE TO RUN AGAINST PRODUCTION: every row it creates is deleted in the
--- CLEANUP block, and nothing it touches belongs to a real organization.
+-- TRANSACTION SAFETY (read this before running it anywhere)
+--
+-- The whole file runs inside BEGIN ... ROLLBACK, so NOTHING it writes can
+-- persist, by any exit path:
+--
+--   * normal completion  -> the explicit CLEANUP block deletes the fixtures,
+--                           then ROLLBACK discards everything anyway
+--   * failed assertion   -> the assertion is caught, the run continues, and
+--                           CLEANUP + ROLLBACK still happen
+--   * unhandled error    -> the transaction aborts; the final SELECT then
+--                           reports 25P02 instead of the results table, and
+--                           ROLLBACK discards every fixture row
+--
+-- The explicit DELETEs are kept as defence in depth, so the file still behaves
+-- if someone pastes only the DO block. They are NOT the guarantee; the
+-- ROLLBACK is. This file does not rely on a deliberately raised exception for
+-- cleanup, and it must never be edited to drop the ROLLBACK.
+--
+-- Trigger-generated rows are covered too. Inserting a public.users row fires
+-- create_default_lists_trigger, which creates asset_lists the fixture never
+-- asked for, and seed_default_list_statuses then seeds their statuses. Those
+-- are deleted explicitly in CLEANUP, and discarded by the ROLLBACK regardless.
+--
+-- It touches no real customer record: every row it reads or writes is one it
+-- created, in two throwaway organizations with random slugs. The destructive
+-- assertion (3) deletes stages of a fixture workflow only.
 -- =============================================================================
+
+BEGIN;
 
 DROP TABLE IF EXISTS _sec_results;
 CREATE TEMP TABLE _sec_results(n int, result text, detail text);
@@ -369,3 +395,6 @@ END;
 $$;
 
 SELECT n, result, detail FROM _sec_results ORDER BY n, result;
+
+-- The guarantee. Do not replace this with COMMIT.
+ROLLBACK;

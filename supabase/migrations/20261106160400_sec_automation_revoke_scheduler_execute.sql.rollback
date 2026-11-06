@@ -1,0 +1,38 @@
+-- ============================================================================
+-- ROLLBACK for 20261106160400_sec_automation_revoke_scheduler_execute.sql
+-- ============================================================================
+-- *** APPLYING THIS FILE REOPENS A CONFIRMED CROSS-TENANT EXECUTION PATH. ***
+--
+-- It re-grants EXECUTE on execute_single_automation_rule and
+-- evaluate_pending_rules to `authenticated`, which means:
+--
+--   * p_trigger_source := 'scheduler' is reachable from a browser again and
+--     skips the only authorization check those functions have, and
+--   * any logged-in user can again run evaluate_pending_rules, which sweeps
+--     due rules across EVERY organization. Measured 2026-11-06: an org-B
+--     user's call processed an org-A rule.
+--
+-- YOU ALMOST CERTAINLY DO NOT NEED THIS FILE.
+--
+-- The only thing 160400 can break is an application that still calls the two
+-- revoked functions directly. If the WorkflowsPage.tsx deploy has to be rolled
+-- back, roll THAT back and leave the revoke in place only if the reverted
+-- frontend does not call them. If the reverted frontend DOES call
+-- execute_single_automation_rule, the "Run rule" button will fail with 42501.
+--
+-- PREFER THIS instead of re-granting: leave 160400 applied and ship a frontend
+-- that calls run_workflow_rule(uuid), which 20261106160200 created and which
+-- is safe. A broken button is recoverable in one deploy; a reopened
+-- cross-tenant execution path is not recoverable at all, because you cannot
+-- know afterwards whether it was used.
+--
+-- If you apply this anyway, treat the exposure as live and re-apply 160400 as
+-- soon as the frontend is fixed.
+-- ============================================================================
+
+GRANT EXECUTE ON FUNCTION public.execute_single_automation_rule(uuid, uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.evaluate_pending_rules() TO authenticated;
+
+-- `anon` is deliberately NOT re-granted. It held no EXECUTE on either function
+-- before 160400 (measured: anon_can_execute = false), so granting it would
+-- widen access past the original state rather than restore it.

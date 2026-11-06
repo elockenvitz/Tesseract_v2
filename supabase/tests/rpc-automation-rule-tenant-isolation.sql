@@ -54,8 +54,36 @@
 -- with 42501; deploying the frontend without the migration leaves them failing
 -- with PGRST202. They ship together.
 --
--- SAFE TO RUN AGAINST PRODUCTION: self-cleaning.
+-- TRANSACTION SAFETY
+--
+-- The whole file runs inside BEGIN ... ROLLBACK, so nothing it writes can
+-- persist by any exit path: normal completion, a failed assertion, or an
+-- unhandled error. The explicit CLEANUP DELETEs are defence in depth, not the
+-- guarantee; the ROLLBACK is. Cleanup does not depend on a deliberately raised
+-- exception, and the ROLLBACK must never be replaced with COMMIT.
+--
+-- Trigger-generated rows are covered. Two sources here: inserting a
+-- public.users row fires create_default_lists_trigger (default asset_lists,
+-- then seeded list_statuses), and running a notify_only rule can write a
+-- workflow_rule_executions row and a notification. All are deleted explicitly
+-- and discarded by the ROLLBACK regardless.
+--
+-- ONE CAVEAT THAT IS NOT TRANSACTIONAL. Assertions 5 and 8 call
+-- run_due_workflow_rules(), which takes pg_try_advisory_lock(hashtext(
+-- 'workflow_rule_scheduler')). An advisory lock is SESSION scoped, not
+-- transaction scoped, so a ROLLBACK does not release it. The function unlocks
+-- on both its success and its exception path, so in normal operation it is
+-- released; but if the session is killed between the lock and the unlock, the
+-- lock survives the rollback and a later scheduler run returns
+-- {"status":"skipped"}. It clears when the session ends. Do not run this file
+-- from a long-lived pooled session, and if a sweep starts reporting "skipped",
+-- check pg_locks for locktype = 'advisory' before looking anywhere else.
+--
+-- It touches no real customer record: every row is one it created, in two
+-- throwaway organizations with random slugs.
 -- =============================================================================
+
+BEGIN;
 
 DROP TABLE IF EXISTS _sec_results;
 CREATE TEMP TABLE _sec_results(n int, result text, detail text);
@@ -234,3 +262,10 @@ END;
 $$;
 
 SELECT n, result, detail FROM _sec_results ORDER BY n, result;
+
+-- The guarantee. Do not replace this with COMMIT.
+ROLLBACK;
+
+-- Belt and braces for the one thing ROLLBACK cannot undo: see the advisory
+-- lock caveat in the header. Safe to run even if the lock was never held.
+SELECT pg_advisory_unlock_all();

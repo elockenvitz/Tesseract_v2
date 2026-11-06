@@ -44,10 +44,30 @@
 -- what production uses today and the fix makes that the only behaviour. If
 -- that function is ever called with an explicit argument, add a case here.
 --
--- SAFE TO RUN AGAINST PRODUCTION: self-cleaning. It picks an EXISTING asset
--- for the ensure_default_scenarios assertions and only ever calls it in a
--- branch that expects a refusal, so it never writes a scenario row.
+-- TRANSACTION SAFETY
+--
+-- The whole file runs inside BEGIN ... ROLLBACK, so nothing it writes can
+-- persist by any exit path: normal completion, a failed assertion, or an
+-- unhandled error. The explicit CLEANUP DELETEs are defence in depth, not the
+-- guarantee; the ROLLBACK is. Cleanup does not depend on a deliberately raised
+-- exception, and the ROLLBACK must never be replaced with COMMIT.
+--
+-- Trigger-generated rows are covered: inserting a public.users row fires
+-- create_default_lists_trigger, which creates asset_lists the fixture never
+-- asked for, and seed_default_list_statuses then seeds their statuses.
+--
+-- THE ONE PLACE IT TOUCHES A REAL ROW, AND WHY THAT IS SAFE
+--
+-- It reads one EXISTING asset id, because `assets` is global reference data
+-- with no organization_id and creating one would be the larger intrusion. It
+-- passes that id only to ensure_default_scenarios, and only from the `anon`
+-- role in assertion 4, which is a branch that expects a refusal. Should that
+-- refusal ever stop happening, the function's own guard returns early when
+-- default scenarios already exist, and the ROLLBACK discards any row it did
+-- write. No real asset, scenario or organization row survives this file.
 -- =============================================================================
+
+BEGIN;
 
 DROP TABLE IF EXISTS _sec_results;
 CREATE TEMP TABLE _sec_results(n int, result text, detail text);
@@ -233,3 +253,6 @@ END;
 $$;
 
 SELECT n, result, detail FROM _sec_results ORDER BY n, result;
+
+-- The guarantee. Do not replace this with COMMIT.
+ROLLBACK;

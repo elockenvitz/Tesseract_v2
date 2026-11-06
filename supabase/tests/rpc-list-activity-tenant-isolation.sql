@@ -61,8 +61,29 @@
 -- collaborate on" would still let the collaborator see BOTH lists, including
 -- the one they were never shared on. Assertion 5 requires exactly 1.
 --
--- SAFE TO RUN AGAINST PRODUCTION: self-cleaning.
+-- TRANSACTION SAFETY
+--
+-- The whole file runs inside BEGIN ... ROLLBACK, so nothing it writes can
+-- persist by any exit path: normal completion, a failed assertion, or an
+-- unhandled error. The explicit CLEANUP DELETEs are defence in depth, not the
+-- guarantee; the ROLLBACK is. Cleanup does not depend on a deliberately raised
+-- exception, and the ROLLBACK must never be replaced with COMMIT.
+--
+-- Trigger-generated rows are covered: inserting a public.users row fires
+-- create_default_lists_trigger, which creates asset_lists the fixture never
+-- asked for, and seed_default_list_statuses then seeds their statuses.
+--
+-- It touches no real customer record: every row is one it created, in two
+-- throwaway organizations with random slugs.
+--
+-- PROOF OF ZERO PERSISTENCE (measured 2026-11-06): this file was run against
+-- production with the explicit DELETEs only, and afterwards organizations,
+-- auth.users, public.users, asset_lists and asset_list_activity matching its
+-- fixture patterns all returned 0. The ROLLBACK added here makes that
+-- structural rather than a property of the cleanup block being correct.
 -- =============================================================================
+
+BEGIN;
 
 DROP TABLE IF EXISTS _sec_results;
 CREATE TEMP TABLE _sec_results(n int, result text, detail text);
@@ -208,3 +229,6 @@ END;
 $$;
 
 SELECT n, result, detail FROM _sec_results ORDER BY n, result;
+
+-- The guarantee. Do not replace this with COMMIT.
+ROLLBACK;

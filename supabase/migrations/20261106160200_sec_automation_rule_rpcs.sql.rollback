@@ -1,32 +1,33 @@
 -- ============================================================================
 -- ROLLBACK for 20261106160200_sec_automation_rule_rpcs.sql
 -- ============================================================================
--- *** APPLYING THIS FILE REOPENS TWO CONFIRMED CROSS-TENANT PATHS. ***
+-- *** APPLYING THIS FILE REOPENS A CONFIRMED CROSS-TENANT PATH. ***
 --
--- It restores:
---   * recompute_workflow_rule_schedules trusting its p_user_id argument, so
---     an attacker who knows a victim's user uuid can rewrite another
---     organization's rule schedules. Measured: {"status":"success"} with the
---     victim's uuid, "Admin permission required" with the attacker's own.
---   * EXECUTE on execute_single_automation_rule and evaluate_pending_rules
---     for `authenticated`, so p_trigger_source := 'scheduler' is reachable
---     from a browser again, and any logged-in user can run
---     evaluate_pending_rules, which sweeps due rules across EVERY
---     organization. Measured: an org-B user's call executed an org-A rule.
+-- It restores recompute_workflow_rule_schedules trusting its p_user_id
+-- argument, so an attacker who knows a victim's user uuid can rewrite another
+-- organization's rule schedules. Measured 2026-11-06: {"status":"success"}
+-- with the victim's uuid, "Admin permission required" with the attacker's own.
+-- It also restores the missing organization term, i.e. removes it.
+--
+-- THE TWO EXECUTE REVOKES ARE NOT UNDONE HERE. They were split out into
+-- 20261106160400 and have their own .rollback. Rolling back the function body
+-- and rolling back the privilege change are independent decisions, and you
+-- almost certainly want only the former.
 --
 -- ORDER MATTERS WHEN ROLLING BACK
 --   Roll the FRONTEND back at the same time, or sooner. After this file runs,
 --   run_workflow_rule and run_due_workflow_rules are gone, so a deployed
 --   frontend that calls them fails with PGRST202 ("function not found in the
---   schema cache"). The safe sequence is:
+--   schema cache"), AND if 20261106160400 is applied the old functions are no
+--   longer callable either, so the "Run rule" button has no working route at
+--   all. The safe sequence is:
 --     1. revert the WorkflowsPage.tsx change and deploy it,
---     2. then run this file.
---   Rolling back the database first leaves the two automation buttons broken
---   until the frontend revert lands.
+--     2. roll back 20261106160400 only if the reverted frontend needs it,
+--     3. then run this file.
 --
--- The `anon` REVOKEs from the forward migration are NOT undone here. anon held
--- no EXECUTE on either function before the change, so restoring it would be
--- widening access beyond the original state, not a rollback.
+-- PREFER NOT RUNNING THIS AT ALL. The recompute fix is behaviour-preserving
+-- for every legitimate caller (measured 8/8), so there is no known reason to
+-- restore the forgeable version.
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.recompute_workflow_rule_schedules(p_workflow_id uuid, p_user_id uuid)
@@ -104,10 +105,6 @@ BEGIN
   );
 END;
 $function$;
-
--- Restore the EXECUTE grants that made scheduler authority reachable.
-GRANT EXECUTE ON FUNCTION public.execute_single_automation_rule(uuid, uuid, text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.evaluate_pending_rules() TO authenticated;
 
 -- Remove the guarded wrappers.
 DROP FUNCTION IF EXISTS public.run_due_workflow_rules();

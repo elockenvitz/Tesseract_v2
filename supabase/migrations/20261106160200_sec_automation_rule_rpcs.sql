@@ -70,10 +70,41 @@
 -- check now runs on a real identity rather than a claimed one. The wrapper
 -- guard is the real boundary; the inner check becomes a second line.
 --
--- APPLICATION DEPENDENCY: this migration must be applied BEFORE or WITH the
--- frontend change that switches those two call sites to the wrappers.
--- Applying the revoke alone makes both buttons fail with 42501 until the
--- frontend ships. Deployment order is in the session report.
+-- DEPLOYMENT
+--
+-- This file is PURELY ADDITIVE and backward compatible. It creates the two
+-- wrappers and tightens recompute_workflow_rule_schedules, and it changes no
+-- grant that the currently deployed frontend depends on. It can be applied at
+-- any time, before the frontend deploy, with no incompatibility window.
+--
+-- The two REVOKEs that actually take scheduler authority off the browser API
+-- are deliberately held back in
+-- 20261106160400_sec_automation_revoke_scheduler_execute.sql, because they are
+-- the only part that breaks the currently deployed frontend. The sequence is:
+--
+--   1. apply this file                      (old frontend keeps working)
+--   2. deploy the WorkflowsPage.tsx change  (now calls the wrappers)
+--   3. apply 20261106160400                 (old route closed)
+--
+-- If step 2 fails, stop. Step 1 is harmless on its own and step 3 is simply
+-- not applied; nothing has to be rolled back. The cost of stopping there is
+-- that the p_trigger_source = 'scheduler' bypass stays open until step 3,
+-- which is stated plainly rather than papered over.
+--
+-- VERIFIED BEFORE SPLITTING THIS FILE (measured on production 2026-11-06):
+--   * No edge function and no other database function calls
+--     execute_single_automation_rule. The only caller is
+--     evaluate_pending_rules, which itself now has no caller at all.
+--   * The REAL scheduler is the pg_cron job `SELECT
+--     execute_due_automation_rules()` (every minute, as role `postgres`), and
+--     that function does NOT call execute_single_automation_rule. So
+--     evaluate_pending_rules was never the scheduler: it was a browser-only
+--     entry point to scheduler authority.
+--   * execute_due_automation_rules, process_branch_ending_rules and
+--     execute_overdue_ending_rules are already NOT executable by
+--     `authenticated`, so the two REVOKEs in 160400 close the only
+--     browser-reachable routes to scheduler authority, with none left over.
+--   * All five pg_cron jobs run as `postgres`, so no REVOKE here affects them.
 --
 -- WHY NOT SECURITY INVOKER for recompute_workflow_rule_schedules
 -- It UPDATEs workflow_automation_rules, whose policies were not audited as
@@ -308,19 +339,13 @@ $function$;
 -- 4. Privileges.
 --    PostgreSQL grants EXECUTE to PUBLIC on every new function, so each
 --    REVOKE ALL ... FROM PUBLIC below is load-bearing, not cosmetic.
+--
+--    THE TWO BREAKING REVOKES ARE NOT IN THIS FILE. They live in
+--    20261106160400_sec_automation_revoke_scheduler_execute.sql so that this
+--    migration is purely additive and backward compatible: it can be applied
+--    before the frontend deploy with no incompatibility window. See the
+--    DEPLOYMENT section in this file's header.
 -- ----------------------------------------------------------------------------
-
--- Narrowed: these two carry scheduler authority and are no longer reachable
--- from a browser session. service_role (the scheduler's key) keeps them.
-REVOKE EXECUTE ON FUNCTION public.execute_single_automation_rule(uuid, uuid, text) FROM authenticated;
-REVOKE EXECUTE ON FUNCTION public.execute_single_automation_rule(uuid, uuid, text) FROM anon;
-REVOKE EXECUTE ON FUNCTION public.execute_single_automation_rule(uuid, uuid, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.execute_single_automation_rule(uuid, uuid, text) TO service_role;
-
-REVOKE EXECUTE ON FUNCTION public.evaluate_pending_rules() FROM authenticated;
-REVOKE EXECUTE ON FUNCTION public.evaluate_pending_rules() FROM anon;
-REVOKE EXECUTE ON FUNCTION public.evaluate_pending_rules() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.evaluate_pending_rules() TO service_role;
 
 -- Restated at their existing level.
 REVOKE ALL ON FUNCTION public.recompute_workflow_rule_schedules(uuid, uuid) FROM PUBLIC;
