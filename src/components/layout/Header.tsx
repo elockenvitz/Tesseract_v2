@@ -7,6 +7,7 @@ import { useNotifications } from '../../hooks/useNotifications'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useMorphSession } from '../../hooks/useMorphSession'
 import { supabase } from '../../lib/supabase'
+import { readUnreadDirectMessages } from '../../lib/messaging/unread-direct-messages'
 import { GlobalSearch } from '../search/GlobalSearch'
 import { FeedbackWidget } from '../feedback/FeedbackWidget'
 import { MorphBanner } from '../support/MorphBanner'
@@ -136,47 +137,40 @@ export function Header({
     ? { ...(user as any), ...morphTargetUser }
     : (user as any))
 
-  // Check for unread direct messages (conversation_messages table only)
+  /*
+   * Check for unread direct messages (conversation_messages table only).
+   *
+   * The 1+N loop that used to be inline here is now one RPC. See
+   * `src/lib/messaging/unread-direct-messages.ts` for the measurement and for
+   * why there is still a fallback path.
+   *
+   * ── On the interval ─────────────────────────────────────────────────────
+   *
+   * 5s with `staleTime: 0` meant this badge was the most frequently executed
+   * query in the product. 20s, because the thing it drives is a dot on an
+   * icon, and because the two responsiveness paths that actually matter are
+   * kept:
+   *
+   *   - `refetchOnWindowFocus` is retained, so coming back to the tab checks
+   *     immediately. That is how a returning reader notices, not the timer.
+   *   - Sending or reading a message invalidates this key directly, so the
+   *     badge reacts to the reader's own actions without waiting.
+   *
+   * `staleTime` is 15s rather than 0 so focus and interval cannot both fire a
+   * request within the same few seconds; with 0 they did.
+   *
+   * This is NOT the path that would make incoming chat feel live. That needs
+   * `conversation_messages` in the realtime publication, which it is not in,
+   * and which is a separate decision. The subscription below is wired to that
+   * table today and has therefore never delivered an event.
+   */
   const { data: hasUnreadDirectMessages, refetch: refetchDirectMessagesUnstable } = useQuery({
     queryKey: ['unread-direct-messages', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return false
-
-      // Check direct messages by getting user's conversations
-      const { data: userConversations, error: convError } = await supabase
-        .from('conversation_participants')
-        .select('conversation_id, last_read_at')
-        .eq('user_id', user.id)
-
-      if (convError) {
-        console.error('Error fetching user conversations for notification:', convError)
-        return false
-      }
-
-      if (!userConversations || userConversations.length === 0) {
-        return false
-      }
-
-      // Check each conversation for unread messages
-      for (const conv of userConversations) {
-        const { count } = await supabase
-          .from('conversation_messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('conversation_id', conv.conversation_id)
-          .neq('user_id', user.id)
-          .gt('created_at', conv.last_read_at || '1970-01-01')
-
-        if (count && count > 0) {
-          return true
-        }
-      }
-
-      return false
-    },
+    queryFn: () => readUnreadDirectMessages(user!.id),
     enabled: !!user?.id,
-    refetchInterval: 5000, // Check every 5 seconds for near-instant notification
+    refetchInterval: 20000,
     refetchOnWindowFocus: true,
-    staleTime: 0,
+    staleTime: 15000,
   })
 
   // Stable ref for refetch to avoid re-creating realtime subscription on every render
