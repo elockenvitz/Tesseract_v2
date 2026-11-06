@@ -44,9 +44,24 @@ export function NotificationPane({
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
-  // Fetch notifications
+  /*
+   * Fetch notifications.
+   *
+   * The key carries the user id. It did not, and this pane is mounted twice
+   * (Layout and CommunicationPane) while the app also supports morphing: an
+   * admin viewing as another user. A cache entry keyed only `['notifications']`
+   * outlives the change of identity, so the first render after a morph starts
+   * or ends serves the previous user's rows from cache until the refetch
+   * lands. The rows themselves were never mis-queried -- `user_id` is always
+   * filtered below, and RLS backs it -- but they were shown to the wrong
+   * reader. Both mounts share the key, so TanStack still collapses them into
+   * one request per user.
+   *
+   * `invalidateQueries({ queryKey: ['notifications'] })` elsewhere keeps
+   * working: TanStack matches keys by prefix unless told otherwise.
+   */
   const { data: notifications, isLoading } = useQuery({
-    queryKey: ['notifications'],
+    queryKey: ['notifications', user?.id],
     queryFn: async () => {
       if (!user?.id) return []
 
