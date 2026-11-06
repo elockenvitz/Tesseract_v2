@@ -275,6 +275,17 @@ export const GATED_DIRS = [
   'src/lib/onboarding',
 
   /*
+   * `src/lib/messaging` is the read seam the direct-messaging panel and the
+   * header's unread badge share. Gated rather than deferred because what its
+   * tests assert is the NUMBER of queries each read makes, and that is the
+   * whole reason the code was moved out of the components: a regression there
+   * is invisible in review and shows up only as database load. These are also
+   * the only gates on which messages count as unread, so an ungated run of
+   * them would let a wrong badge land quietly.
+   */
+  'src/lib/messaging',
+
+  /*
    * The mobile pilot surfaces: Outcomes, the Trade Book / Decision Inbox, and
    * the ops layout. Their tests landed with the pilot lane and were caught
    * here as unclassified; the pilot runs on these screens, so they are gated.
