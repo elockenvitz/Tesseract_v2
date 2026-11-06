@@ -1,0 +1,114 @@
+-- ============================================================================
+-- ROLLBACK for 20261106160200_sec_automation_rule_rpcs.sql
+-- ============================================================================
+-- *** APPLYING THIS FILE REOPENS TWO CONFIRMED CROSS-TENANT PATHS. ***
+--
+-- It restores:
+--   * recompute_workflow_rule_schedules trusting its p_user_id argument, so
+--     an attacker who knows a victim's user uuid can rewrite another
+--     organization's rule schedules. Measured: {"status":"success"} with the
+--     victim's uuid, "Admin permission required" with the attacker's own.
+--   * EXECUTE on execute_single_automation_rule and evaluate_pending_rules
+--     for `authenticated`, so p_trigger_source := 'scheduler' is reachable
+--     from a browser again, and any logged-in user can run
+--     evaluate_pending_rules, which sweeps due rules across EVERY
+--     organization. Measured: an org-B user's call executed an org-A rule.
+--
+-- ORDER MATTERS WHEN ROLLING BACK
+--   Roll the FRONTEND back at the same time, or sooner. After this file runs,
+--   run_workflow_rule and run_due_workflow_rules are gone, so a deployed
+--   frontend that calls them fails with PGRST202 ("function not found in the
+--   schema cache"). The safe sequence is:
+--     1. revert the WorkflowsPage.tsx change and deploy it,
+--     2. then run this file.
+--   Rolling back the database first leaves the two automation buttons broken
+--   until the frontend revert lands.
+--
+-- The `anon` REVOKEs from the forward migration are NOT undone here. anon held
+-- no EXECUTE on either function before the change, so restoring it would be
+-- widening access beyond the original state, not a rollback.
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION public.recompute_workflow_rule_schedules(p_workflow_id uuid, p_user_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_workflow RECORD;
+  v_rule RECORD;
+  v_next TIMESTAMPTZ;
+  v_updated INT := 0;
+  v_unsupported INT := 0;
+  v_errors INT := 0;
+BEGIN
+  -- Load workflow
+  SELECT * INTO v_workflow
+  FROM workflows
+  WHERE id = p_workflow_id;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'error', 'error', 'Workflow not found');
+  END IF;
+
+  -- Permission: creator or admin collaborator
+  IF v_workflow.created_by != p_user_id
+     AND NOT EXISTS (
+       SELECT 1 FROM workflow_collaborations
+       WHERE workflow_id = p_workflow_id
+         AND user_id = p_user_id
+         AND permission = 'admin'
+     )
+  THEN
+    RETURN jsonb_build_object('status', 'error', 'error', 'Admin permission required');
+  END IF;
+
+  -- Iterate active time_interval rules for this workflow
+  FOR v_rule IN
+    SELECT id, condition_type, condition_value
+    FROM workflow_automation_rules
+    WHERE workflow_id = p_workflow_id
+      AND condition_type = 'time_interval'
+      AND is_active = true
+  LOOP
+    BEGIN
+      v_next := compute_next_run_at(v_rule.condition_type, v_rule.condition_value, now());
+
+      IF v_next IS NOT NULL THEN
+        UPDATE workflow_automation_rules
+        SET next_run_at = v_next,
+            schedule_error = NULL
+        WHERE id = v_rule.id;
+        v_updated := v_updated + 1;
+      ELSE
+        UPDATE workflow_automation_rules
+        SET next_run_at = NULL,
+            schedule_error = 'Unsupported recurrence pattern'
+        WHERE id = v_rule.id;
+        v_unsupported := v_unsupported + 1;
+      END IF;
+    EXCEPTION WHEN OTHERS THEN
+      UPDATE workflow_automation_rules
+      SET schedule_error = SQLERRM
+      WHERE id = v_rule.id;
+      v_errors := v_errors + 1;
+    END;
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'status', 'success',
+    'updated', v_updated,
+    'unsupported', v_unsupported,
+    'errors', v_errors,
+    'total', v_updated + v_unsupported + v_errors
+  );
+END;
+$function$;
+
+-- Restore the EXECUTE grants that made scheduler authority reachable.
+GRANT EXECUTE ON FUNCTION public.execute_single_automation_rule(uuid, uuid, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.evaluate_pending_rules() TO authenticated;
+
+-- Remove the guarded wrappers.
+DROP FUNCTION IF EXISTS public.run_due_workflow_rules();
+DROP FUNCTION IF EXISTS public.run_workflow_rule(uuid);

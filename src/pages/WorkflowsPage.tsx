@@ -4672,14 +4672,13 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
 
   const runRuleMutation = useMutation({
     mutationFn: async (ruleId: string) => {
-      const currentUser = await supabase.auth.getUser()
-      const userId = currentUser.data.user?.id
-      if (!userId) throw new Error('Not authenticated')
-
-      const { data, error } = await supabase.rpc('execute_single_automation_rule', {
-        p_rule_id: ruleId,
-        p_user_id: userId,
-        p_trigger_source: 'manual'
+      // run_workflow_rule derives the actor from auth.uid() and fixes the
+      // trigger source server-side, then delegates to
+      // execute_single_automation_rule, which the browser can no longer call
+      // directly. Passing p_user_id or p_trigger_source from here was the
+      // bypass: p_trigger_source: 'scheduler' skipped the permission check.
+      const { data, error } = await supabase.rpc('run_workflow_rule', {
+        p_rule_id: ruleId
       })
 
       if (error) throw error
@@ -4734,12 +4733,16 @@ export function WorkflowsPage({ className = '', tabId = 'workflows', onNavigate,
     staleTime: 2 * 60 * 1000,
   })
 
-  // Run scheduler tick (evaluate_pending_rules) — admin only
+  // Run scheduler tick (run_due_workflow_rules) — admin only
   const [tickResult, setTickResult] = useState<{ processed: number } | null>(null)
 
   const runSchedulerTickMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.rpc('evaluate_pending_rules')
+      // run_due_workflow_rules sweeps only due rules on workflows in the
+      // caller's own organization that the caller may administer.
+      // evaluate_pending_rules, which swept all 26 organizations and was
+      // callable by any logged-in user, is now service_role only.
+      const { data, error } = await supabase.rpc('run_due_workflow_rules')
       if (error) throw error
       return data
     },
