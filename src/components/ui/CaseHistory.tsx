@@ -9,6 +9,15 @@ import { useQuery } from '@tanstack/react-query'
 interface CaseHistoryProps {
   priceTargetId: string
   caseType: 'bull' | 'base' | 'bear'
+  /**
+   * Whether the history panel is the visible face of the card.
+   *
+   * Required, not optional-with-a-default, because the only caller keeps this
+   * component mounted behind a CSS slide transform. An off-screen panel is
+   * still mounted, so without this the query runs for every card on the page
+   * whether or not anyone has opened the history.
+   */
+  active: boolean
   className?: string
 }
 
@@ -23,7 +32,7 @@ interface FieldChange {
   change_type: 'insert' | 'update'
 }
 
-export function CaseHistory({ priceTargetId, caseType, className }: CaseHistoryProps) {
+export function CaseHistory({ priceTargetId, caseType, active, className }: CaseHistoryProps) {
   const { user: currentUser } = useAuth()
 
   const { data: changes, isLoading } = useQuery({
@@ -107,9 +116,21 @@ export function CaseHistory({ priceTargetId, caseType, className }: CaseHistoryP
       
       return transformedData
     },
-    enabled: !!priceTargetId,
-    refetchInterval: 500, // Refetch every 500ms
-    staleTime: 0 // Always fetch fresh data
+    /*
+     * Gated on `active`, and on a human staleTime instead of a 500ms timer.
+     *
+     * This component is mounted behind a slide transform, so `enabled` was
+     * true from the moment the card rendered: two queries (history, then the
+     * authors) twice a second, per case card, for a panel nobody had opened.
+     *
+     * Freshness is not lost. The history rows are written by a database
+     * trigger on `price_targets`, so the only thing that can change them is a
+     * save on the front of this card, and CaseCard invalidates this exact key
+     * after one. The 30s window covers the case where some other path writes
+     * to the same target while the panel sits open.
+     */
+    enabled: !!priceTargetId && active,
+    staleTime: 30_000
   })
 
   const getChangeTypeColor = (type: string) => {
