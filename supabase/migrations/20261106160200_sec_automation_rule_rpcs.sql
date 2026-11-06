@@ -1,8 +1,11 @@
 -- ============================================================================
 -- SECURITY: workflow automation RPCs stop accepting caller-supplied authority
 -- ============================================================================
--- Group C of the cross-tenant RPC remediation. Prepared 2026-11-06. NOT YET
--- APPLIED to any database.
+-- Group C of the cross-tenant RPC remediation. Prepared 2026-11-06.
+-- APPLIED to production (wfcebeagznzgeuyysbnt) on 2026-11-06, ledger version
+-- 20261106160200, AFTER 20261106160000 (which creates the assert_workflow_*
+-- helpers this file calls) and after the amendment to section 4 that revokes
+-- anon EXECUTE on the two new wrappers.
 --
 -- THREE DISTINCT DEFECTS
 -- ----------------------

@@ -1,8 +1,12 @@
 -- ============================================================================
 -- SECURITY: list-activity RPCs stop reading across organizations
 -- ============================================================================
--- Group B of the cross-tenant RPC remediation. Prepared 2026-11-06. NOT YET
--- APPLIED to any database.
+-- Group B of the cross-tenant RPC remediation. Prepared 2026-11-06.
+-- APPLIED to production (wfcebeagznzgeuyysbnt) on 2026-11-06, ledger version
+-- 20261106160100. The exploit below was re-confirmed live immediately before
+-- the apply and denied immediately after: an outsider read a private list's
+-- activity, swept all three lists holding activity, and enumerated lists by
+-- forging p_user_id. All three return zero rows now.
 --
 -- THE CONFIRMED EXPLOIT
 -- ---------------------

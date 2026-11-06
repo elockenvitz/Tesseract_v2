@@ -1,8 +1,12 @@
 -- ============================================================================
 -- SECURITY: take scheduler authority off the browser API
 -- ============================================================================
--- Group C2 of the cross-tenant RPC remediation. Prepared 2026-11-06. NOT YET
--- APPLIED to any database.
+-- Group C2 of the cross-tenant RPC remediation. Prepared 2026-11-06.
+-- APPLIED to production (wfcebeagznzgeuyysbnt) on 2026-11-06, ledger version
+-- 20261106160400, AFTER the frontend from PR #265 was confirmed published.
+-- The published bundle was crawled across all 22 chunks: run_workflow_rule and
+-- run_due_workflow_rules present, execute_single_automation_rule and
+-- evaluate_pending_rules absent. The incompatibility window never opened.
 --
 -- This file contains nothing but privilege changes, and every one of them
 -- NARROWS access. It is split out from 20261106160200 because it is the only

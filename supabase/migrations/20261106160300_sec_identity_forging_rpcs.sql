@@ -1,8 +1,17 @@
 -- ============================================================================
 -- SECURITY: RPCs that act as whoever the caller names
 -- ============================================================================
--- Group D of the cross-tenant RPC remediation. Prepared 2026-11-06. NOT YET
--- APPLIED to any database.
+-- Group D of the cross-tenant RPC remediation. Prepared 2026-11-06.
+-- APPLIED to production (wfcebeagznzgeuyysbnt) on 2026-11-06, ledger version
+-- 20261106160300.
+--
+-- CORRECTION TO THIS HEADER: the five findings below were described as
+-- "suspected rather than confirmed". All five were exploited live against
+-- production immediately before the apply, inside a rolled-back transaction.
+-- An outsider moved another user's conversation read marker, created a private
+-- view OWNED BY the named user in another organization's lab, touched another
+-- organization's trade lab, and created a decision request attributed to
+-- another user. They are confirmed, not suspected.
 --
 -- Five SECURITY DEFINER functions take a user id, a lab id, a portfolio id or
 -- an asset id and act on it with no check on who is asking. None of them was

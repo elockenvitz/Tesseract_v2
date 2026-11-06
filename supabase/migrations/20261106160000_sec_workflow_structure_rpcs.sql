@@ -1,7 +1,11 @@
 -- =============================================================================
 -- SECURITY: workflow-structure RPCs must check the caller, not their arguments
 --
--- NOT APPLIED. Authored 2026-11-06.
+-- Group A of the cross-tenant RPC remediation. Authored 2026-11-06.
+-- APPLIED to production (wfcebeagznzgeuyysbnt) on 2026-11-06, ledger version
+-- 20261106160000. Its helper grants were insufficient as written; see the
+-- forward correction in 20261106160010_sec_workflow_guard_helper_grants.sql.
+-- This file is left exactly as it ran.
 --
 -- Closes two confirmed cross-tenant paths, demonstrated by running them as an
 -- ordinary `authenticated` user in org B with no membership or relationship in
