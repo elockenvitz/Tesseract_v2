@@ -641,7 +641,7 @@ export function useWorkflowMutations({
       permission: 'read' | 'write' | 'admin'
     }) => {
       const { error } = await supabase
-        .from('workflow_collaborators')
+        .from('workflow_collaborations')
         .update({ permission: data.permission })
         .eq('id', data.id)
 
@@ -657,7 +657,7 @@ export function useWorkflowMutations({
   const removeCollaborator = useMutation({
     mutationFn: async (collaboratorId: string) => {
       const { error } = await supabase
-        .from('workflow_collaborators')
+        .from('workflow_collaborations')
         .delete()
         .eq('id', collaboratorId)
 
