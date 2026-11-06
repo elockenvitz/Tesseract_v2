@@ -2,6 +2,10 @@ import React, { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { MessageCircle, Users, Plus, Search, Send, MoreVertical, X, ArrowLeft, Pin, Reply, Info } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import {
+  readConversationList,
+  readConversationMessages,
+} from '../../lib/messaging/conversation-queries'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { Button } from '../ui/Button'
@@ -130,90 +134,13 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     staleTime: 15000, // Consider fresh for 15 seconds
     gcTime: 300000, // Keep in cache for 5 minutes
     refetchInterval: isOpen ? 10000 : false, // Poll every 10s when DM panel is open
-    queryFn: async () => {
-      if (!user?.id) return []
-
-      // First get conversation IDs where user is a participant
-      const { data: userConversations, error: participantError } = await supabase
-        .from('conversation_participants')
-        .select('conversation_id')
-        .eq('user_id', user.id)
-
-      if (participantError) throw participantError
-      if (!userConversations || userConversations.length === 0) return []
-
-      const conversationIds = userConversations.map(p => p.conversation_id)
-
-      // Now get full conversation data with all participants
-      const { data, error } = await supabase
-        .from('conversations')
-        .select(`
-          *,
-          conversation_participants(
-            user_id,
-            is_admin,
-            user:users(id, email, first_name, last_name)
-          )
-        `)
-        .in('id', conversationIds)
-        .order('last_message_at', { ascending: false })
-
-      if (error) throw error
-
-      // Get last message and unread count for each conversation
-      const conversationsWithMessages = await Promise.all(
-        (data || []).map(async (conv) => {
-          const { data: lastMessage } = await supabase
-            .from('conversation_messages')
-            .select('content, user_id, created_at')
-            .eq('conversation_id', conv.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-
-          // Get participant's last_read_at - fetch fresh to avoid stale data
-          const { data: participantData } = await supabase
-            .from('conversation_participants')
-            .select('last_read_at')
-            .eq('conversation_id', conv.id)
-            .eq('user_id', user.id)
-            .single()
-
-          const lastReadAt = participantData?.last_read_at
-
-          // Count unread messages (messages created after last_read_at)
-          let unreadCount = 0
-          if (lastReadAt) {
-            const { count } = await supabase
-              .from('conversation_messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('conversation_id', conv.id)
-              .neq('user_id', user.id) // Don't count own messages
-              .gt('created_at', lastReadAt)
-
-            unreadCount = count || 0
-          } else {
-            // If never read, count all messages from others
-            const { count } = await supabase
-              .from('conversation_messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('conversation_id', conv.id)
-              .neq('user_id', user.id)
-
-            unreadCount = count || 0
-          }
-
-          return {
-            ...conv,
-            last_message: lastMessage,
-            participants: conv.conversation_participants,
-            unread_count: unreadCount
-          }
-        })
-      )
-
-      return conversationsWithMessages as Conversation[]
-    },
+    /*
+     * The read itself is in `src/lib/messaging/conversation-queries.ts`, with
+     * the measurement and the reason it is no longer a loop. It went from
+     * 2 + 3N queries to 2 + 2N for N conversations.
+     */
+    queryFn: async () =>
+      (await readConversationList(user!.id)) as unknown as Conversation[],
     refetchOnWindowFocus: true,
   })
 
@@ -264,51 +191,33 @@ export function DirectMessaging({ isOpen, onClose }: DirectMessagingProps) {
     queryKey: ['conversation-messages', selectedConversationId],
     enabled: !!selectedConversationId,
     staleTime: 5000, // Short stale time — messages should feel live
-    queryFn: async () => {
-      if (!selectedConversationId) return []
-
-      // First, fetch all messages
-      const { data: messagesData, error: messagesErr } = await supabase
-        .from('conversation_messages')
-        .select(`
-          *,
-          user:users(id, email, first_name, last_name)
-        `)
-        .eq('conversation_id', selectedConversationId)
-        .order('created_at', { ascending: true })
-
-      if (messagesErr) {
-        console.error('Error fetching messages:', messagesErr)
-        throw messagesErr
-      }
-
-      // For each message with reply_to, fetch the replied message
-      const messagesWithReplies = await Promise.all(
-        (messagesData || []).map(async (message) => {
-          if (message.reply_to) {
-            const { data: repliedMsg } = await supabase
-              .from('conversation_messages')
-              .select(`
-                id,
-                content,
-                user_id,
-                user:users(id, email, first_name, last_name)
-              `)
-              .eq('id', message.reply_to)
-              .maybeSingle()
-
-            return {
-              ...message,
-              replied_message: repliedMsg
-            }
-          }
-          return message
-        })
-      )
-
-      return messagesWithReplies as Message[]
-    },
-    refetchInterval: 2000, // Real-time updates
+    /*
+     * Also in `src/lib/messaging/conversation-queries.ts`. The per-reply loop
+     * is gone: 1 + R queries per tick became exactly 2.
+     */
+    queryFn: async () =>
+      (await readConversationMessages(selectedConversationId!)) as unknown as Message[],
+    /*
+     * 3s, not 2s, and deliberately not slower than that.
+     *
+     * This is the one surface in the product where a delay is felt directly:
+     * someone is reading a conversation while another person types in it. The
+     * reader's own messages do not wait for this timer (sending invalidates
+     * the key), so what the interval governs is how long the OTHER person's
+     * message takes to appear. 3s keeps that under the threshold where a chat
+     * feels broken while removing a third of the ticks.
+     *
+     * The large reduction here is the reply batch above, not the cadence: the
+     * per-tick cost went from 1 + (one per reply in the thread) to 2. Making
+     * this genuinely live means putting `conversation_messages` in the realtime
+     * publication, which is a separate decision and is not taken here.
+     *
+     * TanStack pauses this while the tab is in the background
+     * (`refetchIntervalInBackground` defaults to false), so the focus refetch
+     * is what catches a reader up on return.
+     */
+    refetchInterval: 3000,
+    refetchOnWindowFocus: true,
   })
 
   // Fetch users in the current org for creating conversations. Scoped
