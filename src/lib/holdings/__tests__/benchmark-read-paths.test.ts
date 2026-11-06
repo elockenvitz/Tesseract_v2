@@ -11,16 +11,30 @@
  * is invisible in behaviour, which is why it ran for weeks. So the shape of
  * the query is pinned here: the only permitted reader of this table is the
  * helper that narrows server-side first.
+ *
+ * ── Why the source is scanned once ───────────────────────────────────────────
+ *
+ * Every assertion below is a property of the whole source tree, and the tree
+ * is about 2800 files. This file used to walk and read all of them SEVEN times
+ * per run: `directReaders()` re-scanned on every call, and the second test
+ * called it once per candidate inside a `.filter()`, five times over. That
+ * test took 4.7s of a 5s budget on its own and timed out whenever vitest ran
+ * it beside the two other guards that walk the same tree, which made the
+ * Netlify deploy gate fail at random on a green tree.
+ *
+ * The tree is now read once per run into `corpus` and every assertion reads
+ * from it. The assertions and their guarantees are unchanged; only the number
+ * of times the disk is read has changed.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 const SRC = path.join(process.cwd(), 'src')
 
 /** Source with comments stripped, so prose about the fix cannot satisfy or break a guard. */
-function codeOf(abs: string): string {
-  return readFileSync(abs, 'utf8')
+function strip(raw: string): string {
+  return raw
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^[ \t]*\/\/.*$/gm, '')
     .replace(/([^:])\/\/.*$/gm, '$1')
@@ -41,14 +55,67 @@ function sourceFiles(dir = SRC, acc: string[] = []): string[] {
 
 const rel = (f: string) => path.relative(SRC, f).replace(/\\/g, '/')
 
+interface SourceFile {
+  /** Path relative to src, forward-slashed. */
+  rel: string
+  /** Raw text, for assertions about comments. */
+  raw: string
+  /** Comment-stripped text, for assertions about code. */
+  code: string
+}
+
+/**
+ * The tree, read once per run of this file.
+ *
+ * Populated by `beforeAll` and cleared by `afterAll` rather than memoised on
+ * first use. vitest runs both hooks on every execution of this file, including
+ * each re-trigger in watch mode, so the cache cannot outlive the tree it
+ * describes: a file edited between runs is re-read on the next one. A plain
+ * lazy memo would be correct today only because the module registry happens to
+ * be rebuilt per run, which is not a guarantee this guard should depend on.
+ */
+let corpus: SourceFile[] | null = null
+
+beforeAll(() => {
+  corpus = sourceFiles().map(abs => {
+    const raw = readFileSync(abs, 'utf8')
+    return { rel: rel(abs), raw, code: strip(raw) }
+  })
+})
+
+afterAll(() => {
+  corpus = null
+})
+
+/**
+ * The scanned tree.
+ *
+ * Throws rather than rescanning if the hook has not run. A guard that quietly
+ * substitutes an empty tree would report PASS on every assertion below while
+ * checking nothing.
+ */
+function sources(): SourceFile[] {
+  if (corpus === null) {
+    throw new Error('the source tree was not scanned: beforeAll did not run')
+  }
+  if (corpus.length === 0) {
+    throw new Error('the source tree scanned as empty, which cannot be right')
+  }
+  return corpus
+}
+
+/** One file's comment-stripped code, by path relative to src. */
+function codeOf(relPath: string): string {
+  const hit = sources().find(f => f.rel === relPath)
+  if (!hit) throw new Error(`${relPath} is not in the scanned source tree`)
+  return hit.code
+}
+
 /** Files whose CODE queries the table directly. */
 function directReaders(): string[] {
-  return sourceFiles()
-    .filter(f => {
-      const code = codeOf(f)
-      return code.includes("from('portfolio_benchmark_weights')")
-    })
-    .map(rel)
+  return sources()
+    .filter(f => f.code.includes("from('portfolio_benchmark_weights')"))
+    .map(f => f.rel)
     .sort()
 }
 
@@ -77,7 +144,8 @@ describe('who may query portfolio_benchmark_weights', () => {
       'components/trading/TradeIdeaDetailModal.tsx',
       'pages/SimulationPage.tsx',
     ]
-    const offenders = fixed.filter(f => directReaders().includes(f))
+    const readers = directReaders()
+    const offenders = fixed.filter(f => readers.includes(f))
     expect(offenders).toEqual([])
   })
 
@@ -90,13 +158,13 @@ describe('who may query portfolio_benchmark_weights', () => {
       ['pages/SimulationPage.tsx', 'fetchLatestBenchmarkWeights('],
     ]
     for (const [file, fn] of expected) {
-      expect(codeOf(path.join(SRC, file)), `${file} should call ${fn}`).toContain(fn)
+      expect(codeOf(file), `${file} should call ${fn}`).toContain(fn)
     }
   })
 })
 
 describe('the helper narrows before it reads', () => {
-  const helper = () => codeOf(path.join(SRC, 'lib/holdings/benchmark-latest-query.ts'))
+  const helper = () => codeOf('lib/holdings/benchmark-latest-query.ts')
 
   it('orders and limits the date probe server-side', () => {
     const code = helper()
@@ -142,12 +210,9 @@ describe('the stale single-date claim is gone', () => {
       'forbids a second',
       'table can hold only one',
     ]
-    const offenders = sourceFiles()
-      .filter(f => {
-        const raw = readFileSync(f, 'utf8')
-        return phrases.some(p => raw.includes(p))
-      })
-      .map(rel)
+    const offenders = sources()
+      .filter(f => phrases.some(p => f.raw.includes(p)))
+      .map(f => f.rel)
       // `latest-benchmark.ts` describes the constraint in the PAST tense as
       // the history of its own existence, which is the opposite of claiming
       // it still holds.
