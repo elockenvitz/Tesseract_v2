@@ -47,6 +47,7 @@ import { fetchLatestBenchmarkWeights } from '../lib/holdings/benchmark-latest-qu
 /* The stored closes, so a failed live quote falls back to a real observed
    price rather than to the literal 100 this page used to invent. */
 import { fetchLatestCloses, LATEST_CLOSE_WINDOW_DAYS } from '../lib/market-data/latest-closes'
+import { assetPriceForVariant, type PriceProvenanceMap } from '../lib/trade-lab/variant-price'
 
 /**
  * What this page uses when it does not know a price.
@@ -1025,6 +1026,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             price: h.price,
             value: h.shares * h.price,
             weight: totalValue > 0 ? ((h.shares * h.price) / totalValue) * 100 : 0,
+            // The snapshot date this mark is as of. `latestSnapshotRows` has
+            // already picked one date's rows; carrying it forward is what
+            // lets the book rung of the sizing ladder be dated at all.
+            as_of: (h as { date?: string | null }).date ?? null,
           }))
 
           const { data, error } = await supabase
@@ -1354,13 +1359,11 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     const variant = intentVariants.find(v => v.id === variantId)
     if (!variant) return
 
-    // Build a mock price for the update
-    const price: AssetPrice = {
-      asset_id: variant.asset_id,
-      price: priceMap?.[variant.asset_id] || NO_PRICE,
-      timestamp: new Date().toISOString(),
-      source: 'realtime',
-    }
+    const price: AssetPrice = assetPriceForVariant({
+      assetId: variant.asset_id,
+      priceMap,
+      priceProvenance,
+    })
 
     await v3UpdateVariant({
       variantId,
@@ -1681,7 +1684,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         let computed = cacheV.computed
         if (!computed) {
           const baseline = baselineByAsset.get(cacheV.asset_id)
-          const price = priceMap?.[cacheV.asset_id] || baseline?.price || NO_PRICE
           const normResult = normalizeSizing({
             action: cacheV.action,
             sizing_input: cacheV.sizing_input!,
@@ -1692,15 +1694,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               active_weight: null,
             } : null,
             portfolio_total_value: simulation.baseline_total_value || 0,
-            price: {
-              asset_id: cacheV.asset_id,
-              price,
-              timestamp: new Date().toISOString(),
-              source: 'realtime',
-            },
+            price: assetPriceForVariant({
+              assetId: cacheV.asset_id,
+              priceMap,
+              priceProvenance,
+              bookPrice: baseline?.price,
+              bookAsOf: baseline?.as_of,
+            }),
             rounding_config: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
             active_weight_config: cacheV.active_weight_config,
             has_benchmark: hasBenchmark,
+            /*
+             * This runs on the execute path -- it rebuilds `computed` for a
+             * variant whose optimistic cache patch nulled it, moments before
+             * `executeSimVariants` books the trade. So the price must clear
+             * the same bar it will be judged by at the write, and failing
+             * here lands the row in `stillSaving` with a reason instead of
+             * sending it on to be refused.
+             */
+            price_enforcement: 'enforce',
           })
           if (!normResult.is_valid || !normResult.computed) {
             stillSaving.push((cacheV as any).asset?.symbol || `asset:${cacheV.asset_id.slice(0, 8)}`)
@@ -2058,12 +2070,21 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
   })
 
   // Fetch current prices for all assets in the simulation (for live calculations)
-  const { data: priceMap, isLoading: pricesLoading, refetch: refetchPrices } = useQuery({
+  const { data: priceData, isLoading: pricesLoading, refetch: refetchPrices } = useQuery({
     queryKey: ['simulation-prices', selectedSimulationId],
     queryFn: async () => {
-      if (!simulation) return {}
+      if (!simulation) return { prices: {}, provenance: {} as PriceProvenanceMap }
 
       const prices: Record<string, number> = {}
+      /*
+       * Which rung answered, per asset, recorded as the price is resolved.
+       *
+       * Every sizing call site used to stamp `timestamp: new Date()` and
+       * `source: 'realtime'` on whatever this map produced, so a 37-day-old
+       * close and a live quote were indistinguishable downstream. The rung is
+       * known exactly here and nowhere else, so it is captured here.
+       */
+      const provenance: PriceProvenanceMap = {}
       const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
 
       // Collect all symbols we need prices for
@@ -2111,7 +2132,12 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
             const quote = await financialDataService.getQuote(symbol)
             if (quote?.price) {
               anyQuoteSucceeded = true
-              return { assetId, price: quote.price }
+              return {
+                assetId,
+                price: quote.price,
+                // A quote is true at the instant it was observed, which is now.
+                prov: { asOf: new Date().toISOString(), basis: 'live_quote' as const },
+              }
             }
           } catch {
             // Fall through to the stored close.
@@ -2131,13 +2157,24 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         const close = latestCloses.get(symbol)
         if (close != null) {
           const value = Number(close.close)
-          if (Number.isFinite(value) && value > 0) return { assetId, price: value }
+          if (Number.isFinite(value) && value > 0) {
+            // The close's own date, not now. This is the field that lets a
+            // guard tell a current close from an outage-era one.
+            return { assetId, price: value, prov: { asOf: close.date, basis: 'stored_close' as const } }
+          }
         }
         const baseline = baselineHoldings.find(h => h.asset_id === assetId)
         if (baseline?.price != null && baseline.price > 0) {
-          return { assetId, price: baseline.price }
+          return {
+            assetId,
+            price: baseline.price,
+            // `as_of` is the baseline snapshot's date when the snapshot
+            // recorded one. Older baselines did not, and an undated book mark
+            // is refused at the write rather than assumed current.
+            prov: { asOf: baseline.as_of ?? null, basis: 'book_mark' as const },
+          }
         }
-        return { assetId, price: null }
+        return { assetId, price: null, prov: null }
       })
 
       const results = await Promise.all(fetchPromises)
@@ -2146,7 +2183,10 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         // Callers read `priceMap[id]` and must handle undefined; writing a
         // number here is what made "we don't know" indistinguishable from
         // "it costs 100".
-        if (r.price != null) prices[r.assetId] = r.price
+        if (r.price != null) {
+          prices[r.assetId] = r.price
+          if (r.prov) provenance[r.assetId] = r.prov
+        }
       })
 
       const unpriced = results.filter(r => r.price == null).length
@@ -2169,7 +2209,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         }
       }
 
-      return prices
+      return { prices, provenance }
     },
     enabled: !!simulation,
     staleTime: 60_000, // Cache for 1 minute
@@ -2179,6 +2219,15 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     refetchInterval: false,
     retry: false,
   })
+
+  /*
+   * `priceMap` keeps its shape -- `Record<string, number>` -- so the forty-odd
+   * display reads and the two child components that take it are untouched.
+   * The provenance rides alongside and is consumed only where an `AssetPrice`
+   * is built for sizing, via `assetPriceForVariant`.
+   */
+  const priceMap = priceData?.prices
+  const priceProvenance = priceData?.provenance
 
   // Fetch benchmark weights for the selected portfolio
   const { data: benchmarkWeightMap } = useQuery({
@@ -2466,18 +2515,19 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       action,
       sizingInput: '',
       currentPosition,
-      price: {
-        asset_id: assetId,
-        price: priceMap?.[assetId] || holding?.price || NO_PRICE,
-        timestamp: new Date().toISOString(),
-        source: 'realtime' as const,
-      },
+      price: assetPriceForVariant({
+        assetId,
+        priceMap,
+        priceProvenance,
+        bookPrice: holding?.price,
+        bookAsOf: holding?.as_of,
+      }),
       portfolioTotalValue: simulation.baseline_total_value || 0,
       roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
       activeWeightConfig: getActiveWeightConfig(assetId),
       hasBenchmark,
     })
-  }, [simulation, priceMap, tradeLab?.id, queryClient, v3CreateVariant, getActiveWeightConfig, hasBenchmark])
+  }, [simulation, priceMap, priceProvenance, tradeLab?.id, queryClient, v3CreateVariant, getActiveWeightConfig, hasBenchmark])
 
   /**
    * Sizing write and variant removal, shared by the desktop table and the
@@ -2545,12 +2595,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
       cost_basis: null,
       active_weight: null,
     } : null
-    const assetPrice = {
-      asset_id: assetId,
-      price: priceMap?.[assetId] || holding?.price || NO_PRICE,
-      timestamp: new Date().toISOString(),
-      source: 'realtime' as const,
-    }
+    const assetPrice = assetPriceForVariant({
+      assetId,
+      priceMap,
+      priceProvenance,
+      bookPrice: holding?.price,
+      bookAsOf: holding?.as_of,
+    })
 
     // Optimistic: update variant in cache immediately so the row
     // shows the new value before the server round-trip completes.
@@ -2763,13 +2814,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         cost_basis: null,
         active_weight: null,
       }
-      const price = priceMap?.[h.asset_id] || h.price || NO_PRICE
-      const assetPrice = {
-        asset_id: h.asset_id,
-        price,
-        timestamp: new Date().toISOString(),
-        source: 'realtime' as const,
-      }
+      const assetPrice = assetPriceForVariant({
+        assetId: h.asset_id,
+        priceMap,
+        priceProvenance,
+        bookPrice: h.price,
+        bookAsOf: h.as_of,
+      })
       const common = {
         currentPosition,
         price: assetPrice,
@@ -2800,6 +2851,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     effectiveBaselineHoldings,
     intentVariants,
     priceMap,
+    priceProvenance,
     getActiveWeightConfig,
     hasBenchmark,
     v3CreateVariant,
@@ -2852,12 +2904,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
           variantId: variant.id,
           updates: { sizingInput: pendingSizing },
           currentPosition,
-          price: {
-            asset_id: assetId,
-            price: priceMap?.[assetId] || holding?.price || NO_PRICE,
-            timestamp: new Date().toISOString(),
-            source: 'realtime' as const,
-          },
+          price: assetPriceForVariant({
+            assetId,
+            priceMap,
+            priceProvenance,
+            bookPrice: holding?.price,
+            bookAsOf: holding?.as_of,
+          }),
           portfolioTotalValue: simulation.baseline_total_value || 0,
           roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
           activeWeightConfig: getActiveWeightConfig(assetId),
@@ -2865,7 +2918,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         })
       }
     }
-  }, [intentVariants, simulation, priceMap, v3UpdateVariant, v3DeleteVariant, getActiveWeightConfig, hasBenchmark])
+  }, [intentVariants, simulation, priceMap, priceProvenance, v3UpdateVariant, v3DeleteVariant, getActiveWeightConfig, hasBenchmark])
 
   // v3: Bidirectional sync between simulation_trades and lab_variants on load.
   // Forward: creates variants for trades that don't have one.
@@ -2978,7 +3031,20 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               active_weight: null,
             } : null
 
-            const tradePrice = priceMap[trade.asset_id] || trade.price || NO_PRICE
+            /*
+             * `simulation_trades.price` is the last rung and carries no date
+             * anywhere in the schema, so it is offered as an undated mark
+             * rather than dressed up as a current one. A variant that ends up
+             * resting on it is refused at execution, which is the right
+             * answer: nothing can say when that number was true.
+             */
+            const tradeAssetPrice = assetPriceForVariant({
+              assetId: trade.asset_id,
+              priceMap,
+              priceProvenance,
+              bookPrice: currentHolding?.price ?? trade.price,
+              bookAsOf: currentHolding?.as_of ?? null,
+            })
             const sizingInput = trade.weight != null
               ? String(trade.weight)
               : trade.shares != null
@@ -2991,12 +3057,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
               sizingInput,
               tradeQueueItemId: trade.trade_queue_item_id,
               currentPosition,
-              price: {
-                asset_id: trade.asset_id,
-                price: tradePrice,
-                timestamp: new Date().toISOString(),
-                source: 'realtime',
-              },
+              price: tradeAssetPrice,
               portfolioTotalValue: simulation.baseline_total_value || 0,
               roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
               activeWeightConfig: getActiveWeightConfig(trade.asset_id),
@@ -3014,7 +3075,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     }
 
     syncVariants()
-  }, [realTradeIds, tradeLab?.id, priceMap, v3Loading, intentVariants, simulation?.baseline_holdings, simulation?.baseline_total_value, v3CreateVariantAsync, v3DeleteVariant, simulation?.simulation_trades, getActiveWeightConfig, hasBenchmark, acceptedTrades])
+  }, [realTradeIds, tradeLab?.id, priceMap, priceProvenance, v3Loading, intentVariants, simulation?.baseline_holdings, simulation?.baseline_total_value, v3CreateVariantAsync, v3DeleteVariant, simulation?.simulation_trades, getActiveWeightConfig, hasBenchmark, acceptedTrades])
 
   // Create simulation mutation
   const createSimulationMutation = useMutation({
@@ -3049,6 +3110,8 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         price: h.price,
         value: h.shares * h.price,
         weight: totalValue > 0 ? ((h.shares * h.price) / totalValue) * 100 : 0,
+        // See `BaselineHolding.as_of`: the snapshot date this mark is as of.
+        as_of: (h as { date?: string | null }).date ?? null,
       }))
 
       const { data, error } = await supabase
@@ -3086,15 +3149,25 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     mutationFn: async (tradeIdea: TradeQueueItemWithDetails) => {
       if (!simulation) throw new Error('No simulation selected')
 
-      // Prefer (in order): live priceMap > baseline holding price > idea target > $100.
-      // The baseline holding lookup is what stops an AAPL auto-apply from
-      // normalizing against $100 when priceMap hasn't been populated yet —
-      // that produced a variant with delta_shares computed at $100 but
-      // applied against the real $228.50 price, inflating the cash draw
-      // ~2.3×. Using the baseline price keeps normalization consistent.
+      /*
+       * Prefer (in order): the resolved price, then the baseline holding's
+       * own mark. Nothing else.
+       *
+       * The baseline lookup is what stops an AAPL auto-apply from normalizing
+       * against a placeholder when `priceMap` has not populated yet -- that
+       * produced a variant with `delta_shares` computed at $100 and applied
+       * against the real $228.50, inflating the cash draw ~2.3x.
+       *
+       * `tradeIdea.target_price` used to sit between the two and has been
+       * removed. A target price is not an observation of what the instrument
+       * costs, it is an opinion about what it will be worth; sizing against
+       * it means buying the number of shares the thesis implies rather than
+       * the number the money buys. It is undated as well, so it cannot even
+       * be judged stale.
+       */
       const baselineHoldingsForPrice = simulation.baseline_holdings as BaselineHolding[]
       const baselineForPrice = baselineHoldingsForPrice?.find(h => h.asset_id === tradeIdea.asset_id)
-      const price = priceMap?.[tradeIdea.asset_id] || baselineForPrice?.price || tradeIdea.target_price || NO_PRICE
+      const price = priceMap?.[tradeIdea.asset_id] || baselineForPrice?.price || NO_PRICE
 
       // Upsert: if the trade already exists (from a rapid toggle race), just return it
       const { data, error } = await supabase
@@ -3148,9 +3221,6 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         // User still wants this trade — sync lab_variant
         if (tradeLab?.id && simulation) {
           try {
-            const baselineHoldingsForSync = simulation.baseline_holdings as BaselineHolding[]
-            const baselineForSync = baselineHoldingsForSync?.find(h => h.asset_id === tradeIdea.asset_id)
-            const price = priceMap?.[tradeIdea.asset_id] || baselineForSync?.price || tradeIdea.target_price || NO_PRICE
             const baselineHoldings = simulation.baseline_holdings as BaselineHolding[]
             const currentHolding = baselineHoldings.find(h => h.asset_id === tradeIdea.asset_id)
             const currentPosition = currentHolding ? {
@@ -3172,7 +3242,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   : '')
 
             const existingVariant = intentVariants.find(v => v.asset_id === tradeIdea.asset_id && !v.id.startsWith('temp-'))
-            const assetPrice = { asset_id: tradeIdea.asset_id, price, timestamp: new Date().toISOString(), source: 'realtime' as const }
+            const assetPrice = assetPriceForVariant({
+              assetId: tradeIdea.asset_id,
+              priceMap,
+              priceProvenance,
+              bookPrice: currentHolding?.price,
+              bookAsOf: currentHolding?.as_of,
+            })
 
             if (existingVariant) {
               v3UpdateVariant({
@@ -3307,7 +3383,9 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         action: leg.action,
         shares: leg.proposed_shares,
         weight: leg.proposed_weight,
-        price: priceMap?.[leg.asset_id] || leg.target_price || NO_PRICE,
+        // `leg.target_price` removed as a rung: a target price is an opinion
+        // about future value, not an observation of what the leg costs.
+        price: priceMap?.[leg.asset_id] || NO_PRICE,
         sort_order: (simulation.simulation_trades?.length || 0) + index,
       }))
 
@@ -3339,7 +3417,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 active_weight: null,
               } : null
 
-              const legPrice = priceMap?.[leg.asset_id] || leg.target_price || NO_PRICE
+              const legAssetPrice = assetPriceForVariant({
+                assetId: leg.asset_id,
+                priceMap,
+                priceProvenance,
+                bookPrice: currentHolding?.price,
+                bookAsOf: currentHolding?.as_of,
+              })
               const sizingInput = leg.proposed_weight != null
                 ? String(leg.proposed_weight)
                 : leg.proposed_shares != null
@@ -3353,7 +3437,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   variantId: existingVariant.id,
                   updates: { action: leg.action, sizingInput },
                   currentPosition,
-                  price: { asset_id: leg.asset_id, price: legPrice, timestamp: new Date().toISOString(), source: 'realtime' },
+                  price: legAssetPrice,
                   portfolioTotalValue: simulation.baseline_total_value || 0,
                   roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
                   activeWeightConfig: getActiveWeightConfig(leg.asset_id),
@@ -3366,7 +3450,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                   sizingInput,
                   tradeQueueItemId: leg.id,
                   currentPosition,
-                  price: { asset_id: leg.asset_id, price: legPrice, timestamp: new Date().toISOString(), source: 'realtime' },
+                  price: legAssetPrice,
                   portfolioTotalValue: simulation.baseline_total_value || 0,
                   roundingConfig: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' },
                   activeWeightConfig: getActiveWeightConfig(leg.asset_id),
@@ -3671,20 +3755,36 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // keeps netTradeNotional=0 and hides the synthetic CASH_USD row until
     // the simulation query refetches (hundreds of ms later).
     //
-    // Price fallback order: baseline holding price (always accurate for an
-    // existing position) > idea target_price > $100. Earlier this fell
-    // through to $100 whenever priceMap hadn't populated yet, which made
-    // normalize-sizing compute delta_shares against $100 and then the
-    // simulation applied those inflated shares against the real price on
-    // commit — over-consuming cash by whatever factor real_price/$100 was.
+    /*
+     * Price hint order: the baseline holding's own mark, and nothing else.
+     *
+     * This fell through to $100 whenever `priceMap` had not populated yet,
+     * which made normalize-sizing compute `delta_shares` against $100 while
+     * the commit applied those inflated shares at the real price, over-
+     * consuming cash by whatever factor real_price/$100 was. The
+     * `target_price` rung between them has also gone: it is an opinion about
+     * future value, not an observation of cost.
+     *
+     * The hint carries the baseline's snapshot date so it is judged on the
+     * same terms as every other price. With no mark there is no hint, and the
+     * row shows no notional until the query answers -- which is honest.
+     */
     if (selectedSimulationId && (priceMap?.[assetId] == null)) {
       const baselineHoldingsForHint = simulation?.baseline_holdings as BaselineHolding[] | undefined
       const baselineForHint = baselineHoldingsForHint?.find(h => h.asset_id === assetId)
-      const priceHint = baselineForHint?.price || (idea as any).target_price || NO_PRICE
-      queryClient.setQueryData<Record<string, number>>(
-        ['simulation-prices', selectedSimulationId],
-        (old) => ({ ...(old || {}), [assetId]: priceHint }),
-      )
+      const priceHint = baselineForHint?.price
+      if (priceHint != null && priceHint > 0) {
+        queryClient.setQueryData<{ prices: Record<string, number>; provenance: PriceProvenanceMap }>(
+          ['simulation-prices', selectedSimulationId],
+          (old) => ({
+            prices: { ...(old?.prices || {}), [assetId]: priceHint },
+            provenance: {
+              ...(old?.provenance || {}),
+              [assetId]: { asOf: baselineForHint?.as_of ?? null, basis: 'book_mark' },
+            },
+          }),
+        )
+      }
     }
 
     // Optimistic: add temp variant to cache for instant table row.
@@ -3711,11 +3811,14 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         if (tempSizing && simulation) {
           const baselineHoldings = (simulation.baseline_holdings as BaselineHolding[]) || []
           const baseline = baselineHoldings.find(h => h.asset_id === assetId)
-          const price =
-            priceMap?.[assetId] ||
-            baseline?.price ||
-            (idea as any).target_price ||
-            NO_PRICE
+          // `target_price` removed as a rung: see the import mutation above.
+          const tempAssetPrice = assetPriceForVariant({
+            assetId,
+            priceMap,
+            priceProvenance,
+            bookPrice: baseline?.price,
+            bookAsOf: baseline?.as_of,
+          })
           try {
             const normResult = normalizeSizing({
               action: (idea.action || 'buy') as any,
@@ -3727,7 +3830,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 active_weight: null,
               } : null,
               portfolio_total_value: simulation.baseline_total_value || 0,
-              price: { asset_id: assetId, price, timestamp: new Date().toISOString(), source: 'realtime' as const },
+              price: tempAssetPrice,
               rounding_config: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' as const },
               active_weight_config: getActiveWeightConfig(assetId),
               has_benchmark: hasBenchmark,
@@ -3762,7 +3865,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     // Fire import immediately
     importsInFlightRef.current.add(assetId)
     importTradeMutation.mutate(idea)
-  }, [tradeLab?.id, queryClient, importTradeMutation, selectedSimulationId, priceMap])
+  }, [tradeLab?.id, queryClient, importTradeMutation, selectedSimulationId, priceMap, priceProvenance])
 
   // Override-aware trade count: filters out trades the user has toggled OFF.
   // This keeps the header count and tab badge in sync with checkbox state instantly.
@@ -4501,7 +4604,13 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
         if (tempSizingForLeg && simulation) {
           const baselineHoldings = (simulation.baseline_holdings as BaselineHolding[]) || []
           const baseline = baselineHoldings.find(h => h.asset_id === a.assetId)
-          const price = priceMap?.[a.assetId] || baseline?.price || NO_PRICE
+          const legTempAssetPrice = assetPriceForVariant({
+            assetId: a.assetId,
+            priceMap,
+            priceProvenance,
+            bookPrice: baseline?.price,
+            bookAsOf: baseline?.as_of,
+          })
           try {
             const normResult = normalizeSizing({
               action: a.action as any,
@@ -4513,7 +4622,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
                 active_weight: null,
               } : null,
               portfolio_total_value: simulation.baseline_total_value || 0,
-              price: { asset_id: a.assetId, price, timestamp: new Date().toISOString(), source: 'realtime' as const },
+              price: legTempAssetPrice,
               rounding_config: { lot_size: 1, min_lot_behavior: 'round', round_direction: 'toward_zero' as const },
               active_weight_config: getActiveWeightConfig(a.assetId),
               has_benchmark: hasBenchmark,
@@ -4555,6 +4664,7 @@ export function SimulationPage({ simulationId: propSimulationId, tabId, onClose,
     tradeLab?.id,
     simulation,
     priceMap,
+    priceProvenance,
     getActiveWeightConfig,
     hasBenchmark,
     queryClient,

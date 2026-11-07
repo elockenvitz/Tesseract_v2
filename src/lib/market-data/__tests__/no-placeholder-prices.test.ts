@@ -51,20 +51,35 @@ const codeOf = (src: string) => src
   .filter(l => !l.trim().startsWith('//'))
   .join('\n')
 
-/** Every surface that builds a price which is then sized or booked against. */
+/**
+ * Every surface that builds a price which is then sized or booked against.
+ *
+ * `proposal-sizing.ts` was added after the fact. It held
+ * `price > 0 ? price : 100` the whole time the other nineteen sites were
+ * being cleaned up, and this list did not include it -- so the guard passed
+ * while a placeholder shipped. Two lessons are encoded below: the list has to
+ * name every sizing surface, and the pattern has to match the TERNARY form,
+ * not just `||` and `??`.
+ */
 const SIZING_SURFACES = [
   'src/pages/SimulationPage.tsx',
   'src/components/trading/SuggestionReviewPanel.tsx',
   'src/components/trading/RecommendationEditorModal.tsx',
+  'src/lib/trade-lab/proposal-sizing.ts',
+  'src/lib/trade-lab/variant-price.ts',
 ]
 
 describe('no sizing surface falls back to a fabricated price', () => {
   for (const rel of SIZING_SURFACES) {
     it(`${rel} has no literal price placeholder`, () => {
-      // `|| 100` / `?? 100` as a fallback in a price expression. `\s*` spans
-      // newlines on purpose: one of the twenty sites was wrapped across four
+      // Three fallback spellings, all seen in this codebase:
+      //   `|| 100`      the original nineteen
+      //   `?? 100`      the same thing, nullish
+      //   `: 100`       the ternary in `proposal-sizing.ts`, which the
+      //                 first two patterns walked straight past
+      // `\s*` spans newlines on purpose: one site was wrapped across four
       // lines and a line-oriented search missed it.
-      const placeholders = codeOf(read(rel)).match(/(\|\||\?\?)\s*100\b/g) ?? []
+      const placeholders = codeOf(read(rel)).match(/(\|\||\?\?|:)\s*100\b/g) ?? []
       expect(placeholders).toEqual([])
     })
   }
@@ -73,10 +88,32 @@ describe('no sizing surface falls back to a fabricated price', () => {
     const src = read('src/pages/SimulationPage.tsx')
     // The ladder: live quote, then the stored close, then the book's price.
     expect(src).toContain('fetchLatestCloses')
-    // An unknown price is an ABSENT key, never a value.
-    expect(src).toMatch(/if \(r\.price != null\) prices\[r\.assetId\] = r\.price/)
+    /*
+     * An unknown price is an ABSENT key, never a value.
+     *
+     * This used to pin the exact line `if (r.price != null) prices[r.assetId]
+     * = r.price`. The ladder now also records WHICH rung answered, so that
+     * one statement became a block and the old pattern no longer matched.
+     * Rewritten rather than dropped: the rule being guarded is unchanged, and
+     * it is now expressed as "the write is conditional on a non-null price"
+     * instead of as one exact line, so adding to the block does not break it
+     * again.
+     */
+    expect(src).toMatch(/if \(r\.price != null\) \{[\s\S]{0,200}?prices\[r\.assetId\] = r\.price/)
     // The sentinel is zero, which the guards reject.
     expect(src).toMatch(/const NO_PRICE = 0\b/)
+  })
+
+  it('never sizes against a target price', () => {
+    /*
+     * A target price is an opinion about future value, not an observation of
+     * what the instrument costs. Three rungs of the Trade Lab ladder ended in
+     * `target_price`, which sized trades at the number the thesis implied
+     * rather than the number the money buys -- and it is undated, so it could
+     * not even be judged stale.
+     */
+    const src = codeOf(read('src/pages/SimulationPage.tsx'))
+    expect(src).not.toMatch(/\|\|\s*(\(idea as any\)\.|tradeIdea\.|leg\.)?target_price/)
   })
 })
 

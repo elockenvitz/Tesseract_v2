@@ -57,7 +57,22 @@ import { executeSimVariants } from '../execute-sim-variants-service'
 const variant = (over: Record<string, unknown> = {}) => ({
   id: 'v-1', portfolio_id: 'p1', asset_id: 'a-aapl', action: 'add',
   sizing_input: '+1', sizing_spec: null, notes: null,
-  computed: { target_weight: 3, target_shares: 100, delta_weight: 1, delta_shares: 30, notional_value: 6000, price_used: 200 },
+  /*
+   * `price_as_of` / `price_basis` added to this fixture because
+   * `assertVariantPriceIsBookable` now refuses a price with no recorded
+   * provenance, which is what this fixture used to carry. The refusal is the
+   * point of that guard -- eleven production trades were booked at a price
+   * with no source -- so the fixture is brought up to what a real variant
+   * carries rather than the guard being relaxed. The date is computed rather
+   * than literal so the fixture does not go stale and start failing on its
+   * own in five days.
+   */
+  computed: {
+    target_weight: 3, target_shares: 100, delta_weight: 1, delta_shares: 30,
+    notional_value: 6000, price_used: 200,
+    price_as_of: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+    price_basis: 'stored_close',
+  },
   trade_queue_item_id: 'tq-1', proposal_id: null, decision_request_id: null,
   asset: { symbol: 'AAPL' },
   ...over,

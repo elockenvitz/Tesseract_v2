@@ -26,6 +26,8 @@ const SHOP: AcceptSizingBasis = {
   portfolioTotalValue: 34779457.0707,
   asOf: '2026-09-29',
   isNewPosition: false,
+  priceBasis: 'book_mark',
+  priceAsOf: '2026-09-29',
 }
 
 const ASSET = '26003bd1-aff7-48ce-962a-068ad092298b'
