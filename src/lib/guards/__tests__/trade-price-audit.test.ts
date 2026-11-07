@@ -7,12 +7,29 @@
  * ── 1. It must not be able to write ──────────────────────────────────────
  *
  * The audit answers "do holdings, cash and outcomes need correcting" and the
- * standing instruction is not to modify historical data. A comment promising
- * that is worth nothing, so every statement goes through `assertReadOnly`.
- * Here that guard is fed writes in each shape one could reach the database
- * in -- a bare write, one riding behind a legitimate SELECT, one inside a
- * CTE, DDL, a GRANT -- and must refuse all of them, while accepting every
- * query the script actually sends.
+ * standing instruction is not to modify historical data.
+ *
+ * There are two layers and it matters which is which. The BOUNDARY is the
+ * database: every request carries `read_only: true`, so postgres rejects a
+ * write itself with SQLSTATE 25006. `readQueryBody` is tested below for
+ * exactly that flag, because a request body that silently lost it is a
+ * request that can write.
+ *
+ * `assertReadOnly` is the TRIPWIRE in front of it, and a keyword denylist is
+ * not a security boundary. An earlier version of this file claimed the
+ * read-only behaviour was "enforced" by that denylist alone. It was not: a
+ * review fed it four statements that write while spelled as ordinary
+ * SELECTs, and all four were accepted --
+ *
+ *   select * into stolen_trades from accepted_trades      creates a table
+ *   select public.apply_trade_to_holdings(...)            moves holdings
+ *   select setval('some_seq', 1)                          rewinds a sequence
+ *   select pg_terminate_backend(1)                        kills a connection
+ *
+ * Three of those are now named in the denylist and are tested here. The
+ * second deliberately is not: any volatile function can write and naming
+ * them one at a time is a losing game, so that one is left to the read-only
+ * transaction. Passing the tripwire is not proof a statement is safe.
  *
  * ── 2. It must classify the one trade that matters ───────────────────────
  *
@@ -29,6 +46,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   assertReadOnly,
+  readQueryBody,
   classifyTrade,
   isCorroborated,
   summarize,
@@ -104,6 +122,62 @@ describe('the audit cannot write', () => {
   it('allows a trailing semicolon', () => {
     accepts('select 1 from assets;')
     accepts('select 1 from assets;   \n  ')
+  })
+
+  it('refuses the SELECT-shaped writes a review demonstrated', () => {
+    // Each of these was ACCEPTED by the first version of the guard. None of
+    // them contains a write keyword; they are all spelled as a SELECT.
+    refuses('select * into stolen_trades from accepted_trades')
+    refuses('select price_at_acceptance into audit_copy from accepted_trades')
+    refuses("select setval('accepted_trades_id_seq', 1)")
+    refuses("select nextval('accepted_trades_id_seq')")
+    refuses('select pg_terminate_backend(1)')
+    refuses('select pg_cancel_backend(1)')
+    refuses("select pg_read_file('/etc/passwd')")
+    refuses("select dblink_exec('dbname=x', 'delete from assets')")
+  })
+
+  it('does not false-positive on names that merely contain a banned word', () => {
+    // `into` is the risky addition: it is a short word. Word boundaries keep
+    // ordinary identifiers safe.
+    accepts('select intonation from assets')
+    accepts('select shares, cost from portfolio_holdings')
+    accepts('select setvalue_label from org_settings_v')
+  })
+
+  it('refuses a banned word inside a string literal, and that is accepted', () => {
+    // A known false positive, recorded rather than fixed. The guard scans raw
+    // text and cannot tell a keyword from a literal, so a query that merely
+    // mentions INTO is refused:
+    refuses("select id from assets where symbol = 'INTO'")
+    // Fixing it would mean parsing SQL in a guard whose whole job is to be
+    // too simple to have bugs, and the failure direction is the safe one:
+    // the audit refuses to run and a human looks. All five queries this
+    // script actually sends are asserted above to pass, which is the case
+    // that has to keep working.
+  })
+})
+
+describe('the read-only transaction is the actual boundary', () => {
+  // Proven against this project on 2026-11-07 with statements that are
+  // harmless even if they run: `read_only: true` makes postgres answer
+  //   update price_history_cache set symbol = symbol where false
+  //   create temp table t (x int)
+  //   select 1 as x into temp t
+  // with SQLSTATE 25006, "cannot execute ... in a read-only transaction".
+  // These tests pin the flag that asks for it.
+  it('sets read_only on every request body', () => {
+    for (const [name, query] of Object.entries(ALL_QUERIES as Record<string, string>)) {
+      const body = readQueryBody(query) as { query: string; read_only: boolean }
+      expect(body.read_only, name).toBe(true)
+      expect(body.query, name).toBe(query)
+    }
+  })
+
+  it('runs the tripwire before it will build a body at all', () => {
+    // So a write cannot reach the network even once, read-only or not.
+    expect(() => readQueryBody('update accepted_trades set price_at_acceptance = 1')).toThrow()
+    expect(() => readQueryBody('select * into stolen_trades from accepted_trades')).toThrow()
   })
 })
 

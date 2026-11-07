@@ -26,11 +26,36 @@
  *
  * ── This script does not write ───────────────────────────────────────────
  *
- * That is not a promise in a comment, it is enforced: every statement goes
- * through `assertReadOnly`, which refuses anything that is not a single
- * SELECT or WITH. Corrections to historical records are a separate,
- * separately authorised decision -- an audit that edits what it is measuring
- * destroys its own evidence.
+ * Two layers, and it matters which one is the boundary.
+ *
+ * The BOUNDARY is the database. Every request carries `read_only: true`, so
+ * Postgres runs the statement inside a read-only transaction and rejects any
+ * write itself, with SQLSTATE 25006, before it touches a row. Measured
+ * against this project on 2026-11-07:
+ *
+ *   update price_history_cache set symbol = symbol where false
+ *                             -> 25006 cannot execute UPDATE
+ *   create temp table t (x int)
+ *                             -> 25006 cannot execute CREATE TABLE
+ *   select 1 as x into temp t -> 25006 cannot execute SELECT INTO
+ *
+ * That holds regardless of what this file sends, which is the point: it does
+ * not depend on anyone keeping a keyword list complete.
+ *
+ * The TRIPWIRE is `assertReadOnly`, which refuses anything that is not a
+ * single SELECT or WITH before it reaches the network. It is a keyword
+ * denylist and a denylist is not a security boundary -- it cannot enumerate
+ * every function that writes. It is here to catch a careless edit to this
+ * file early and loudly, not to be relied on alone.
+ *
+ * One thing the read-only transaction does NOT stop, which is why the
+ * tripwire still earns its place: `pg_terminate_backend` and
+ * `pg_cancel_backend` both returned successfully inside one. They disrupt
+ * availability rather than data, and they are on the denylist.
+ *
+ * Corrections to historical records are a separate, separately authorised
+ * decision -- an audit that edits what it is measuring destroys its own
+ * evidence.
  *
  * ── Usage ────────────────────────────────────────────────────────────────
  *
@@ -66,13 +91,42 @@ export const PLACEHOLDER_PRICE = 100
 // The write guard
 // ─────────────────────────────────────────────────────────────────────────
 
-/** Words that have no business in a read. */
+/** Statement keywords that have no business in a read. */
 const WRITE_WORDS = [
   'insert', 'update', 'delete', 'truncate', 'drop', 'alter', 'create',
   'grant', 'revoke', 'merge', 'upsert', 'copy', 'vacuum', 'reindex',
   'comment', 'refresh', 'call', 'do', 'set', 'reset', 'lock', 'notify',
   'listen', 'begin', 'commit', 'rollback', 'savepoint', 'prepare', 'execute',
   'analyze', 'cluster', 'discard', 'security', 'import',
+]
+
+/**
+ * Things that write, or disrupt, without using a write KEYWORD. A review of
+ * this guard found all of these accepted by the keyword list above, because
+ * each one is spelled as an ordinary SELECT:
+ *
+ *   select * into stolen_trades from accepted_trades   creates a table
+ *   select public.apply_trade_to_holdings(...)         moves holdings and cash
+ *   select setval('some_seq', 1)                       rewinds a sequence
+ *   select pg_terminate_backend(1)                     kills a connection
+ *
+ * `into` closes the first. The sequence functions close the third. The
+ * backend-signalling pair closes the fourth and is the one case the
+ * read-only transaction genuinely does not cover.
+ *
+ * The second cannot be closed this way and is not pretended to be: any
+ * volatile function can write, and naming them one at a time is a losing
+ * game. That one is stopped by the read-only transaction, which refuses the
+ * write inside the function body with 25006. This list is the early, loud
+ * failure; the transaction is the boundary.
+ */
+const SIDE_EFFECT_WORDS = [
+  'into',
+  'setval', 'nextval',
+  'pg_terminate_backend', 'pg_cancel_backend',
+  'pg_advisory_lock', 'pg_advisory_xact_lock',
+  'dblink', 'dblink_exec',
+  'pg_read_file', 'pg_read_binary_file', 'pg_ls_dir', 'lo_import', 'lo_export',
 ]
 
 /** Strip `--` line comments and `/* *\/` block comments. */
@@ -82,11 +136,18 @@ const stripComments = (q) =>
 /**
  * Refuse anything that is not one read statement.
  *
- * Three ways a write could otherwise slip through, all closed here: a write
- * as the whole statement; a write smuggled after a `;` behind a legitimate
- * select; and a write hidden inside a comment that a later edit uncomments.
- * Comments are stripped BEFORE the keyword scan, so a commented-out write is
- * allowed to sit in the file -- it is the uncommenting that trips the guard.
+ * This is a tripwire, not the boundary. The boundary is the read-only
+ * transaction the request asks Postgres for; see the header. What this
+ * catches, early and before the network: a write as the whole statement; a
+ * write smuggled after a `;` behind a legitimate select; a write hidden
+ * inside a comment that a later edit uncomments; and the SELECT-shaped
+ * writes listed under SIDE_EFFECT_WORDS. Comments are stripped BEFORE the
+ * keyword scan, so a commented-out write is allowed to sit in the file -- it
+ * is the uncommenting that trips the guard.
+ *
+ * It cannot be complete, because any volatile function can write and they
+ * cannot all be named. Do not treat passing this check as proof that a
+ * statement is safe.
  */
 export function assertReadOnly(query) {
   const bare = stripComments(String(query))
@@ -110,7 +171,26 @@ export function assertReadOnly(query) {
     }
   }
 
+  for (const word of SIDE_EFFECT_WORDS) {
+    if (new RegExp(`(^|[^a-z_])${word}([^a-z_]|$)`, 'i').test(bare)) {
+      throw new Error(`refusing a query containing \`${word}\`: it writes or signals without a write keyword`)
+    }
+  }
+
   return query
+}
+
+/**
+ * The body of a read request to the Management API query endpoint.
+ *
+ * `read_only: true` is the whole reason this is a named, exported function
+ * rather than an inline object literal: it is the actual boundary, so it is
+ * worth a unit test of its own. A build of this request that loses the flag
+ * is a build that can write.
+ */
+export function readQueryBody(query) {
+  assertReadOnly(query)
+  return { query, read_only: true }
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -442,12 +522,27 @@ export function selfTest(log = console.log) {
     ['an uncommented write', `select 1 from accepted_trades where id in (select id from accepted_trades) /* then */ truncate accepted_trades`],
     ['a DDL', `select 1; alter table accepted_trades drop column price_at_acceptance`],
     ['a grant', `select 1; grant all on accepted_trades to anon`],
+    // The four SELECT-shaped writes a review of this guard demonstrated.
+    ['SELECT INTO, which creates a table', `select * into stolen_trades from accepted_trades`],
+    ['a sequence rewind', `select setval('accepted_trades_id_seq', 1)`],
+    ['a sequence advance', `select nextval('accepted_trades_id_seq')`],
+    ['killing a connection', `select pg_terminate_backend(1)`],
+    ['cancelling a connection', `select pg_cancel_backend(1)`],
   ]
   for (const [label, query] of writes) {
     let refused = false
     try { assertReadOnly(query) } catch { refused = true }
     check(refused, `refused: ${label}`)
   }
+
+  // The boundary, not the tripwire. A request body that lost `read_only`
+  // would let postgres run a write that this guard happened not to name.
+  log('\nevery request asks postgres for a read-only transaction:')
+  const body = readQueryBody(Q_POPULATION)
+  check(body.read_only === true, 'readQueryBody sets read_only: true')
+  let bodyRefused = false
+  try { readQueryBody('update accepted_trades set price_at_acceptance = 1') } catch { bodyRefused = true }
+  check(bodyRefused, 'readQueryBody runs the tripwire before building a body')
 
   log(failures === 0
     ? '\nself-test PASS: the classifier reproduces the recorded verdicts and the guard refuses every write'
@@ -487,11 +582,12 @@ async function run(argv) {
   const out = asJson ? () => {} : (...a) => console.log(...a)
 
   const sql = async (query) => {
-    assertReadOnly(query)
     const res = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
+      // readQueryBody runs the tripwire AND asks postgres for a read-only
+      // transaction. Do not hand-roll this body.
+      body: JSON.stringify(readQueryBody(query)),
     })
     const text = await res.text()
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`)
