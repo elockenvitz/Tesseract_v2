@@ -75,6 +75,60 @@ const REQUIRED_CHECK_NAMES = [
 ]
 
 /**
+ * Whether a workflow's failure notifier will keep telling someone.
+ *
+ * ── The defect ───────────────────────────────────────────────────────────
+ *
+ * `ingest.yml`'s notifier read `if (existing.data.length === 0) { issues
+ * .create(...) }`. The intent was "do not open a hundred duplicate issues";
+ * the effect was that once the first failure had opened an issue, every later
+ * failure did nothing. Issue #248 opened on 2026-10-06 and 24 further nightly
+ * failures passed in silence, which is how a market-data outage ran for 35
+ * days inside a product whose prices were visibly wrong.
+ *
+ * The dedupe was applied to the NOTIFICATION rather than to the issue. One
+ * issue is right; one notification is not.
+ *
+ * Pure, and takes `[path, parsedWorkflow]` pairs, so it can be tested against
+ * fixtures rather than only against the two real files.
+ *
+ * @param {Array<[string, any]>} entries
+ * @returns {string[]} one problem per line, empty when every notifier is sound
+ */
+export function auditFailureNotifiers(entries) {
+  const problems = []
+  const scriptBodies = (d) =>
+    Object.values(d?.jobs ?? {})
+      .flatMap(j => j?.steps ?? [])
+      .map(st => st?.with?.script)
+      .filter(s => typeof s === 'string')
+      .join('\n')
+
+  for (const [wf, parsed] of entries ?? []) {
+    const bodies = scriptBodies(parsed)
+    if (!bodies.trim()) {
+      problems.push(`${wf} has no failure-notification script at all.`)
+      continue
+    }
+    if (!/alert-on-failure\.cjs/.test(bodies)) {
+      problems.push(`${wf}'s notifier does not route through .github/scripts/alert-on-failure.cjs.`)
+    }
+    /*
+     * The literal shape of the bug, and the two near-spellings of it. A
+     * notifier that creates an issue only when none exists is the defect
+     * whatever the comparison is written as.
+     */
+    if (/\.length\s*===\s*0|\.length\s*<\s*1|!\s*existing\.data\.length/.test(bodies)) {
+      problems.push(
+        `${wf}'s notifier skips the notification when an issue already exists. ` +
+        'That is the bug that kept 24 ingestion failures silent.',
+      )
+    }
+  }
+  return problems
+}
+
+/**
  * Every structural claim this file makes about a workflow, as one pure
  * function so it can be tested against fixture workflows rather than only
  * against the real one.
@@ -261,6 +315,91 @@ export function main() {
     console.error(`FAIL: ${INGEST} has no failure notification. A silent nightly job looks identical to a working one.`)
     process.exit(1)
   }
+
+  /**
+   * The freshness watchdog, checked the same way and for a sharper reason.
+   *
+   * This is the workflow that would have caught the 35-day market-data
+   * outage, and it exists precisely because a check inside `ingest.yml`
+   * cannot report that `ingest.yml` died. A watchdog that silently stops
+   * running leaves the product in exactly the state it was in before the
+   * watchdog existed, and GitHub reports a broken workflow file as a run with
+   * ZERO jobs rather than as an error -- so the Actions tab looks quiet
+   * rather than red. Hence parse it, not grep it.
+   */
+  const FRESH = '.github/workflows/market-data-freshness.yml'
+  if (!existsSync(FRESH)) {
+    console.error(`FAIL: ${FRESH} is missing — nothing would notice stale market data.`)
+    process.exit(1)
+  }
+  let fresh
+  try {
+    fresh = parse(readFileSync(FRESH, 'utf8'))
+  } catch (e) {
+    console.error(`FAIL: ${FRESH} is not parseable YAML — GitHub reports zero jobs, not an error.`)
+    console.error(String(e.message ?? e))
+    process.exit(1)
+  }
+  const freshTriggers = fresh?.on ?? fresh?.[true]
+  const freshCrons = (freshTriggers?.schedule ?? []).map(s => s?.cron).filter(Boolean)
+  const freshJobs = Object.keys(fresh?.jobs ?? {})
+  console.log(`freshness jobs: ${freshJobs.length} -> ${freshJobs.join(', ')}`)
+  console.log(`freshness schedule: ${freshCrons.join(' | ') || 'NONE'}`)
+  if (!freshCrons.length) {
+    console.error(`FAIL: ${FRESH} declares no schedule, so it would only ever run by hand.`)
+    process.exit(1)
+  }
+  for (const want of ['freshness', 'notify-failure']) {
+    if (!freshJobs.includes(want)) {
+      console.error(`FAIL: ${FRESH} is missing the "${want}" job.`)
+      process.exit(1)
+    }
+  }
+
+  /*
+   * The watchdog must run its own self-test.
+   *
+   * `--self-test` re-runs every assertion against thresholds nothing can meet
+   * and fails if any stays quiet. Without it the workflow could pass forever
+   * on a check that had stopped measuring anything, which is the defect class
+   * this whole file exists to catch.
+   */
+  const freshRuns = runCommands(fresh).join('\n')
+  if (!/check-market-data-freshness\.mjs/.test(freshRuns)) {
+    console.error(`FAIL: ${FRESH} never runs scripts/check-market-data-freshness.mjs.`)
+    process.exit(1)
+  }
+  if (!/--self-test/.test(freshRuns)) {
+    console.error(`FAIL: ${FRESH} runs the freshness check without --self-test.`)
+    console.error('A check that cannot observe its own failure mode is decoration.')
+    process.exit(1)
+  }
+
+  /**
+   * The notifier must not dedupe the NOTIFICATION.
+   *
+   * `ingest.yml` carried `if (existing.data.length === 0) { issues.create }`,
+   * so after the first failure opened issue #248 on 2026-10-06, 24 further
+   * nightly failures said nothing at all. One issue is right; one
+   * notification is not. Both notifiers go through
+   * `.github/scripts/alert-on-failure.cjs`, which comments on the existing
+   * issue, and this asserts neither has drifted back to the old shape.
+   */
+  const ALERT = '.github/scripts/alert-on-failure.cjs'
+  if (!existsSync(ALERT)) {
+    console.error(`FAIL: ${ALERT} is missing — the failure notifiers have nothing to call.`)
+    process.exit(1)
+  }
+  const notifierProblems = auditFailureNotifiers([[INGEST, ingest], [FRESH, fresh]])
+  if (notifierProblems.length) {
+    for (const p of notifierProblems) console.error(`FAIL: ${p}`)
+    console.error('')
+    console.error('One ISSUE per subject is right; one NOTIFICATION is not. Comment on')
+    console.error('the existing issue instead of skipping the notification.')
+    process.exit(1)
+  }
+  console.log(`failure notifiers routed through ${ALERT}: ${[INGEST, FRESH].length}`)
+
   console.log('PASS')
 }
 

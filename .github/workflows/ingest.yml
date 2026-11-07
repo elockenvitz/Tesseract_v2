@@ -1,15 +1,15 @@
 name: Nightly ingestion
 
-# ══ THIS DOES NOT RUN UNTIL IT IS ON `main` ═══════════════════════════════
+# ══ THIS ONLY RUNS FROM `main` ════════════════════════════════════════════
 #
-# GitHub only schedules workflows from the DEFAULT branch. While this file
-# lives on a feature branch it is not registered at all — the Actions API
-# listed `ci.yml` alone, and `workflow_dispatch` against this file returned
-# 404 rather than queueing a run.
+# GitHub only schedules workflows from the DEFAULT branch. While a change to
+# this file lives on a feature branch it is not registered at all — the
+# Actions API lists only what is on main, and `workflow_dispatch` against an
+# unmerged version returns 404 rather than queueing a run.
 #
-# So merging is not a tidiness step here, it is the switch. Until then the
-# nightly ingestion is written, credentialled and proven by hand, and firing
-# never.
+# This file is on main and firing: run 42348062597 on 2026-11-07 completed
+# with all three jobs green. The banner stays because the rule still applies
+# to every edit of it, including this one.
 #
 # Verify after merge:
 #   gh api repos/:owner/:repo/actions/workflows --jq '.workflows[].path'
@@ -147,6 +147,17 @@ jobs:
 
   # A silent nightly job is worse than none: it looks identical to a working
   # one right up until somebody asks why the weight series has holes.
+  #
+  # ── This notifier used to go quiet after the first failure ───────────────
+  #
+  # It read `if (existing.data.length === 0) { issues.create(...) }`, so once
+  # an open `ingestion` issue existed every later failure did nothing. Issue
+  # #248 opened on 2026-10-06 and 24 further nightly failures passed in
+  # silence, which is how a market-data outage ran for 35 days.
+  #
+  # One ISSUE per subject is right. One NOTIFICATION is not. The dedupe moved
+  # off the notification and onto the issue: see
+  # `.github/scripts/alert-on-failure.cjs`.
   notify-failure:
     name: Alert on failed ingestion
     needs: [prices, benchmark, reconcile]
@@ -155,27 +166,31 @@ jobs:
     permissions:
       issues: write
     steps:
+      # The notifier is a file in the repo now, so this job needs the repo.
+      - uses: actions/checkout@v4
       - uses: actions/github-script@v7
         with:
           script: |
-            const title = 'Nightly ingestion failed'
-            const body = [
-              `Ingestion failed at ${new Date().toISOString()}.`,
-              '',
-              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              '',
-              'Both scripts are idempotent, so a re-run is safe and resumes',
-              'rather than restarting. Check first whether the provider blocked',
-              'us — Yahoo and SSGA both return HTTP 200 with HTML when they do,',
-              'and both scripts report that as a failure rather than parsing it.',
-            ].join('\n')
-            const existing = await github.rest.issues.listForRepo({
-              owner: context.repo.owner, repo: context.repo.repo,
-              state: 'open', labels: 'ingestion',
+            const alert = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/alert-on-failure.cjs`)
+            await alert({
+              github, context,
+              subject: 'Nightly ingestion failed',
+              label: 'ingestion',
+              detail: [
+                'Both scripts are idempotent, so a re-run is safe and resumes',
+                'rather than restarting.',
+                '',
+                'Check in this order:',
+                '',
+                '1. **Credentials.** A 401 naming legacy API keys means the',
+                '   `SUPABASE_SERVICE_ROLE_KEY` secret holds a disabled legacy',
+                '   key. This is what caused the 2026-10 outage. An `sb_secret_`',
+                '   key is not a JWT: it must be sent as `apikey`, and a',
+                '   Bearer-only request returns 401.',
+                '2. **Provider interstitial.** Yahoo and SSGA both return HTTP',
+                '   200 with an HTML body when they block us, and both scripts',
+                '   report that as a failure rather than parsing it.',
+                '3. **The failing step in the run log**, which names the symbol',
+                '   or the file it stopped on.',
+              ],
             })
-            if (existing.data.length === 0) {
-              await github.rest.issues.create({
-                owner: context.repo.owner, repo: context.repo.repo,
-                title, body, labels: ['ingestion'],
-              })
-            }
