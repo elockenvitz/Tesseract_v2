@@ -69,10 +69,22 @@ export function parseSizingWithConflictCheck(
     }
   }
 
-  // Create mock price for normalization
+  /*
+   * Zero, never 100, where no price is known.
+   *
+   * This read `price > 0 ? price : 100`. The ternary form is why the
+   * `no-placeholder-prices` guard did not catch it: that test matched
+   * `|| 100` and `?? 100`, and nineteen sites were cleaned up around this
+   * one. It is the same defect -- `normalizeSizing` divides the portfolio
+   * value by this number to get a share count, and the count is what a
+   * proposal shows the PM before they approve it.
+   *
+   * Zero is refused by the normalizer, so the preview says it cannot size
+   * rather than quoting shares against a price nobody observed.
+   */
   const mockPrice: AssetPrice = {
     asset_id: 'temp',
-    price: price > 0 ? price : 100,
+    price: price > 0 ? price : 0,
     timestamp: new Date().toISOString(),
     source: 'realtime',
   }

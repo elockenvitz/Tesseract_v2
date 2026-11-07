@@ -88,6 +88,14 @@ export const GATED_DIRS = [
   'src/lib/security',
   'src/lib/services',
   'src/lib/coverage',
+  /*
+   * `src/lib/trade-lab` had test files but no `__tests__` directory -- its
+   * suites sat beside their sources as `*.test.ts` -- so the directory came
+   * into existence with the sizing price-validity gate and was neither gated
+   * nor deferred. This is the lane that converts an approved weight into a
+   * share count and a cash movement; its tests belong in the gate.
+   */
+  'src/lib/trade-lab',
   'src/components/coverage',
   'src/components/signals',
   'src/components/mobile',
@@ -392,7 +400,9 @@ export const DEFERRED_DIRS = [
   'src/lib/research/__tests__',
   'src/lib/storage',
   // 'src/lib/today' and its `__tests__` moved UP to the gated list.
-  'src/lib/trade-lab',
+  // 'src/lib/trade-lab' moved UP as well: it holds `normalize-sizing`, which
+  // turns an approved weight into a share count and a cash movement, and the
+  // price-validity gate that decides whether a price may do that at all.
 ]
 
 /** Kept as the old name so nothing that imports it breaks. */
