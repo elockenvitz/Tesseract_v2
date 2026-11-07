@@ -35,6 +35,7 @@
     "sec:edge-authz": "node scripts/edge-authz-guard.mjs",
     "guard:gallery": "node scripts/gallery-purity.mjs",
     "guard:holdings": "node scripts/holdings-collapse-audit.mjs",
+    "audit:trade-prices": "node scripts/audit-trade-price-contamination.mjs",
     "guard:tdz": "node scripts/lint-mobile-ratchet.mjs",
     "guard:unit": "node scripts/unit-guard.mjs",
     "guard:social-preview": "node scripts/guard-social-preview.mjs",
