@@ -37,12 +37,65 @@
  *
  *   FAIL CLOSED   absent, non-positive, undated, or carrying no recorded
  *                 basis. These cannot be sized against at all.
- *   GATED         dated and sourced, but older than the policy allows. Usable
- *                 only where the caller passes `allowStaleBasis`, which is
- *                 how the book-basis rule in `accept-sizing` survives: that
- *                 path sizes against the book's own carrying price on purpose,
+ *   GATED         usable only where the caller passes `allowStaleBasis`, and
+ *                 recorded as gated when it is. Two things land here: a
+ *                 dated, sourced price older than the policy allows; and a
+ *                 `book_mark`, ALWAYS, because nothing in the schema records
+ *                 when a mark was last a market price. That is how the
+ *                 book-basis rule in `accept-sizing` survives: that path
+ *                 sizes against the book's own carrying price on purpose,
  *                 because `target = current + delta` only closes when both
  *                 sides are measured in the same money.
+ *
+ * The four kinds of price this separates, which is the distinction the rest
+ * of the system was missing:
+ *
+ *   a dated, valid market price      ok, ungated
+ *   a dated market price, too old    stale, gated
+ *   an undated or unsourced number   refused outright
+ *   the book's own carrying price    gated, always, never called current
+ *
+ * A trade whose TRANSACTION date is in the past is a different matter and is
+ * not blocked here: this judges the price's own effective date, not the
+ * trade's. A correction that re-books a June fill at June's close is a
+ * dated, sourced price being used exactly as intended.
+ *
+ * ── What `sourced` does and does not mean ───────────────────────────────
+ *
+ * `basis: 'stored_close'` says the number came out of `price_history_cache`
+ * on a stated date. It does NOT say the row itself is trustworthy, and on
+ * this project it currently is not, which is worth stating where the
+ * guarantee is made rather than leaving it implied.
+ *
+ * Measured against production on 2026-11-07. `price_history_cache` has RLS
+ * enabled with exactly two policies:
+ *
+ *   INSERT  "Users can insert price history"   WITH CHECK (auth.uid() IS NOT NULL)
+ *   SELECT  "Users can view price history cache"    USING (auth.uid() IS NOT NULL)
+ *
+ * The table has no `organization_id` and is global reference data by design.
+ * No UPDATE or DELETE policy exists, so RLS denies both, and
+ * `price_history_cache_symbol_date_key` is unique on (symbol, date) -- so an
+ * existing close cannot be overwritten or removed by a client. What ANY
+ * authenticated user of ANY organization can do is INSERT a row for a
+ * (symbol, date) pair that does not exist yet. Today the newest close is
+ * 2026-11-06, so every later date is available, and a fabricated close
+ * inserted there would reach this module as a dated, sourced, in-policy
+ * price and be judged `ok`.
+ *
+ * No client code writes this table: the only writers are the nightly
+ * ingestion job and the backfill script, both using the service-role key,
+ * which bypasses RLS. The INSERT policy therefore grants a capability
+ * nothing uses.
+ *
+ * The smallest fix is one statement, and it is deliberately NOT included in
+ * this change -- production RLS is not altered without approval:
+ *
+ *   DROP POLICY "Users can insert price history" ON public.price_history_cache;
+ *
+ * Server-side ingestion is unaffected. Until that lands, treat the gate as
+ * verifying that a price is dated and came from our own store, not that
+ * nobody could have planted it.
  *
  * ── Provider independence ────────────────────────────────────────────────
  *
@@ -66,17 +119,42 @@ import { assessFreshness, DAILY_CLOSE_POLICY, type FreshnessPolicy, type Adjustm
  * Deliberately about our ladder rather than the vendor. The three rungs
  * behave differently and the difference is the whole point:
  *
- *   live_quote    observed now, by a provider, for this symbol
- *   stored_close  a dated daily close out of `price_history_cache`
- *   book_mark     the portfolio's own carrying price for the position, which
- *                 is as of the holdings snapshot and may be far from market
- *   manual        a person typed it
+ *   live_quote    observed now, by a provider, for this symbol. Dated by the
+ *                 observation.
+ *   stored_close  a dated daily close out of `price_history_cache`. Dated by
+ *                 the trading day it closed on.
+ *   book_mark     the portfolio's own carrying price for the position. UNDATED
+ *                 BY CONSTRUCTION, so never a verified market price. See
+ *                 `assessSizingPrice`.
  *
  * There is no `unknown` member. A price whose basis nobody recorded is not a
  * fourth kind of price, it is a price we cannot vouch for, and the verdict
  * says so instead of inventing a label for it.
+ *
+ * ── There is no `manual` member, and that is a correction ────────────────
+ *
+ * This type used to declare `'manual'`, and `describePriceBasis` labelled it
+ * "Entered by hand". Nothing in the codebase ever produced it. A price that
+ * really was typed by a person would therefore have arrived here with a null
+ * basis and been refused as `unsourced`, so the label advertised a workflow
+ * that did not exist and would not have worked if used.
+ *
+ * A disconnected second vocabulary does exist and is equally inert:
+ * `decision-snapshot-service` declares
+ * `PriceSource = 'db_cached' | 'live_quote' | 'manual' | 'backfill'` and
+ * defaults an override to `'manual'`, but its `overridePrice` parameter has
+ * zero callers and its `price_source` output is never read back anywhere, so
+ * no manual price reaches a trade write from there either.
+ *
+ * Implementing it properly needs three things this codebase does not have: a
+ * surface that collects the price, a record of WHO entered it and WHEN, and
+ * somewhere on the trade to persist that. A hand-entered price is the one
+ * basis whose trustworthiness rests entirely on a person, so it cannot be a
+ * bare label. When that work happens, add the member back together with its
+ * provenance and treat it the way `book_mark` is treated here: always gated,
+ * never silently `ok`.
  */
-export type PriceBasis = 'live_quote' | 'stored_close' | 'book_mark' | 'manual'
+export type PriceBasis = 'live_quote' | 'stored_close' | 'book_mark'
 
 /** A price offered up for sizing, with the provenance it must carry. */
 export interface SizingPriceInput {
@@ -99,6 +177,11 @@ export type PriceVerdictCode =
   | 'ok'
   /** Dated and sourced, but older than the policy. Usable only when gated. */
   | 'stale'
+  /**
+   * A book mark, whose age cannot be established at all. Usable only when
+   * gated, and ALWAYS gated. See `assessSizingPrice`.
+   */
+  | 'undated_book_mark'
   | 'absent'
   | 'nonpositive'
   | 'undated'
@@ -201,6 +284,54 @@ export function assessSizingPrice(
     }
   }
 
+  /*
+   * ── A book mark is undated by construction ──────────────────────────────
+   *
+   * `portfolio_holdings` has exactly these columns: id, portfolio_id,
+   * asset_id, shares, price, cost, created_at, updated_at, created_by, date.
+   * Not one of them records when `price` was TRUE. `date` is the snapshot
+   * date -- the day the row is filed under -- and `apply_trade_to_holdings`
+   * copies the previous snapshot's `price` and `cost` forward onto today:
+   *
+   *     INSERT INTO portfolio_holdings (..., shares, price, cost, date)
+   *     SELECT portfolio_id, asset_id, shares, price, cost, v_today
+   *       FROM portfolio_holdings WHERE ... AND date = v_last;
+   *
+   * So the first trade in a book re-dates every mark in it to today, without
+   * anyone re-marking anything.
+   *
+   * This path used to pass the snapshot date as the price's effective date.
+   * The consequence was not a missing warning, it was an inverted one: an
+   * untouched book reported `stale` and warned, and a book that had been
+   * traded once reported `ok` with `gated: false` and said nothing -- so the
+   * safeguard disarmed itself on exactly the books in active use. Measured
+   * against production: 388 marks sit 50% or more from market, and a single
+   * trade per book would have made all of that book's marks read fresh.
+   *
+   * A mark is therefore never `ok` and never dated. It is always GATED, so a
+   * caller that wants it must say so and the gating is recorded on the trade.
+   * `accept-sizing` does want it, deliberately, because `target = current +
+   * delta` only closes when both sides are in the same money. Trade Lab's
+   * execute path does not, and now refuses it rather than being handed a
+   * number whose age is unknowable.
+   *
+   * This is not a suppressed warning. It is the opposite: the warning now
+   * fires on EVERY book mark, including the ones that previously read clean.
+   */
+  if (basis === 'book_mark') {
+    return {
+      ...base,
+      usable: allowStaleBasis,
+      gated: true,
+      code: 'undated_book_mark',
+      reason:
+        "this is the portfolio's own carrying price, and nothing records when it was last a "
+        + 'market price, so its age cannot be judged',
+      basis,
+      price: allowStaleBasis ? price : null,
+    }
+  }
+
   const asOf = typeof input.asOf === 'string' && input.asOf.length > 0 ? input.asOf : null
   if (asOf == null || parseAsOf(asOf) == null) {
     return {
@@ -254,8 +385,7 @@ export function describePriceBasis(basis: PriceBasis | null | undefined): string
   switch (basis) {
     case 'live_quote': return 'Live quote'
     case 'stored_close': return 'Last close'
-    case 'book_mark': return "Portfolio's carrying price"
-    case 'manual': return 'Entered by hand'
+    case 'book_mark': return "Portfolio's carrying price (undated)"
     default: return 'Source not recorded'
   }
 }

@@ -77,9 +77,30 @@ describe('enforcement', () => {
     expect(r.computed).toBeUndefined()
   })
 
-  it('refuses an undated price when enforced', () => {
+  it('refuses an undated BOOK MARK when enforced', () => {
+    /*
+     * The expected code changed from `undated` to `undated_book_mark`, and
+     * that is the fix rather than a cosmetic rename. A book mark no longer
+     * reaches the date check at all: nothing in `portfolio_holdings` records
+     * when a mark was last a market price, and `apply_trade_to_holdings`
+     * copies prices forward onto today, so a mark is treated as undated
+     * whatever date it arrives with. The refusal here is unchanged.
+     */
     const r = normalizeSizing(ctx(
       { asset_id: 'a', price: 228.5, timestamp: new Date().toISOString(), source: 'close', as_of: null, basis: 'book_mark' },
+      { price_enforcement: 'enforce' },
+    ))
+    expect(r.is_valid).toBe(false)
+    expect(r.price_verdict?.code).toBe('undated_book_mark')
+  })
+
+  it('refuses an undated price whose basis is a real market source', () => {
+    // `undated` still exists and still fires: this is the
+    // `assets.current_price` fall-through, which has no `as of` anywhere in
+    // the schema. Kept as a separate case so the book-mark branch above
+    // cannot be mistaken for having replaced it.
+    const r = normalizeSizing(ctx(
+      { asset_id: 'a', price: 228.5, timestamp: new Date().toISOString(), source: 'close', as_of: null, basis: 'stored_close' },
       { price_enforcement: 'enforce' },
     ))
     expect(r.is_valid).toBe(false)

@@ -75,9 +75,17 @@ describe('a variant that cannot be booked', () => {
   })
 
   it('refuses the five-month-old book mark a live variant is still holding', () => {
+    /*
+     * The refusal is unchanged; the REASON changed, and that is the fix.
+     * These two cases used to assert /days old/, an age derived from the
+     * holdings snapshot date. A book mark has no knowable age: nothing in
+     * `portfolio_holdings` records when its price was last a market price,
+     * and `apply_trade_to_holdings` copies prices forward onto today. So
+     * asserting an age here was asserting the defect.
+     */
     expect(() => assertVariantPriceIsBookable(
       variant(priced({ price_used: 310.92, price_as_of: '2026-05-29', price_basis: 'book_mark' })),
-    )).toThrow(/days old/)
+    )).toThrow(/nothing records when it was last a market price/)
   })
 
   it('refuses a stale price even when the variant claims it was gated upstream', () => {
@@ -87,6 +95,28 @@ describe('a variant that cannot be booked', () => {
       variant(priced({
         price_used: 228.5, price_as_of: '2026-09-28', price_basis: 'book_mark', price_gated: true,
       })),
+    )).toThrow(/nothing records when it was last a market price/)
+  })
+
+  it('refuses a book mark dated TODAY, which the age-based rule let straight through', () => {
+    /*
+     * The case the old assertion could not make, and the hole it left open.
+     * A book traded this morning has every one of its marks re-dated to
+     * today, so an age-based rule reports a current price for a mark that may
+     * be 12x away from market. 388 production marks sit 50% or more off.
+     */
+    const today = new Date().toISOString().slice(0, 10)
+    expect(() => assertVariantPriceIsBookable(
+      variant(priced({ price_used: 780.2, price_as_of: today, price_basis: 'book_mark' }), 'NFLX'),
+    )).toThrow(/Refusing to book NFLX/)
+  })
+
+  it('still refuses a stale MARKET close with its age, so that path is intact', () => {
+    // `stale` and its age message still exist and still fire for a dated
+    // market price. Kept here so the book-mark change above cannot be
+    // mistaken for having removed them.
+    expect(() => assertVariantPriceIsBookable(
+      variant(priced({ price_used: 330.32, price_as_of: '2026-10-01', price_basis: 'stored_close' })),
     )).toThrow(/days old/)
   })
 })

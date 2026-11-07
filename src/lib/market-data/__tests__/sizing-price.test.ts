@@ -143,7 +143,18 @@ describe('a dated price that is too old', () => {
   })
 
   it('gates the 2026-10-05 book mark rather than silently sizing against it', () => {
-    // The approval that bought 743 shares instead of ~510.
+    /*
+     * The approval that bought 743 shares instead of ~510.
+     *
+     * REWRITTEN, with the reason recorded. This case originally asserted
+     * `ageDays === 7`, derived from the holdings snapshot date passed in as
+     * the price's `asOf`. That was the defect, not the measurement: the
+     * snapshot date is the day the row is filed under, and
+     * `apply_trade_to_holdings` copies the previous snapshot's price forward
+     * onto today, so one trade in a book re-dates every mark in it. A mark
+     * has no knowable age, so `ageDays` is now null and the verdict says
+     * why. The next case is the one the old assertion could never have made.
+     */
     const v = assessSizingPrice(
       { price: 228.5, asOf: '2026-09-28', basis: 'book_mark' },
       { now: Date.parse('2026-10-05T21:38:00Z'), allowStaleBasis: true },
@@ -151,7 +162,63 @@ describe('a dated price that is too old', () => {
     expect(v.usable).toBe(true)
     expect(v.gated).toBe(true)
     expect(v.basis).toBe('book_mark')
-    expect(v.ageDays).toBe(7)
+    expect(v.code).toBe('undated_book_mark')
+    expect(v.ageDays).toBeNull()
+    expect(v.asOf).toBeNull()
+    expect(v.reason).toContain('nothing records when it was last a market price')
+  })
+})
+
+/**
+ * The hole the first version of this gate left open.
+ *
+ * Measured against production: 388 holdings marks sit 50% or more away from
+ * market. Under the old rule every one of them was caught ONLY because the
+ * snapshot date was old. `apply_trade_to_holdings` carries a book's prices
+ * forward onto today the first time anything in it trades, so a single trade
+ * would have made all of that book's marks report `ok` with `gated: false`
+ * and no warning at all. The safeguard disarmed itself on exactly the books
+ * in active use.
+ */
+describe('a book mark is undated by construction', () => {
+  const MARK = { price: 780.2, basis: 'book_mark' as const }
+
+  it('is gated even when its date is TODAY, which is the self-disarm case', () => {
+    // NFLX marked at 780.20 against a 63.41 close: 12.3x off, and dated
+    // today because the book was traded this morning.
+    const today = new Date(NOW).toISOString().slice(0, 10)
+    const v = assessSizingPrice({ ...MARK, asOf: today }, { now: NOW, allowStaleBasis: true })
+
+    expect(v.code).toBe('undated_book_mark')
+    expect(v.gated).toBe(true)
+    expect(v.usable).toBe(true)
+    expect(v.price).toBe(780.2)
+  })
+
+  it('is never `ok`, at any date the snapshot could carry', () => {
+    // No snapshot date anywhere makes a mark read as a current market price.
+    for (const asOf of ['2024-01-01', '2026-09-28', '2026-11-06', '2026-11-07', null]) {
+      const v = assessSizingPrice({ ...MARK, asOf }, { now: NOW, allowStaleBasis: true })
+      expect(v.code, `asOf=${asOf}`).toBe('undated_book_mark')
+      expect(v.gated, `asOf=${asOf}`).toBe(true)
+    }
+  })
+
+  it('is refused outright where the caller has not allowed a stale basis', () => {
+    // Trade Lab's execute path. An old number there is just the newest one
+    // the pipeline managed to store, not a deliberate basis.
+    const v = assessSizingPrice({ ...MARK, asOf: '2026-11-07' }, { now: NOW })
+    expect(v.usable).toBe(false)
+    expect(v.price).toBeNull()
+    expect(v.gated).toBe(true)
+  })
+
+  it('still refuses a non-positive or absent mark before anything else', () => {
+    // The book-mark branch must not become a way past the earlier checks.
+    expect(assessSizingPrice({ price: 0, asOf: null, basis: 'book_mark' }, { allowStaleBasis: true }).code)
+      .toBe('nonpositive')
+    expect(assessSizingPrice({ price: null, asOf: null, basis: 'book_mark' }, { allowStaleBasis: true }).code)
+      .toBe('absent')
   })
 })
 
@@ -186,9 +253,25 @@ describe('describePriceBasis', () => {
   it('names every basis, and says so when none was recorded', () => {
     expect(describePriceBasis('live_quote')).toBe('Live quote')
     expect(describePriceBasis('stored_close')).toBe('Last close')
-    expect(describePriceBasis('book_mark')).toBe("Portfolio's carrying price")
-    expect(describePriceBasis('manual')).toBe('Entered by hand')
+    expect(describePriceBasis('book_mark')).toBe("Portfolio's carrying price (undated)")
     expect(describePriceBasis(undefined)).toBe('Source not recorded')
+  })
+
+  it('no longer advertises a manual basis, because nothing produces one', () => {
+    /*
+     * `'manual'` was removed from `PriceBasis`. It was declared and labelled
+     * "Entered by hand", and nothing in the codebase ever set it:
+     * `decision-snapshot-service`'s `overridePrice` parameter has zero
+     * callers and its `price_source` output is never read back. A price a
+     * person really typed would therefore have arrived with a null basis and
+     * been refused as `unsourced`, so the label promised a workflow that did
+     * not exist and would not have worked.
+     *
+     * Asserted through a cast because the type now makes the member
+     * unrepresentable, which is the real guarantee. The docblock in
+     * `sizing-price.ts` records what implementing it properly would need.
+     */
+    expect(describePriceBasis('manual' as never)).toBe('Source not recorded')
   })
 })
 

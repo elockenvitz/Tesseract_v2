@@ -184,7 +184,21 @@ export async function resolveAcceptSizingBasis(
       asOf: totals.asOf,
       isNewPosition: false,
       priceBasis: 'book_mark',
-      priceAsOf: totals.asOf,
+      /*
+       * NOT `totals.asOf`. The snapshot date is the day the holdings row is
+       * filed under, not the day its price was true, and
+       * `apply_trade_to_holdings` copies the previous snapshot's price
+       * forward onto today -- so the first trade in a book re-dates every
+       * mark in it without anyone re-marking anything.
+       *
+       * Passing the snapshot date here is what made the safeguard disarm
+       * itself: an untouched book warned, and a book that had been traded
+       * once reported a current price and said nothing. `assessSizingPrice`
+       * now treats a `book_mark` as undated by construction and always
+       * gates it, so this field is the honest null rather than a date that
+       * means something else.
+       */
+      priceAsOf: null,
     }
   }
 
@@ -275,7 +289,10 @@ export function basisFromBook(
     asOf: totals.asOf,
     isNewPosition: false,
     priceBasis: 'book_mark',
-    priceAsOf: totals.asOf,
+    // Null for the same reason as in `resolveAcceptSizingBasis`: the snapshot
+    // date is not when the mark was true, and a book mark is undated by
+    // construction.
+    priceAsOf: null,
   }
 }
 

@@ -439,6 +439,22 @@ function buildAcceptedTradeInput(
     // update for every trade executed through this path.
     notional_value: computed?.notional_value ?? null,
     price_at_acceptance: computed?.price_used ?? null,
+    /*
+     * The same provenance `assertVariantPriceIsBookable` just checked,
+     * carried through to the write boundary, which checks it again.
+     *
+     * Not redundant. This one is the earlier, friendlier refusal: it names
+     * the variant and fires before a batch is created. The gate inside
+     * `createAcceptedTrade` is the guarantee, because it is the only place
+     * every path has to pass through.
+     *
+     * `allow_stale_basis` is left unset, so false. Trade Lab is exactly the
+     * path where an old number is just the newest one the pipeline managed
+     * to store rather than a deliberate basis.
+     */
+    price_basis: computed?.price_basis ?? null,
+    price_as_of: computed?.price_as_of ?? null,
+    asset_symbol: v.asset?.symbol ?? null,
     source: classifyVariantSource(v),
     decision_request_id: decisionRequestId,
     lab_variant_id: v.id,
