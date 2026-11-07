@@ -65,7 +65,25 @@ module.exports = async function alertOnFailure({ github, context, subject, label
   const found = await github.rest.issues.listForRepo({
     owner, repo, labels: label, state: 'all', sort: 'created', direction: 'desc', per_page: 20,
   })
-  const issue = found.data.find((i) => i.title === subject) ?? found.data[0]
+  /*
+   * The subject is the identity, and ONLY the subject. There used to be a
+   * `?? found.data[0]` fallback here, which meant that when no title matched,
+   * the notifier adopted an arbitrary issue carrying the same label. A review
+   * drove it with a label-filtering fake and found two live consequences:
+   *
+   *   a human-filed issue under the same label captured the alert, so the
+   *   watchdog commented on "Investigate SSGA weight gaps" instead of opening
+   *   its own issue;
+   *
+   *   a second watchdog subject sharing the label was swallowed by the first,
+   *   so "Benchmark weights have stopped arriving" landed as a comment on
+   *   "Market data is stale".
+   *
+   * Both partly reintroduce the defect this script exists to fix. Matching
+   * the title exactly means an unrecognised subject opens its own issue,
+   * which is the safe direction: at worst a duplicate, never a silence.
+   */
+  const issue = found.data.find((i) => i.title === subject)
 
   const lines = [
     `**${subject}** at ${when}.`,

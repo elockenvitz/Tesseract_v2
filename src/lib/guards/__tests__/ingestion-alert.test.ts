@@ -132,14 +132,106 @@ describe('every failure after the first', () => {
   })
 })
 
+/**
+ * An Octokit stand-in that FILTERS BY LABEL, the way the real API does.
+ *
+ * This exists because the previous version of this file tested subject
+ * separation with `fakeGithub([])` -- an empty issue list. With nothing to
+ * pick from, any implementation passes, so the test proved nothing about the
+ * discrimination it claimed to prove. It passed vacuously while the notifier
+ * carried a `?? found.data[0]` fallback that adopted an arbitrary same-label
+ * issue. CLAUDE.md Standing Rule 3: a gate that cannot observe its own
+ * failure mode is decoration.
+ *
+ * Every test below hands this fake a NON-EMPTY list, so there is always a
+ * wrong issue available to be picked.
+ */
+const fakeGithubByLabel = (issues: Array<Record<string, unknown>>) => {
+  const calls = { created: [] as unknown[], comments: [] as unknown[], updates: [] as unknown[] }
+  return {
+    calls,
+    rest: {
+      issues: {
+        listForRepo: vi.fn(async ({ labels }: { labels: string }) => ({
+          data: issues.filter((i) => ((i.labels as string[]) ?? []).includes(labels)),
+        })),
+        create: vi.fn(async (a: unknown) => { calls.created.push(a); return { data: { number: 999 } } }),
+        createComment: vi.fn(async (a: unknown) => { calls.comments.push(a); return { data: {} } }),
+        update: vi.fn(async (a: unknown) => { calls.updates.push(a); return { data: {} } }),
+        listComments: vi.fn(async () => ({ data: [] as Array<{ body: string }> })),
+      },
+    },
+  }
+}
+
+/** Issues that exist in the repo for these tests to be confused by. */
+const INGESTION_ISSUE = { number: 248, title: 'Nightly ingestion failed', state: 'open', labels: ['ingestion'] }
+const HUMAN_ISSUE = { number: 300, title: 'Investigate SSGA weight gaps', state: 'open', labels: ['market-data'] }
+const STALE_ISSUE = { number: 301, title: 'Market data is stale', state: 'open', labels: ['market-data'] }
+const CLOSED_WEIGHTS = { number: 302, title: 'Benchmark weights have stopped arriving', state: 'closed', labels: ['market-data'] }
+
 describe('separate subjects stay separate', () => {
-  it('opens its own issue rather than commenting on an unrelated one', async () => {
+  it('ignores an issue under a different label', async () => {
     // The freshness watchdog uses the `market-data` label precisely so a
     // stale-data alert does not land on an ingestion-failure issue: the two
     // have different fixes.
-    const github = fakeGithub([])
-    await alertOnFailure({ github, context, subject: 'Market data is stale', label: 'market-data', detail: DETAIL })
+    const github = fakeGithubByLabel([INGESTION_ISSUE])
+    const r = await alertOnFailure({ github, context, subject: 'Market data is stale', label: 'market-data', detail: DETAIL })
+
+    expect(r.action).toBe('opened')
+    expect(github.calls.comments).toHaveLength(0)
     expect((github.calls.created[0] as Recorded).labels).toEqual(['market-data'])
+  })
+
+  it('does not hijack a HUMAN issue filed under the same label', async () => {
+    // The regression. With `?? found.data[0]` the watchdog commented on
+    // "Investigate SSGA weight gaps" and never opened an issue of its own,
+    // so the stale-data alert was buried in someone else's thread.
+    const github = fakeGithubByLabel([HUMAN_ISSUE])
+    const r = await alertOnFailure({ github, context, subject: 'Market data is stale', label: 'market-data', detail: DETAIL })
+
+    expect(r.action).toBe('opened')
+    expect(r.number).not.toBe(300)
+    expect(github.calls.comments).toHaveLength(0)
+    expect((github.calls.created[0] as Recorded).title).toBe('Market data is stale')
+  })
+
+  it('does not let one watchdog subject swallow another sharing its label', async () => {
+    // The second half of the regression: two subjects, one label. The newer
+    // subject was reported as a comment on the older subject's issue.
+    const github = fakeGithubByLabel([STALE_ISSUE])
+    const r = await alertOnFailure({ github, context, subject: 'Benchmark weights have stopped arriving', label: 'market-data', detail: DETAIL })
+
+    expect(r.action).toBe('opened')
+    expect(r.number).not.toBe(301)
+    expect(github.calls.comments).toHaveLength(0)
+    expect((github.calls.created[0] as Recorded).title).toBe('Benchmark weights have stopped arriving')
+  })
+
+  it('still finds its OWN issue among several sharing the label', async () => {
+    // The other direction has to keep working, or the fix above would have
+    // traded one silence for a pile of duplicates. Three same-label issues
+    // are present and only the matching title may be commented on.
+    const github = fakeGithubByLabel([HUMAN_ISSUE, STALE_ISSUE, CLOSED_WEIGHTS])
+    const r = await alertOnFailure({ github, context, subject: 'Market data is stale', label: 'market-data', detail: DETAIL })
+
+    expect(r.action).toBe('commented')
+    expect(r.number).toBe(301)
+    expect(github.calls.created).toHaveLength(0)
+    expect(github.calls.comments).toHaveLength(1)
+    expect(github.calls.updates).toHaveLength(0)
+  })
+
+  it('reopens its own CLOSED issue rather than the newest same-label one', async () => {
+    // #301 is open and newer; #302 is this subject's issue and closed. The
+    // closed one is the correct target.
+    const github = fakeGithubByLabel([HUMAN_ISSUE, STALE_ISSUE, CLOSED_WEIGHTS])
+    const r = await alertOnFailure({ github, context, subject: 'Benchmark weights have stopped arriving', label: 'market-data', detail: DETAIL })
+
+    expect(r.action).toBe('commented')
+    expect(r.number).toBe(302)
+    expect(github.calls.updates).toMatchObject([{ issue_number: 302, state: 'open' }])
+    expect(github.calls.created).toHaveLength(0)
   })
 })
 
