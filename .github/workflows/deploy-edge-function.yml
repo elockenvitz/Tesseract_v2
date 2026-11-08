@@ -152,5 +152,24 @@ jobs:
             exit 1
           fi
           # Reuses scripts/supabase-target.mjs, which targets the prod ref explicitly.
-          npm run deploy:fn:prod -- "$IN_FUNCTION"
+          #
+          # `--yes` is REQUIRED here and must not be removed. The Supabase CLI
+          # asks "Confirmation required: Deploy 1 Function (target: ... ·
+          # production)" and, with no terminal attached, refuses rather than
+          # proceeding:
+          #
+          #   This run can't ask because stdout is not a terminal.
+          #   Nothing was changed.  Re-run with --yes to confirm.
+          #
+          # That cost run 42477797152 on 2026-11-08: every gate below passed,
+          # the right project ref was printed, and nothing deployed.
+          #
+          # The flag lives HERE and not in `scripts/supabase-target.mjs` on
+          # purpose. A person running `npm run deploy:fn:prod` from a laptop
+          # should still be asked to confirm a production deploy; it is only
+          # this job, which has already passed the allowlist, the merged-commit
+          # ancestry check and the required-reviewer gate, that has the standing
+          # to answer yes in advance. The script appends unrecognised arguments
+          # to the CLI invocation, so no change to it is needed.
+          npm run deploy:fn:prod -- "$IN_FUNCTION" --yes
           echo "Deployed $IN_FUNCTION to $PROD_REF from $IN_SHA."
