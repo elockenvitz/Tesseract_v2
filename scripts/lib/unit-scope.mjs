@@ -233,6 +233,19 @@ export const GATED_DIRS = [
   'src/lib/onboarding',
 
   /*
+   * `src/lib/messaging` is the read seam the direct-messaging panel uses.
+   * Gated rather than deferred because what its tests assert is the NUMBER of
+   * queries each read makes, and that is the whole reason the code was moved
+   * out of the component: a regression there is invisible in review and shows
+   * up only as database load.
+   *
+   * The header's unread-badge half of this seam is NOT in this release; it
+   * needs an unapplied `has_unread_direct_messages` migration. When that lands
+   * its module joins this same directory and is gated by this entry already.
+   */
+  'src/lib/messaging',
+
+  /*
    * The mobile pilot surfaces: Outcomes, the Trade Book / Decision Inbox, and
    * the ops layout. Their tests landed with the pilot lane and were caught
    * here as unclassified; the pilot runs on these screens, so they are gated.

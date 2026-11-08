@@ -1,16 +1,9 @@
 {
   "$comment": "Reviewed legacy-finding inventory for frontend-tenant-lint. Each (file -> table) is a known pre-existing finding with its severity and occurrence count. NEW/WORSENED findings fail CI; a fixed finding makes this STALE and must be removed here in a reviewed commit. P0 entries require a non-empty ack and are echoed every run. Do NOT regenerate this to silence a real finding.",
-  "generatedAt": "2026-10-19",
+  "generatedAt": "2026-11-08",
   "findings": {
     "src/components/communication/AITagPicker.tsx": {
       "themes": {
-        "severity": "P0",
-        "count": 1,
-        "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"
-      }
-    },
-    "src/components/communication/DirectMessaging.tsx": {
-      "conversations": {
         "severity": "P0",
         "count": 1,
         "ack": "LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups"

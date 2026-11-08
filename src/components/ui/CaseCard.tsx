@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { History, ArrowLeft } from 'lucide-react'
 import { Card } from './Card'
 import { Badge } from './Badge'
@@ -15,6 +16,23 @@ interface CaseCardProps {
 
 export function CaseCard({ caseType, priceTarget, onPriceTargetSave }: CaseCardProps) {
   const [showHistory, setShowHistory] = useState(false)
+  const queryClient = useQueryClient()
+
+  /*
+   * Saving a field is what produces a history row: a trigger on
+   * `price_targets` writes to `price_target_history`. The history panel used
+   * to notice by polling every 500ms; it now learns here instead, which is
+   * both exact and free.
+   */
+  const saveField = useCallback(
+    async (field: string, value: string) => {
+      await onPriceTargetSave(caseType, field, value)
+      if (priceTarget?.id) {
+        queryClient.invalidateQueries({ queryKey: ['case-history', priceTarget.id, caseType] })
+      }
+    },
+    [onPriceTargetSave, caseType, priceTarget?.id, queryClient]
+  )
 
   const getCaseVariant = (type: string) => {
     switch (type) {
@@ -56,7 +74,7 @@ export function CaseCard({ caseType, priceTarget, onPriceTargetSave }: CaseCardP
                 <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Price Target</label>
                 <EditableField
                   value={priceTarget?.price || ''}
-                  onSave={(value) => onPriceTargetSave(caseType, 'price', value)}
+                  onSave={(value) => saveField('price', value)}
                   placeholder="Set price"
                   type="number"
                   prefix="$"
@@ -69,7 +87,7 @@ export function CaseCard({ caseType, priceTarget, onPriceTargetSave }: CaseCardP
                 <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Time Horizon</label>
                 <TimeHorizonSelector
                   value={priceTarget?.timeframe || ''}
-                  onSave={(value) => onPriceTargetSave(caseType, 'timeframe', value)}
+                  onSave={(value) => saveField('timeframe', value)}
                   displayClassName="text-sm text-gray-500 text-center dark:text-gray-400"
                 />
               </div>
@@ -78,7 +96,7 @@ export function CaseCard({ caseType, priceTarget, onPriceTargetSave }: CaseCardP
                 <label className="block text-xs font-medium text-gray-600 mb-1 dark:text-gray-400">Reasoning</label>
                 <EditableField
                   value={priceTarget?.reasoning || ''}
-                  onSave={(value) => onPriceTargetSave(caseType, 'reasoning', value)}
+                  onSave={(value) => saveField('reasoning', value)}
                   placeholder="Add reasoning..."
                   displayClassName="text-xs text-gray-600 text-center min-h-[40px] flex items-center justify-center dark:text-gray-400"
                   inputClassName="text-xs text-gray-600 text-center min-h-[40px] dark:text-gray-400"
@@ -115,6 +133,7 @@ export function CaseCard({ caseType, priceTarget, onPriceTargetSave }: CaseCardP
             <CaseHistory
               priceTargetId={priceTarget?.id || ''}
               caseType={caseType}
+              active={showHistory}
             />
           </div>
         </div>

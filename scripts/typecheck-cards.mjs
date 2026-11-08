@@ -221,7 +221,14 @@ const MAX_ERRORS = 0
 // `price_history_cache` from usePositionLifecycle.ts removed two errors of an
 // existing kind. The guard asks for the ground to be held rather than left as
 // slack, so it is held.
-const MAX_REPO_ERRORS = 8652
+// 2026-11-08: lowered 8652 -> 8643. The direct-messaging reads and the
+// case-history read moved out of their components into modules where the row
+// shapes are declared instead of inferred from an embed the generated types do
+// not describe. Nine errors went with the inline code. Measured by running the
+// guard, not derived: the commit this is ported from claimed eleven, but that
+// figure included the header unread-badge module, which is NOT in this release
+// because it depends on an unapplied migration.
+const MAX_REPO_ERRORS = 8643
 
 /**
  * A floor on real source files, now that they are counted as source files.
