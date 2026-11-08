@@ -7,8 +7,17 @@ name: deploy-edge-function
 #     Fork/PR code can never trigger this, so untrusted code never sees the prod token (req 7).
 #  2. Reuses the EXISTING secrets.SUPABASE_ACCESS_TOKEN; passed only as a masked job env var, never
 #     echoed, and `supabase functions deploy` does not print it (req 2, 9).
-#  3. `function` is a fixed choice allowlist (calendar-sync / market-events / market-news), re-checked
-#     at runtime; auto-archive and holdings-sftp-sync are deliberately absent (req 3).
+#  3. `function` is a fixed choice allowlist (calendar-sync / market-events / market-news /
+#     yahoo-chart-proxy), re-checked at runtime; auto-archive and holdings-sftp-sync are
+#     deliberately absent (req 3).
+#
+#     yahoo-chart-proxy was added 2026-11-07. It stopped being a stateless proxy: it now persists
+#     the daily closes it fetches into price_history_cache under service_role, replacing two browser
+#     upserts that the "Users can insert price history" RLS policy admitted on
+#     `auth.uid() IS NOT NULL` alone. So it has to be deployable at all, and it has to be deployable
+#     only through this gate rather than from a laptop, because it is now the sole writer of the
+#     trade-price gate's trust anchor. It carries the same verified-user check as market-events and
+#     market-news; see supabase/functions/authz-registry.json.
 #  4. All operator inputs are consumed via `env:` and referenced as quoted shell vars ("$SHA"), never
 #     interpolated as ${{ inputs.* }} inside run scripts — so a crafted input cannot inject shell (req 4).
 #  5. `sha` must be a full 40-hex commit and an ancestor of the freshly-fetched remote origin/main — a
@@ -30,6 +39,7 @@ on:
           - calendar-sync
           - market-events
           - market-news
+          - yahoo-chart-proxy
       sha:
         description: Full 40-char commit SHA to deploy (must be merged to main)
         required: true
@@ -48,7 +58,7 @@ jobs:
     environment: production
     env:
       PROD_REF: wfcebeagznzgeuyysbnt
-      ALLOWLIST: "calendar-sync market-events market-news"
+      ALLOWLIST: "calendar-sync market-events market-news yahoo-chart-proxy"
       # Inputs consumed as env vars (never ${{ }} inside run) to prevent script injection.
       IN_FUNCTION: ${{ inputs.function }}
       IN_SHA: ${{ inputs.sha }}
