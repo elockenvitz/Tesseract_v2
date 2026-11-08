@@ -4,6 +4,8 @@
  * Types for the Trade Queue and Simulation system
  */
 
+import type { PriceBasis, SizingPriceVerdict } from '../lib/market-data/sizing-price'
+
 // Enums matching database types
 // Note: 'discussing' renamed to 'working_on', 'simulating' renamed to 'modeling' in new workflow
 export type TradeQueueStatus = 'idea' | 'discussing' | 'simulating' | 'deciding' | 'working_on' | 'modeling' | 'approved' | 'rejected' | 'executed' | 'cancelled' | 'archived' | 'deleted'
@@ -541,6 +543,19 @@ export interface BaselineHolding {
   price: number
   value: number
   weight: number
+  /**
+   * The holdings snapshot date `price` is as of.
+   *
+   * `baseline_holdings` is jsonb, so this needs no migration. It was dropped
+   * on the floor at every construction site: `portfolio_holdings` is a dated
+   * series, the snapshot date is selected and used to pick the latest rows,
+   * and then only shares and price were copied forward. That left the book
+   * rung of the sizing ladder structurally undated, which is why a trade
+   * could be sized at a mark from six weeks earlier with nothing able to say
+   * so. Optional because baselines written before this exist without it, and
+   * an undated book mark is refused at the write rather than assumed current.
+   */
+  as_of?: string | null
 }
 
 // Simulation Trade
@@ -954,7 +969,22 @@ export interface ComputedValues {
   target_active_weight?: number   // Final active weight (if benchmark available)
   notional_value: number          // Dollar value of the trade
   price_used: number              // Price used for computation
-  price_timestamp: string         // When price was fetched
+  price_timestamp: string         // When this computation ran, NOT when the price was true
+  /**
+   * When `price_used` was true, carried through from the `AssetPrice`.
+   *
+   * `computed` is jsonb on `lab_variants`, so these two fields need no
+   * migration. They exist because the booking guard runs at execution time,
+   * long after the sizing, and `price_used` alone cannot tell it whether the
+   * number was a live quote or a four-week-old book mark.
+   */
+  price_as_of?: string | null
+  price_basis?: PriceBasis
+  /**
+   * True when the price was accepted only because the caller allowed a stale
+   * basis. Recorded so a trade sized that way is findable afterwards.
+   */
+  price_gated?: boolean
 }
 
 // =============================================================================
@@ -993,6 +1023,15 @@ export interface NormalizedSizingResult {
   below_lot_warning: boolean      // True if computed shares < lot_size
   rounded_shares?: number         // Shares after lot rounding (if applicable)
   error?: string                  // Error message if invalid
+  /**
+   * What the normalizer made of the price it was handed.
+   *
+   * Always present, including on a valid result, so a preview surface can say
+   * "sized off a 41-day-old mark" rather than showing a share count with no
+   * qualification. Under `price_enforcement: 'advisory'` an unusable verdict
+   * does not invalidate the result; under `'enforce'` it does.
+   */
+  price_verdict?: SizingPriceVerdict
 }
 
 // Intent Variant - ephemeral scenario delta in Trade Lab
@@ -1132,8 +1171,26 @@ export interface ResolveQueueItemInput {
 export interface AssetPrice {
   asset_id: string
   price: number
+  /**
+   * When this object was built.
+   *
+   * NOT when the price was true. Every call site sets this to `new Date()`
+   * regardless of which rung of the ladder supplied the number, so a close
+   * from five weeks ago and a quote from five seconds ago arrive with the same
+   * stamp. `as_of` is the field that answers the question that matters.
+   */
   timestamp: string
   source: 'realtime' | 'delayed' | 'close'
+  /**
+   * When the price was TRUE: the close's date, or the instant a quote was
+   * observed. Null means undated, and an undated price cannot book a trade.
+   *
+   * Optional only so that preview surfaces compile unchanged. The booking
+   * paths require it — see `assertBookablePrice`.
+   */
+  as_of?: string | null
+  /** Which rung of the ladder supplied it. See `PriceBasis`. */
+  basis?: PriceBasis
 }
 
 // Batch price fetch result

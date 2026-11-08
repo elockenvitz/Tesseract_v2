@@ -39,6 +39,7 @@ import { supabase } from '../supabase'
 import { FINAL_STAGE } from '../ideas/stage-model'
 import { parseSizingInput } from '../trade-lab/sizing-parser'
 import { nearlyEqual } from '../mobile/exploration'
+import { assertBookablePrice } from '../market-data/sizing-price'
 import {
   recordDecisionRecorded,
   resolveOrganizationIdForPortfolio,
@@ -52,6 +53,7 @@ import type {
   ActionContext,
   TradeAction,
   TradeBatch,
+  ComputedValues,
 } from '../../types/trading'
 
 // ---------------------------------------------------------------------------
@@ -328,6 +330,58 @@ export function assertSizingAgreesWithInput(v: {
   // rather than re-deriving them badly.
 }
 
+/**
+ * Refuse to book a variant whose price cannot be verified.
+ *
+ * ── Why here ─────────────────────────────────────────────────────────────
+ *
+ * This is the narrowest point that protects all three consequential
+ * operations at once. `price_at_acceptance` is written from
+ * `computed.price_used` four lines below; `apply_trade_to_holdings` then puts
+ * that same number into `portfolio_holdings.price`, `.cost` and the
+ * portfolio's CASH line. Everything upstream -- the normalizer, the preview,
+ * the optimistic cache patch -- can be wrong without consequence. From here
+ * on it cannot.
+ *
+ * Guarding here rather than in `normalizeSizing` is deliberate. The
+ * normalizer runs on every keystroke in four preview components that hold a
+ * bare number and have no provenance to give it, so a refusal there blanks a
+ * preview without protecting a write. This runs once, at the write.
+ *
+ * ── What it refuses ──────────────────────────────────────────────────────
+ *
+ * A price with no recorded basis, no date, or a date outside
+ * `DAILY_CLOSE_POLICY`. Stale is refused here and NOT gated: on this path an
+ * old number is simply the newest one the pipeline managed to store, which is
+ * exactly the state the October ingestion outage left the product in for 35
+ * days. `accept-sizing` is the one path that gates instead of refusing,
+ * because there the old number is the book's own carrying price and the
+ * approved weight was expressed in it.
+ *
+ * ── The transition cost, stated ──────────────────────────────────────────
+ *
+ * A variant sized before this shipped carries no basis, so it is refused and
+ * the PM re-enters the size, which recomputes `computed` with provenance.
+ * There are 21 such variants in production and the oldest is from May, priced
+ * at 310.92; one still carries the literal 100. None of them should execute at
+ * the price they are holding, so the refusal is the right answer rather than a
+ * migration problem.
+ */
+export function assertVariantPriceIsBookable(v: IntentVariantWithDetails): void {
+  const computed = v.computed as ComputedValues | null | undefined
+  if (!computed) return // the caller's own guard handles missing sizing
+
+  assertBookablePrice(
+    v.asset?.symbol || v.asset_id,
+    {
+      price: computed.price_used,
+      asOf: computed.price_as_of ?? null,
+      basis: computed.price_basis ?? null,
+    },
+    { allowStaleBasis: false },
+  )
+}
+
 function buildAcceptedTradeInput(
   v: IntentVariantWithDetails,
   decisionRequestId: string,
@@ -351,6 +405,12 @@ function buildAcceptedTradeInput(
   // So re-derive from the string and refuse if they disagree. This is a
   // safety net, not the calculation — the numbers used are still `computed`.
   assertSizingAgreesWithInput(v)
+
+  // ── And what executes must be priced at something we can vouch for ──────
+  //
+  // `price_at_acceptance` below becomes `portfolio_holdings.price` and moves
+  // the portfolio's cash. See `assertVariantPriceIsBookable`.
+  assertVariantPriceIsBookable(v)
 
   // Shares columns on accepted_trades are integers. If the baseline has
   // fractional holdings (e.g. AZO 1,075.12) and the user trims to a
@@ -379,6 +439,22 @@ function buildAcceptedTradeInput(
     // update for every trade executed through this path.
     notional_value: computed?.notional_value ?? null,
     price_at_acceptance: computed?.price_used ?? null,
+    /*
+     * The same provenance `assertVariantPriceIsBookable` just checked,
+     * carried through to the write boundary, which checks it again.
+     *
+     * Not redundant. This one is the earlier, friendlier refusal: it names
+     * the variant and fires before a batch is created. The gate inside
+     * `createAcceptedTrade` is the guarantee, because it is the only place
+     * every path has to pass through.
+     *
+     * `allow_stale_basis` is left unset, so false. Trade Lab is exactly the
+     * path where an old number is just the newest one the pipeline managed
+     * to store rather than a deliberate basis.
+     */
+    price_basis: computed?.price_basis ?? null,
+    price_as_of: computed?.price_as_of ?? null,
+    asset_symbol: v.asset?.symbol ?? null,
     source: classifyVariantSource(v),
     decision_request_id: decisionRequestId,
     lab_variant_id: v.id,
