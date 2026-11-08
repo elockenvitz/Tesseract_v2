@@ -222,6 +222,69 @@ describe('the conversation list', () => {
   })
 })
 
+/*
+ * Why this block exists, written while the defect was in the file.
+ *
+ * Moving these reads out of the component took the `conversations` query with
+ * them, and it was the only P0 entry the frontend tenant lint held against
+ * DirectMessaging.tsx. Removing `.in('id', conversationIds)` from the new
+ * module -- which makes the list ask for EVERY conversation in the database --
+ * was measured against both gates and neither noticed:
+ *
+ *   tenant:lint:frontend   PASS: current findings exactly match the inventory
+ *   the 18 tests above     18 passed
+ *
+ * The lint matches `supabase.from('<table>')`, and the module calls
+ * `.from(...)` on an injected `client` parameter, so the refactor moved the
+ * query out of the lint's sight. The tests assert how MANY queries run, which
+ * is what they were written for, and nothing asserted WHICH rows are asked
+ * for. So the one gate that is left is this one: it must fail when the filter
+ * goes, which is the state it was written in.
+ */
+describe('the conversation list asks only for the caller own conversations', () => {
+  it('filters conversations by the ids the caller participates in', async () => {
+    const { client, calls } = stubClient({
+      participants: [{ conversation_id: 'c1' }, { conversation_id: 'c2' }],
+      conversations: [
+        conversation('c1', [{ user_id: ME, last_read_at: null }]),
+        conversation('c2', [{ user_id: ME, last_read_at: null }]),
+      ],
+    })
+    await readConversationList(ME, client)
+
+    const conversationRead = calls.find(c => c.table === 'conversations')
+    expect(conversationRead, 'the conversations read vanished').toBeTruthy()
+    expect(
+      conversationRead!.filters,
+      'the conversations read is unfiltered, so it asks for every conversation in the database'
+    ).toEqual([['in', 'id', ['c1', 'c2']]])
+  })
+
+  it('derives those ids from the caller own participant rows, never from an argument', async () => {
+    const { client, calls } = stubClient({
+      participants: [{ conversation_id: 'mine' }],
+      conversations: [conversation('mine', [{ user_id: ME, last_read_at: null }])],
+    })
+    await readConversationList(ME, client)
+
+    const participantRead = calls.find(c => c.table === 'conversation_participants')
+    expect(participantRead!.filters).toEqual([['eq', 'user_id', ME]])
+
+    const conversationRead = calls.find(c => c.table === 'conversations')
+    expect(conversationRead!.filters).toEqual([['in', 'id', ['mine']]])
+  })
+
+  it('asks for nothing at all when the caller participates in nothing', async () => {
+    const { client, calls } = stubClient({ participants: [] })
+    await expect(readConversationList(ME, client)).resolves.toEqual([])
+
+    expect(
+      calls.map(c => c.table),
+      'an empty participant set must not fall through to an unfiltered read'
+    ).toEqual(['conversation_participants'])
+  })
+})
+
 describe('the messages in one conversation', () => {
   const msg = (id: string, reply_to: string | null = null) => ({
     id,
