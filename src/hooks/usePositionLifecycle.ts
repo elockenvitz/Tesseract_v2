@@ -186,15 +186,25 @@ export function useChartBundle(
           ['position-chart-bundle', assetId, portfolioId, symbol],
           (prev) => (prev ? { ...prev, priceHistory: points } : prev),
         )
-        void supabase
-          .from('price_history_cache')
-          .upsert(
-            points.map(p => ({ symbol, date: p.date, close: p.close, source: 'yahoo_finance' })),
-            { onConflict: 'symbol,date' },
-          )
-          .then(({ error: upErr }) => {
-            if (upErr) console.warn('[chartBundle] failed to cache Yahoo result:', upErr.message)
-          })
+        /*
+         * The browser no longer writes `price_history_cache`.
+         *
+         * This used to upsert `points` here with source 'yahoo_finance'. The
+         * rows were fine; the authority was not. The write was admitted by the
+         * RLS policy "Users can insert price history", whose entire check was
+         * `auth.uid() IS NOT NULL` -- so any logged-in user of any
+         * organisation could insert any (symbol, date) that did not already
+         * exist, into the table the trade-price gate trusts as dated, sourced
+         * market data. Measured against production 2026-11-07: the newest real
+         * close was 2026-11-06, so every later date was free.
+         *
+         * `chartDataService` already fetches through the `yahoo-chart-proxy`
+         * edge function, which runs server-side. That function now persists
+         * the daily closes itself, behind a verified-user gate and with
+         * `ignoreDuplicates` so it can only fill a gap and never revise a
+         * stored close. The cache still fills on this exact code path -- by
+         * the request above, rather than by a second call from the browser.
+         */
       } catch (err) {
         console.warn('[chartBundle] Yahoo fallback failed:', err)
       }
@@ -241,14 +251,9 @@ export function usePositionPriceHistory(
           date: typeof c.time === 'string' ? c.time : new Date(Number(c.time) * 1000).toISOString().slice(0, 10),
           close: c.close,
         }))
-      if (points.length > 0) {
-        void supabase
-          .from('price_history_cache')
-          .upsert(
-            points.map(p => ({ symbol, date: p.date, close: p.close, source: 'yahoo_finance' })),
-            { onConflict: 'symbol,date' },
-          )
-      }
+      // No upsert here either: `getChartData` goes through the
+      // `yahoo-chart-proxy` edge function, which persists the daily closes
+      // server-side. See the note in `useChartBundle` above.
       return points
     },
     enabled: standaloneEnabled,
