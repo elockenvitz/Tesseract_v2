@@ -182,6 +182,12 @@ export type PriceVerdictCode =
    * gated, and ALWAYS gated. See `assessSizingPrice`.
    */
   | 'undated_book_mark'
+  /**
+   * Dated AFTER today. Never usable, gated or not. See `assessSizingPrice`:
+   * this is the shape a fabricated close takes, and a negative age otherwise
+   * reads as the freshest price in the book.
+   */
+  | 'future_dated'
   | 'absent'
   | 'nonpositive'
   | 'undated'
@@ -339,6 +345,41 @@ export function assessSizingPrice(
       basis,
       code: 'undated',
       reason: 'the price carries no date, so its age cannot be judged',
+    }
+  }
+
+  /*
+   * ── A price cannot be dated in the future ───────────────────────────────
+   *
+   * Found by running this module against production values on 2026-11-07, not
+   * by reading it: a close dated 2026-12-31 came back `ok`, `usable: true`,
+   * `gated: false`. `assessFreshness` compares an age against a maximum, and a
+   * future date gives a NEGATIVE age, which is never greater than the maximum
+   * -- so a forward-dated price read as the freshest thing in the book.
+   *
+   * That is exactly the payload the `price_history_cache` INSERT policy
+   * allowed: the newest real close is 2026-11-06, so every later date was
+   * unoccupied, and any logged-in user of any organisation could plant a row
+   * there. It would arrive here dated, sourced and apparently current.
+   *
+   * The write side refuses it too now (`_shared/chart-closes.ts` drops any bar
+   * dated after today, and the policy that let a browser insert one is
+   * dropped). This is the reader's half, and it is the half that has to hold
+   * even if a bad row gets in some other way: an unusable price must not
+   * become usable by being dated further ahead.
+   *
+   * Not gateable. There is no caller for whom tomorrow's close is a
+   * legitimate basis, unlike a stale close or a book mark.
+   */
+  const asOfMs = parseAsOf(asOf) as number
+  const startOfTomorrow = new Date(now).setUTCHours(24, 0, 0, 0)
+  if (asOfMs >= startOfTomorrow) {
+    return {
+      ...base,
+      basis,
+      asOf,
+      code: 'future_dated',
+      reason: `the price is dated ${asOf}, which is in the future, so it cannot be a close`,
     }
   }
 

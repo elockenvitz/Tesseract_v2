@@ -217,7 +217,11 @@ const MAX_ERRORS = 0
 // a separate change, since it touches unrelated call sites. Raised knowingly
 // rather than left as slack, which is the failure this ceiling exists to
 // prevent.
-const MAX_REPO_ERRORS = 8654
+// 2026-11-07: lowered 8654 -> 8652. Deleting the two browser upserts into
+// `price_history_cache` from usePositionLifecycle.ts removed two errors of an
+// existing kind. The guard asks for the ground to be held rather than left as
+// slack, so it is held.
+const MAX_REPO_ERRORS = 8652
 
 /**
  * A floor on real source files, now that they are counted as source files.
