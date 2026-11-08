@@ -4,11 +4,11 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
    sparkles on this page belong to ThesisUnifiedSummary, which draws its own. */
 import { Target, FileText, Plus, Calendar, User, Users, Activity, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3, GitBranch, CheckCircle2, RotateCcw, Play } from 'lucide-react'
 import { clsx } from 'clsx'
-import {
-  buildAudienceOptions,
-  effectiveMemberCounts,
-  type AudienceNode,
-} from '../../lib/contributions/audience-reach'
+/* `effectiveMemberCounts` left with the org-chart query, which is now
+   `useOrgAudienceContext`. `buildAudienceOptions` had already stopped being
+   called here when the option building moved into `AudiencePicker` -- only
+   the comment at the old call site still named it. */
+import { type AudienceNode } from '../../lib/contributions/audience-reach'
 import { AudiencePicker } from '../contributions/AudiencePicker'
 import {
   /* `stageColor` went with the Open Items rows that used it; the idea
@@ -19,6 +19,7 @@ import {
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
 import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgAudienceContext } from '../../hooks/useOrgAudienceContext'
 import { useAIConfig } from '../../hooks/useAIConfig'
 import { initialResearchView } from '../../lib/desktop-asset/research-view'
 import {
@@ -1441,86 +1442,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     enabled: contributorIds.length > 0
   })
 
-  // Get user's org chart context for visibility targets
-  const { data: userOrgContext } = useQuery({
-    queryKey: ['user-org-context', user?.id],
-    queryFn: async () => {
-      const { data: memberships } = await supabase
-        .from('org_chart_node_members')
-        .select('node_id, org_chart_nodes(id, name, color, node_type, parent_id)')
-        .eq('user_id', user?.id)
-
-      const empty = {
-        portfolios: [], teams: [], departments: [], divisions: [],
-        memberCounts: new Map<string, number>(),
-        nodeById: new Map<string, AudienceNode>(),
-      }
-      if (!memberships) return empty
-
-      const directNodes = memberships
-        .map(m => m.org_chart_nodes as { id: string; name: string; color: string; node_type: string; parent_id: string | null })
-        .filter(Boolean)
-
-      const { data: allNodes } = await supabase
-        .from('org_org_chart_nodes_v')
-        .select('id, name, color, node_type, parent_id')
-
-      if (!allNodes) return empty
-
-      /*
-       * EFFECTIVE member counts per node — distinct people the node reaches,
-       * counting its own members and everyone in the groups beneath it.
-       *
-       * Membership is inherited upward, so sharing with a department reaches
-       * its teams. The count has to say that, or the picker understates an
-       * audience and an author shares more widely than the number implied.
-       * `user_id` is selected because the rollup counts distinct PEOPLE: one
-       * person in two teams under the same department is one reader, not two.
-       * See src/lib/contributions/audience-reach.ts.
-       */
-      const { data: allMembers } = await supabase
-        .from('org_chart_node_members')
-        .select('node_id, user_id')
-
-      const memberCounts = effectiveMemberCounts(
-        allNodes as AudienceNode[],
-        (allMembers ?? []) as { node_id: string; user_id: string }[],
-      )
-      // Every node by id, so a target the author can no longer pick can still
-      // be shown by name instead of as a bare id.
-      const nodeById = new Map<string, AudienceNode>(
-        (allNodes as AudienceNode[]).map(n => [n.id, n])
-      )
-
-      const nodeMap = new Map(allNodes.map(n => [n.id, n]))
-      const teamsSet = new Map<string, typeof allNodes[0]>()
-      const departmentsSet = new Map<string, typeof allNodes[0]>()
-      const divisionsSet = new Map<string, typeof allNodes[0]>()
-
-      const traverseUp = (nodeId: string | null) => {
-        if (!nodeId) return
-        const node = nodeMap.get(nodeId)
-        if (!node) return
-        if (node.node_type === 'team') teamsSet.set(node.id, node)
-        else if (node.node_type === 'department') departmentsSet.set(node.id, node)
-        else if (node.node_type === 'division') divisionsSet.set(node.id, node)
-        traverseUp(node.parent_id)
-      }
-
-      directNodes.forEach(node => {
-        if (node.node_type === 'team') teamsSet.set(node.id, node)
-        traverseUp(node.parent_id)
-      })
-
-      const portfolios = directNodes.filter(n => n.node_type === 'portfolio').sort((a, b) => a.name.localeCompare(b.name))
-      const teams = Array.from(teamsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
-      const departments = Array.from(departmentsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
-      const divisions = Array.from(divisionsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
-
-      return { portfolios, teams, departments, divisions, memberCounts, nodeById }
-    },
-    enabled: !!user?.id
-  })
+  /*
+   * Where this user sits in the org chart, and so which groups they may
+   * address. This was ~80 lines here; none of it was about an asset, and the
+   * Theme page needs the same inputs to offer the same AudiencePicker, so it
+   * moved to `useOrgAudienceContext` unchanged -- same query key, same
+   * tables, same traversal, same sort. `getTargetOptions` below is now that
+   * hook's `nodesFor`.
+   */
+  const {
+    context: userOrgContext,
+    nodesFor: audienceNodesFor,
+    memberCounts: audienceMemberCounts,
+    nodeById: audienceNodeById,
+  } = useOrgAudienceContext()
 
   // Fetch ALL contributions for this asset (for unified summary view)
   const { contributions: allAssetContributions, isLoading: contributionsLoading, isFetching: contributionsFetching } = useContributions({ assetId: asset.id })
@@ -1707,17 +1642,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const hasUserLayout = !!activeLayout
 
   // Get target options for selected visibility level
-  const getTargetOptions = useCallback((visibility: ContributionVisibility) => {
-    if (!userOrgContext) return []
-    switch (visibility) {
-      case 'firm': return []
-      case 'division': return userOrgContext.divisions
-      case 'department': return userOrgContext.departments
-      case 'team': return userOrgContext.teams
-      case 'portfolio': return userOrgContext.portfolios
-      default: return []
-    }
-  }, [userOrgContext])
+  /* `useOrgAudienceContext().nodesFor` is this function, verbatim, beside the
+   * query that feeds it. Kept under the old name so the call sites below read
+   * as they did. */
+  const getTargetOptions = audienceNodesFor
 
   /*
    * Building the option list — candidates, stored targets, reachability —
@@ -4290,8 +4218,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 <AudiencePicker
                   saved={savedAudience ?? { visibility: sharedThesisVisibility, targetIds: sharedThesisTargetIds }}
                   nodesFor={(v) => getTargetOptions(v) as AudienceNode[]}
-                  memberCounts={userOrgContext?.memberCounts ?? new Map()}
-                  nodeById={userOrgContext?.nodeById ?? new Map()}
+                  memberCounts={audienceMemberCounts}
+                  nodeById={audienceNodeById}
                   isLoading={!userOrgContext}
                   onApply={handleAudienceApply}
                 />

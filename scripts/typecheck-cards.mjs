@@ -238,7 +238,12 @@ const MAX_ERRORS = 0
 // components into `src/lib/messaging`, where the row shapes are declared
 // instead of inferred from an embed the generated types do not describe. Eleven
 // errors went with the inline code. Measured by running the guard, not derived.
-const MAX_REPO_ERRORS = 8600
+// 8600 -> 8586: the Asset page's inline org-chart query moved into
+// `src/hooks/useOrgAudienceContext.ts`, where the node rows are typed as
+// `AudienceNode` once instead of being re-inferred from a nested
+// `org_chart_nodes(...)` embed at every use. Fourteen errors went with it.
+// Measured by running the guard, not derived.
+const MAX_REPO_ERRORS = 8586
 
 /**
  * A floor on real source files, now that they are counted as source files.

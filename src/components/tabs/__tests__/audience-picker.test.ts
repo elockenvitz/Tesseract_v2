@@ -18,10 +18,14 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const TAB = readFileSync(join(process.cwd(), 'src/components/tabs/AssetTab.tsx'), 'utf8')
-  // Comments explain the invariants; they must not be able to satisfy them.
+// Comments explain the invariants; they must not be able to satisfy them.
+const strip = (s: string) => s
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '')
+
+const TAB = strip(readFileSync(join(process.cwd(), 'src/components/tabs/AssetTab.tsx'), 'utf8'))
+/** The org-chart context the picker is fed, which both pages now share. */
+const HOOK = strip(readFileSync(join(process.cwd(), 'src/hooks/useOrgAudienceContext.ts'), 'utf8'))
 
 describe('AssetTab delegates the audience control', () => {
   it('renders AudiencePicker instead of its own dropdown', () => {
@@ -47,17 +51,41 @@ describe('AssetTab delegates the audience control', () => {
 })
 
 describe('the picker is fed effective reach', () => {
+  /*
+   * These two asserted that AssetTab itself called `effectiveMemberCounts(`
+   * and passed `memberCounts={userOrgContext?.memberCounts}`. Both named the
+   * right CLAIM and the wrong file: the ~80-line org-chart query they
+   * describe moved to `src/hooks/useOrgAudienceContext.ts`, because nothing
+   * in it is about an asset and the Theme page needs the same inputs to offer
+   * the same picker. So they are rewritten to follow the code rather than
+   * deleted, and the rollup claim is now asserted where the rollup happens.
+   */
   it('passes the rolled-up counts, not a per-node tally', () => {
-    expect(TAB).toMatch(/effectiveMemberCounts\(/)
-    expect(TAB).not.toMatch(/memberCounts\.set\(m\.node_id/)
+    expect(HOOK, 'the rollup is gone, so the picker understates an audience')
+      .toMatch(/effectiveMemberCounts\(/)
+    expect(HOOK, 'counting membership rows instead of distinct people')
+      .not.toMatch(/memberCounts\.set\(m\.node_id/)
     const at = TAB.indexOf('<AudiencePicker')
     const props = TAB.slice(at, at + 600)
-    expect(props).toMatch(/memberCounts=\{userOrgContext\?\.memberCounts/)
+    expect(props).toMatch(/memberCounts=\{audienceMemberCounts\}/)
   })
 
   it('passes nodeById so a stored target resolves to a name, not a bare id', () => {
     const at = TAB.indexOf('<AudiencePicker')
-    expect(TAB.slice(at, at + 600)).toMatch(/nodeById=\{userOrgContext\?\.nodeById/)
+    expect(TAB.slice(at, at + 600)).toMatch(/nodeById=\{audienceNodeById\}/)
+    // And the map it comes from is built over EVERY node, not only the ones
+    // the author may currently pick.
+    expect(HOOK).toMatch(/nodeById = new Map<string, AudienceNode>\(/)
+  })
+
+  it('builds that context once, in a hook both pages can call', () => {
+    /* The point of the move. If this query comes back into AssetTab, the
+       Theme page can only get the same picker by cloning it, which is how the
+       two pages drifted in the first place. */
+    expect(TAB, 'the org-chart query is back inside the Asset page')
+      .not.toMatch(/queryKey: \['user-org-context'/)
+    expect(TAB).toMatch(/useOrgAudienceContext\(\)/)
+    expect(HOOK).toMatch(/orgAudienceContextKey/)
   })
 
   it('passes the saved audience, falling back to the live selection before it loads', () => {
