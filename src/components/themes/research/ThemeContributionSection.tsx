@@ -17,6 +17,9 @@ import { RichTextEditor, type RichTextEditorRef } from '../../rich-text-editor/R
 import { useIsMobile } from '../../../hooks/useMediaQuery'
 import { SmartInputRenderer } from '../../smart-input'
 import { useAuth } from '../../../hooks/useAuth'
+import { useOrgAudienceContext } from '../../../hooks/useOrgAudienceContext'
+import { describeAudience } from '../../contributions/AudiencePicker'
+import { type AudienceNode } from '../../../lib/contributions/audience-reach'
 import {
   useThemeContributionsV2,
   type ThemeContribution,
@@ -28,11 +31,19 @@ export type ThemeResearchActiveTab = 'aggregated' | string
 
 interface ThemeContributionSectionProps {
   themeId: string
-  themeIsPublic: boolean
   field: ThemeResearchField
   activeTab: ThemeResearchActiveTab
   hideWhenEmpty?: boolean
   onTabChange?: (tab: ThemeResearchActiveTab) => void
+  /**
+   * The audience chosen on the toolbar, which every save on this page writes.
+   *
+   * It is a page-level control, as on the asset page, so it is passed in
+   * rather than chosen here. A per-field select is what used to be here, and
+   * it offered two levels the database ignored.
+   */
+  sharedVisibility?: ThemeContributionVisibility
+  sharedTargetIds?: string[]
 }
 
 // Visual theme — matches asset ContributionSection styling
@@ -65,18 +76,54 @@ function hasText(html: string | null | undefined): boolean {
   return html.replace(/<[^>]*>/g, '').trim().length > 0
 }
 
-function VisibilityBadge({ visibility, isOwn }: { visibility: ThemeContributionVisibility; isOwn?: boolean }) {
+/**
+ * Who can read this contribution, named.
+ *
+ * It used to read "Org" or "Shared" — two words for one reach, because the
+ * policy ignored the column. Now it names the actual audience the way the
+ * asset page's picker does, through the same `describeAudience`, so a
+ * restricted piece of research says which groups rather than "Shared".
+ *
+ * A non-firm level with no groups is the one state worth colouring as wrong:
+ * the server refuses to create it, so seeing it means a row predates the
+ * restriction and is readable by its author alone.
+ */
+function VisibilityBadge({
+  contribution, isOwn, nodeById,
+}: {
+  contribution: ThemeContribution
+  isOwn?: boolean
+  nodeById: ReadonlyMap<string, AudienceNode>
+}) {
   const common = 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium'
-  if (visibility === 'shared') {
+  const targetIds = (contribution.visibility_targets ?? []).map(t => t.node_id)
+  const selection = { visibility: contribution.visibility, targetIds }
+
+  if (contribution.visibility === 'firm') {
     return (
-      <span className={clsx(common, 'bg-violet-50 text-violet-700')}>
-        <Globe className="w-2.5 h-2.5" /> Shared
+      <span className={clsx(common, 'bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200')}>
+        <Globe className="w-2.5 h-2.5" /> Firm
       </span>
     )
   }
+
+  const orphaned = targetIds.length === 0
   return (
-    <span className={clsx(common, isOwn ? 'bg-sky-50 text-sky-700' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800')}>
-      <Building2 className="w-2.5 h-2.5" /> Org
+    <span
+      className={clsx(
+        common,
+        orphaned
+          ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200'
+          : isOwn
+            ? 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200'
+            : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800'
+      )}
+      title={orphaned
+        ? `This research is marked ${contribution.visibility} but names no group, so only you can read it.`
+        : `Visible to ${describeAudience(selection, nodeById)}`}
+    >
+      <Building2 className="w-2.5 h-2.5" />
+      {orphaned ? 'Only you' : describeAudience(selection, nodeById)}
     </span>
   )
 }
@@ -84,9 +131,13 @@ function VisibilityBadge({ visibility, isOwn }: { visibility: ThemeContributionV
 // Component ----------------------------------------------------------------
 
 export function ThemeContributionSection({
-  themeId, themeIsPublic, field, activeTab, hideWhenEmpty = false, onTabChange,
+  themeId, field, activeTab, hideWhenEmpty = false, onTabChange,
+  sharedVisibility, sharedTargetIds = [],
 }: ThemeContributionSectionProps) {
   const { user } = useAuth()
+  /* The same react-query entry the toolbar picker reads, so N fields on a
+     theme share one org-chart fetch. See useOrgAudienceContext. */
+  const { nodeById: audienceNodeById } = useOrgAudienceContext()
   const {
     contributions,
     isLoading,
@@ -134,35 +185,57 @@ export function ThemeContributionSection({
   const isMobileViewport = useIsMobile()
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState<string>(ownContribution?.content || '')
-  const [visibility, setVisibility] = useState<ThemeContributionVisibility>(ownContribution?.visibility || 'org')
   const editorRef = useRef<RichTextEditorRef>(null)
+  /** What the server said when it refused an audience, shown in place. */
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isEditing) {
-      setDraft(ownContribution?.content || '')
-      setVisibility(ownContribution?.visibility || 'org')
-    }
-  }, [ownContribution?.id, ownContribution?.content, ownContribution?.visibility, isEditing])
+    if (!isEditing) setDraft(ownContribution?.content || '')
+  }, [ownContribution?.id, ownContribution?.content, isEditing])
 
   const startEdit = () => {
     setDraft(ownContribution?.content || '')
-    setVisibility(ownContribution?.visibility || 'org')
+    setSaveError(null)
     setIsEditing(true)
   }
   const cancelEdit = () => {
     setIsEditing(false)
+    setSaveError(null)
     setDraft(ownContribution?.content || '')
   }
   const commitEdit = async () => {
+    setSaveError(null)
     try {
       await upsertContribution({
         section: field.slug,
         content: draft,
-        visibility: themeIsPublic ? visibility : 'org',
+        /*
+         * The toolbar's choice is forwarded on every save, as the asset page
+         * does from its AssetTab host: the picker is the explicit audience
+         * control, so its value is deliberate and a save has to carry it.
+         * Omitting it would leave a first contribution at the 'firm' default
+         * while the toolbar showed a restriction.
+         *
+         * Omitted entirely when the page has not resolved an audience yet, in
+         * which case `undefined` means PRESERVE — never a silent 'firm'.
+         */
+        ...(sharedVisibility
+          ? { visibility: sharedVisibility, targetIds: sharedTargetIds }
+          : {}),
       })
       setIsEditing(false)
     } catch (e) {
+      /*
+       * Shown, not just logged. `set_theme_contribution_audience` refuses for
+       * reasons the analyst can act on -- "a team audience must name at least
+       * one group" -- and a console line the analyst never opens made a
+       * refused save look like a successful one. The editor stays OPEN so the
+       * prose survives.
+       */
       console.error('[theme research] failed to save', e)
+      setSaveError(
+        e instanceof Error && e.message ? e.message : 'Could not save this research.'
+      )
     }
   }
   const clearOwn = async () => {
@@ -217,8 +290,9 @@ export function ThemeContributionSection({
             )}
             {!isAggregated && focusedContribution && (
               <VisibilityBadge
-                visibility={focusedContribution.visibility}
+                contribution={focusedContribution}
                 isOwn={focusedContribution.created_by === user?.id}
+                nodeById={audienceNodeById}
               />
             )}
           </div>
@@ -251,9 +325,10 @@ export function ThemeContributionSection({
             draft={draft}
             setDraft={setDraft}
             placeholder={field.placeholder || 'Share your take...'}
-            themeIsPublic={themeIsPublic}
-            visibility={visibility}
-            setVisibility={setVisibility}
+            audience={sharedVisibility
+              ? describeAudience({ visibility: sharedVisibility, targetIds: sharedTargetIds }, audienceNodeById)
+              : null}
+            error={saveError}
             onCancel={cancelEdit}
             onSave={commitEdit}
             isSaving={isUpserting}
@@ -297,9 +372,11 @@ interface InlineEditorProps {
   draft: string
   setDraft: (v: string) => void
   placeholder: string
-  themeIsPublic: boolean
-  visibility: ThemeContributionVisibility
-  setVisibility: (v: ThemeContributionVisibility) => void
+  /** The audience this save will be written under, in words. Null before the
+   *  page has resolved one, in which case the save preserves what is stored. */
+  audience: string | null
+  /** The server's refusal, if the last save was refused. */
+  error: string | null
   onCancel: () => void
   onSave: () => Promise<void>
   isSaving: boolean
@@ -307,7 +384,7 @@ interface InlineEditorProps {
 }
 
 function InlineEditor({
-  draft, setDraft, placeholder, themeIsPublic, visibility, setVisibility,
+  draft, setDraft, placeholder, audience, error,
   onCancel, onSave, isSaving, editorRef,
 }: InlineEditorProps) {
   return (
@@ -319,29 +396,27 @@ function InlineEditor({
         placeholder={placeholder}
         minHeight="140px"
       />
-      {/* Visibility and the commit pair share a line at desktop width and
-          stack on a phone — "Visible to:" plus a select plus Cancel plus Save
-          is wider than 390px, and Save is not something to leave hanging off
-          the edge. */}
+      {error && (
+        /* In place, beside the prose it refused to save, and the editor stays
+           open. The message is the server's own. */
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert">{error}</p>
+      )}
+      {/* The audience and the commit pair share a line at desktop width and
+          stack on a phone — the statement plus Cancel plus Save is wider than
+          390px, and Save is not something to leave hanging off the edge. */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          {themeIsPublic ? (
-            <>
-              <span className="shrink-0">Visible to:</span>
-              <select
-                value={visibility}
-                onChange={(e) => setVisibility(e.target.value as ThemeContributionVisibility)}
-                className="text-xs px-2 py-1 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800"
-              >
-                <option value="org">Org only</option>
-                <option value="shared">Shared</option>
-              </select>
-            </>
-          ) : (
-            <span className="inline-flex items-center gap-1">
-              <Building2 className="w-3 h-3" /> Org only
+        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 min-w-0">
+          {/* A statement, not a control. The audience is chosen once on the
+              toolbar for the whole page -- as on the asset page -- so a select
+              here would be a second control over one value. What used to sit
+              here offered "Org only" and "Shared", which named one reach
+              twice: the policy ignored the column entirely. */}
+          <span className="inline-flex items-center gap-1 min-w-0">
+            <Building2 className="w-3 h-3 shrink-0" />
+            <span className="truncate">
+              {audience ? `Visible to ${audience}` : 'Audience unchanged'}
             </span>
-          )}
+          </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button size="sm" variant="outline" onClick={onCancel} className="flex-1 sm:flex-none">

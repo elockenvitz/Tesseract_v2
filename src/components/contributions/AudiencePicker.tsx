@@ -41,10 +41,13 @@ import { clsx } from 'clsx'
 import { Check, ChevronDown, Globe, Loader2, AlertTriangle } from 'lucide-react'
 import {
   buildAudienceOptions, isLevelSelectable, unreachableReason,
-  type AudienceNode, type AudienceOption,
+  type AudienceNode, type AudienceOption, type AudienceVisibility,
 } from '../../lib/contributions/audience-reach'
 
-export type AudienceVisibility = 'firm' | 'division' | 'department' | 'team' | 'portfolio'
+/* Declared in `audience-reach`, beside the CHECK constraints and the two RPCs
+   that enforce it, and re-exported here because this is where the call sites
+   have always imported it from. One union, not one per page. */
+export type { AudienceVisibility }
 
 /** The four group scopes, in org-chart order: widest first. */
 export const GROUP_SCOPES: ReadonlyArray<{ value: Exclude<AudienceVisibility, 'firm'>; label: string; plural: string }> = [

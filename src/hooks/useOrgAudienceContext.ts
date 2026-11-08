@@ -44,13 +44,16 @@ import { useQuery } from '@tanstack/react-query'
 import {
   effectiveMemberCounts,
   type AudienceNode,
+  type AudienceVisibility,
 } from '../lib/contributions/audience-reach'
 import { supabase } from '../lib/supabase'
 
 import { useAuth } from './useAuth'
 
-/** The five audience levels. `firm` addresses everyone and names no group. */
-export type AudienceLevel = 'firm' | 'division' | 'department' | 'team' | 'portfolio'
+/** The five audience levels. `firm` addresses everyone and names no group.
+ *  An alias, not a second declaration: the union lives in `audience-reach`
+ *  beside the constraints that enforce it. */
+export type AudienceLevel = AudienceVisibility
 
 export interface OrgAudienceContext {
   /** Direct portfolio memberships only, by name. */

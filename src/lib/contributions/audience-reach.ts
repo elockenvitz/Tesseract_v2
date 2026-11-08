@@ -37,6 +37,51 @@
  *    UI can explain them, and the author decides.
  */
 
+/**
+ * The audience vocabulary, declared ONCE.
+ *
+ * Every level is a real scope on the server: the five words are exactly what
+ * `set_contribution_audience` and `set_theme_contribution_audience` accept
+ * (22023 otherwise) and exactly what both `visibility` CHECK constraints
+ * admit. A sixth word here would be a word the database refuses.
+ *
+ * It lives in this module because this module is what both research subjects
+ * already import. `AudiencePicker` re-exports it as `AudienceVisibility` for
+ * the call sites that have always imported it from there.
+ */
+export type AudienceVisibility = 'firm' | 'division' | 'department' | 'team' | 'portfolio'
+
+/** Widest first, which is the order the picker lists them in. */
+export const AUDIENCE_LEVELS: readonly AudienceVisibility[] =
+  ['firm', 'division', 'department', 'team', 'portfolio'] as const
+
+export const isAudienceVisibility = (v: unknown): v is AudienceVisibility =>
+  typeof v === 'string' && (AUDIENCE_LEVELS as readonly string[]).includes(v)
+
+/**
+ * Refuse a restricted audience that names nobody.
+ *
+ * `targetIds: []` at a non-firm level is not "no restriction" — it is a
+ * contribution readable by its author alone while the UI shows it as shared.
+ * Both audience RPCs refuse it with 23514; this catches it before the round
+ * trip so the message can name the level.
+ *
+ * It belongs beside the vocabulary rather than in one subject's hook, because
+ * the rule is a property of the levels, not of assets or themes.
+ */
+export function assertVisibilityNamesAnAudience(
+  visibility: AudienceVisibility,
+  targetIds: readonly string[],
+) {
+  if (visibility !== 'firm' && targetIds.length === 0) {
+    throw new Error(
+      `Cannot save "${visibility}" visibility with no targets. ` +
+      `That would delete the audience this contribution was shared with and ` +
+      `leave it visible only to you. Select at least one ${visibility}, or choose Firm.`
+    )
+  }
+}
+
 export interface AudienceNode {
   id: string
   name: string

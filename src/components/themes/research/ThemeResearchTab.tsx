@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { useIsMobile } from '../../../hooks/useMediaQuery'
 // `Star` marked the reader's own pill among the contributors; "My Research"
@@ -46,9 +46,20 @@ import { ThemeKeyReferencesSection } from './ThemeKeyReferencesSection'
 import {
   useThemeResearchLayout,
   useThemeContributionsV2,
+  type ThemeContributionVisibility,
 } from '../../../hooks/useThemeResearch'
 import { useThemeKeyReferences } from '../../../hooks/useThemeKeyReferences'
 import { useAuth } from '../../../hooks/useAuth'
+/*
+ * The Asset page's audience control, imported rather than approximated — the
+ * fourth piece of asset research chrome this page now shares. It is
+ * subject-agnostic by construction (`saved`, `nodesFor`, `memberCounts`,
+ * `nodeById`, `onApply`) and knows nothing about assets, so a theme-shaped
+ * copy of it would differ only by drifting.
+ */
+import { AudiencePicker } from '../../contributions/AudiencePicker'
+import { useOrgAudienceContext } from '../../../hooks/useOrgAudienceContext'
+import { type AudienceNode } from '../../../lib/contributions/audience-reach'
 
 interface ThemeResearchTabProps {
   themeId: string
@@ -98,11 +109,30 @@ function shortName(author: { first_name: string | null; last_name: string | null
 }
 
 export function ThemeResearchTab({
-  themeId, themeIsPublic, readMode, onReadModeChange, notesSlot, notesCount,
+  /*
+   * `themeIsPublic` is no longer read. It used to gate the per-field
+   * visibility select, and it gated it BACKWARDS: a theme that was not public
+   * forced its research to 'org', the WIDEST reach, while a public theme was
+   * the only one offered a choice. A theme's publicity governs who can see the
+   * theme, not who can read one analyst's research on it, which is what the
+   * audience picker now decides. Left on the props so callers still compile;
+   * removing it is a separate change.
+   */
+  themeId, readMode, onReadModeChange, notesSlot, notesCount,
 }: ThemeResearchTabProps) {
   const { user } = useAuth()
   const { layout, isLoading: layoutLoading } = useThemeResearchLayout()
-  const { contributions, contributors, isLoading: contribsLoading } = useThemeContributionsV2(themeId)
+  const {
+    contributions, contributors, isLoading: contribsLoading, updateVisibility,
+  } = useThemeContributionsV2(themeId)
+  /* One org-chart fetch for the whole page, shared with every field's badge
+     and with the Asset page. See useOrgAudienceContext. */
+  const {
+    context: userOrgContext,
+    nodesFor: audienceNodesFor,
+    memberCounts: audienceMemberCounts,
+    nodeById: audienceNodeById,
+  } = useOrgAudienceContext()
   const { references } = useThemeKeyReferences(themeId)
   /* References holds two kinds of thing now: the theme's links and the
      theme's notes. The count has to be both, or it describes half of what
@@ -157,6 +187,89 @@ export function ThemeResearchTab({
   }, [analysts, viewFilter])
 
   const viewingOther = viewFilter !== 'aggregated' && viewFilter !== user?.id
+
+  /*
+   * ── Who can read this analyst's theme research ──────────────────────────
+   *
+   * One audience for the page, exactly as on the asset case: the picker sits
+   * on this bar and every field's save is written under it. Per-field
+   * audiences are not offered because they were not honoured — the column was
+   * inert until `20261104140000_theme_contribution_audience.sql`.
+   *
+   * Three pieces of state, and the third is the one that matters:
+   *   - the live SELECTION, which the picker commits into;
+   *   - `savedAudience`, what the server holds, kept apart so the picker can
+   *     show the current audience including groups the author could no longer
+   *     pick;
+   *   - `rehydratedVisibilityRef`, which distinguishes a LOAD from a user's
+   *     choice. Without it the level-change effect below wipes the targets
+   *     the load just restored, in the same render, and the next content save
+   *     writes `targetIds: []` -- destroying the restriction while the badge
+   *     still shows a lock. That is a defect this product has already had on
+   *     the asset page; it is not being rebuilt here.
+   */
+  const [sharedVisibility, setSharedVisibility] = useState<ThemeContributionVisibility>('firm')
+  const [sharedTargetIds, setSharedTargetIds] = useState<string[]>([])
+  const [hasInitializedVisibility, setHasInitializedVisibility] = useState(false)
+  const rehydratedVisibilityRef = useRef<ThemeContributionVisibility | null>(null)
+  const [savedAudience, setSavedAudience] =
+    useState<{ visibility: ThemeContributionVisibility; targetIds: string[] } | null>(null)
+
+  useEffect(() => {
+    if (hasInitializedVisibility || !user?.id) return
+    const own = contributions.find(c => c.created_by === user.id)
+    if (!own) return
+    const level = own.visibility
+    // Before the state, so the effect below can tell this was a load.
+    rehydratedVisibilityRef.current = level
+    const ids = (own.visibility_targets ?? []).map(t => t.node_id).filter(Boolean)
+    setSharedVisibility(level)
+    setSharedTargetIds(ids)
+    setSavedAudience({ visibility: level, targetIds: ids })
+    setHasInitializedVisibility(true)
+  }, [user?.id, contributions, hasInitializedVisibility])
+
+  // A different theme is different research, so nothing carries over.
+  useEffect(() => {
+    setHasInitializedVisibility(false)
+    rehydratedVisibilityRef.current = null
+    setSavedAudience(null)
+    setSharedVisibility('firm')
+    setSharedTargetIds([])
+  }, [themeId])
+
+  // A team id is not a department id, so a level change cannot carry targets.
+  useEffect(() => {
+    if (rehydratedVisibilityRef.current === sharedVisibility) return
+    setSharedTargetIds([])
+  }, [sharedVisibility])
+
+  /**
+   * Commit the picker's draft.
+   *
+   * Written to the server HERE rather than deferred to the next content save.
+   * On the asset page the toolbar choice is persisted by that next save, which
+   * means changing only who can see your work and then leaving changes
+   * nothing; there is no reason to reproduce that. Research with nothing saved
+   * yet has no row to update, and `updateVisibility` reports that as an empty
+   * result rather than an error -- the level is then applied by the first save.
+   */
+  const handleAudienceApply = async (next: { visibility: ThemeContributionVisibility; targetIds: string[] }) => {
+    // The ref first, so the level-change effect does not read this as a
+    // user-driven level change and wipe the ids set in the same batch.
+    rehydratedVisibilityRef.current = next.visibility
+    setSharedVisibility(next.visibility)
+    setSharedTargetIds(next.targetIds)
+    /*
+     * Deliberately NOT wrapped in try/catch. A rejection propagates to
+     * AudiencePicker, which shows the server's own words in the panel and
+     * keeps the draft, so a refused audience cannot look like a saved one.
+     * `setSavedAudience` is after the await for the same reason: on a refusal
+     * it never runs, so the footer keeps stating what is actually stored.
+     */
+    await updateVisibility({ visibility: next.visibility, targetIds: next.targetIds })
+    setSavedAudience({ visibility: next.visibility, targetIds: next.targetIds })
+  }
 
   /*
    * Which sections are folded shut, by slug.
@@ -343,8 +456,22 @@ export function ThemeResearchTab({
             )}
           </div>
 
-          {/* Right: how to read it, then the overflow */}
+          {/* Right: who can read it, then how to read it, then the overflow */}
           <div className="flex items-center gap-2 min-w-0">
+            {/* Only in the author's own view, and placed first so the read-mode
+                buttons do not shift when it appears — both are the Asset
+                page's choices. Someone reading a colleague's research must not
+                be offered a control over who can see it. */}
+            {viewFilter === user?.id && (
+              <AudiencePicker
+                saved={savedAudience ?? { visibility: sharedVisibility, targetIds: sharedTargetIds }}
+                nodesFor={(v) => audienceNodesFor(v) as AudienceNode[]}
+                memberCounts={audienceMemberCounts}
+                nodeById={audienceNodeById}
+                isLoading={!userOrgContext}
+                onApply={handleAudienceApply}
+              />
+            )}
             {isMobileViewport ? (
               <OptionPicker
                 label="Show"
@@ -621,11 +748,12 @@ export function ThemeResearchTab({
                       >
                         <ThemeContributionSection
                           themeId={themeId}
-                          themeIsPublic={themeIsPublic}
                           field={field}
                           activeTab={viewFilter}
                           hideWhenEmpty={viewingOther}
                           onTabChange={setViewFilter}
+                          sharedVisibility={sharedVisibility}
+                          sharedTargetIds={sharedTargetIds}
                         />
                       </ArrangeableField>
                     ))
