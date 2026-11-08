@@ -222,6 +222,55 @@ describe('a book mark is undated by construction', () => {
   })
 })
 
+/**
+ * Found by running this module against production values on 2026-11-07, not by
+ * reading it: a close dated 2026-12-31 came back `ok`, `usable: true`,
+ * `gated: false`. `assessFreshness` compares an age against a maximum, and a
+ * future date gives a NEGATIVE age, which is never greater than the maximum --
+ * so a forward-dated price read as the freshest thing in the book.
+ *
+ * That is precisely the payload the `price_history_cache` INSERT policy
+ * allowed. The newest real close is 2026-11-06, so every later date was
+ * unoccupied, and any logged-in user of any organisation could plant a row
+ * there. The policy is being dropped and the edge-function writer refuses a
+ * future-dated bar as well, but this is the reader's half, and it is the half
+ * that has to hold even if a bad row gets in some other way: an unusable price
+ * must not become usable by being dated further ahead.
+ */
+describe('a price dated in the future is never usable', () => {
+  const future = { price: 1.23, asOf: '2026-12-31', basis: 'stored_close' as const }
+
+  it('refuses it, and says why', () => {
+    const v = assessSizingPrice(future, { now: NOW })
+    expect(v.usable).toBe(false)
+    expect(v.code).toBe('future_dated')
+    expect(v.reason).toMatch(/dated 2026-12-31, which is in the future/)
+    expect(v.price).toBeNull()
+  })
+
+  it('is NOT gateable: allowStaleBasis does not admit it', () => {
+    // There is no caller for whom tomorrow's close is a legitimate basis.
+    const v = assessSizingPrice(future, { now: NOW, allowStaleBasis: true })
+    expect(v.usable).toBe(false)
+    expect(v.gated).toBe(false)
+    expect(v.code).toBe('future_dated')
+  })
+
+  it('refuses one day ahead, not only an absurd date', () => {
+    expect(assessSizingPrice({ ...future, asOf: '2026-11-08' }, { now: NOW }).code).toBe('future_dated')
+  })
+
+  it('accepts today, which is the boundary', () => {
+    const v = assessSizingPrice({ price: 342.37, asOf: '2026-11-07', basis: 'stored_close' }, { now: NOW })
+    expect(v.usable).toBe(true)
+    expect(v.code).toBe('ok')
+  })
+
+  it('throws at the booking boundary', () => {
+    expect(() => assertBookablePrice('ZZ', future, { now: NOW })).toThrow(/in the future/)
+  })
+})
+
 describe('assertBookablePrice', () => {
   it('throws on an unsourced price and names the instrument', () => {
     expect(() => assertBookablePrice('META', { price: 100, asOf: null, basis: null }, { now: NOW }))
