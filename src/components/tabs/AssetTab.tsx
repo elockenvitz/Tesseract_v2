@@ -4133,8 +4133,23 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 <div className="flex items-center space-x-2">
                   <Icon className="h-4 w-4" />
                   <span>{MODE_LABEL[mode]}</span>
-                  {mode === 'work' && activeProcessCount > 0 && (
-                    <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center">
+                  {mode === 'work' && (
+                    /* ALWAYS rendered, and hidden rather than omitted when
+                       there is nothing to count. `activeProcessCount` is
+                       `allAssetWorkflows?.filter(...).length ?? 0`, so it is
+                       0 while that query is in flight, so the pill was absent
+                       on first paint and appeared a moment later -- widening
+                       the Work tab by its own box plus the row's `space-x-2`
+                       gap and pushing History, which sits to its right, along
+                       with it on every asset load. An invisible element keeps
+                       its box, so the row is measured once. Same fix and same
+                       reason as the Theme page's Assets count. */
+                    <span
+                      className={clsx(
+                        'text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center',
+                        activeProcessCount === 0 && 'invisible',
+                      )}
+                    >
                       {activeProcessCount}
                     </span>
                   )}

@@ -43,7 +43,37 @@ describe('the nav shows four modes, driven by the model', () => {
   })
 
   it('keeps the running-process count on Work, from the same source', () => {
-    expect(TAB).toMatch(/mode === 'work' && activeProcessCount > 0/)
+    /* This asserted the markup `mode === 'work' && activeProcessCount > 0`,
+       which is the guard that caused a layout shift on every asset load (see
+       the next test). The CLAIM it was making is still the right one -- the
+       count belongs to Work and comes from `activeProcessCount` -- so it is
+       rewritten against the shape that does not reflow, rather than dropped. */
+    expect(TAB).toMatch(/mode === 'work' && \(/)
+    expect(TAB).toMatch(/\{activeProcessCount\}/)
+  })
+
+  it('reserves the count pill, so an arriving count cannot shift the row', () => {
+    /* `activeProcessCount` is `allAssetWorkflows?.filter(...).length ?? 0`, so
+       it reads 0 while that query is in flight. Behind `> 0` the pill was
+       therefore absent on first paint and appeared a moment later, widening
+       the Work tab by its own box plus the row's `space-x-2` gap and pushing
+       History along with it.
+
+       Measured on the Theme page's identical nav, by toggling the three
+       states on the mounted row: visible 126px / hidden 126px / absent 96px,
+       moving the next tab 29px. An invisible element keeps its box; an absent
+       one does not. */
+    const at = TAB.indexOf('aria-label="Asset modes"')
+    expect(at).toBeGreaterThan(-1)
+    const nav = TAB.slice(at, TAB.indexOf('</nav>', at))
+
+    expect(
+      nav,
+      'the pill is back behind a data guard, so the row reflows when the query resolves'
+    ).not.toMatch(/activeProcessCount > 0/)
+    // An absent element gives up its box; an invisible one keeps it.
+    expect(nav, 'the pill is omitted rather than hidden when the count is zero')
+      .toMatch(/activeProcessCount === 0 && 'invisible'/)
   })
 })
 
