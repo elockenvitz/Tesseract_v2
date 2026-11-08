@@ -338,11 +338,24 @@ describe('what a reader is told', () => {
       .not.toMatch(/> Shared$/m)
   })
 
-  it('flags a restricted contribution that names no group', () => {
-    // The server refuses to create this, so seeing it means a row predates
-    // the restriction and only its author can read it.
-    expect(SECTION).toMatch(/targetIds\.length === 0/)
-    expect(SECTION).toMatch(/Only you/)
+  it('cannot create a restricted contribution that names no group', () => {
+    /* REWRITTEN, not deleted. This used to assert that the theme field's
+       own VisibilityBadge rendered "Only you" in amber over a non-firm
+       contribution with no targets. That badge is gone: the audience is a
+       page-level choice, so a per-field badge restated the toolbar once per
+       field (see "a theme field card is the asset field card").
+
+       The invariant it was really protecting is not the label, it is that
+       the state cannot be reached, and that lives in two places that both
+       still exist. Asserted there instead.
+
+       What IS lost with the badge: a row that reached the orphaned state
+       BEFORE these guards existed is no longer flagged in the field header.
+       Recorded as a known gap rather than papered over here. */
+    expect(PICKER).toMatch(/draft\.visibility !== 'firm' && draft\.targetIds\.length === 0/)
+    expect(PICKER, 'the picker would let an empty restriction be applied')
+      .toMatch(/!emptyRestricted/)
+    expect(REACH).toMatch(/visibility !== 'firm' && targetIds\.length === 0/)
   })
 
   it('shows a refused save in place instead of only logging it', () => {
@@ -361,5 +374,62 @@ describe('what a reader is told', () => {
     // visibility preserves what is stored rather than publishing to firm.
     expect(SECTION).toMatch(/Audience unchanged/)
     expect(SECTION).toMatch(/\.\.\.\(sharedVisibility/)
+  })
+})
+
+describe('a theme field card is the asset field card', () => {
+  /* Four things the theme card had and the asset card does not. Each was
+     reported from the running app, and each is asserted against the ASSET
+     file too wherever the asset file is what makes it a rule -- a parity
+     gate that only reads one of the two files cannot tell parity from
+     coincidence. */
+  const ASSET = read('src/components/contributions/ContributionSection.tsx')
+  const ASSET_CALL = read('src/components/tabs/AssetTab.tsx')
+
+  it('carries no per-field audience badge, because the audience is the page\'s', () => {
+    // The asset page's rule, stated at its call site.
+    expect(ASSET_CALL).toMatch(/hideVisibility=\{true\}/)
+    expect(ASSET).toMatch(/!hideVisibility && \(/)
+    // So the theme card must not render one at all.
+    expect(SECTION, 'a per-field audience badge is back on the theme card')
+      .not.toMatch(/VisibilityBadge/)
+    expect(SECTION, 'the Firm pill is back')
+      .not.toMatch(/<Globe className="w-2\.5 h-2\.5" \/> Firm/)
+  })
+
+  it('puts no icon ahead of the field name', () => {
+    /* The asset section renders an icon only when one is PASSED, and the
+       research surface passes none. The theme card hard-coded FileText, so
+       every field wore the same blue square. */
+    expect(ASSET).toMatch(/\{Icon && \(/)
+    expect(SECTION, 'an icon tile is back in the theme field header')
+      .not.toMatch(/FileText/)
+  })
+
+  it('asks for a view in the asset page\'s words, not the field\'s question', () => {
+    /* `FocusedOwn`'s empty state WAS `{placeholder}` -- the field's own
+       question out of the database, e.g. "How does your view differ from
+       consensus?". The asset page says "Add your view". The question is
+       still the editor's placeholder, which is where it belongs. */
+    const at = SECTION.indexOf('function FocusedOwn')
+    expect(at, 'FocusedOwn is gone; this gate no longer watches anything').toBeGreaterThan(-1)
+    const own = SECTION.slice(at)
+    expect(ASSET).toMatch(/Add your view/)
+    expect(own).toMatch(/Add your view/)
+    expect(own, 'the field question is back as the empty state')
+      .not.toMatch(/\{placeholder\}/)
+    // The question still reaches the editor.
+    expect(SECTION).toMatch(/placeholder=\{field\.placeholder/)
+  })
+
+  it('offers no hover pencil or bin over the reader\'s own prose', () => {
+    /* A pencil floating over click-to-edit prose, beside an unconfirmed
+       destructive bin, with a header pill already offering the same edit.
+       The asset page has neither; it has no Clear at all. */
+    expect(ASSET, 'the asset card grew a Clear control; re-check this rule')
+      .not.toMatch(/title="Clear"/)
+    expect(SECTION, 'the hover overlay is back').not.toMatch(/group-hover:opacity-100/)
+    expect(SECTION, 'the bin is back').not.toMatch(/Trash2/)
+    expect(SECTION, 'a Clear control is back').not.toMatch(/title="Clear"/)
   })
 })
