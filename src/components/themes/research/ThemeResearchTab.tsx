@@ -267,8 +267,23 @@ export function ThemeResearchTab({
      * `setSavedAudience` is after the await for the same reason: on a refusal
      * it never runs, so the footer keeps stating what is actually stored.
      */
-    await updateVisibility({ visibility: next.visibility, targetIds: next.targetIds })
-    setSavedAudience({ visibility: next.visibility, targetIds: next.targetIds })
+    const written = await updateVisibility({
+      visibility: next.visibility, targetIds: next.targetIds,
+    })
+    /*
+     * Only claim it is SAVED when a row was actually written.
+     *
+     * An author who opens the picker before writing anything has no row to
+     * update, so `updateVisibility` returns []. Setting `savedAudience` there
+     * would make the panel's footer read "Saved: Growth Team" while the
+     * database holds nothing -- an unwritten audience looking saved, which is
+     * the same class of lie as a refused one looking saved. Left null, the
+     * picker falls back to the live selection and the first content save is
+     * what writes it.
+     */
+    if (written.length > 0) {
+      setSavedAudience({ visibility: next.visibility, targetIds: next.targetIds })
+    }
   }
 
   /*

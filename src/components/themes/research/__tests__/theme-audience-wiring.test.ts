@@ -201,6 +201,19 @@ describe('committing a draft cannot wipe the targets it just set', () => {
     expect(body, 'a catch here would swallow the refusal the picker needs')
       .not.toMatch(/catch/)
   })
+
+  it('does not report an UNWRITTEN audience as saved either', () => {
+    /* Found in the running app: an author who opens the picker before writing
+       anything has no row to update, so the write is a no-op. Reporting that
+       as saved would read "Saved: Growth Team" with nothing in the database --
+       the same class of lie as a refused change looking saved. */
+    const at = TAB.indexOf('const handleAudienceApply')
+    const body = TAB.slice(at, at + 1400)
+    expect(body).toMatch(/const written = await updateVisibility\(/)
+    expect(body).toMatch(/if \(written\.length > 0\)/)
+    const guard = body.indexOf('written.length > 0')
+    expect(guard).toBeLessThan(body.indexOf('setSavedAudience('))
+  })
 })
 
 describe('what a reader is told', () => {
