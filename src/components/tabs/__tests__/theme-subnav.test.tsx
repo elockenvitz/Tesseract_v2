@@ -279,6 +279,38 @@ describe('the desktop row reads the same list the picker does', () => {
     expect(nav, 'still an underline nav').not.toContain('border-b-2')
   })
 
+  it('is laid out once, so an arriving count cannot shift it', () => {
+    /* The defect: the Assets tab's count pill was rendered only once the
+       `relatedAssets` query had resolved AND come back non-empty:
+
+         {mode === 'assets' && relatedAssets && relatedAssets.length > 0 && (
+           <span className="... min-w-[18px] ...">{relatedAssets.length}</span>
+         )}
+
+       `relatedAssets` is async, so on first paint the pill was absent and the
+       Assets tab was narrower by the pill's own box plus the row's
+       `space-x-2` gap. When the query landed the tab widened and Research and
+       Work were shoved right -- on every load of the page.
+
+       The fix is to let the element keep its box at all times and toggle
+       `visibility` instead, so the row is measured once. Asserted on the
+       desktop nav only: the phone `OptionPicker` renders its counts inside a
+       dropdown that is closed on load, so it has no such shift. */
+    const at = code.indexOf('<nav className=')
+    const nav = code.slice(at, code.indexOf('</nav>', at))
+
+    expect(
+      nav,
+      'the count pill is back behind a data guard, so the row reflows when the query resolves'
+    ).not.toMatch(/mode === 'assets' && relatedAssets/)
+
+    // An absent element gives up its box; an invisible one keeps it.
+    expect(nav, 'the pill is omitted rather than hidden when there is nothing to count')
+      .toContain("'invisible'")
+    // And it must still show the real number when there is one.
+    expect(nav).toMatch(/relatedAssets\?\.length/)
+  })
+
   it('is the Asset page\'s nav markup, not a lookalike', () => {
     /* Two files can only match by saying the same thing, and the way they
        drift is one of them being restyled alone. These are the exact strings

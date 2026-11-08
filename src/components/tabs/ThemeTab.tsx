@@ -1216,12 +1216,28 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                   <div className="flex items-center space-x-2">
                     <Icon className="h-4 w-4" />
                     <span>{THEME_MODE_LABEL[mode]}</span>
-                    {mode === 'assets' && relatedAssets && relatedAssets.length > 0 && (
+                    {mode === 'assets' && (
                       /* The same count pill shape the Asset page's Work tab
                          uses, rather than this page's generic Badge, so the
-                         two navs do not differ by a border radius. */
-                      <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center dark:bg-purple-900/60 dark:text-purple-200">
-                        {relatedAssets.length}
+                         two navs do not differ by a border radius.
+
+                         ALWAYS rendered, and hidden rather than omitted when
+                         there is nothing to count. `relatedAssets` arrives
+                         from a query, so this used to be absent on first
+                         paint and appear a moment later -- the pill plus the
+                         row's `space-x-2` gap widened this tab by ~26px and
+                         shoved Research and Work to the right on every single
+                         load. An invisible element still occupies its box, so
+                         the row is laid out once and never reflows: no shift
+                         when the count arrives, and none when it turns out to
+                         be zero either. */
+                      <span
+                        className={clsx(
+                          'text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center dark:bg-purple-900/60 dark:text-purple-200',
+                          !relatedAssets?.length && 'invisible',
+                        )}
+                      >
+                        {relatedAssets?.length ?? 0}
                       </span>
                     )}
                   </div>
