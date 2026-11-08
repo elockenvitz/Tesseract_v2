@@ -84,20 +84,62 @@ describe('the vocabulary is the one the database enforces', () => {
     expect(HOOK).toMatch(/ThemeContributionVisibility = AudienceVisibility/)
   })
 
-  it('has no trace of the inert two-level vocabulary', () => {
-    /* These are the words the old CHECK admitted. The new one rejects them,
-       so a surviving literal is a write the database refuses with 23514. */
+  it('never writes the dead level, and reads the legacy one only as a fallback', () => {
+    /*
+     * 'shared' is gone outright: it had zero rows and no meaning in either
+     * model.
+     *
+     * 'org' is NOT gone, and must not be. The two CHECK constraints are
+     * disjoint, so until the migrations are applied `'org'` is the only word
+     * the database will accept on a new row. It survives in exactly one
+     * place -- the capability-gated INSERT default -- and nowhere else.
+     *
+     * This assertion originally banned it entirely, which is what shipped a
+     * frontend that could not write to the un-migrated schema at all.
+     */
     for (const src of [HOOK, SECTION, TAB]) {
-      expect(src).not.toMatch(/visibility[^\n]{0,40}'org'/)
       expect(src).not.toMatch(/visibility[^\n]{0,40}'shared'/)
-      expect(src).not.toMatch(/\?\? 'org'/)
     }
+    expect(SECTION).not.toMatch(/'org'/)
+    expect(TAB).not.toMatch(/'org'/)
+    expect(
+      HOOK.match(/'org'/g)?.length,
+      "'org' appears outside the single capability-gated INSERT default"
+    ).toBe(1)
   })
 
-  it('defaults a brand-new contribution to firm', () => {
-    // The reach the six pre-existing rows already had under 'org'. A default
-    // of 'team' would restrict to a group the insert never named.
-    expect(HOOK).toMatch(/visibility: input\.visibility \?\? 'firm'/)
+  it('defaults a brand-new contribution to the widest level the schema accepts', () => {
+    /* 'firm' once the five-level CHECK is in; the legacy 'org' until then.
+       Both mean the same reach -- everyone in the organization -- which is
+       what a row with no prior audience should have. Hardcoding either one
+       is a 23514 on the analyst's first save in half the environments. */
+    expect(HOOK).toMatch(/visibility: audienceReady \? \(input\.visibility \?\? 'firm'\) : 'org'/)
+  })
+
+  it('cannot be taken down by the audience tables being absent', () => {
+    /*
+     * The regression this replaced: the targets were a PostgREST embed, and
+     * an unknown embedded relation is a 400 on the WHOLE request, not an
+     * empty embed. Every contribution vanished and the page said "No team
+     * research yet" about research that was in the table. Measured as a live
+     * 400 against production.
+     *
+     * So the contributions are read alone, and the audience is a second
+     * request whose error is swallowed.
+     */
+    expect(HOOK, 'the targets are back inside the contributions select')
+      .not.toMatch(/visibility_targets:theme_contribution_visibility_targets/)
+    // The second request exists, and its error is explicitly not thrown.
+    expect(HOOK).toMatch(/from\('theme_contribution_visibility_targets'\)/)
+    expect(HOOK).toMatch(/if \(!tErr\)/)
+  })
+
+  it('hides the control when the server cannot store an audience', () => {
+    expect(HOOK).toMatch(/export function useThemeAudienceCapability/)
+    // Unknown counts as not-ready: never offer what cannot be honoured.
+    expect(HOOK).toMatch(/return data \?\? false/)
+    const at = TAB.indexOf('<AudiencePicker')
+    expect(TAB.slice(Math.max(0, at - 300), at)).toMatch(/audienceReady &&/)
   })
 })
 
@@ -121,7 +163,10 @@ describe('an audience can only be changed through the RPC', () => {
   it('treats an absent level as PRESERVE, not as firm', () => {
     // A prose edit is not a visibility decision. Defaulting here is what
     // destroys an audience on an ordinary content save.
-    expect(HOOK).toMatch(/const isVisibilityChange = input\.visibility !== undefined/)
+    /* `audienceReady &&` is part of it now: when the server cannot store an
+       audience, an incoming level is treated as absent rather than written,
+       so a prose save stays a prose save instead of becoming a 23514. */
+    expect(HOOK).toMatch(/const isVisibilityChange = audienceReady && input\.visibility !== undefined/)
     expect(HOOK).toMatch(/if \(isVisibilityChange\)/)
   })
 
@@ -213,6 +258,76 @@ describe('committing a draft cannot wipe the targets it just set', () => {
     expect(body).toMatch(/if \(written\.length > 0\)/)
     const guard = body.indexOf('written.length > 0')
     expect(guard).toBeLessThan(body.indexOf('setSavedAudience('))
+  })
+})
+
+describe('which perspective the page opens on', () => {
+  /*
+   * Reported from use: "it's defaulting to firm and not sticking when I
+   * navigate away and then go back. needs to default to my research."
+   *
+   * `'aggregated'` as a seed is the exact defect `initialResearchView` was
+   * written to delete from the Asset page -- the reader lands on the firm
+   * summary and their own work looks missing.
+   */
+  it('seeds from the shared resolver, never from the firm sentinel', () => {
+    expect(TAB, 'the firm summary is the default again')
+      .not.toMatch(/useState<ThemeResearchActiveTab>\('aggregated'\)/)
+    expect(TAB).toMatch(/initialResearchView\(\{/)
+    expect(TAB).toMatch(/researchSeed\.filter/)
+  })
+
+  it('restores a perspective the reader chose', () => {
+    expect(TAB).toMatch(/themeResearchViewFilter/)
+    expect(TAB).toMatch(/TabStateManager\.loadTabState\(themeId\)/)
+  })
+
+  it('persists only a CHOSEN perspective, not a resolved default', () => {
+    // Saving a default keeps sending the reader somewhere they never picked,
+    // which is the outcome the default exists to prevent.
+    const at = TAB.indexOf('if (!viewChosen || !themeId) return')
+    expect(at).toBeGreaterThan(-1)
+    expect(TAB).toMatch(/const chooseViewFilter = useCallback/)
+    expect(TAB).toMatch(/setViewChosen\(true\)/)
+  })
+
+  it('routes every reader-facing control through the chooser', () => {
+    /* A control still calling the raw setter changes the view without
+       recording that a person chose it, so it silently does not persist. */
+    for (const bad of [
+      /onChange=\{setViewFilter\}/,
+      /onClick=\{\(\) => setViewFilter\(/,
+      /onOpenAnalyst=\{setViewFilter\}/,
+      /onTabChange=\{setViewFilter\}/,
+    ]) {
+      expect(TAB, 'a perspective control bypasses chooseViewFilter').not.toMatch(bad)
+    }
+  })
+})
+
+describe('a late count cannot shove the control beside it', () => {
+  /*
+   * Reported from use: "hitching in the banner and section loads because of
+   * the number of assets loading late."
+   *
+   * Same defect as the desktop count pill, on the phone picker next to it:
+   * withholding the count until it was non-zero let it APPEAR after paint and
+   * widen the trigger. An invisible element keeps its box; an absent one gives
+   * it up.
+   */
+  const THEMETAB = read('src/components/tabs/ThemeTab.tsx')
+  const PICKER_UI = read('src/components/ui/OptionPicker.tsx')
+
+  it('sends 0 rather than withholding the count while it loads', () => {
+    expect(THEMETAB, 'the count is withheld until non-zero, so it arrives late')
+      .not.toMatch(/relatedAssets && relatedAssets\.length > 0/)
+    expect(THEMETAB).toMatch(/count: mode === 'assets' \? \(relatedAssets\?\.length \?\? 0\) : undefined/)
+  })
+
+  it('reserves the slot at 0 instead of rendering nothing', () => {
+    expect(PICKER_UI, 'the trigger drops the count box at 0 and regains it later')
+      .not.toMatch(/selected\?\.count != null && selected\.count > 0/)
+    expect(PICKER_UI).toMatch(/selected\.count === 0 && 'invisible'/)
   })
 })
 

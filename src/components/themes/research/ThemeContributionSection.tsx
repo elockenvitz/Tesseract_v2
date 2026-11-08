@@ -19,7 +19,9 @@ import { SmartInputRenderer } from '../../smart-input'
 import { useAuth } from '../../../hooks/useAuth'
 import { useOrgAudienceContext } from '../../../hooks/useOrgAudienceContext'
 import { describeAudience } from '../../contributions/AudiencePicker'
-import { type AudienceNode } from '../../../lib/contributions/audience-reach'
+import {
+  isAudienceVisibility, type AudienceNode,
+} from '../../../lib/contributions/audience-reach'
 import {
   useThemeContributionsV2,
   type ThemeContribution,
@@ -99,7 +101,14 @@ function VisibilityBadge({
   const targetIds = (contribution.visibility_targets ?? []).map(t => t.node_id)
   const selection = { visibility: contribution.visibility, targetIds }
 
-  if (contribution.visibility === 'firm') {
+  /*
+   * A value outside the five levels is a row written under the OLD
+   * vocabulary, where 'org' and 'shared' both meant org-wide. It reaches the
+   * whole firm, so it is labelled as such -- reading it as a restriction
+   * would show "Only you" in amber over research everybody can see, which is
+   * the opposite of the truth.
+   */
+  if (!isAudienceVisibility(contribution.visibility) || contribution.visibility === 'firm') {
     return (
       <span className={clsx(common, 'bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200')}>
         <Globe className="w-2.5 h-2.5" /> Firm

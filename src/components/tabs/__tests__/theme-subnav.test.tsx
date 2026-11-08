@@ -117,10 +117,21 @@ describe('every one of the six old sections still has a surface', () => {
   })
 
   it('counts the roster on the mode that holds it', () => {
-    // The count followed the table. A badge on Overview would number a
-    // surface Overview no longer shows.
-    expect(code).toContain("mode === 'assets' && relatedAssets")
+    /*
+     * The count followed the table. A badge on Overview would number a
+     * surface Overview no longer shows. That claim is unchanged.
+     *
+     * It used to be pinned as the literal `mode === 'assets' && relatedAssets`,
+     * which also pinned a DEFECT: the `&& relatedAssets.length > 0` that
+     * followed withheld the count until the query landed, so it appeared
+     * after paint and widened the picker's trigger. The count is now always
+     * sent for Assets (0 while loading) and the slot is reserved, so the
+     * markup this asserted no longer exists. Rewritten to the claim rather
+     * than the spelling.
+     */
+    expect(code).toMatch(/mode === 'assets' \?/)
     expect(code).not.toContain("mode === 'overview' && relatedAssets")
+    expect(code).not.toMatch(/mode === 'overview' \?.*relatedAssets/)
   })
 
   it('renders the research pane, and hands it the notes', () => {
@@ -229,8 +240,14 @@ describe('the phone gets the accepted picker, not a new primitive', () => {
   })
 
   it('keeps the one count the desktop row shows', () => {
+    /* Still the same claim -- the phone picker carries the Assets count
+       rather than dropping it. The expression moved from
+       `relatedAssets.length` to `relatedAssets?.length ?? 0` so that a count
+       still in flight reserves its slot instead of appearing late and
+       shoving the label. */
     const at = source.indexOf('<OptionPicker')
-    expect(source.slice(at, at + 900)).toContain('relatedAssets.length')
+    expect(at).toBeGreaterThan(-1)
+    expect(source.slice(at, at + 1400)).toMatch(/relatedAssets\?\.length \?\? 0/)
   })
 
   it('is the same treatment Portfolio uses, not a second implementation', () => {
@@ -691,5 +708,60 @@ describe('no viewport or width regressions', () => {
   it('assumes no desktop width', () => {
     const wide = [...source.matchAll(/w-\[(\d+)px\]/g)].filter(m => Number(m[1]) >= 300)
     expect(wide.map(m => m[0])).toEqual([])
+  })
+})
+
+describe('the context strip is measured once', () => {
+  const strip = readFileSync(
+    resolve(__dirname, '../../themes/ThemeContextStrip.tsx'),
+    'utf8',
+  )
+
+  it('reserves the Held cell\'s second line instead of growing into it', () => {
+    /* The defect, measured live on a cold theme open: the mode nav sat at
+       y=253, rose to 237, and dropped back to 253 at +1607ms. The band
+       around it went 137 -> 121 -> 137. The 16px was the Held cell's
+       "top X%" sub-line, which was rendered inside the holdings branch:
+
+         ) : (
+           <>
+             <div className={VALUE}>{held.names.length} of {assetIds.length}</div>
+             <div className={SUB}>top {...}%</div>
+           </>
+         )
+
+       It is the only cell in the strip with a second line, so it sets the
+       strip's height. `useHoldingsForAssets` is async and depends on
+       `assetIds`, which is itself async, so the line arrived two queries
+       deep -- long after the nav had been painted and pointed at.
+
+       SUB is `text-[11px] leading-tight mt-0.5`: 14px of line plus 2px of
+       margin, which is exactly the 16px that was measured. */
+    const at = strip.indexOf('label="Held"')
+    expect(at, 'the Held cell is gone; this gate no longer watches anything')
+      .toBeGreaterThan(-1)
+    const cell = strip.slice(at, strip.indexOf('label="Case"', at))
+
+    // An absent element gives up its box; an invisible one keeps it.
+    expect(cell, 'the sub-line is omitted rather than hidden when nothing is held')
+      .toContain('invisible')
+    /* And it must sit OUTSIDE the ternary, so no branch can drop it. A
+       branch of a ternary renders ONE element, so the only way to put a
+       second line inside one is to wrap both in a fragment -- which is
+       exactly what the defective version did. No fragment in this cell means
+       every branch is one line and the sub-line is a sibling of all of
+       them. */
+    expect(cell, 'a fragment is back in a branch, so that branch owns a line the others lack')
+      .not.toContain('<>')
+    // It still shows the real figure when there is one.
+    expect(cell).toMatch(/topWeightPct\.toFixed\(1\)/)
+  })
+
+  it('has no other cell that can gain a line after paint', () => {
+    /* Every other cell renders exactly one line in every branch. If a second
+       SUB appears in the strip, it must be reserved the same way or the
+       header starts shifting again. */
+    const subs = [...strip.matchAll(/className=\{clsx\(SUB|className=\{SUB\}/g)]
+    expect(subs.length, 'a new sub-line was added; reserve its box too').toBe(1)
   })
 })

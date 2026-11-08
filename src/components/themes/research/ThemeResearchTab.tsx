@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { useIsMobile } from '../../../hooks/useMediaQuery'
 // `Star` marked the reader's own pill among the contributors; "My Research"
@@ -60,6 +60,10 @@ import { useAuth } from '../../../hooks/useAuth'
 import { AudiencePicker } from '../../contributions/AudiencePicker'
 import { useOrgAudienceContext } from '../../../hooks/useOrgAudienceContext'
 import { type AudienceNode } from '../../../lib/contributions/audience-reach'
+import { TabStateManager } from '../../../lib/tabStateManager'
+/* The Asset page's perspective resolver, not a second set of rules. It is
+   pure and tested, which is why it lives in lib rather than in a component. */
+import { initialResearchView } from '../../../lib/desktop-asset/research-view'
 
 interface ThemeResearchTabProps {
   themeId: string
@@ -124,6 +128,7 @@ export function ThemeResearchTab({
   const { layout, isLoading: layoutLoading } = useThemeResearchLayout()
   const {
     contributions, contributors, isLoading: contribsLoading, updateVisibility,
+    audienceReady,
   } = useThemeContributionsV2(themeId)
   /* One org-chart fetch for the whole page, shared with every field's badge
      and with the Asset page. See useOrgAudienceContext. */
@@ -143,7 +148,55 @@ export function ThemeResearchTab({
   // One control naming the current view, as on the asset case — a row of
   // analyst pills does not survive 390px.
   const isMobileViewport = useIsMobile()
-  const [viewFilter, setViewFilter] = useState<ThemeResearchActiveTab>('aggregated')
+  /*
+   * ── Whose research the page opens on ────────────────────────────────────
+   *
+   * This was `useState('aggregated')`, which is the exact defect
+   * `initialResearchView` was written to delete from the Asset page: the
+   * reader landed on the FIRM summary, so opening a theme showed everyone
+   * else's case and the reader's own work was one click away and looked
+   * missing. `'aggregated'` is a sentinel for "undecided", never a default.
+   *
+   * Three sources, in priority order:
+   *   1. a perspective the reader CHOSE here before, restored from tab state;
+   *   2. otherwise the reader's own id, which is in hand on the first render
+   *      (`ProtectedRoute` only mounts this tree once `user` is non-null), so
+   *      no effect and no flicker;
+   *   3. `'aggregated'` only when there is no reader at all.
+   *
+   * A default is never persisted. Saving one would keep sending the reader
+   * somewhere they never picked, which is the outcome the default exists to
+   * prevent.
+   */
+  const researchSeed = useRef(initialResearchView({
+    arriving: TabStateManager.loadTabState(themeId)?.themeResearchViewFilter ?? null,
+    userId: user?.id ?? null,
+  })).current
+  const [viewFilter, setViewFilter] =
+    useState<ThemeResearchActiveTab>(researchSeed.filter)
+  const [viewChosen, setViewChosen] = useState<boolean>(researchSeed.chosen)
+
+  /** Every perspective change made by a person, as opposed to resolved. */
+  const chooseViewFilter = useCallback((next: ThemeResearchActiveTab) => {
+    setViewChosen(true)
+    setViewFilter(next)
+  }, [])
+
+  /* Only a CHOSEN perspective is written. `themeResearchViewFilter` is its own
+     key for the same reason `themeResearchRead` is: `activeTab` carries a mode
+     and cannot also carry a user id. */
+  useEffect(() => {
+    if (!viewChosen || !themeId) return
+    const saved = TabStateManager.loadTabState(themeId) ?? {}
+    TabStateManager.saveTabState(themeId, { ...saved, themeResearchViewFilter: viewFilter })
+  }, [themeId, viewFilter, viewChosen])
+
+  /* A reader with no id at mount (seed undecided) settles onto their own view
+     the moment auth lands, without overriding a real choice. */
+  useEffect(() => {
+    if (researchSeed.decided || viewChosen) return
+    if (user?.id && viewFilter === 'aggregated') setViewFilter(user.id)
+  }, [user?.id, viewFilter, viewChosen, researchSeed.decided])
   /* `viewMode` was local state here with four values, all / summary / history
      / references. It is now the page's `readMode` with three, because
      "Summary" merged into the aggregated perspective the same way the asset
@@ -393,7 +446,7 @@ export function ThemeResearchTab({
               <OptionPicker
                 label="Whose view"
                 value={viewFilter}
-                onChange={setViewFilter}
+                onChange={chooseViewFilter}
                 className="min-w-0"
                 options={[
                   ...(selfAnalyst ? [{ value: selfAnalyst.id, label: 'My Research' }] : []),
@@ -416,7 +469,7 @@ export function ThemeResearchTab({
                     narrowest while showing the widest. */}
                 {selfAnalyst && (
                   <button
-                    onClick={() => setViewFilter(selfAnalyst.id)}
+                    onClick={() => chooseViewFilter(selfAnalyst.id)}
                     className={clsx(
                       'px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
                       viewFilter === selfAnalyst.id
@@ -428,7 +481,7 @@ export function ThemeResearchTab({
                   </button>
                 )}
                 <button
-                  onClick={() => setViewFilter('aggregated')}
+                  onClick={() => chooseViewFilter('aggregated')}
                   className={clsx(
                     'px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
                     viewFilter === 'aggregated'
@@ -442,7 +495,7 @@ export function ThemeResearchTab({
                 {otherAnalysts.map(a => (
                   <button
                     key={a.id}
-                    onClick={() => setViewFilter(a.id)}
+                    onClick={() => chooseViewFilter(a.id)}
                     className={clsx(
                       'px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
                       viewFilter === a.id
@@ -457,7 +510,7 @@ export function ThemeResearchTab({
             ) : (
               <select
                 value={viewFilter}
-                onChange={(e) => setViewFilter(e.target.value)}
+                onChange={(e) => chooseViewFilter(e.target.value)}
                 className="w-full sm:w-auto px-3 h-9 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:text-gray-300 dark:bg-gray-800"
               >
                 {/* The same two names as the pills above; this is the other
@@ -477,7 +530,11 @@ export function ThemeResearchTab({
                 buttons do not shift when it appears — both are the Asset
                 page's choices. Someone reading a colleague's research must not
                 be offered a control over who can see it. */}
-            {viewFilter === user?.id && (
+            {/* `audienceReady` is false until the audience migrations are
+                applied. Hiding the control is the honest state: it cannot
+                store a restriction yet, and a picker that silently does
+                nothing is the defect this feature was built to remove. */}
+            {audienceReady && viewFilter === user?.id && (
               <AudiencePicker
                 saved={savedAudience ?? { visibility: sharedVisibility, targetIds: sharedTargetIds }}
                 nodesFor={(v) => audienceNodesFor(v) as AudienceNode[]}
@@ -652,7 +709,7 @@ export function ThemeResearchTab({
               </p>
               {user?.id && (
                 <button
-                  onClick={() => setViewFilter(user.id)}
+                  onClick={() => chooseViewFilter(user.id)}
                   className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
                 >
                   <Target className="w-4 h-4" />
@@ -670,7 +727,7 @@ export function ThemeResearchTab({
                 </span>
                 <button
                   type="button"
-                  onClick={() => setViewFilter(user.id)}
+                  onClick={() => chooseViewFilter(user.id)}
                   className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-primary-700"
                 >
                   <Edit3 className="h-4 w-4" />
@@ -702,7 +759,7 @@ export function ThemeResearchTab({
               contributions={firmRecord}
               fields={ourViewFields}
               currentUserId={user?.id}
-              onOpenAnalyst={setViewFilter}
+              onOpenAnalyst={chooseViewFilter}
               mode="full"
               className="px-1"
             />
@@ -766,8 +823,11 @@ export function ThemeResearchTab({
                           field={field}
                           activeTab={viewFilter}
                           hideWhenEmpty={viewingOther}
-                          onTabChange={setViewFilter}
-                          sharedVisibility={sharedVisibility}
+                          onTabChange={chooseViewFilter}
+                          /* Omitted entirely when the server cannot hold an
+                             audience, so a save preserves whatever is stored
+                             instead of asserting a level the CHECK refuses. */
+                          sharedVisibility={audienceReady ? sharedVisibility : undefined}
                           sharedTargetIds={sharedTargetIds}
                         />
                       </ArrangeableField>

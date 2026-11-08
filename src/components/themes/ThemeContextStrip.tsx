@@ -125,13 +125,19 @@ export function ThemeContextStrip({
         ) : held.names.length === 0 ? (
           <Empty>Watchlist only</Empty>
         ) : (
-          <>
-            <div className={VALUE}>{held.names.length} of {assetIds.length}</div>
-            {/* Largest single-portfolio stake, never a cross-book sum. The
-                band says which book; here there is room only for the size. */}
-            <div className={SUB}>top {held.names[0].topWeightPct.toFixed(1)}%</div>
-          </>
+          <div className={VALUE}>{held.names.length} of {assetIds.length}</div>
         )}
+        {/* Largest single-portfolio stake, never a cross-book sum. The band
+            says which book; here there is room only for the size.
+
+            The slot is RESERVED, not conditional. This is the only cell with
+            a second line, so it sets the strip's height: rendering it only
+            once the holdings query settles made the whole header grow 16px
+            after paint and pushed the mode nav down under the user's cursor.
+            An invisible element keeps its box; an absent one gives it up. */}
+        <div className={clsx(SUB, held.names.length === 0 && 'invisible')} aria-hidden={held.names.length === 0}>
+          top {held.names.length > 0 ? held.names[0].topWeightPct.toFixed(1) : '0.0'}%
+        </div>
       </Cell>
 
       <Cell label="Case" onClick={() => onJump({ mode: 'research' })} title="Who has written on this theme">

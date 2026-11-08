@@ -229,7 +229,18 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
        * `themeModeOf('changes')` falls through to 'overview' and a reader who
        * left the page on the change log came back to the Overview.
        */
+      /*
+       * Spread what is already stored, because `saveTabState` REPLACES a
+       * tab's state rather than merging it. This component is not the only
+       * writer any more: `ThemeResearchTab` persists the chosen research
+       * perspective under `themeResearchViewFilter`, and without the spread
+       * this effect -- which also runs on mount -- erased it, so the
+       * perspective never survived a navigation.
+       *
+       * Any key a child adds later is preserved for the same reason.
+       */
       TabStateManager.saveTabState(theme.id, {
+        ...(TabStateManager.loadTabState(theme.id) ?? {}),
         activeTab: MODE_LEGACY_KEY[activeMode],
         themeResearchRead: researchRead,
         showNoteEditor,
@@ -1177,12 +1188,19 @@ export function ThemeTab({ theme, isFocusMode = false, onCite }: ThemeTabProps) 
                 options={THEME_MODES.map(mode => ({
                   value: mode,
                   label: THEME_MODE_LABEL[mode],
-                  /* The one count the desktop row carries, kept rather than
-                     dropped on the phone. It moved with Related Assets, which
-                     is on Assets, which is the mode it counts. */
-                  count: mode === 'assets' && relatedAssets && relatedAssets.length > 0
-                    ? relatedAssets.length
-                    : undefined,
+                  /*
+                   * The one count the desktop row carries, kept rather than
+                   * dropped on the phone. It moved with Related Assets, which
+                   * is on Assets, which is the mode it counts.
+                   *
+                   * Sent as 0 rather than withheld while `relatedAssets` is
+                   * in flight. Withholding it made the number APPEAR when the
+                   * query landed, which widens the trigger and shoves the
+                   * label -- the same late-count shove the desktop count pill
+                   * had, on the control beside it. `OptionPicker` reserves
+                   * the slot for a count of 0 and renders nothing in it.
+                   */
+                  count: mode === 'assets' ? (relatedAssets?.length ?? 0) : undefined,
                 }))}
               />
             </div>
