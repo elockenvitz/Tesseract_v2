@@ -1,0 +1,48 @@
+-- ============================================================================
+-- ROLLBACK for 20261107190000_sec_price_history_cache_insert_policy.sql
+-- ============================================================================
+-- *** APPLYING THIS FILE REOPENS A CONFIRMED PRICE-POISONING PATH. ***
+--
+-- It restores the original policy verbatim, as measured on production on
+-- 2026-11-07 before the drop:
+--
+--   polname      "Users can insert price history"
+--   polcmd       a            (INSERT)
+--   polpermissive true
+--   polroles     {}           (PUBLIC -- so anon and authenticated both)
+--   polqual      null
+--   polwithcheck (auth.uid() IS NOT NULL)
+--
+-- With it in place, any logged-in user of any organization can insert a
+-- (symbol, date) that does not yet exist into the table that the PR #267
+-- trade-price gate treats as dated, sourced market data. The newest real close
+-- is 2026-11-06, so every later date is free. This was demonstrated against
+-- production inside a rolled-back transaction, not inferred.
+--
+-- YOU ALMOST CERTAINLY DO NOT NEED THIS FILE.
+--
+-- The only thing the drop can break is the browser write-through in
+-- src/hooks/usePositionLifecycle.ts, which persists Yahoo candles fetched via
+-- the `yahoo-chart-proxy` edge function. Prefer fixing that forward: move the
+-- write into the edge function, which already runs server-side and can hold
+-- service_role, and delete the two client upserts. A chart that stops caching
+-- is recoverable in one deploy; a reopened write path into the price trust
+-- anchor is not recoverable at all, because afterwards you cannot tell whether
+-- it was used.
+--
+-- If you apply this anyway, treat the exposure as live, and before trusting
+-- any `stored_close` again check for rows dated after the nightly job's last
+-- run or carrying an unexpected `source`:
+--
+--   select source, count(*), min(date), max(date), max(created_at)
+--   from public.price_history_cache group by source order by 2 desc;
+--
+-- `anon` is covered by restoring TO PUBLIC, which is the original state. Note
+-- that an anon caller still cannot insert, because auth.uid() is null for it;
+-- the WITH CHECK is what stops anon, not the role list.
+-- ============================================================================
+
+CREATE POLICY "Users can insert price history"
+  ON public.price_history_cache
+  FOR INSERT
+  WITH CHECK (auth.uid() IS NOT NULL);

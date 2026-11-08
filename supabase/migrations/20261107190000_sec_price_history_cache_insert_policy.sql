@@ -1,0 +1,88 @@
+-- ============================================================================
+-- SECURITY: take price-cache write authority off the browser
+-- ============================================================================
+-- Prepared 2026-11-07. NOT YET APPLIED to production -- see BLOCKER below.
+--
+-- `price_history_cache` is the product's canonical stored market price. It is
+-- the trust anchor for the trade-price gate added in PR #267: a price whose
+-- basis is `stored_close` is accepted as dated and sourced precisely because
+-- it came from this table.
+--
+-- WHAT IT CLOSES (measured on production wfcebeagznzgeuyysbnt, 2026-11-07)
+--
+--   Policy "Users can insert price history"
+--     FOR INSERT, TO PUBLIC (polroles = {}), WITH CHECK (auth.uid() IS NOT NULL)
+--
+--   Any logged-in user of ANY organization can insert a (symbol, date) that
+--   does not already exist. Proven, not suspected: acting as role
+--   `authenticated` with a real user's uid, inside a transaction that was then
+--   rolled back,
+--     insert into price_history_cache (symbol, date, close, source)
+--     values ('ZZ-POISON-PROBE', '2026-12-31', 1.23, 'rls-probe');
+--   succeeded. Row count and content hash were identical before and after
+--   (42494 rows, md5 6fc61d7cdd3b0e1ccfb0e78fa7190012), so nothing persisted.
+--
+--   The newest real close is 2026-11-06, so every later date is unoccupied. A
+--   fabricated close planted at one of them reaches the PR #267 gate looking
+--   dated, sourced and current, and would be booked as a real market price.
+--
+-- WHAT IS *NOT* OPEN, AND IS NOT CHANGED BY THIS FILE
+--
+--   * There is no UPDATE policy and no DELETE policy, and
+--     UNIQUE (symbol, date) is enforced by
+--     price_history_cache_symbol_date_key. An existing close therefore cannot
+--     be overwritten or removed by a browser client, with or without this
+--     file. `INSERT ... ON CONFLICT DO UPDATE` (what PostgREST `upsert` emits)
+--     additionally requires an UPDATE policy, so an upsert that collides with
+--     an existing row fails today.
+--   * Policy "Users can view price history cache" (FOR SELECT, TO PUBLIC,
+--     USING (auth.uid() IS NOT NULL)) is deliberately left exactly as it is.
+--     This table is global reference data with no organization_id by design --
+--     the documented exception in CLAUDE.md Standing Rule 5 -- and roughly 25
+--     read sites across the app depend on it.
+--   * No grant is changed. `anon` and `authenticated` keep the Supabase
+--     default table grants; with no INSERT policy left, RLS denies the insert
+--     regardless of the grant.
+--   * service_role and postgres are unaffected: both bypass RLS, which is how
+--     the nightly ingestion (.github/workflows/ingest.yml, SUPABASE_SERVICE_
+--     ROLE_KEY) and scripts/backfill-price-history.mjs write this table.
+--
+-- *** ORDER: PR #270 MUST BE MERGED AND DEPLOYED BEFORE THIS FILE ***
+--
+--   The policy was not an unused capability. src/hooks/usePositionLifecycle.ts
+--   held two browser-side upserts into this table (the cold-cache fallback in
+--   `useChartBundle`, and the standalone branch of `usePositionPriceHistory`),
+--   both writing Yahoo candles obtained through the `yahoo-chart-proxy` edge
+--   function with source='yahoo_finance'.
+--
+--   Live code, not a leftover: 600 rows across 8 symbols carry that source,
+--   last written 2026-08-10. Seven of those symbols are also covered by the
+--   nightly job, but ORCL's 251 rows (2025-08-11 .. 2026-08-10) exist ONLY
+--   because a browser wrote them -- ORCL is not in the nightly universe.
+--
+--   Applying this file before PR #270 deploys would therefore cost something
+--   real. 774 of 912 assets have no cached history at all, and that browser
+--   write-through is the only mechanism that has ever populated one. Charts
+--   would still render (the fallback pushes its points into the query cache
+--   before writing, and the write error is caught and logged), but an uncached
+--   name would never acquire a `stored_close`, so `resolveAcceptSizingBasis`
+--   in src/lib/decisions/accept-sizing.ts would keep refusing to size a NEW
+--   position in it: "No price for <SYM> on or before <date>".
+--
+--   PR #270 resolves that: the write moves into the `yahoo-chart-proxy` edge
+--   function, which already fetches the data server-side, behind the same
+--   verified-user gate market-events / market-news use, writing with
+--   `ignoreDuplicates` so it can only fill a gap and never revise a stored
+--   close. The capability is kept; the browser's authority is removed.
+--
+--   So the sequence is: merge #270, deploy the frontend, deploy
+--   yahoo-chart-proxy through .github/workflows/deploy-edge-function.yml,
+--   confirm the cache still fills, THEN apply this file.
+--
+-- IDEMPOTENT: DROP POLICY IF EXISTS is a no-op on re-run.
+--
+-- RLS POSTURE: RLS stays enabled on the table. One INSERT policy is removed.
+-- No policy is created or widened. No grant, column, index or row is touched.
+-- ============================================================================
+
+DROP POLICY IF EXISTS "Users can insert price history" ON public.price_history_cache;
