@@ -1,7 +1,8 @@
 -- ============================================================================
 -- SECURITY: take price-cache write authority off the browser
 -- ============================================================================
--- Prepared 2026-11-07. NOT YET APPLIED to production -- see BLOCKER below.
+-- Prepared 2026-11-07. APPLIED to production 2026-11-08, ledger version
+-- 20261108180637. See "AS APPLIED" at the foot of this file.
 --
 -- `price_history_cache` is the product's canonical stored market price. It is
 -- the trust anchor for the trade-price gate added in PR #267: a price whose
@@ -83,6 +84,56 @@
 --
 -- RLS POSTURE: RLS stays enabled on the table. One INSERT policy is removed.
 -- No policy is created or widened. No grant, column, index or row is touched.
+--
+-- ── AS APPLIED, 2026-11-08 (ledger version 20261108180637) ───────────────
+--
+-- The sequence above was followed in order, and each step was verified against
+-- production before the next one ran.
+--
+--   PR #270 merged 8a40b6da and published. The production bundle was crawled
+--   across 22 chunks: no insert or upsert into price_history_cache anywhere,
+--   and the `future_dated` verdict present.
+--
+--   yahoo-chart-proxy deployed TWICE. Version 10 (from main d4a26c37) produced
+--   all three required refusals but ALSO refused every real user, because
+--   supabase-js@2.39.0 declares @supabase/gotrue-js@^2.56.0 -- a range -- and
+--   the new bundle resolved it to 2.119.0, where a headerless getUser()
+--   returns AuthSessionMissingError with no stored session. Fixed in PR #274
+--   (pass the JWT explicitly) and redeployed as version 11, ezbr b957f158,
+--   from main 9714ccbc.
+--
+--   Version 11 verified live against the deployed function, not a mock:
+--     no Authorization header            401 Missing authorization header
+--     bare publishable key as bearer     401 Unauthorized
+--     forged token                       401 Invalid JWT (gateway)
+--     genuine session JWT                200, AEM/NYSE/USD, 251 daily bars
+--     empty body / bad interval / no range / injection-shaped symbol  400
+--     unknown symbol                     502 (upstream 404, no row written)
+--
+--   Write-through BEFORE this file: AEM 0 -> 251 rows, source
+--   yahoo_chart_v8_edge, 2025-11-07 .. 2026-11-06, last close 191.57 equal to
+--   the provider's regularMarketPrice. The 42,494 pre-existing rows still
+--   hashed to 6fc61d7cdd3b0e1ccfb0e78fa7190012, so no stored close was
+--   revised -- `ignoreDuplicates` holding, as designed.
+--
+--   Write-through AFTER this file, which is the check that matters: AFG
+--   0 -> 128 rows, source yahoo_chart_v8_edge, 2026-05-07 .. 2026-11-06, last
+--   close 154.5500030517578. Server-side ingestion fills an uncached symbol
+--   with no browser-reachable INSERT policy in existence.
+--
+--   Authorization matrix after applying, each case inside a rolled-back
+--   transaction, inserting a close dated 2026-12-31 (past every real one):
+--     anon                                       denied 42501
+--     authenticated, a user of org 090ae173      denied 42501  (was ALLOWED)
+--     authenticated, a user of org 09915187      denied 42501  (was ALLOWED)
+--     service_role                               ALLOWED
+--   Row count, content hash and probe-row count identical before and after,
+--   so nothing persisted.
+--
+--   Resulting state: exactly ONE policy on the table, "Users can view price
+--   history cache" (SELECT), RLS still enabled, public-schema policy count
+--   917 -> 916. No UPDATE or DELETE policy exists, so no browser-reachable
+--   path can revise or remove a stored close either.
 -- ============================================================================
 
 DROP POLICY IF EXISTS "Users can insert price history" ON public.price_history_cache;
