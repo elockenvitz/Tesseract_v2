@@ -275,10 +275,13 @@ BEGIN
 
     SELECT id, organization_id INTO v_new_sec, v_sec_org
       FROM theme_research_sections WHERE name = 'STLC dual ' || v_suffix;
+    -- `occurred_at`, not `created_at`: `audit_events` has no `created_at`
+    -- column and the first run of this file failed 42703 here. The failure
+    -- was mine, not the function's.
     SELECT org_id INTO v_aud_org FROM audit_events
      WHERE actor_id = v_dual AND action_category = 'research_layout'
        AND metadata->>'theme_id' = v_theme_b::text
-     ORDER BY created_at DESC LIMIT 1;
+     ORDER BY occurred_at DESC LIMIT 1;
 
     INSERT INTO stlc_results VALUES (6,
       'the organization comes from the theme, not from the caller''s memberships',
@@ -478,7 +481,9 @@ BEGIN
   IF coalesce(current_setting('stlc.persist', true), 'off') = 'on' THEN
     RAISE NOTICE '%', v_report;
   ELSE
-    RAISE EXCEPTION 'ROLLBACK-BY-DESIGN :: %s', v_report
+    -- `%`, not `%s`: plpgsql RAISE has no printf conversions, so `%s` emits
+    -- the report followed by a stray "s".
+    RAISE EXCEPTION 'ROLLBACK-BY-DESIGN :: %', v_report
       USING DETAIL = v_report;
   END IF;
 END $$;
