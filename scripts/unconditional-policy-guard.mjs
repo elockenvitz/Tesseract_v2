@@ -294,17 +294,21 @@ export const KNOWN_UNRESOLVED = new Set([
  * only be removed.
  */
 export const KNOWN_UNRESOLVED_BROAD_CLASS = new Set([
-  // "Users can manage earnings dates" ALL TO public USING (auth.uid() IS NOT
-  // NULL). The READ is intentional and allowlisted — earnings dates are
-  // published by the issuer. The WRITE is not: any authenticated user in any
-  // org can insert, rewrite or delete the earnings calendar every tenant reads.
-  'asset_earnings_dates',
-
-  // "Users can view/manage portfolio universe assets|filters" — SELECT and ALL,
-  // both TO public, both USING (auth.uid() IS NOT NULL). A portfolio's universe
-  // and its screening filters are tenant research, readable AND writable by
-  // every authenticated caller in every organization. The sharpest of the four.
-  'portfolio_universe_assets', 'portfolio_universe_filters',
+  // EMPTY as of 2026-11-09. All three seeded entries were remediated and
+  // deployed to production the same day, in PR #278 (main 32de2099):
+  //
+  //   asset_earnings_dates         20261109190003 — the ALL policy dropped, so
+  //                                 writes are denied by the absence of any
+  //                                 INSERT/UPDATE/DELETE policy; SELECT kept.
+  //   portfolio_universe_assets    20261109190000 — four per-verb policies TO
+  //   portfolio_universe_filters                    authenticated, each
+  //                                                 portfolio_in_current_org().
+  //
+  // Verified against production after deployment, not inferred: the
+  // portfolio-universe suite reports 12/12 and the earnings suite 5/5, both
+  // having failed 7/12 and 2/5 against the pre-fix policies.
+  //
+  // Removal only. Nothing may be added back to this set.
 ])
 
 /**
@@ -361,18 +365,37 @@ export const OPEN_BRANCH_ALLOWLIST = {
  * Same rule: removal only. Each entry names what the branch admits.
  */
 export const KNOWN_UNRESOLVED_OPEN_BRANCH = new Set([
-  // `collab_view_own` SELECT TO public — `(user_id IS NULL AND team_id IS NULL)`.
-  // Byte-for-byte the `layout_collaborations` defect fixed in PR #276, on the
-  // sibling table: an org-wide template share is recorded as both columns NULL,
-  // and anon holds SELECT, so it is readable with no account. Measured
-  // 2026-11-09: 0 rows currently match, so nothing is exposed TODAY — the first
-  // org-wide template share arms it. Queued as the next stage.
-  'template_collaborations',
+  // REMOVED 2026-11-09: `template_collaborations` / `collab_view_own`. The
+  // `(user_id IS NULL AND team_id IS NULL)` branch now ANDs
+  // text_template_in_current_org(template_id), a SECURITY DEFINER helper, and
+  // the policy is TO authenticated. Migration 20261109190001, PR #278, main
+  // 32de2099. Verified against production after deployment: the collaboration
+  // suite reports 11/11, having failed 5/11 against the pre-fix policies.
+  //
+  // The definer helper is load-bearing, not stylistic. An inline EXISTS against
+  // text_templates was written first and FAILED the preserve-sharing
+  // assertions: a policy subquery is filtered by the CALLER's RLS on the table
+  // it reads, and text_templates only exposes a parent to a non-owner when
+  // is_shared = true, which shareWithOrganization() does not set. See the
+  // migration header.
 
   // "Users can view workflow stakeholders" SELECT TO public — the first branch
-  // is `workflows.is_public = true`, a deliberate public-workflow feature, but
-  // anon holds SELECT: measured 2026-11-09, 7 stakeholder rows in 1 org are
-  // readable with no account. The feature is intended; the anon reach is not.
+  // is `EXISTS (select 1 from workflows where id = ... and is_public = true)`,
+  // a deliberate public-workflow feature.
+  //
+  // CORRECTION, measured 2026-11-09 against production: anon reads ZERO
+  // stakeholder rows, and so does a foreign-org member. An earlier note here
+  // claimed 7 rows in 1 org were anon-readable; that was a reading of the
+  // predicate, not a measurement, and it was wrong.
+  //
+  // The branch is textually caller-free but it EXISTS-joins `workflows`, which
+  // has its own RLS, and a policy subquery is evaluated under the CALLER's RLS.
+  // So the branch inherits workflows' boundary and admits nothing anon can
+  // reach. This is the static-analysis limit the guard cannot see textually:
+  // a caller-free branch referencing ONLY its own table is a real hole, while
+  // one that joins another RLS-protected table is not. Kept in the ratchet
+  // because the predicate shape is still a latent hole the moment workflows'
+  // own policy widens, but it is NOT live exposure today.
   'workflow_stakeholders',
 
   // `(is_system = true)` / `(organization_id IS NULL)`, both TO public with an
