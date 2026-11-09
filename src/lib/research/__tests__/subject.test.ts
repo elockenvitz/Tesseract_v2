@@ -24,6 +24,9 @@ import {
   subjectQueryKey,
   type ResearchSubjectDescriptor,
 } from '../subject'
+/* The curated asset set, so the asset half of the system-default block can
+   be checked against the list itself rather than against a copy of it. */
+import { SYSTEM_DEFAULT_FIELD_SLUGS } from '../layout-resolver'
 
 const srcRoot = resolve(__dirname, '../../..')
 
@@ -290,5 +293,75 @@ describe('lookup by kind', () => {
     for (const [kind, d] of Object.entries(RESEARCH_SUBJECTS)) {
       expect(d.kind, `${kind} is filed under the wrong key`).toBe(kind)
     }
+  })
+})
+
+/*
+ * What is on the page when nothing says otherwise, per subject.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * `resolveLayout` read one shared constant for this: eight curated slugs in
+ * `SYSTEM_DEFAULT_FIELD_SLUGS`. A curated slug list is ASSET vocabulary.
+ * The theme catalogue slugs its risks field `risks`; the asset list spells
+ * the same idea `risks_to_thesis`. So every theme page resolved
+ * "Risks to Thesis" as INVISIBLE -- measured live, two of three fields
+ * rendered -- while the field stayed in `theme_research_fields` and stayed
+ * offered by the customizer. Nothing threw and nothing logged.
+ *
+ * These assertions are behavioural: they call the predicates rather than
+ * reading source, because the defect was a wrong ANSWER, not a missing
+ * call. Each was confirmed to fail with its fix reverted.
+ */
+describe('the system default is the subject’s answer, not one shared list', () => {
+  const asset = ASSET_RESEARCH_SUBJECT.isInSystemDefault
+  const theme = THEME_RESEARCH_SUBJECT.isInSystemDefault
+
+  it('keeps the asset answer exactly as the curated list had it', () => {
+    for (const slug of SYSTEM_DEFAULT_FIELD_SLUGS) {
+      expect(asset({ slug }), `${slug} is on the asset default`).toBe(true)
+    }
+    // And nothing else is, which is the half that makes it curated.
+    expect(asset({ slug: 'scorecard' })).toBe(false)
+    expect(asset({ slug: 'risks' })).toBe(false)
+  })
+
+  it('does not consult is_system on an asset, where the list is the rule', () => {
+    /* An asset catalogue holds system fields that are deliberately OFF the
+       default page, so answering by `is_system` there would put them back. */
+    expect(asset({ slug: 'scorecard', is_system: true })).toBe(false)
+  })
+
+  it('puts a theme’s risks field on the page, which is the bug', () => {
+    /* The three seeded theme fields, by their real slugs. `risks` is the
+       one the asset list cannot name. */
+    expect(theme({ slug: 'thesis', is_system: true })).toBe(true)
+    expect(theme({ slug: 'where_different', is_system: true })).toBe(true)
+    expect(theme({ slug: 'risks', is_system: true })).toBe(true)
+  })
+
+  it('answers a theme by is_system rather than by a slug list', () => {
+    /*
+     * The anti-regression. A theme slug list would pass the test above and
+     * still be the same trap: the next theme system field would be added to
+     * the catalogue, render nowhere, and appear in the customizer. So a
+     * slug this test has never heard of must be on the default when it is a
+     * system field, and off it when it is not.
+     */
+    expect(theme({ slug: 'a-slug-nobody-has-authored-yet', is_system: true })).toBe(true)
+    expect(theme({ slug: 'thesis', is_system: false })).toBe(false)
+    /* Absent, not false: a field row that did not select the column must
+       not be treated as a system field. */
+    expect(theme({ slug: 'thesis' })).toBe(false)
+  })
+
+  it('is what the resolver is actually handed, not merely available', () => {
+    /* The predicate existing on the descriptor is worth nothing if the
+       query layer keeps reading the constant. Checked at the source. */
+    const HOOK = readFileSync(
+      join(process.cwd(), 'src/hooks/useUserAssetPagePreferences.ts'), 'utf8',
+    ).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    expect(HOOK).toContain('isInSystemDefault: S.isInSystemDefault')
+    expect(HOOK).not.toContain('SYSTEM_DEFAULT_FIELD_SLUGS')
   })
 })

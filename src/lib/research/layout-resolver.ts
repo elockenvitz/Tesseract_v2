@@ -554,6 +554,22 @@ export interface ResolveLayoutInput {
   userDefaultLayout: LayoutTemplate | null
   /** The asset-specific layout selection (if any, for a specific asset) */
   assetSelection: AssetLayoutSelection | null
+  /**
+   * Whether a field is on the page when nothing else decides.
+   *
+   * Passed in rather than read from `SYSTEM_DEFAULT_FIELD_SLUGS`, because
+   * that set is ASSET vocabulary: the theme catalogue slugs its risks field
+   * `risks` where the asset list spells it `risks_to_thesis`, so a theme
+   * resolved against the shared set lost a field silently. The subject
+   * descriptor owns the answer; see `isInSystemDefault` in `subject.ts`.
+   *
+   * Optional, defaulting to the curated asset set, so every existing caller
+   * and test keeps the behaviour it was written against.
+   */
+  isInSystemDefault?: (field: {
+    readonly slug: string
+    readonly is_system?: boolean | null
+  }) => boolean
 }
 
 /**
@@ -563,6 +579,10 @@ export interface ResolveLayoutInput {
  */
 export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult {
   const { availableFields, allSections, userDefaultLayout, assetSelection } = input
+  /* The asset set is the default so this function keeps answering exactly
+     as it did for every caller that does not name a subject. */
+  const inSystemDefault =
+    input.isInSystemDefault ?? (f => SYSTEM_DEFAULT_FIELD_SLUGS.has(f.slug))
 
   // --- Step 1: Determine the active template ---
   let activeTemplate: LayoutTemplate | null = null
@@ -706,7 +726,7 @@ export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult
       isVisible = false
       source = 'template-not-listed'
     } else {
-      isVisible = SYSTEM_DEFAULT_FIELD_SLUGS.has(field.slug)
+      isVisible = inSystemDefault(field)
       source = 'system-default'
     }
 

@@ -83,7 +83,10 @@ import {
 } from '../../hooks/useUserAssetPagePreferences'
 import { useResearchFields } from '../../hooks/useResearchFields'
 import { assetSubject, type ResearchSubject } from '../../lib/research/subject'
-import { fieldConfigMatchesField, SYSTEM_DEFAULT_FIELD_SLUGS, FULL_SPAN, asSpan, spanFromWidth, type FieldWidth } from '../../lib/research/layout-resolver'
+/* `SYSTEM_DEFAULT_FIELD_SLUGS` is no longer imported here: the Default
+   template's membership is the subject's answer, via `isOnDefaultTemplate`
+   below, not a curated asset slug list. */
+import { fieldConfigMatchesField, FULL_SPAN, asSpan, spanFromWidth, type FieldWidth } from '../../lib/research/layout-resolver'
 import { spanLabel } from '../../lib/research/field-span'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -662,10 +665,30 @@ export function AssetPageFieldCustomizer({
   const hasFieldOverrides = assetFieldOverrides.length > 0
 
   // Get template field IDs for comparison - uses DRAFT layout for preview
+  /**
+   * Is this field on the Default template?
+   *
+   * The subject's answer, not the curated asset slug list this file read at
+   * five sites. That list is asset vocabulary: the theme catalogue slugs
+   * its risks field `risks` where the asset list spells it
+   * `risks_to_thesis`, so a theme asked "is this on the default?" was told
+   * no about a field that is the whole point of the default. The mismatch
+   * was invisible -- the field stayed in the catalogue and stayed offered
+   * here, it just never rendered.
+   */
+  const isOnDefaultTemplate = useCallback(
+    (field: { field_slug: string; is_system?: boolean | null }) =>
+      activeSubject.descriptor.isInSystemDefault({
+        slug: field.field_slug,
+        is_system: field.is_system,
+      }),
+    [activeSubject],
+  )
+
   const templateFieldIds = useMemo(() => {
     if (isDraftUsingDefault) {
       // Default template = universal fields
-      return new Set(fieldsWithPreferences.filter(f => SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug)).map(f => f.field_id))
+      return new Set(fieldsWithPreferences.filter(f => isOnDefaultTemplate(f)).map(f => f.field_id))
     }
     if (draftActiveLayout?.field_config && draftActiveLayout.field_config.length > 0) {
       return new Set(draftActiveLayout.field_config.map(fc => fc.field_id))
@@ -781,7 +804,7 @@ export function AssetPageFieldCustomizer({
         return draftOverride.is_visible
       }
       if (isDraftUsingDefault) {
-        return SYSTEM_DEFAULT_FIELD_SLUGS.has(field.field_slug)
+        return isOnDefaultTemplate(field)
       }
       if (layoutConfig) {
         return layoutConfig.is_visible
@@ -869,7 +892,7 @@ export function AssetPageFieldCustomizer({
         section.fields.forEach(field => {
           // For default template, only include universal fields (unless overridden)
           const draftOverride = draftFieldOverrides.get(field.field_id)
-          const isInTemplate = SYSTEM_DEFAULT_FIELD_SLUGS.has(field.field_slug)
+          const isInTemplate = isOnDefaultTemplate(field)
           const isAddedViaOverride = draftOverride?.is_visible === true && !isInTemplate
 
           if (!isInTemplate && !isAddedViaOverride) return
@@ -984,7 +1007,7 @@ export function AssetPageFieldCustomizer({
         // Calculate template default visibility based on DRAFT selection
         let templateDefaultVisibility: boolean
         if (isDraftUsingDefault) {
-          templateDefaultVisibility = SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug)
+          templateDefaultVisibility = isOnDefaultTemplate(f)
         } else if (draftActiveLayout?.field_config) {
           const layoutConfig = draftActiveLayout.field_config.find(fc => fc.field_id === f.field_id)
           templateDefaultVisibility = layoutConfig?.is_visible ?? false
@@ -1046,7 +1069,7 @@ export function AssetPageFieldCustomizer({
     const map = new Map<string, boolean>()
     fieldsWithPreferences.forEach(f => {
       if (isDraftUsingDefault) {
-        map.set(f.field_id, SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug))
+        map.set(f.field_id, isOnDefaultTemplate(f))
       } else if (draftActiveLayout?.field_config) {
         const fc = draftActiveLayout.field_config.find(c => c.field_id === f.field_id)
         map.set(f.field_id, fc?.is_visible ?? false)

@@ -36,6 +36,8 @@
  * for a subject starts with its prefix.
  */
 
+import { SYSTEM_DEFAULT_FIELD_SLUGS } from './layout-resolver'
+
 export type ResearchSubjectKind = 'asset' | 'theme'
 
 /**
@@ -151,6 +153,38 @@ export interface ResearchSubjectDescriptor {
    * from the theme table violates NOT NULL.
    */
   readonly layoutsAreOrgScoped: boolean
+  /**
+   * Whether a field is on the page when NO template and no override apply.
+   *
+   * ── Why this is a predicate, and why it is per subject ────────────────
+   *
+   * The resolver used one shared constant, `SYSTEM_DEFAULT_FIELD_SLUGS` --
+   * eight curated asset slugs. A curated slug list is ASSET vocabulary, not
+   * a universal fact, and pointing a theme at it hid a real field: the
+   * theme catalogue slugs its risks field `risks` and the asset list spells
+   * it `risks_to_thesis`, so "Risks to Thesis" resolved invisible on every
+   * theme page, silently, with the field still in the catalogue and still
+   * offered by the customizer.
+   *
+   * A predicate rather than a second Set because the two subjects do not
+   * answer this the same WAY, not merely with different values:
+   *
+   *   - an asset's catalogue holds many fields that are deliberately off
+   *     the default page (scorecards, sliders, spreadsheets), so the
+   *     default has to be a curated list and a new field must be added to
+   *     it explicitly
+   *   - a theme's catalogue holds only its system fields plus whatever an
+   *     organisation authored, so "the system fields" IS the default, and
+   *     a hardcoded list there is a maintenance trap that fails exactly
+   *     the way the one above did
+   *
+   * Taking `is_system` off the field rather than closing over a list is
+   * what makes the theme answer self-maintaining.
+   */
+  readonly isInSystemDefault: (field: {
+    readonly slug: string
+    readonly is_system?: boolean | null
+  }) => boolean
 }
 
 /**
@@ -184,6 +218,9 @@ export const ASSET_RESEARCH_SUBJECT: ResearchSubjectDescriptor = {
       'layout:user_asset_page_layouts!layout_collaborations_layout_id_fkey(*)',
   },
   layoutsAreOrgScoped: false,
+  /* The curated eight. Unchanged behaviour: this is the same set the
+     resolver read directly before it became per-subject. */
+  isInSystemDefault: field => SYSTEM_DEFAULT_FIELD_SLUGS.has(field.slug),
 }
 
 /**
@@ -220,6 +257,18 @@ export const THEME_RESEARCH_SUBJECT: ResearchSubjectDescriptor = {
       'layout:user_theme_page_layouts!theme_layout_collaborations_layout_id_fkey(*)',
   },
   layoutsAreOrgScoped: true,
+  /*
+   * Every system field, which for a theme is the whole seeded document:
+   * `thesis`, `where_different` and `risks`. Verified against the live
+   * catalogue -- all three carry `is_system = true` and `is_universal =
+   * true`, and nothing else in `theme_research_fields` is a system field.
+   *
+   * Deliberately NOT a slug list. A list here would have to be edited
+   * every time a theme system field is added, and the omission would show
+   * up as a field that renders nowhere while still appearing in the
+   * customizer -- which is precisely the bug this replaced.
+   */
+  isInSystemDefault: field => field.is_system === true,
 }
 
 export const RESEARCH_SUBJECTS: Record<ResearchSubjectKind, ResearchSubjectDescriptor> = {

@@ -48,7 +48,9 @@ import {
   sectionOverrideSaysSomething,
   reorderedSectionOverrides,
   catalogFieldOrder,
-  SYSTEM_DEFAULT_FIELD_SLUGS,
+  /* `SYSTEM_DEFAULT_FIELD_SLUGS` is gone from here: default-template
+     membership is `S.isInSystemDefault`, which the asset descriptor
+     answers with that same set and the theme descriptor does not. */
   type ResolveLayoutInput,
   type LayoutResolutionResult,
   type FieldWidth,
@@ -557,6 +559,12 @@ export function useResearchPagePreferences(subject: ResearchSubject) {
   const resolverInput: ResolveLayoutInput | null =
     availableFields && allSections
       ? {
+          /* The subject decides what is on the page by default. Without
+             this the resolver falls back to the curated ASSET slugs, and a
+             theme loses every field whose slug the asset list spells
+             differently -- which hid "Risks to Thesis" (`risks` against
+             `risks_to_thesis`) on every theme page. */
+          isInSystemDefault: S.isInSystemDefault,
           availableFields: (availableFields || []).map(field => ({
             id: field.id,
             name: field.name,
@@ -956,7 +964,14 @@ export function useResearchPagePreferences(subject: ResearchSubject) {
       } else if (isUsingCustomTemplate) {
         templateDefaultVisibility = false // Not in custom template = hidden
       } else {
-        templateDefaultVisibility = SYSTEM_DEFAULT_FIELD_SLUGS.has(field.field_slug)
+        /* Same per-subject answer the resolver uses. Reading the asset set
+           here would make this disagree with the page it is comparing
+           against, and the comparison decides whether an override is
+           WRITTEN or dropped as a no-op. */
+        templateDefaultVisibility = S.isInSystemDefault({
+          slug: field.field_slug,
+          is_system: field.is_system,
+        })
       }
 
       // Check if the new visibility matches the template default
