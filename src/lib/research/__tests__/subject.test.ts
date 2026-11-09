@@ -12,7 +12,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join, resolve, relative, sep } from 'node:path'
 
 import {
   ASSET_RESEARCH_SUBJECT,
@@ -363,5 +363,111 @@ describe('the system default is the subject’s answer, not one shared list', ()
     ).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
     expect(HOOK).toContain('isInSystemDefault: S.isInSystemDefault')
     expect(HOOK).not.toContain('SYSTEM_DEFAULT_FIELD_SLUGS')
+  })
+})
+
+/*
+ * The ratchet on the defect class, not on the one instance of it.
+ *
+ * Fixing `resolveLayout` fixed the field that was hidden. It did not stop
+ * the NEXT subject-generic module from importing the same asset-shaped
+ * constant and failing the same silent way -- and silent is the whole
+ * problem: a curated slug list applied to the other subject's vocabulary
+ * neither throws nor logs, it just answers wrong.
+ *
+ * So the importers are an allowlist. Three modules may read it:
+ *
+ *   layout-resolver.ts   declares it, and uses it only as the DEFAULT when
+ *                        a caller supplies no predicate
+ *   subject.ts           hands it to the asset descriptor, which is the one
+ *                        subject whose answer it is
+ *   default-layout.ts    builds the asset Default TEMPLATE. Asset-only by
+ *                        construction: both its importers
+ *                        (`ResearchFieldsManager`, the mobile layout
+ *                        editor) take no `ResearchSubject` and query
+ *                        `research_fields` directly.
+ *
+ * A fourth importer is either a subject-generic site -- the bug again -- or
+ * a new asset-only surface, in which case add it here WITH the reason it is
+ * asset-only. Reading this constant from a module that also serves themes
+ * is the defect, and the allowlist is the only place that distinction is
+ * written down.
+ */
+describe('the curated asset slug list stays inside asset vocabulary', () => {
+  const ALLOWED = new Set([
+    'src/lib/research/layout-resolver.ts',
+    'src/lib/research/subject.ts',
+    'src/lib/research/default-layout.ts',
+    /*
+     * The Default-template editor. Asset-only the same way: it takes no
+     * `ResearchSubject` and selects `research_fields` directly, and it
+     * reads the list to mark which catalogue rows the Default template
+     * ships with.
+     */
+    'src/components/templates/ResearchFieldsManager.tsx',
+  ])
+
+  /* Tests may reference it freely: asserting on a constant is not applying
+     it to a subject. */
+  const isTest = (p: string) =>
+    p.includes('__tests__') || /\.(test|spec)\.tsx?$/.test(p)
+
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap(e => {
+      const full = join(dir, e.name)
+      if (e.isDirectory()) return walk(full)
+      return /\.tsx?$/.test(e.name) ? [full] : []
+    })
+
+  it('is imported only by the modules that are allowed to apply it', () => {
+    const offenders = walk(join(process.cwd(), 'src'))
+      .map(full => ({
+        rel: relative(process.cwd(), full).split(sep).join('/'),
+        /*
+         * Comments stripped FIRST. The note recording that this import was
+         * removed sits inside the import's own braces in
+         * `useUserAssetPagePreferences.ts`, so brace-scoping alone still
+         * read the record of the fix as the defect.
+         */
+        src: readFileSync(full, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/^\s*\/\/.*$/gm, ''),
+      }))
+      .filter(f => !isTest(f.rel))
+      /*
+       * The import, not a mention: the comments left where it USED to be
+       * read are the record of this fix and must not fail it.
+       *
+       * Scoped to ONE import statement's braces, which cannot contain `}`.
+       * A looser `import[\s\S]*?SYSTEM_DEFAULT...[\s\S]*?from` spans the
+       * whole file -- it matched `useUserAssetPagePreferences.ts`, whose
+       * only mention is the comment recording that the import is gone.
+       */
+      .filter(f => /import\s*\{[^}]*\bSYSTEM_DEFAULT_FIELD_SLUGS\b[^}]*\}\s*from/.test(f.src))
+      .map(f => f.rel)
+      .filter(rel => !ALLOWED.has(rel))
+
+    expect(
+      offenders,
+      'a new module imports the curated ASSET slug list. If it serves both '
+        + 'subjects, use ResearchSubjectDescriptor.isInSystemDefault instead: '
+        + 'the theme catalogue slugs its risks field `risks`, so the list '
+        + 'silently hides it. If the module is asset-only, add it to ALLOWED '
+        + 'with the reason.',
+    ).toEqual([])
+  })
+
+  it('is not what the shared resolver reaches for on its own', () => {
+    /* The default exists so an asset caller need not pass a predicate. It
+       must stay a DEFAULT: a resolver that ignores the input is the bug
+       with the seam built and unused. */
+    const RESOLVER = readFileSync(
+      join(process.cwd(), 'src/lib/research/layout-resolver.ts'), 'utf8',
+    ).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    expect(RESOLVER).toMatch(
+      /input\.isInSystemDefault \?\? \(f => SYSTEM_DEFAULT_FIELD_SLUGS\.has\(f\.slug\)\)/,
+    )
+    /* And exactly once, so no other branch of the resolver consults it. */
+    expect(RESOLVER.match(/SYSTEM_DEFAULT_FIELD_SLUGS\.has/g)).toHaveLength(1)
   })
 })
