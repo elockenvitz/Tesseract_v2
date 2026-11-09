@@ -552,7 +552,11 @@ describe('the Research bar matches the Asset page\'s', () => {
        Asserted in BOTH directions, as everything else in this block is, so
        renaming either page alone fails here rather than quietly producing two
        vocabularies again. */
-    for (const label of ['Investment Case', 'History', 'Key references']) {
+    /* The third was "Key references" and is now "Artifacts". That rename is
+       exactly what this both-directions assertion is for: the asset page and
+       the theme page were renamed in the same change, and had only one been,
+       this fails rather than letting the two vocabularies split again. */
+    for (const label of ['Investment Case', 'History', 'Artifacts']) {
       expect(researchCode, `the theme bar no longer says: ${label}`).toContain(`'${label}'`)
       expect(assetTab, `AssetTab no longer says: ${label}`).toContain(label)
     }

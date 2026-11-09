@@ -122,7 +122,10 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   estimates: 'Estimates',
   timeline: 'Timeline',
   metric: 'Metric',
-  key_references: 'Key References',
+  /* The field TYPE behind the Artifacts surface. The `key_references` key
+     is the database's own enum value and is not renamed; only the label
+     the reader sees is. */
+  key_references: 'Artifacts',
   scorecard: 'Scorecard',
   slider: 'Slider / Gauge',
   spreadsheet: 'Spreadsheet',

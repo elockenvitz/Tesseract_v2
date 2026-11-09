@@ -566,7 +566,7 @@ export function ThemeResearchTab({
                 options={[
                   { value: 'thesis',  label: 'Investment Case' },
                   { value: 'changes', label: 'History' },
-                  { value: 'notes',   label: 'Key references', count: referenceCount },
+                  { value: 'notes',   label: 'Artifacts', count: referenceCount },
                 ]}
               />
             ) : (
@@ -586,7 +586,7 @@ export function ThemeResearchTab({
 
                         Investment Case   the case itself
                         History           what changed in it, and when
-                        Key references    the material it rests on
+                        Artifacts         the material it rests on
 
                       The persisted keys stay `thesis`/`changes`/`notes`,
                       because they are written into saved tab state
@@ -601,7 +601,7 @@ export function ThemeResearchTab({
                   {([
                     { mode: 'thesis',  label: 'Investment Case', Icon: Layers },
                     { mode: 'changes', label: 'History',         Icon: HistoryIcon },
-                    { mode: 'notes',   label: 'Key references',  Icon: Link2 },
+                    { mode: 'notes',   label: 'Artifacts',       Icon: Link2 },
                   ] as const).map(({ mode, label, Icon }) => (
                     <button
                       key={mode}

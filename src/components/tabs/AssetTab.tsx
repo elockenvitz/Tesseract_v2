@@ -4289,10 +4289,14 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                       ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                   )}
-                  title="Key references"
+                  /* "Key references" until this surface was renamed
+                     Artifacts. Its own contents already said artifacts
+                     ("Key Artifacts", "No matching artifacts"), so the tab
+                     was the last thing calling it something else. */
+                  title="Artifacts"
                 >
                   <Link2 className="w-4 h-4" />
-                  <span className="hidden xl:inline">Key references</span>
+                  <span className="hidden xl:inline">Artifacts</span>
                   {userKeyReferences.length > 0 && (
                     <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
                       {userKeyReferences.length}
@@ -4811,8 +4815,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   <Card key={section.section_id} padding="none" className={sectionShade}>
                     {arrangeSectionHeader(section, sectionIdx)}
                     <p className="px-5 py-3 text-xs text-gray-500 dark:text-gray-400">
-                      Shown under <span className="font-medium">Key references</span>. Its
-                      position, name and visibility are arranged here; the references
+                      Shown under <span className="font-medium">Artifacts</span>. Its
+                      position, name and visibility are arranged here; the artifacts
                       themselves are added there.
                     </p>
                   </Card>

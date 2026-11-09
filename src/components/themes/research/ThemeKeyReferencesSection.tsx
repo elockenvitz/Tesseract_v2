@@ -61,7 +61,10 @@ export function ThemeKeyReferencesSection({ themeId }: ThemeKeyReferencesSection
           <div className="p-1.5 rounded-lg bg-blue-50">
             <Library className="w-4 h-4 text-blue-600" />
           </div>
-          <h3 className="text-base font-semibold text-gray-900 dark:text-white">Key References</h3>
+          {/* "Key References" until the surface was renamed Artifacts on
+              both the asset and theme pages. The hook, the table and the
+              `reference_type` column keep their names. */}
+          <h3 className="text-base font-semibold text-gray-900 dark:text-white">Artifacts</h3>
           {references.length > 0 && (
             <span className="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-200 text-gray-700 dark:text-gray-300">
               {references.length}
@@ -70,7 +73,7 @@ export function ThemeKeyReferencesSection({ themeId }: ThemeKeyReferencesSection
         </div>
         <Button size="sm" onClick={() => setShowAdd(s => !s)}>
           <Plus className="w-3.5 h-3.5 mr-1" />
-          Add reference
+          Add artifact
         </Button>
       </div>
 
@@ -111,7 +114,7 @@ export function ThemeKeyReferencesSection({ themeId }: ThemeKeyReferencesSection
               </Button>
             </div>
           </div>
-          <p className="text-[11px] text-gray-500 dark:text-gray-400">Tip: for now, add any URL as a reference (research notes, filings, reports). Note & file attachment coming later.</p>
+          <p className="text-[11px] text-gray-500 dark:text-gray-400">Tip: for now, add any URL as an artifact (research notes, filings, reports). Note & file attachment coming later.</p>
         </div>
       )}
 
@@ -121,7 +124,7 @@ export function ThemeKeyReferencesSection({ themeId }: ThemeKeyReferencesSection
       ) : references.length === 0 ? (
         <div className="p-8 text-center">
           <Library className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-          <p className="text-sm text-gray-500 dark:text-gray-400">No references yet.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">No artifacts yet.</p>
           <p className="text-xs text-gray-400 mt-1">Pin URLs, research notes, and docs that back up this theme.</p>
         </div>
       ) : (

@@ -98,8 +98,12 @@ describe('Research presentation: original per-section cards restored', () => {
    * subject here is still "every read mode carries a visible label" and the
    * count is now three.
    */
-  it('preserves the Research read-modes (Investment Case / History / Key references)', () => {
-    for (const label of ['Investment Case', 'History', 'Key references']) {
+  /* "Key references" is now "Artifacts". Renamed in the label only: the
+     persisted mode key is still `'references'`, which the union assertion
+     at the foot of this test pins, because a stored value renamed to tidy a
+     label strands every reader who left the page on it. */
+  it('preserves the Research read-modes (Investment Case / History / Artifacts)', () => {
+    for (const label of ['Investment Case', 'History', 'Artifacts']) {
       expect(ASSET_TAB).toContain(`>${label}</span>`)
     }
     /* Gone as a mode: no button, no branch, and no member in the union a

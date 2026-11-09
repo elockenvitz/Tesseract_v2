@@ -34,7 +34,9 @@ describe('UX1c-1: the three Research modes are clearly labelled', () => {
     // are WHOSE), so it moved into the Firm branch beside the aggregated
     // valuation it never had. ux2-phase2 pins where it landed and its order
     // among the computed and written blocks.
-    for (const label of ['Investment Case', 'History', 'Key references']) {
+    // "Key references" became "Artifacts", matching what that surface's own
+    // contents already said ("Key Artifacts", "No matching artifacts").
+    for (const label of ['Investment Case', 'History', 'Artifacts']) {
       expect(ASSET_TAB, `visible label "${label}" should be rendered`).toContain(`>${label}</span>`)
     }
     expect(ASSET_TAB, 'AI summary is no longer a read mode').not.toContain('>AI summary</span>')
