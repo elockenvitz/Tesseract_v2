@@ -39,6 +39,30 @@
  * single policy that is exactly as open as the two-policy version above. So a
  * predicate is only SCOPED when EVERY top-level OR branch is scoped. One broad
  * branch decides the whole expression, because a reader only needs one.
+ *
+ * ── Why the class alone was not enough either ─────────────────────────────
+ *
+ * `layout_collaborations.layout_collab_view_own`, found 2026-11-09, was three
+ * correctly scoped branches OR-ed with a fourth that read, in full:
+ *
+ *     ((user_id IS NULL) AND (team_id IS NULL) AND (org_node_id IS NULL))
+ *
+ * Every row where those three columns are NULL — which is how an org-wide share
+ * is recorded — was returned to anyone, including `anon`. The branch is not
+ * `true`, does not prove a session, and names no tenancy helper, so it classifies
+ * as UNKNOWN; and UNKNOWN produced no finding. The predicate was *reported as
+ * unread* and the run still exited 0.
+ *
+ * What distinguishes that branch is sharper than "unparseable": it places NO
+ * condition on the caller at all, so it is satisfied by row content alone. Any
+ * caller who can reach the table gets those rows. `callerBindingProfile` below
+ * counts those branches, and a predicate that mixes caller-bound branches with
+ * caller-free ones is the signature of a boundary with an escape hatch welded on.
+ *
+ * This is deliberately not the same question as "is the predicate scoped?".
+ * `(is_system = true)` on a reference table is caller-free and entirely correct.
+ * The finding is a question to answer, which is why the guard carries an
+ * allowlist for the legitimate cases rather than this file guessing.
  */
 
 import { createHash } from 'node:crypto'
@@ -154,6 +178,111 @@ export function classifyPredicateText(expr) {
     if (branches.includes(c)) return c
   }
   return CLASS.DENY
+}
+
+// ---------------------------------------------------------------------------
+// Caller-binding analysis — per top-level OR branch
+// ---------------------------------------------------------------------------
+
+/**
+ * Expressions that reference WHO IS ASKING, derived from the session.
+ *
+ * Narrower than SCOPE_SIGNALS on purpose. `organization_id` is a scope signal
+ * because `organization_id = current_org_id()` is a tenancy test — but the bare
+ * column is not a caller reference, and `(organization_id IS NULL)` is exactly
+ * the kind of branch this analysis exists to find.
+ */
+const IDENTITY_SIGNALS = [
+  /\bauth\.(uid|jwt|role|email)\s*\(/i,
+  /\bcurrent_org_id\s*\(/i,
+  /\bcurrent_user_id\s*\(/i,
+  /\bcurrent_user_effective_node_ids\s*\(/i,
+  /\bcurrent_user\b/i,                       // the SQL keyword, not a function
+  /\brequest\.jwt\b/i,
+  /\b\w*_in_current_org\s*\(/i,              // portfolio_in_current_org(...) & friends
+]
+
+/**
+ * Helpers that take their answer from the caller's session or from the caller's
+ * own membership, enumerated from every function named in a production policy.
+ *
+ * Being on this list means only "this branch asks a question about the caller".
+ * It is NOT a statement that the helper is correctly implemented — CLAUDE.md
+ * Standing Rule 6 is explicit that a familiar auth helper is not proof of
+ * security, and `user_has_layout_access` was on this list while returning true
+ * for a NULL caller. Whether a helper is sound is a runtime test's job. This
+ * analysis answers the strictly weaker question of whether the branch asks at
+ * all, because a branch that never asks cannot be rescued by any helper.
+ *
+ * A name absent from this list makes its branch read as caller-free, which
+ * produces a finding rather than a pass. Adding a new helper here is therefore
+ * a deliberate review step, which is the same bargain SCOPE_SIGNALS makes.
+ */
+export const IDENTITY_HELPERS = new Set([
+  'can_read_asset_contribution', 'can_review_decision', 'can_view_contribution',
+  'estimate_visible_to_caller', 'get_user_created_project_ids', 'has_note_permission',
+  'is_active_member_of_current_org', 'is_active_org_admin_of_current_org',
+  'is_coverage_admin', 'is_member_of_org', 'is_org_member', 'is_platform_admin',
+  'is_portfolio_pm', 'is_simulation_admin', 'is_team_admin_for_field',
+  'rating_visible_to_caller', 'theme_layout_access', 'trade_lab_writable_by_caller',
+  'user_has_collaborate_share', 'user_has_layout_access', 'user_has_list_collaboration',
+  'user_has_live_portfolio_share', 'user_has_viewer_access', 'user_has_workflow_access',
+  'user_has_workflow_edit_access', 'user_is_active_member', 'user_is_portfolio_member',
+])
+
+/** Does this branch place any condition on the caller? */
+export function branchBindsCaller(branch) {
+  const b = String(branch ?? '')
+  if (IDENTITY_SIGNALS.some(re => re.test(b))) return true
+  for (const m of b.matchAll(/\b([a-z_][a-z0-9_]*)\s*\(/gi)) {
+    if (IDENTITY_HELPERS.has(m[1].toLowerCase())) return true
+  }
+  return false
+}
+
+/**
+ * Count a predicate's top-level OR branches, and how many of them bind no
+ * caller.
+ *
+ * `{ branches: 4, open: 1 }` is the layout defect: three branches test the
+ * caller and a fourth does not, so the three are decoration. `{ branches: 1,
+ * open: 1 }` is an ordinary caller-free predicate — a reference table, a public
+ * feed — and is left to the class system and its allowlist, because a single
+ * branch carries no contradiction to report.
+ *
+ * `false` branches are excluded: a disjunct that grants nothing is not a hatch.
+ */
+export function callerBindingProfile(expr) {
+  if (expr === null || expr === undefined) return { branches: 0, open: 0 }
+  const e = String(expr).replace(/\s+/g, ' ').trim()
+  if (e === '') return { branches: 0, open: 0 }
+
+  const branches = splitTopLevelOr(unwrap(e))
+  let open = 0
+  for (const b of branches) {
+    if (/^false$/i.test(unwrap(b))) continue
+    if (!branchBindsCaller(b)) open++
+  }
+  return { branches: branches.length, open }
+}
+
+/**
+ * Read the profile back out of an inventory, from whatever it carries.
+ *
+ * Recorded at capture time as two integers per side, so the committed inventory
+ * gains this analysis without gaining a single predicate. An inventory captured
+ * before `schema_version` 3 carries neither the counts nor the text, and is
+ * reported as unanalysed rather than clean — see `coverage` in the guard.
+ */
+export function resolveBindingProfile(policy, which) {
+  const branches = policy[`${which}_branches`]
+  const open = policy[`${which}_open`]
+  if (Number.isInteger(branches) && Number.isInteger(open)) return { branches, open }
+
+  const text = which === 'qual' ? policy.qual : policy.with_check
+  if (text !== undefined) return callerBindingProfile(text)
+
+  return null
 }
 
 // ---------------------------------------------------------------------------

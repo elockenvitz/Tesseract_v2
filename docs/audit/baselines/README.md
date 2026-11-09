@@ -98,6 +98,28 @@ proves only that someone is logged in, and nothing about which columns, tables
 or helpers it mentions. The predicate text is read in memory by
 `scripts/audit/schema-baseline.mjs` and dropped before the file is written.
 
+From `schema_version` 3 each policy also carries **two integers per side** —
+`qual_branches` / `qual_open` and `check_branches` / `check_open`: how many
+top-level `OR` branches the predicate has, and how many of those place no
+condition on the caller.
+
+Those exist because the class was not enough either.
+`layout_collaborations.layout_collab_view_own` was three correctly scoped
+branches OR-ed with `((user_id IS NULL) AND (team_id IS NULL) AND (org_node_id
+IS NULL))`, which is how an org-wide share is recorded — so every one of those
+rows was readable by `anon`, with no account. That branch is not `true`, proves
+no session and names no tenancy helper, so its class was a truthful `UNKNOWN`,
+and `UNKNOWN` produced no finding. `4 / 1` says "one of four branches asks
+nothing about who is asking" and discloses nothing more; a count cannot be read
+back into an expression.
+
+Per **role** (also from `schema_version` 3) — name, can-login, bypass-RLS, and
+whether an API caller can assume it. `tesseract_audience_writer` holds six
+unconditional write policies and is NOLOGIN with no members but `postgres`, so
+suppressing them is correct — and suppressing them by NAME would not be, since
+one `GRANT` makes all six live. The fact is captured so the suppression expires
+with it.
+
 Per **function** — name, identity arguments, owner, `SECURITY DEFINER`,
 whether `search_path` is pinned, volatility, `EXECUTE` for `anon` and
 `authenticated`, and a hash of the definition.
@@ -132,7 +154,8 @@ It carries strictly less than the full inventory:
 | | Full | CI subset |
 |---|---|---|
 | tables: name, RLS flags, `anon`/`authenticated` privileges | ✓ | ✓ |
-| policies: table, name, command, roles, permissive, unconditional, two predicate classes | ✓ | ✓ |
+| policies: table, name, command, roles, permissive, unconditional, two predicate classes, per-side branch / caller-free-branch counts | ✓ | ✓ |
+| roles: name, can-login, bypass-RLS, API-reachable | ✓ | ✓ |
 | policy predicate hashes | ✓ | — |
 | function map: name, owner, `SECURITY DEFINER`, `search_path` pinned, `anon` EXECUTE, body hash | ✓ | — |
 | trigger map | ✓ | — |
