@@ -1085,15 +1085,17 @@ describe('the arrange bar follows the subject it is handed', () => {
       .toMatch(/\[subjectProp\.descriptor\.kind, subjectProp\.id\]/)
   })
 
-  it('still carries the subject id into the two mutations named for assets', () => {
+  it('hands the subject id to a parameter that names a subject', () => {
     /*
-     * `selectLayoutForAsset` and `clearAssetOverrides` keep a parameter
-     * spelled `assetId` while being subject-aware inside — they write
-     * `S.tables.selections` keyed on `S.subjectColumn`. That mismatch is
-     * deliberate and recorded, and this pins the value handed over so a
-     * future rename cannot quietly drop back to an asset-only field.
+     * The keyed mutations spelled this `assetId` while the hook was
+     * asset-only. They write `S.tables.selections` keyed on
+     * `S.subjectColumn`, so on a theme page the value is a theme id, and a
+     * parameter naming the wrong kind of thing is how a caller comes to
+     * believe it is passing an asset. Both halves are pinned: the name and
+     * the value.
      */
-    expect(CANVAS).toMatch(/assetId: draft!\.subject\.id!/)
+    expect(CANVAS).toMatch(/subjectId: draft!\.subject\.id!/)
     expect(CANVAS).not.toMatch(/draft!\.assetId|draft\?\.assetId|draft\.assetId/)
+    expect(CANVAS).not.toMatch(/mutateAsync\(\{ assetId:/)
   })
 })

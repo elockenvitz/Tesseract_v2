@@ -574,11 +574,10 @@ export function ResearchArrangeBar({
      * sitting on an empty override that still counts as one.
      */
     if (kept.length === 0 && assetSectionOverrides.length === 0 && !activeLayout?.id) {
-      /* `clearAssetOverrides` and `selectLayoutForAsset` below still spell
-         their parameter `assetId`. They are already subject-aware inside —
-         both write `S.tables.selections` keyed on `S.subjectColumn` — so a
-         theme id is the right value to hand them under the wrong name.
-         Renaming the two mutation parameters is a separate change. */
+      /* `clearAssetOverrides` takes the id positionally; the keyed
+         mutations spell it `subjectId`. Both write
+         `S.tables.selections` keyed on `S.subjectColumn`, so on a theme
+         page this is a theme id. */
       if (draft?.subject.id) await clearAssetOverrides.mutateAsync(draft.subject.id)
       return
     }
@@ -708,7 +707,7 @@ export function ResearchArrangeBar({
                   const layoutId = e.target.value || null
                   setError(null)
                   try {
-                    await selectLayoutForAsset.mutateAsync({ assetId: draft!.subject.id!, layoutId })
+                    await selectLayoutForAsset.mutateAsync({ subjectId: draft!.subject.id!, layoutId })
                   } catch (err) {
                     setError(err instanceof Error ? err.message : 'Could not switch template.')
                   }

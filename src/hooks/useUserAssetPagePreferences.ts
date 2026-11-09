@@ -945,9 +945,17 @@ export function useResearchPagePreferences(subject: ResearchSubject) {
       .sort((a, b) => a.section_display_order - b.section_display_order)
   })()
 
-  // Toggle field visibility for a specific asset (creates asset-specific override)
+  /*
+   * Toggle field visibility for one subject (creates a per-subject override).
+   *
+   * The parameter is `subjectId`, not `assetId`: this writes
+   * `S.tables.selections` keyed on `S.subjectColumn`, so on a theme page the
+   * value is a theme id. It was `assetId` while the hook was asset-only, and
+   * a parameter naming the wrong kind of thing is how a caller comes to
+   * believe it is passing an asset.
+   */
   const toggleAssetFieldVisibility = useMutation({
-    mutationFn: async ({ assetId: targetAssetId, fieldId }: { assetId: string; fieldId: string }) => {
+    mutationFn: async ({ subjectId: targetAssetId, fieldId }: { subjectId: string; fieldId: string }) => {
       if (!user?.id) throw new Error('Not authenticated')
 
       const field = fieldsWithPreferences.find(f => f.field_id === fieldId)
@@ -1180,9 +1188,9 @@ export function useResearchPagePreferences(subject: ResearchSubject) {
     }
   })
 
-  // Select a layout for a specific asset
+  // Select a layout for one subject. `subjectId` for the reason above.
   const selectLayoutForAsset = useMutation({
-    mutationFn: async ({ assetId: targetAssetId, layoutId }: { assetId: string; layoutId: string | null }) => {
+    mutationFn: async ({ subjectId: targetAssetId, layoutId }: { subjectId: string; layoutId: string | null }) => {
       if (!user?.id) throw new Error('Not authenticated')
 
       // Get existing selection to preserve field_overrides and section_overrides
@@ -1292,13 +1300,13 @@ export function useResearchPagePreferences(subject: ResearchSubject) {
   // Update section override (rename, hide, reorder)
   const updateSectionOverride = useMutation({
     mutationFn: async ({
-      assetId: targetAssetId,
+      subjectId: targetAssetId,
       sectionId,
       nameOverride,
       isHidden,
       displayOrder
     }: {
-      assetId: string
+      subjectId: string
       sectionId: string
       nameOverride?: string | null
       isHidden?: boolean

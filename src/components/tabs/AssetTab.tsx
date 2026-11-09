@@ -1546,12 +1546,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       canMoveDown={index < sectionsForArranging.length - 1}
       busy={sectionWriteBusy}
       onRename={name => updateSectionOverride.mutate({
-        assetId: asset.id,
+        subjectId: asset.id,
         sectionId: section.section_id,
         nameOverride: name,
       })}
       onToggleHidden={hidden => updateSectionOverride.mutate({
-        assetId: asset.id,
+        subjectId: asset.id,
         sectionId: section.section_id,
         isHidden: hidden,
       })}
