@@ -1,0 +1,31 @@
+-- Rollback for 20261109190003_sec_asset_earnings_dates_write_restriction.sql
+--
+-- WARNING: running this RESTORES the ability of any authenticated user, in any
+-- organization, to insert, update and delete rows in the global earnings
+-- calendar that every tenant reads. The policies below are the verbatim
+-- production state captured before the fix applied, on 2026-11-09. They are
+-- recorded so the change is provably reversible, not because reverting is
+-- advisable.
+--
+-- If the reason for reverting is that an ingestion job started failing, this
+-- is the WRONG fix: run the job as service_role, which bypasses RLS and needs
+-- no policy. Re-granting write to every logged-in user to unblock one job
+-- reopens the hole for all 24 organizations.
+
+begin;
+
+drop policy if exists "asset_earnings_dates_select" on public.asset_earnings_dates;
+
+create policy "Users can view all earnings dates"
+  on public.asset_earnings_dates
+  for select
+  using (true);
+
+create policy "Users can manage earnings dates"
+  on public.asset_earnings_dates
+  for all
+  using ((auth.role() = 'authenticated'::text));
+
+comment on table public.asset_earnings_dates is null;
+
+commit;

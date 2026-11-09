@@ -1,0 +1,59 @@
+-- Rollback for 20261109190001_sec_template_collaborations_org_scope.sql
+--
+-- WARNING: running this RESTORES an anonymous read of every organization-wide
+-- template share. The policies below are the verbatim production state
+-- captured before the fix applied, on 2026-11-09. They are recorded so the
+-- change is provably reversible, not because reverting is advisable.
+--
+-- The anon grant revoke is deliberately NOT undone -- see the foot of this
+-- file.
+
+begin;
+
+drop policy if exists "collab_view_own" on public.template_collaborations;
+
+create policy "collab_view_own"
+  on public.template_collaborations
+  for select
+  using (
+    ((user_id = auth.uid())
+     OR (EXISTS ( SELECT 1
+        FROM team_memberships
+       WHERE ((team_memberships.team_id = template_collaborations.team_id)
+         AND (team_memberships.user_id = auth.uid()))))
+     OR ((user_id IS NULL) AND (team_id IS NULL)))
+  );
+
+drop policy if exists "collab_owner_manage" on public.template_collaborations;
+
+create policy "collab_owner_manage"
+  on public.template_collaborations
+  for all
+  using (
+    (EXISTS ( SELECT 1
+       FROM text_templates
+      WHERE ((text_templates.id = template_collaborations.template_id)
+        AND (text_templates.user_id = auth.uid()))))
+  );
+
+-- authenticated's prior grants. The forward migration reduced these to the
+-- four DML verbs; the default-privilege set also included TRUNCATE,
+-- REFERENCES, TRIGGER and MAINTAIN.
+grant all on public.template_collaborations to authenticated;
+
+-- The helper the forward migration added. Dropped last, after the policy that
+-- referenced it has been replaced above.
+drop function if exists public.text_template_in_current_org(uuid);
+
+commit;
+
+-- NOT RESTORED, on purpose:
+--
+--   grant all on public.template_collaborations to anon;
+--
+-- This was never intentional -- it is Supabase's ALTER DEFAULT PRIVILEGES
+-- grant, which lands on every table created in `public`. Nothing in the
+-- application reads a template collaboration without an account, so
+-- re-granting it would restore exposure without restoring any behaviour.
+-- Uncomment only if a specific anonymous read path is identified, and say
+-- which.
