@@ -1,8 +1,37 @@
 /**
- * useUserAssetPagePreferences Hook
+ * The research layout stack, for whatever a research page is a page OF.
  *
- * Manages user-specific preferences for asset page research field layout.
- * Allows users to show/hide fields, reorder them, and save named layouts.
+ * Manages one user's research field layout for one subject: show/hide a
+ * field, reorder it, set its width, move it between sections, and save all of
+ * that as a named template.
+ *
+ * ── Why this takes a subject ──────────────────────────────────────────────
+ *
+ * It was written against assets, spelled out in string literals:
+ * `from('user_asset_layout_selections')`, `.eq(S.subjectColumn, assetId)`,
+ * `['user-asset-layout-selection', ...]`. The Theme page needs the same
+ * stack against its own tables, and the alternative was a second copy of
+ * ~2500 lines kept in sync by hand.
+ *
+ * So the differences are named once, in `src/lib/research/subject.ts`, and
+ * passed in. Every type involved -- `SavedLayout`, `FieldConfigItem`,
+ * `FieldOverride`, `SectionOverride`, `FieldWithPreference` -- already
+ * mentions no subject, and `layout-resolver.ts` is already pure, so the only
+ * thing that differed was which rows the queries read.
+ *
+ * `useUserAssetPagePreferences(assetId)` and `useUserAssetPageLayouts()`
+ * remain, as thin wrappers passing the asset subject, so no asset call site
+ * changed.
+ *
+ * ── The query-key rule, which is load bearing ─────────────────────────────
+ *
+ * Every key goes through `subjectQueryKey`, so every key starts with its
+ * subject's prefix. An asset id and a theme id are both uuids: an unprefixed
+ * `['layout-selection', id]` would let one subject's cached row answer the
+ * other's query. The keys are built ONCE below, in `K`, because this file
+ * does 61 cache operations against 10 of them and `setQueryData` needs an
+ * exact match -- an inline key written by hand at site 54 is how an
+ * optimistic update ends up writing to a cache entry nothing reads.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -25,6 +54,11 @@ import {
   type FieldWidth,
   type FieldSpan
 } from '../lib/research/layout-resolver'
+import {
+  assetSubject,
+  subjectQueryKey,
+  type ResearchSubject,
+} from '../lib/research/subject'
 
 // Types
 export interface SavedLayout {
@@ -117,9 +151,140 @@ export interface FieldWithPreference {
 }
 
 /**
- * Hook to manage user's asset page field preferences
+ * Every React Query key this stack uses, for one subject.
+ *
+ * Built in one place for two reasons. The obvious one is that nothing can
+ * then be written without its subject prefix. The less obvious one is
+ * `setQueryData`, which matches a key EXACTLY where `invalidateQueries`
+ * matches by prefix: this file does 61 cache operations, and an inline key
+ * that differs from the query's by one element reads as an optimistic update
+ * and behaves as a write to a cache entry nothing reads.
+ *
+ * `sectionsScoped` and `sections` are deliberately two entries, not one.
+ * `sectionsScoped` is what the sections query is keyed by (it carries the
+ * org, so switching organisation refetches). `sections` is the prefix the
+ * invalidations use, which matches it. They are kept separate here rather
+ * than collapsed, because collapsing them would silently CHANGE behaviour
+ * at the three `setQueryData` sites that use the short form -- see the note
+ * on those.
+ */
+export function researchLayoutKeys(
+  subject: ResearchSubject,
+  userId: string | undefined,
+  orgId: string | null | undefined,
+) {
+  /*
+   * Two shapes, and the difference matters.
+   *
+   * `subjectQueryKey` puts the subject's ID in the key, which is right for
+   * the ONE row that is per-subject: the layout selection. Everything else
+   * here is library-level or user-level -- the section catalogue, the field
+   * catalogue, the user's templates, their default template -- and pinning a
+   * subject id onto those would give every asset its own cache entry for the
+   * same row, so opening ten assets would fetch the same template list ten
+   * times.
+   *
+   * So the library keys carry the subject's PREFIX and not its id. They are
+   * still per-subject in the sense that matters, because an asset's section
+   * catalogue and a theme's are different tables.
+   */
+  const lib = (name: string, ...rest: readonly unknown[]) =>
+    [subject.descriptor.queryKeyPrefix, name, userId, ...rest] as const
+
+  return {
+    selection: subjectQueryKey(subject, 'layout-selection', userId),
+    defaultLayout: lib('default-layout'),
+    sectionsScoped: lib('sections', orgId),
+    sections: lib('sections'),
+    fieldsVersioned: lib('fields', 'v6'),
+    fields: lib('fields'),
+    layouts: lib('layouts'),
+    usageMetrics: lib('layout-usage-metrics'),
+    collabSummaries: lib('layout-collab-summaries'),
+  } as const
+}
+
+/**
+ * The same keys, truncated to the part a prefix match needs.
+ *
+ * `invalidateQueries` matches by prefix, so a caller outside this file that
+ * only wants to say "the field catalogue changed" does not need the user id,
+ * and must not guess at it. `researchLayoutKeys` would put `undefined` in
+ * that slot, and `[p, 'fields', undefined]` is not a prefix of
+ * `[p, 'fields', 'abc']` -- it is a sibling that matches nothing.
+ *
+ * This exists because the keys used to be bare literals that outside callers
+ * wrote by hand. Those calls kept working by accident while the key names
+ * happened to agree, and stopped matching silently the moment the prefix was
+ * added. Never for `setQueryData`, which needs an exact key.
+ */
+export function researchLayoutKeyPrefixes(subject: ResearchSubject) {
+  const p = subject.descriptor.queryKeyPrefix
+  return {
+    selection: [p, 'layout-selection'],
+    defaultLayout: [p, 'default-layout'],
+    sections: [p, 'sections'],
+    fields: [p, 'fields'],
+    layouts: [p, 'layouts'],
+  } as const
+}
+
+/**
+ * The asset-shaped entry point, unchanged for every existing caller.
+ *
+ * `assetId` is still the whole signature; the subject is supplied here so no
+ * asset call site had to learn about subjects.
  */
 export function useUserAssetPagePreferences(assetId?: string) {
+  return useResearchPagePreferences(assetSubject(assetId))
+}
+
+export function useResearchPagePreferences(subject: ResearchSubject) {
+  const S = subject.descriptor
+  /*
+   * ── What the type system is and is not doing here ───────────────────────
+   *
+   * Passing `S.tables.selections` to `.from()` gives it a UNION of two table
+   * names, which supabase-js would normally resolve to the intersection of
+   * two row types, i.e. `never`. That is not what happens in this repo,
+   * because `src/types/database.ts` contains NEITHER table: these rows were
+   * already untyped before this change, and the ~40 "does not exist on type
+   * 'never'" errors this file reports are the same ~40 it reported at HEAD.
+   * So the union costs nothing here, and a cast to one literal would buy
+   * nothing either -- that was tried and reverted.
+   *
+   * It also means TypeScript is not checking the claim the two descriptors
+   * make, that these table pairs are column-compatible for everything this
+   * file touches. The claim was verified against `information_schema` when
+   * `subject.ts` was written, and `subject-table-parity.test.ts` re-checks
+   * the names. Nothing checks the COLUMNS. Treat that as the live risk in
+   * this file.
+   *
+   * TWO differences that are real and are handled:
+   *   - `user_theme_layout_selections.field_overrides` and
+   *     `section_overrides` are NOT NULL DEFAULT '[]' where the asset
+   *     columns are nullable. Nothing here writes NULL to them; the RPC
+   *     writes '[]'.
+   *   - the theme table carries
+   *     CHECK (layout_id IS NOT NULL OR field_overrides <> '[]' OR
+   *            section_overrides <> '[]')
+   *     and the asset table has no such constraint, so a direct write that
+   *     empties a theme selection raises 23514 where the asset one would
+   *     store an empty row. The RPC deletes in that case instead. The direct
+   *     writes below always set at least one override, so they do not reach
+   *     it -- but a new direct write that can empty a selection must go
+   *     through `saveCustomization`, not the table.
+   */
+  /*
+   * `assetId` keeps its name through the body of this function.
+   *
+   * It is the subject's id, whatever the subject is, and renaming it at ~90
+   * sites would have made the diff unreadable without changing a single
+   * thing about what the code does. The queries below name the column
+   * through `S.subjectColumn`, which is the part that actually differs.
+   */
+  const assetId = subject.id
+
   const { user } = useAuth()
   /*
    * The org comes from the app's current-org context, not from a membership
@@ -144,14 +309,17 @@ export function useUserAssetPagePreferences(assetId?: string) {
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
+  /* Every key this file reads or writes, built once. See the header note. */
+  const K = researchLayoutKeys(subject, user?.id, currentOrgId)
+
   // Fetch user's default layout
   const { data: defaultLayout, isLoading: layoutLoading } = useQuery({
-    queryKey: ['user-default-layout', user?.id],
+    queryKey: K.defaultLayout,
     queryFn: async () => {
       if (!user?.id) return null
 
       const { data, error } = await supabase
-        .from('user_asset_page_layouts')
+        .from(S.tables.layouts)
         .select('*')
         .eq('user_id', user.id)
         .eq('is_default', true)
@@ -165,16 +333,16 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
   // Fetch asset-specific layout selection (if any)
   const { data: assetLayoutSelection, isLoading: assetLayoutLoading } = useQuery({
-    queryKey: ['user-asset-layout-selection', user?.id, assetId],
+    queryKey: K.selection,
     queryFn: async () => {
       if (!user?.id || !assetId) return null
 
       // Use explicit foreign key reference for the join
       const { data, error } = await supabase
-        .from('user_asset_layout_selections')
-        .select('*, layout:user_asset_page_layouts!user_asset_layout_selections_layout_id_fkey(*)')
+        .from(S.tables.selections)
+        .select(`*, ${S.embeds.selectionLayout}`)
         .eq('user_id', user.id)
-        .eq('asset_id', assetId)
+        .eq(S.subjectColumn, assetId)
         .maybeSingle()
 
       if (error) {
@@ -217,12 +385,12 @@ export function useUserAssetPagePreferences(assetId?: string) {
   const { data: allSections, isLoading: sectionsLoading } = useQuery({
     // Keyed on the org, so switching organisation refetches rather than
     // showing the previous org's sections.
-    queryKey: ['all-research-sections', user?.id, currentOrgId],
+    queryKey: K.sectionsScoped,
     queryFn: async () => {
       if (!user?.id || !currentOrgId) return []
 
       const { data: sections, error } = await supabase
-        .from('research_sections')
+        .from(S.tables.sections)
         .select('id, name, slug, display_order, is_system')
         .eq('organization_id', currentOrgId)
         /*
@@ -249,13 +417,13 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
   // Fetch all available fields with their sections
   const { data: availableFields, isLoading: fieldsLoading } = useQuery({
-    queryKey: ['available-research-fields', user?.id, 'v6'], // v6 - include preset fields
+    queryKey: K.fieldsVersioned, // v6 - include preset fields
     queryFn: async () => {
       if (!user?.id) return []
 
       // Get all fields the user has access to
       const { data: fields, error } = await supabase
-        .from('research_fields')
+        .from(S.tables.fields)
         .select(`
           id,
           name,
@@ -268,7 +436,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
           display_order,
           created_by,
           created_at,
-          research_sections!inner (
+          ${S.embeds.fieldSection} (
             id,
             name,
             slug,
@@ -796,10 +964,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Get existing selection
       const { data: existing } = await supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select('*')
         .eq('user_id', user.id)
-        .eq('asset_id', targetAssetId)
+        .eq(S.subjectColumn, targetAssetId)
         .maybeSingle()
 
       if (existing) {
@@ -820,7 +988,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
         }
 
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .update({ field_overrides: newOverrides })
           .eq('id', existing.id)
 
@@ -828,10 +996,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
       } else if (!matchesTemplateDefault) {
         // Only create new selection if the visibility differs from template default
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .insert({
             user_id: user.id,
-            asset_id: targetAssetId,
+            [S.subjectColumn]: targetAssetId,
             layout_id: null, // No template override, just field overrides
             field_overrides: [{ field_id: fieldId, is_visible: newVisibility }]
           })
@@ -840,7 +1008,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      queryClient.invalidateQueries({ queryKey: K.selection })
     }
   })
 
@@ -851,10 +1019,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Get existing selection
       const { data: existing } = await supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select('*')
         .eq('user_id', user.id)
-        .eq('asset_id', assetId)
+        .eq(S.subjectColumn, assetId)
         .maybeSingle()
 
       const newOverride: FieldOverride = { field_id: fieldId, is_visible: true, section_id: sectionId }
@@ -866,17 +1034,17 @@ export function useUserAssetPagePreferences(assetId?: string) {
         const newOverrides = [...filteredOverrides, newOverride]
 
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .update({ field_overrides: newOverrides })
           .eq('id', existing.id)
 
         if (error) throw error
       } else {
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .insert({
             user_id: user.id,
-            asset_id: assetId,
+            [S.subjectColumn]: assetId,
             layout_id: null,
             field_overrides: [newOverride],
             section_overrides: []
@@ -886,11 +1054,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
       }
     },
     onMutate: async ({ fieldId, sectionId }) => {
-      await queryClient.cancelQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
-      const previousSelection = queryClient.getQueryData(['user-asset-layout-selection', user?.id, assetId])
+      await queryClient.cancelQueries({ queryKey: K.selection })
+      const previousSelection = queryClient.getQueryData(K.selection)
 
       // Optimistically add field override
-      queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], (old: any) => {
+      queryClient.setQueryData(K.selection, (old: any) => {
         const currentOverrides: FieldOverride[] = old?.field_overrides || []
         const filteredOverrides = currentOverrides.filter(o => o.field_id !== fieldId)
         return {
@@ -906,11 +1074,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousSelection) {
-        queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], context.previousSelection)
+        queryClient.setQueryData(K.selection, context.previousSelection)
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      queryClient.invalidateQueries({ queryKey: K.selection })
     }
   })
 
@@ -921,10 +1089,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Get existing selection
       const { data: existing } = await supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select('*')
         .eq('user_id', user.id)
-        .eq('asset_id', assetId)
+        .eq(S.subjectColumn, assetId)
         .maybeSingle()
 
       if (existing) {
@@ -944,17 +1112,17 @@ export function useUserAssetPagePreferences(assetId?: string) {
         }
 
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .update({ field_overrides: newOverrides })
           .eq('id', existing.id)
 
         if (error) throw error
       } else {
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .insert({
             user_id: user.id,
-            asset_id: assetId,
+            [S.subjectColumn]: assetId,
             layout_id: null,
             field_overrides: [{ field_id: fieldId, is_visible: false }],
             section_overrides: []
@@ -964,11 +1132,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
       }
     },
     onMutate: async ({ fieldId }) => {
-      await queryClient.cancelQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
-      const previousSelection = queryClient.getQueryData(['user-asset-layout-selection', user?.id, assetId])
+      await queryClient.cancelQueries({ queryKey: K.selection })
+      const previousSelection = queryClient.getQueryData(K.selection)
 
       // Optimistically hide field
-      queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], (old: any) => {
+      queryClient.setQueryData(K.selection, (old: any) => {
         const currentOverrides: FieldOverride[] = old?.field_overrides || []
         const existingIdx = currentOverrides.findIndex(o => o.field_id === fieldId)
         let newOverrides: FieldOverride[]
@@ -989,11 +1157,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousSelection) {
-        queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], context.previousSelection)
+        queryClient.setQueryData(K.selection, context.previousSelection)
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      queryClient.invalidateQueries({ queryKey: K.selection })
     }
   })
 
@@ -1004,10 +1172,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Get existing selection to preserve field_overrides and section_overrides
       const { data: existing, error: fetchError } = await supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select('*')
         .eq('user_id', user.id)
-        .eq('asset_id', targetAssetId)
+        .eq(S.subjectColumn, targetAssetId)
         .maybeSingle()
 
       if (fetchError) {
@@ -1023,7 +1191,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
         // No layout and no overrides - remove the selection entirely
         if (existing) {
           const { error } = await supabase
-            .from('user_asset_layout_selections')
+            .from(S.tables.selections)
             .delete()
             .eq('id', existing.id)
 
@@ -1034,7 +1202,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       } else if (existing) {
         // Update existing row
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .update({
             layout_id: layoutId,
             field_overrides: existingFieldOverrides,
@@ -1049,10 +1217,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
       } else {
         // Insert new row
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .insert({
             user_id: user.id,
-            asset_id: targetAssetId,
+            [S.subjectColumn]: targetAssetId,
             layout_id: layoutId,
             field_overrides: existingFieldOverrides,
             section_overrides: existingSectionOverrides
@@ -1064,7 +1232,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      queryClient.invalidateQueries({ queryKey: K.selection })
     }
   })
 
@@ -1075,10 +1243,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Get existing selection
       const { data: existing } = await supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select('*')
         .eq('user_id', user.id)
-        .eq('asset_id', targetAssetId)
+        .eq(S.subjectColumn, targetAssetId)
         .maybeSingle()
 
       if (!existing) return // Nothing to clear
@@ -1086,7 +1254,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       if (existing.layout_id) {
         // Has layout selection, just clear overrides
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .update({ field_overrides: [], section_overrides: [] })
           .eq('id', existing.id)
 
@@ -1094,7 +1262,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       } else {
         // No layout, only had overrides - delete the whole row
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .delete()
           .eq('id', existing.id)
 
@@ -1102,7 +1270,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      queryClient.invalidateQueries({ queryKey: K.selection })
     }
   })
 
@@ -1125,10 +1293,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Get existing selection
       const { data: existing } = await supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select('*')
         .eq('user_id', user.id)
-        .eq('asset_id', targetAssetId)
+        .eq(S.subjectColumn, targetAssetId)
         .maybeSingle()
 
       const currentOverrides: SectionOverride[] = existing?.section_overrides || []
@@ -1187,7 +1355,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
         }
 
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .update({ section_overrides: newOverrides })
           .eq('id', existing.id)
 
@@ -1195,10 +1363,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
       } else if (hasValues) {
         // Create new selection with the section override
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .insert({
             user_id: user.id,
-            asset_id: targetAssetId,
+            [S.subjectColumn]: targetAssetId,
             layout_id: null,
             field_overrides: [],
             section_overrides: [merged]
@@ -1208,7 +1376,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      queryClient.invalidateQueries({ queryKey: K.selection })
     }
   })
 
@@ -1226,7 +1394,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Check for existing sections with similar slugs to generate a unique one
       const { data: existingSections } = await supabase
-        .from('research_sections')
+        .from(S.tables.sections)
         .select('slug')
         .eq('organization_id', currentOrgId)
         .like('slug', `${baseSlug}%`)
@@ -1246,7 +1414,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Get max display order
       const { data: sections } = await supabase
-        .from('research_sections')
+        .from(S.tables.sections)
         .select('display_order')
         .eq('organization_id', currentOrgId)
         .order('display_order', { ascending: false })
@@ -1255,7 +1423,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       const maxOrder = sections?.[0]?.display_order ?? 0
 
       const { data: newSection, error } = await supabase
-        .from('research_sections')
+        .from(S.tables.sections)
         .insert({
           organization_id: currentOrgId,
           name,
@@ -1272,10 +1440,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
       if (assetId && addAsOverride) {
         // Get existing selection or create new one
         const { data: existing } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .select('*')
           .eq('user_id', user.id)
-          .eq('asset_id', assetId)
+          .eq(S.subjectColumn, assetId)
           .maybeSingle()
 
         const sectionOverride: SectionOverride = {
@@ -1286,7 +1454,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
         if (existing) {
           const currentOverrides: SectionOverride[] = existing.section_overrides || []
           const { error: updateError } = await supabase
-            .from('user_asset_layout_selections')
+            .from(S.tables.selections)
             .update({
               section_overrides: [...currentOverrides, sectionOverride]
             })
@@ -1295,10 +1463,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
           if (updateError) throw updateError
         } else {
           const { error: insertError } = await supabase
-            .from('user_asset_layout_selections')
+            .from(S.tables.selections)
             .insert({
               user_id: user.id,
-              asset_id: assetId,
+              [S.subjectColumn]: assetId,
               layout_id: null,
               field_overrides: [],
               section_overrides: [sectionOverride]
@@ -1312,12 +1480,12 @@ export function useUserAssetPagePreferences(assetId?: string) {
     },
     onMutate: async ({ name }) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['all-research-sections', user?.id] })
-      await queryClient.cancelQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      await queryClient.cancelQueries({ queryKey: K.sections })
+      await queryClient.cancelQueries({ queryKey: K.selection })
 
       // Snapshot previous values
-      const previousSections = queryClient.getQueryData(['all-research-sections', user?.id])
-      const previousSelection = queryClient.getQueryData(['user-asset-layout-selection', user?.id, assetId])
+      const previousSections = queryClient.getQueryData(K.sections)
+      const previousSelection = queryClient.getQueryData(K.selection)
 
       // Generate optimistic section with temp ID
       const tempId = `temp-${Date.now()}`
@@ -1331,13 +1499,13 @@ export function useUserAssetPagePreferences(assetId?: string) {
       }
 
       // Optimistically add section to allSections
-      queryClient.setQueryData(['all-research-sections', user?.id], (old: any[] = []) => {
+      queryClient.setQueryData(K.sections, (old: any[] = []) => {
         return [...old, optimisticSection]
       })
 
       // Optimistically add section override to asset layout selection
       if (assetId) {
-        queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], (old: any) => {
+        queryClient.setQueryData(K.selection, (old: any) => {
           const currentOverrides: SectionOverride[] = old?.section_overrides || []
           return {
             ...old,
@@ -1355,7 +1523,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
       // Replace temp ID with real ID in the cache (no flash)
       if (context?.tempId && newSection) {
         // Update allSections: replace temp section with real one
-        queryClient.setQueryData(['all-research-sections', user?.id], (old: any[] = []) => {
+        queryClient.setQueryData(K.sections, (old: any[] = []) => {
           return old.map(s => s.id === context.tempId ? {
             id: newSection.id,
             name: newSection.name,
@@ -1367,7 +1535,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
         // Update asset layout selection: replace temp section_id with real one
         if (assetId) {
-          queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], (old: any) => {
+          queryClient.setQueryData(K.selection, (old: any) => {
             if (!old) return old
             const updatedOverrides = (old.section_overrides || []).map((o: SectionOverride) =>
               o.section_id === context.tempId ? { ...o, section_id: newSection.id } : o
@@ -1380,10 +1548,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
     onError: (_err, _vars, context) => {
       // Rollback on error
       if (context?.previousSections) {
-        queryClient.setQueryData(['all-research-sections', user?.id], context.previousSections)
+        queryClient.setQueryData(K.sections, context.previousSections)
       }
       if (context?.previousSelection) {
-        queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], context.previousSelection)
+        queryClient.setQueryData(K.selection, context.previousSelection)
       }
     }
   })
@@ -1395,10 +1563,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Remove the section override from user_asset_layout_selections
       const { data: existing } = await supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select('*')
         .eq('user_id', user.id)
-        .eq('asset_id', assetId)
+        .eq(S.subjectColumn, assetId)
         .maybeSingle()
 
       if (existing) {
@@ -1406,7 +1574,7 @@ export function useUserAssetPagePreferences(assetId?: string) {
         const newOverrides = currentOverrides.filter(o => o.section_id !== sectionId)
 
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .update({ section_overrides: newOverrides })
           .eq('id', existing.id)
 
@@ -1415,13 +1583,13 @@ export function useUserAssetPagePreferences(assetId?: string) {
     },
     onMutate: async ({ sectionId }) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      await queryClient.cancelQueries({ queryKey: K.selection })
 
       // Snapshot previous value
-      const previousSelection = queryClient.getQueryData(['user-asset-layout-selection', user?.id, assetId])
+      const previousSelection = queryClient.getQueryData(K.selection)
 
       // Optimistically remove section override
-      queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], (old: any) => {
+      queryClient.setQueryData(K.selection, (old: any) => {
         if (!old) return old
         const currentOverrides: SectionOverride[] = old.section_overrides || []
         return {
@@ -1435,12 +1603,12 @@ export function useUserAssetPagePreferences(assetId?: string) {
     onError: (_err, _vars, context) => {
       // Rollback on error
       if (context?.previousSelection) {
-        queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], context.previousSelection)
+        queryClient.setQueryData(K.selection, context.previousSelection)
       }
     },
     onSettled: () => {
       // Refetch to sync with server
-      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      queryClient.invalidateQueries({ queryKey: K.selection })
     }
   })
 
@@ -1451,10 +1619,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Get existing selection
       const { data: existing } = await supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select('*')
         .eq('user_id', user.id)
-        .eq('asset_id', assetId)
+        .eq(S.subjectColumn, assetId)
         .maybeSingle()
 
       const currentOverrides: SectionOverride[] = existing?.section_overrides || []
@@ -1473,17 +1641,17 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       if (existing) {
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .update({ section_overrides: newOverrides })
           .eq('id', existing.id)
 
         if (error) throw error
       } else {
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .insert({
             user_id: user.id,
-            asset_id: assetId,
+            [S.subjectColumn]: assetId,
             layout_id: null,
             field_overrides: [],
             section_overrides: newOverrides
@@ -1493,11 +1661,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
       }
     },
     onMutate: async ({ orderedSectionIds }) => {
-      await queryClient.cancelQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
-      const previousSelection = queryClient.getQueryData(['user-asset-layout-selection', user?.id, assetId])
+      await queryClient.cancelQueries({ queryKey: K.selection })
+      const previousSelection = queryClient.getQueryData(K.selection)
 
       // Optimistically update section order
-      queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], (old: any) => {
+      queryClient.setQueryData(K.selection, (old: any) => {
         /* The same rule the write uses, not a second copy of it. The
            optimistic path had its own inline version that always wrote
            explicit positions, so a reorder back to the template's order
@@ -1517,11 +1685,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousSelection) {
-        queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], context.previousSelection)
+        queryClient.setQueryData(K.selection, context.previousSelection)
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      queryClient.invalidateQueries({ queryKey: K.selection })
     }
   })
 
@@ -1532,10 +1700,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       // Get existing selection
       const { data: existing } = await supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select('*')
         .eq('user_id', user.id)
-        .eq('asset_id', assetId)
+        .eq(S.subjectColumn, assetId)
         .maybeSingle()
 
       // Build field overrides with new display_order
@@ -1581,17 +1749,17 @@ export function useUserAssetPagePreferences(assetId?: string) {
 
       if (existing) {
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .update({ field_overrides: newOverrides })
           .eq('id', existing.id)
 
         if (error) throw error
       } else {
         const { error } = await supabase
-          .from('user_asset_layout_selections')
+          .from(S.tables.selections)
           .insert({
             user_id: user.id,
-            asset_id: assetId,
+            [S.subjectColumn]: assetId,
             layout_id: null,
             field_overrides: newOverrides,
             section_overrides: []
@@ -1601,11 +1769,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
       }
     },
     onMutate: async ({ sectionId, orderedFieldIds }) => {
-      await queryClient.cancelQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
-      const previousSelection = queryClient.getQueryData(['user-asset-layout-selection', user?.id, assetId])
+      await queryClient.cancelQueries({ queryKey: K.selection })
+      const previousSelection = queryClient.getQueryData(K.selection)
 
       // Optimistically update field order
-      queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], (old: any) => {
+      queryClient.setQueryData(K.selection, (old: any) => {
         const currentOverrides: FieldOverride[] = old?.field_overrides || []
         const newOverrides = [...currentOverrides]
 
@@ -1637,11 +1805,11 @@ export function useUserAssetPagePreferences(assetId?: string) {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousSelection) {
-        queryClient.setQueryData(['user-asset-layout-selection', user?.id, assetId], context.previousSelection)
+        queryClient.setQueryData(K.selection, context.previousSelection)
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
+      queryClient.invalidateQueries({ queryKey: K.selection })
     }
   })
 
@@ -1659,8 +1827,8 @@ export function useUserAssetPagePreferences(assetId?: string) {
       // Pass current version for optimistic concurrency control
       const currentVersion = assetLayoutSelection?.version ?? null
 
-      const { data, error } = await supabase.rpc('save_asset_layout_customization', {
-        p_asset_id: assetId,
+      const { data, error } = await supabase.rpc(S.tables.saveCustomizationFn, {
+        [S.tables.saveCustomizationSubjectParam]: assetId,
         p_layout_id: params.layoutId ?? null,
         p_field_overrides: params.fieldOverrides,
         p_section_overrides: params.sectionOverrides,
@@ -1674,6 +1842,18 @@ export function useUserAssetPagePreferences(assetId?: string) {
         if (error.message?.includes('CONFLICT:')) {
           throw new Error('This layout was modified in another tab or session. Please refresh and try again.')
         }
+        /*
+         * PGRST202 is "no function by that name", which for a theme means
+         * `save_theme_layout_customization` has not been applied to this
+         * server yet. Say so, rather than letting a 404 surface as a
+         * generic failure -- the layout tables exist, so everything else on
+         * the page works and only saving does not.
+         */
+        if (error.code === 'PGRST202') {
+          throw new Error(
+            'Saving a layout is not enabled on this server yet. Your research is unaffected.'
+          )
+        }
         throw error
       }
       return data as {
@@ -1685,10 +1865,10 @@ export function useUserAssetPagePreferences(assetId?: string) {
     },
     onSuccess: () => {
       // Invalidate all relevant queries to ensure fresh data
-      queryClient.invalidateQueries({ queryKey: ['user-asset-layout-selection', user?.id, assetId] })
-      queryClient.invalidateQueries({ queryKey: ['user-default-layout', user?.id] })
-      queryClient.invalidateQueries({ queryKey: ['all-research-sections', user?.id] })
-      queryClient.invalidateQueries({ queryKey: ['available-research-fields', user?.id] })
+      queryClient.invalidateQueries({ queryKey: K.selection })
+      queryClient.invalidateQueries({ queryKey: K.defaultLayout })
+      queryClient.invalidateQueries({ queryKey: K.sections })
+      queryClient.invalidateQueries({ queryKey: K.fields })
     }
   })
 
@@ -1818,9 +1998,19 @@ async function logLayoutAuditEvent(
 }
 
 /**
- * Hook to manage saved asset page layouts
+ * Named layout templates for one subject. Asset-shaped entry point.
  */
 export function useUserAssetPageLayouts() {
+  return useResearchPageLayouts(assetSubject(undefined))
+}
+
+/**
+ * The templates themselves are not per-subject -- they belong to the user --
+ * but they live in a different TABLE per subject, so this still takes one.
+ * The subject's `id` is unused here and callers may pass `undefined` for it.
+ */
+export function useResearchPageLayouts(subject: ResearchSubject) {
+  const S = subject.descriptor
   const { user } = useAuth()
   // Org-wide layout shares are scoped to the org the user is currently in.
   // See the note in `useUserAssetPagePreferences` on why this is not a
@@ -1828,15 +2018,17 @@ export function useUserAssetPageLayouts() {
   const { currentOrgId } = useOrganization()
   const queryClient = useQueryClient()
 
+  const K = researchLayoutKeys(subject, user?.id, currentOrgId)
+
   // Fetch user's own layouts + layouts shared with them
   const { data: layouts, isLoading } = useQuery({
-    queryKey: ['user-asset-page-layouts', user?.id],
+    queryKey: K.layouts,
     queryFn: async () => {
       if (!user?.id) return []
 
       // 1. Get user's own layouts
       const { data: ownLayouts, error: ownError } = await supabase
-        .from('user_asset_page_layouts')
+        .from(S.tables.layouts)
         .select('*')
         .eq('user_id', user.id)
         .order('name')
@@ -1845,10 +2037,10 @@ export function useUserAssetPageLayouts() {
 
       // 2. Get layouts shared with user directly
       const { data: directShares, error: directError } = await supabase
-        .from('layout_collaborations')
+        .from(S.tables.layoutCollaborations)
         .select(`
           permission,
-          layout:user_asset_page_layouts!layout_collaborations_layout_id_fkey(*)
+          ${S.embeds.collaborationLayout}
         `)
         .eq('user_id', user.id)
 
@@ -1865,10 +2057,10 @@ export function useUserAssetPageLayouts() {
       let teamShares: any[] = []
       if (teamIds.length > 0) {
         const { data, error: teamError } = await supabase
-          .from('layout_collaborations')
+          .from(S.tables.layoutCollaborations)
           .select(`
             permission,
-            layout:user_asset_page_layouts!layout_collaborations_layout_id_fkey(*)
+            ${S.embeds.collaborationLayout}
           `)
           .in('team_id', teamIds)
 
@@ -1887,10 +2079,10 @@ export function useUserAssetPageLayouts() {
       let nodeShares: any[] = []
       if (nodeIds.length > 0) {
         const { data, error: nodeError } = await supabase
-          .from('layout_collaborations')
+          .from(S.tables.layoutCollaborations)
           .select(`
             permission,
-            layout:user_asset_page_layouts!layout_collaborations_layout_id_fkey(*)
+            ${S.embeds.collaborationLayout}
           `)
           .in('org_node_id', nodeIds)
 
@@ -1903,10 +2095,10 @@ export function useUserAssetPageLayouts() {
       let orgShares: any[] = []
       if (currentOrgId) {
         const { data, error: orgError } = await supabase
-          .from('layout_collaborations')
+          .from(S.tables.layoutCollaborations)
           .select(`
             permission,
-            layout:user_asset_page_layouts!layout_collaborations_layout_id_fkey(*)
+            ${S.embeds.collaborationLayout}
           `)
           .is('user_id', null)
           .is('team_id', null)
@@ -2001,13 +2193,13 @@ export function useUserAssetPageLayouts() {
       // If setting as default, clear other defaults first
       if (isDefault) {
         await supabase
-          .from('user_asset_page_layouts')
+          .from(S.tables.layouts)
           .update({ is_default: false })
           .eq('user_id', user.id)
       }
 
       const { data, error } = await supabase
-        .from('user_asset_page_layouts')
+        .from(S.tables.layouts)
         .insert({
           user_id: user.id,
           name,
@@ -2027,10 +2219,10 @@ export function useUserAssetPageLayouts() {
     },
     onMutate: async ({ name, description, fieldConfig, isDefault }) => {
       // Cancel outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
+      await queryClient.cancelQueries({ queryKey: K.layouts })
 
       // Snapshot previous value
-      const previousLayouts = queryClient.getQueryData(['user-asset-page-layouts', user?.id])
+      const previousLayouts = queryClient.getQueryData(K.layouts)
 
       // Optimistically add the new layout
       const optimisticLayout: LayoutWithSharing = {
@@ -2046,7 +2238,7 @@ export function useUserAssetPageLayouts() {
         my_permission: 'owner'
       }
 
-      queryClient.setQueryData(['user-asset-page-layouts', user?.id], (old: LayoutWithSharing[] = []) => {
+      queryClient.setQueryData(K.layouts, (old: LayoutWithSharing[] = []) => {
         // If setting as default, clear other defaults
         const updated = isDefault
           ? old.map(l => ({ ...l, is_default: false }))
@@ -2059,14 +2251,14 @@ export function useUserAssetPageLayouts() {
     onError: (_err, _vars, context) => {
       // Rollback on error
       if (context?.previousLayouts) {
-        queryClient.setQueryData(['user-asset-page-layouts', user?.id], context.previousLayouts)
+        queryClient.setQueryData(K.layouts, context.previousLayouts)
       }
     },
     onSettled: (_data, _err, vars) => {
       // Refetch to sync with server
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
+      queryClient.invalidateQueries({ queryKey: K.layouts })
       // Also invalidate default layout query so preferences hook picks up changes
-      queryClient.invalidateQueries({ queryKey: ['user-default-layout', user?.id] })
+      queryClient.invalidateQueries({ queryKey: K.defaultLayout })
 
       // Fire-and-forget audit event for template creation
       if (_data && !_err && user?.id) {
@@ -2113,7 +2305,7 @@ export function useUserAssetPageLayouts() {
       // If setting as default, clear other defaults first
       if (isDefault) {
         await supabase
-          .from('user_asset_page_layouts')
+          .from(S.tables.layouts)
           .update({ is_default: false })
           .eq('user_id', user.id)
       }
@@ -2132,7 +2324,7 @@ export function useUserAssetPageLayouts() {
        * which rows changed is how a miss becomes a conflict.
        */
       let query = supabase
-        .from('user_asset_page_layouts')
+        .from(S.tables.layouts)
         .update(updates)
         .eq('id', layoutId)
       if (expectedUpdatedAt) query = query.eq('updated_at', expectedUpdatedAt)
@@ -2148,10 +2340,10 @@ export function useUserAssetPageLayouts() {
       }
     },
     onMutate: async ({ layoutId, name, description, fieldConfig, sectionConfig, isDefault }) => {
-      await queryClient.cancelQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
-      const previousLayouts = queryClient.getQueryData(['user-asset-page-layouts', user?.id])
+      await queryClient.cancelQueries({ queryKey: K.layouts })
+      const previousLayouts = queryClient.getQueryData(K.layouts)
 
-      queryClient.setQueryData(['user-asset-page-layouts', user?.id], (old: LayoutWithSharing[] = []) => {
+      queryClient.setQueryData(K.layouts, (old: LayoutWithSharing[] = []) => {
         return old.map(layout => {
           // Clear other defaults if setting this as default
           if (isDefault && layout.id !== layoutId) {
@@ -2174,12 +2366,12 @@ export function useUserAssetPageLayouts() {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousLayouts) {
-        queryClient.setQueryData(['user-asset-page-layouts', user?.id], context.previousLayouts)
+        queryClient.setQueryData(K.layouts, context.previousLayouts)
       }
     },
     onSettled: (_data, _err, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
-      queryClient.invalidateQueries({ queryKey: ['user-default-layout', user?.id] })
+      queryClient.invalidateQueries({ queryKey: K.layouts })
+      queryClient.invalidateQueries({ queryKey: K.defaultLayout })
 
       // Fire-and-forget audit event for template update
       if (!_err && user?.id) {
@@ -2193,18 +2385,18 @@ export function useUserAssetPageLayouts() {
   const deleteLayout = useMutation({
     mutationFn: async (layoutId: string) => {
       const { error } = await supabase
-        .from('user_asset_page_layouts')
+        .from(S.tables.layouts)
         .delete()
         .eq('id', layoutId)
 
       if (error) throw error
     },
     onMutate: async (layoutId) => {
-      await queryClient.cancelQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
-      const previousLayouts = queryClient.getQueryData(['user-asset-page-layouts', user?.id]) as LayoutWithSharing[] | undefined
+      await queryClient.cancelQueries({ queryKey: K.layouts })
+      const previousLayouts = queryClient.getQueryData(K.layouts) as LayoutWithSharing[] | undefined
       const deletedName = previousLayouts?.find(l => l.id === layoutId)?.name
 
-      queryClient.setQueryData(['user-asset-page-layouts', user?.id], (old: LayoutWithSharing[] = []) => {
+      queryClient.setQueryData(K.layouts, (old: LayoutWithSharing[] = []) => {
         return old.filter(layout => layout.id !== layoutId)
       })
 
@@ -2212,13 +2404,13 @@ export function useUserAssetPageLayouts() {
     },
     onError: (_err, _vars, context) => {
       if (context?.previousLayouts) {
-        queryClient.setQueryData(['user-asset-page-layouts', user?.id], context.previousLayouts)
+        queryClient.setQueryData(K.layouts, context.previousLayouts)
       }
     },
     onSettled: (_data, _err, layoutId, context) => {
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts', user?.id] })
+      queryClient.invalidateQueries({ queryKey: K.layouts })
       // Deleted template may have been the default — refetch
-      queryClient.invalidateQueries({ queryKey: ['user-default-layout', user?.id] })
+      queryClient.invalidateQueries({ queryKey: K.defaultLayout })
 
       // Fire-and-forget audit event for template deletion
       if (!_err && user?.id) {
@@ -2266,17 +2458,22 @@ import type {
  *  - perLayout: LayoutUsageMetric[] (assets_using + assets_with_overrides per layout_id)
  *  - globalOverrideCount: total assets with any overrides (field or section)
  */
-export function useLayoutUsageMetrics() {
+export function useLayoutUsageMetrics(
+  subject: ResearchSubject = assetSubject(undefined),
+) {
+  const S = subject.descriptor
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+  const K = researchLayoutKeys(subject, user?.id, currentOrgId)
 
   return useQuery({
-    queryKey: ['layout-usage-metrics', user?.id],
+    queryKey: K.usageMetrics,
     queryFn: async () => {
       if (!user?.id) return { perLayout: [] as LayoutUsageMetric[], globalOverrideCount: 0 }
 
       // Fetch all layout selections for this user
       const { data, error } = await supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select('layout_id, field_overrides, section_overrides')
         .eq('user_id', user.id)
 
@@ -2324,17 +2521,22 @@ export function useLayoutUsageMetrics() {
  * Returns an array of LayoutCollaborationSummary — one per layout that has collaborations.
  * Layouts with no collaborations won't appear (scope defaults to 'personal').
  */
-export function useLayoutCollabSummaries() {
+export function useLayoutCollabSummaries(
+  subject: ResearchSubject = assetSubject(undefined),
+) {
+  const S = subject.descriptor
   const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+  const K = researchLayoutKeys(subject, user?.id, currentOrgId)
 
   return useQuery({
-    queryKey: ['layout-collab-summaries', user?.id],
+    queryKey: K.collabSummaries,
     queryFn: async () => {
       if (!user?.id) return [] as LayoutCollaborationSummary[]
 
       // Step 1: Get owned layout IDs
       const { data: layouts } = await supabase
-        .from('user_asset_page_layouts')
+        .from(S.tables.layouts)
         .select('id')
         .eq('user_id', user.id)
 
@@ -2343,7 +2545,7 @@ export function useLayoutCollabSummaries() {
       // Step 2: Get all collaborations for those layouts
       const layoutIds = layouts.map(l => l.id)
       const { data: collabs, error } = await supabase
-        .from('layout_collaborations')
+        .from(S.tables.layoutCollaborations)
         .select('layout_id, user_id, team_id, org_node_id')
         .in('layout_id', layoutIds)
 
@@ -2421,7 +2623,7 @@ export function useAffectedAssets(
       if (!user?.id) return []
 
       let query = supabase
-        .from('user_asset_layout_selections')
+        .from(S.tables.selections)
         .select(`
           asset_id,
           layout_id,

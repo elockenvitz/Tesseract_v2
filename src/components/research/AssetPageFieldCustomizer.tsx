@@ -73,14 +73,16 @@ import {
 } from 'lucide-react'
 import { SCENARIO_PRESETS, METRIC_PRESETS } from './FieldTypeRenderers'
 import {
-  useUserAssetPagePreferences,
-  useUserAssetPageLayouts,
+  useResearchPagePreferences,
+  useResearchPageLayouts,
+  researchLayoutKeyPrefixes,
   type FieldWithPreference,
   type LayoutWithSharing,
   type SectionOverride,
   type FieldOverride
 } from '../../hooks/useUserAssetPagePreferences'
 import { useResearchFields } from '../../hooks/useResearchFields'
+import { assetSubject, type ResearchSubject } from '../../lib/research/subject'
 import { fieldConfigMatchesField, SYSTEM_DEFAULT_FIELD_SLUGS, FULL_SPAN, asSpan, spanFromWidth, type FieldWidth } from '../../lib/research/layout-resolver'
 import { spanLabel } from '../../lib/research/field-span'
 import { useAuth } from '../../hooks/useAuth'
@@ -284,6 +286,21 @@ interface AssetPageFieldCustomizerProps {
   onClose: () => void
   assetId?: string
   assetName?: string
+  /**
+   * What this is a customizer FOR.
+   *
+   * Defaults to the asset subject built from `assetId`, so every existing
+   * asset call site is unchanged. The Theme page passes
+   * `themeSubject(themeId)` and gets this same modal against the theme
+   * tables -- which is the whole point of the subject layer, and the reason
+   * this file was not cloned.
+   *
+   * `assetId` and `assetName` remain because the copy and the audit metadata
+   * use them; when a subject is passed, `assetId` should be the same id.
+   */
+  subject?: ResearchSubject
+  /** What to call the thing in the UI. "asset" unless told otherwise. */
+  subjectNoun?: string
   /** Current view filter: 'aggregated' or a user ID */
   viewFilter?: 'aggregated' | string
   /** Current user's ID */
@@ -299,11 +316,24 @@ export function AssetPageFieldCustomizer({
   assetName,
   viewFilter = 'aggregated',
   currentUserId,
-  onOpenTemplates
+  onOpenTemplates,
+  subject,
+  subjectNoun = 'asset'
 }: AssetPageFieldCustomizerProps) {
   // Can only change layout when viewing own view (not aggregated or other users' views)
   const isViewingOwnView = viewFilter === currentUserId
   const canChangeLayout = isViewingOwnView
+
+  /* An asset unless told otherwise. `useMemo` so the descriptor identity is
+     stable across renders and does not retrigger the queries keyed off it. */
+  const activeSubject = useMemo(
+    () => subject ?? assetSubject(assetId),
+    [subject, assetId],
+  )
+  const layoutKeyPrefixes = useMemo(
+    () => researchLayoutKeyPrefixes(activeSubject),
+    [activeSubject],
+  )
 
   const {
     fieldsWithPreferences,
@@ -327,15 +357,18 @@ export function AssetPageFieldCustomizer({
     reorderSections,
     reorderFieldsInSection,
     isUpdating
-  } = useUserAssetPagePreferences(assetId)
+  } = useResearchPagePreferences(activeSubject)
 
   const {
     layouts,
     isLoading: layoutsLoading,
     saveLayout
-  } = useUserAssetPageLayouts()
+  } = useResearchPageLayouts(activeSubject)
 
-  const { createField, deleteField, isDeleting: isDeletingField } = useResearchFields()
+  /* Only `createField` and `deleteField` follow the subject; the rest of
+     that hook is asset-only, and this component uses only those two. */
+  const { createField, deleteField, isDeleting: isDeletingField } =
+    useResearchFields(activeSubject)
   const { user } = useAuth()
   const [fieldToDelete, setFieldToDelete] = useState<{ id: string; name: string } | null>(null)
   const queryClient = useQueryClient()
@@ -1863,10 +1896,10 @@ export function AssetPageFieldCustomizer({
       // Refresh the field list so the new field appears in the Field Library
       // The user can then drag it to their layout if they want it visible
       // Use invalidateQueries to properly match queries with additional key parts (user id, version)
-      await queryClient.invalidateQueries({ queryKey: ['available-research-fields'] })
+      await queryClient.invalidateQueries({ queryKey: layoutKeyPrefixes.fields })
       await queryClient.invalidateQueries({ queryKey: ['research-fields'] })
       // Force refetch to ensure data is immediately available
-      await queryClient.refetchQueries({ queryKey: ['available-research-fields'], exact: false })
+      await queryClient.refetchQueries({ queryKey: layoutKeyPrefixes.fields, exact: false })
       await queryClient.refetchQueries({ queryKey: ['research-fields'], exact: false })
 
       // Reset and close dialog
@@ -1897,7 +1930,7 @@ export function AssetPageFieldCustomizer({
             </div>
             <p className="text-xs text-gray-400 mt-0.5">
               {assetName ? <span className="text-gray-500 dark:text-gray-400">{assetName}</span> : null}
-              {assetName ? ' · ' : ''}Changes here apply to this asset only.
+              {assetName ? ' · ' : ''}Changes here apply to this {subjectNoun} only.
             </p>
           </div>
           <div className="flex items-center gap-3">

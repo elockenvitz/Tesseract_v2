@@ -49,16 +49,90 @@ const tableNamesIn = (code: string): Set<string> => {
 describe('the asset descriptor describes the queries that exist', () => {
   const d = ASSET_RESEARCH_SUBJECT
 
-  it('names tables the asset hooks really read', () => {
-    const read = tableNamesIn(assetCode)
-    // Only the ones the descriptor is responsible for. `users`,
-    // `team_memberships` and `org_chart_node_members` are read for names and
-    // membership and are the same table for both subjects, which is why they
-    // are not in the descriptor.
+  it('is how the hooks name their tables, not a parallel list of them', () => {
+    /* REWRITTEN, not deleted.
+     *
+     * This used to grep the hooks for each of the descriptor's five table
+     * names and require a bare `.from('user_asset_layout_selections')` to be
+     * present. That was the right assertion while the descriptor was a
+     * DESCRIPTION of literals living elsewhere -- it caught a descriptor
+     * that had drifted from the queries.
+     *
+     * Those literals are now gone: the hooks read
+     * `.from(S.tables.selections)`, which is the whole point of the subject
+     * layer, so the old assertion fails BECAUSE the work it was guarding
+     * landed. Keeping it would have meant keeping one literal per table
+     * purely to satisfy it.
+     *
+     * The invariant that still matters, and is stronger, is the inverse: no
+     * bare literal for a subject-specific table may reappear in these hooks,
+     * because a single one is a query the theme page would send at an asset
+     * table. The next test ("leaves no subject-specific table out of the
+     * descriptor") is what catches a table that is read but unaccounted for.
+     */
+    /* Scoped to the file that IS parameterized.
+     *
+     * `useResearchFields.ts` is only partly subject-aware, and deliberately:
+     * `createField` and `deleteField` follow the subject, while
+     * `useResearchSections` and `useUserResearchLayout` are asset-only
+     * because `team_research_fields`, `research_field_viewers`,
+     * `research_field_access_requests` and `add_field_from_preset()` have no
+     * theme twin in production. Those two hooks therefore still name
+     * `research_sections` as a literal, correctly. Asserting over both files
+     * would force either a false failure here or a fake parameterization
+     * there. */
+    const parameterized = stripComments(
+      readFileSync(join(srcRoot, 'hooks/useUserAssetPagePreferences.ts'), 'utf8')
+    )
+    const read = tableNamesIn(parameterized)
     for (const name of [d.tables.sections, d.tables.fields, d.tables.layouts,
                         d.tables.selections, d.tables.layoutCollaborations]) {
-      expect(read, `the asset hooks no longer read ${name}`).toContain(name)
+      expect(
+        read,
+        `${name} is named as a literal again; it must come from the descriptor`
+      ).not.toContain(name)
     }
+
+    // And they are reached through the descriptor rather than by some third
+    // route, so "no literal" cannot be satisfied by the query being deleted.
+    for (const prop of ['tables.sections', 'tables.fields', 'tables.layouts',
+                        'tables.selections', 'tables.layoutCollaborations']) {
+      expect(parameterized, `nothing reads S.${prop}`).toContain(`S.${prop}`)
+    }
+  })
+
+  it('names every PostgREST embed, because a wrong one is a 400 on everything', () => {
+    /* An unknown embedded relation is HTTP 400 on the WHOLE request, not an
+       empty embed, so one literal embed left behind does not degrade the
+       theme page, it blanks it. That exact mistake shipped once on
+       `theme_contributions_v2`.
+       An embed also names a FOREIGN KEY CONSTRAINT, and those names are not
+       derivable from the table names, which is why they are spelled out per
+       subject rather than composed. */
+    /* `useAffectedAssets` is excluded, and is asset-only by its nature
+       rather than by omission: it answers "which assets would this template
+       change", selecting `symbol` and `company_name` off `assets`. A theme
+       equivalent would be a different question against a different table, so
+       it keeps its asset literals. Everything BEFORE it is parameterized. */
+    const whole = stripComments(
+      readFileSync(join(srcRoot, 'hooks/useUserAssetPagePreferences.ts'), 'utf8')
+    )
+    const affectedAt = whole.indexOf('export function useAffectedAssets')
+    expect(affectedAt, 'useAffectedAssets moved; this exclusion is now wrong')
+      .toBeGreaterThan(-1)
+    const parameterized = whole.slice(0, affectedAt)
+
+    for (const embed of ['embeds.selectionLayout', 'embeds.fieldSection',
+                         'embeds.collaborationLayout']) {
+      expect(parameterized, `nothing reads S.${embed}`).toContain(`S.${embed}`)
+    }
+    // No hard-coded FK constraint name may survive in the parameterized file.
+    expect(parameterized, 'a literal FK embed is back')
+      .not.toMatch(/user_asset_layout_selections_layout_id_fkey/)
+    expect(parameterized, 'a literal FK embed is back')
+      .not.toMatch(/layout_collaborations_layout_id_fkey/)
+    expect(parameterized, 'the catalogue embeds the asset section table by name')
+      .not.toMatch(/research_sections!inner/)
   })
 
   it('leaves no subject-specific table out of the descriptor', () => {

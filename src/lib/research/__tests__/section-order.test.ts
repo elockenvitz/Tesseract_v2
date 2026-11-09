@@ -44,22 +44,45 @@ const FIELDS_HOOK = strip(read('src/hooks/useResearchFields.ts'))
 const MANAGER = strip(read('src/components/templates/ResearchFieldsManager.tsx'))
 const MOBILE_EDITOR = strip(read('src/components/templates/mobile/MobileResearchLayoutEditor.tsx'))
 
-/** Every `.from('research_sections')` query, as a slice of its own source. */
+/**
+ * Every sections query, as a slice of its own source.
+ *
+ * The anchor used to be the literal `.from('research_sections')`. The
+ * layout stack now names its tables through the subject descriptor, so the
+ * literal is gone from the hooks and only the descriptor spells it. Both
+ * spellings are matched: other files (the mobile editor) still use the
+ * literal, and a slice that found nothing would make every assertion below
+ * vacuously true.
+ */
+const SECTION_FROM = [".from('research_sections')", '.from(S.tables.sections)']
+
 const sectionQueries = (src: string): string[] => {
   const out: string[] = []
-  let at = src.indexOf(".from('research_sections')")
-  while (at !== -1) {
-    out.push(src.slice(at, at + 500))
-    at = src.indexOf(".from('research_sections')", at + 1)
+  for (const anchor of SECTION_FROM) {
+    let at = src.indexOf(anchor)
+    while (at !== -1) {
+      out.push(src.slice(at, at + 500))
+      at = src.indexOf(anchor, at + 1)
+    }
   }
   return out
 }
 
 describe('the field catalogue is sorted by section, then within it', () => {
-  /** The `available-research-fields` queryFn, from its key to its `enabled`. */
+  /**
+   * The field-catalogue queryFn, from its key to its `enabled`.
+   *
+   * The anchor was the literal key `'available-research-fields'`. Keys now
+   * go through the subject descriptor and are built once in
+   * `researchLayoutKeys`, so the catalogue query is keyed `K.fieldsVersioned`.
+   * The `expect` on the index is kept, and matters more than it looks: if
+   * this anchor ever stops resolving, every assertion in this block slices
+   * an empty string and passes for free.
+   */
   const catalogQuery = (() => {
-    const from = HOOK.indexOf("'available-research-fields'")
-    expect(from).toBeGreaterThan(-1)
+    const from = HOOK.indexOf('queryKey: K.fieldsVersioned')
+    expect(from, 'the catalogue query key moved; this block would slice nothing')
+      .toBeGreaterThan(-1)
     const to = HOOK.indexOf('enabled: !!user?.id,', from)
     expect(to).toBeGreaterThan(from)
     return HOOK.slice(from, to)

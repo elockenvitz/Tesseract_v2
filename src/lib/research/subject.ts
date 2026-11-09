@@ -65,6 +65,64 @@ export interface ResearchSubjectTables {
   readonly layoutCollaborations: 'layout_collaborations' | 'theme_layout_collaborations'
   /** The SECURITY DEFINER predicate the layout policies call. */
   readonly layoutAccessFn: 'user_has_layout_access' | 'theme_layout_access'
+  /**
+   * The SECURITY DEFINER function that writes a selection.
+   *
+   * Every customization save goes through this rather than through a direct
+   * table write, because it does four things a client cannot: it creates new
+   * sections in the org library and maps their temp ids into the overrides in
+   * one transaction, it enforces the optimistic version check, it writes the
+   * audit event, and it authorizes the template.
+   *
+   * `save_theme_layout_customization` is deliberately NOT a copy of the asset
+   * one. The asset function resolves the organization with
+   * `organization_memberships ... LIMIT 1` (arbitrary for a multi-org user)
+   * and inlines the collaboration subquery that is the documented cross-org
+   * layout-sharing leak. The theme one reads the organization from the theme
+   * and calls `theme_layout_access`.
+   */
+  readonly saveCustomizationFn:
+    | 'save_asset_layout_customization'
+    | 'save_theme_layout_customization'
+  /** That function's first parameter, which names the subject. */
+  readonly saveCustomizationSubjectParam: 'p_asset_id' | 'p_theme_id'
+}
+
+/**
+ * The PostgREST embeds, spelled out per subject.
+ *
+ * ── Why these cannot be built from the table names ────────────────────────
+ *
+ * An embed names a FOREIGN KEY CONSTRAINT, not just a table, and the
+ * constraint names are not derivable: the selection-to-layout FK is
+ * `user_asset_layout_selections_layout_id_fkey` on one side and
+ * `user_theme_layout_selections_layout_id_fkey` on the other, and the
+ * collaboration one is `layout_collaborations_layout_id_fkey` against
+ * `theme_layout_collaborations_layout_id_fkey`. Every name here was read out
+ * of `pg_constraint`, not guessed.
+ *
+ * ── Why getting one wrong is worse than it looks ──────────────────────────
+ *
+ * An UNKNOWN embedded relation is HTTP 400 on the WHOLE request, not an
+ * empty embed. Pointing the theme page's field catalogue at
+ * `research_sections!inner` does not return fields without sections, it
+ * returns nothing at all and the research surface goes blank. That exact
+ * mistake shipped once already on `theme_contributions_v2`.
+ *
+ * ── The aliases are deliberately identical across subjects ────────────────
+ *
+ * `research_sections:` keeps its asset-shaped name on both sides, because
+ * three call sites read the embed back off the row by that property name.
+ * Aliasing is what makes the response shape subject-independent; renaming it
+ * per subject would push the difference back out into the component.
+ */
+export interface ResearchSubjectEmbeds {
+  /** The layout joined onto a selection row. */
+  readonly selectionLayout: string
+  /** The section joined onto a catalogue field row, inner. */
+  readonly fieldSection: string
+  /** The layout joined onto a collaboration row. */
+  readonly collaborationLayout: string
 }
 
 export interface ResearchSubjectDescriptor {
@@ -74,6 +132,7 @@ export interface ResearchSubjectDescriptor {
   /** First element of every React Query key built for this subject. */
   readonly queryKeyPrefix: 'asset-research' | 'theme-research'
   readonly tables: ResearchSubjectTables
+  readonly embeds: ResearchSubjectEmbeds
   /**
    * Whether a template row carries `organization_id`.
    *
@@ -114,6 +173,15 @@ export const ASSET_RESEARCH_SUBJECT: ResearchSubjectDescriptor = {
     selections: 'user_asset_layout_selections',
     layoutCollaborations: 'layout_collaborations',
     layoutAccessFn: 'user_has_layout_access',
+    saveCustomizationFn: 'save_asset_layout_customization',
+    saveCustomizationSubjectParam: 'p_asset_id',
+  },
+  embeds: {
+    selectionLayout:
+      'layout:user_asset_page_layouts!user_asset_layout_selections_layout_id_fkey(*)',
+    fieldSection: 'research_sections!inner',
+    collaborationLayout:
+      'layout:user_asset_page_layouts!layout_collaborations_layout_id_fkey(*)',
   },
   layoutsAreOrgScoped: false,
 }
@@ -138,6 +206,18 @@ export const THEME_RESEARCH_SUBJECT: ResearchSubjectDescriptor = {
     selections: 'user_theme_layout_selections',
     layoutCollaborations: 'theme_layout_collaborations',
     layoutAccessFn: 'theme_layout_access',
+    saveCustomizationFn: 'save_theme_layout_customization',
+    saveCustomizationSubjectParam: 'p_theme_id',
+  },
+  embeds: {
+    selectionLayout:
+      'layout:user_theme_page_layouts!user_theme_layout_selections_layout_id_fkey(*)',
+    /* The ALIAS stays `research_sections` on purpose; see the note on
+       `ResearchSubjectEmbeds`. Three call sites read the embed back off the
+       row by that property name, so the response shape must not vary. */
+    fieldSection: 'research_sections:theme_research_sections!inner',
+    collaborationLayout:
+      'layout:user_theme_page_layouts!theme_layout_collaborations_layout_id_fkey(*)',
   },
   layoutsAreOrgScoped: true,
 }
