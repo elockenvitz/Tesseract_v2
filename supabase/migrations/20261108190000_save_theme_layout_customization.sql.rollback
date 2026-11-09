@@ -1,0 +1,10 @@
+-- Rollback for 20261108190000_save_theme_layout_customization.
+--
+-- The function is new, so dropping it restores the previous state exactly:
+-- nothing could write `user_theme_layout_selections` before it existed.
+-- Rows it wrote are NOT removed -- they are user data, and the table and its
+-- policies predate this migration (20261104150001).
+
+drop function if exists public.save_theme_layout_customization(
+  uuid, uuid, jsonb, jsonb, jsonb, boolean, integer
+);

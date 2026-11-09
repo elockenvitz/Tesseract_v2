@@ -39,7 +39,8 @@ import {
   type ThemeResearchActiveTab,
 } from './ThemeContributionSection'
 import { OptionPicker } from '../../ui/OptionPicker'
-import { ThemeFieldManagerModal } from './ThemeFieldManagerModal'
+import { AssetPageFieldCustomizer } from '../../research/AssetPageFieldCustomizer'
+import { themeSubject } from '../../../lib/research/subject'
 import { ThemeThesisSummaryView } from './ThemeThesisSummaryView'
 import { ThemeThesisHistoryView } from './ThemeThesisHistoryView'
 import { ThemeKeyReferencesSection } from './ThemeKeyReferencesSection'
@@ -840,8 +841,31 @@ export function ThemeResearchTab({
         </>
       )}
 
+      {/* Customize fields: the ASSET page's customizer, pointed at this
+          theme.
+
+          `ThemeFieldManagerModal` is still on disk and still reachable from
+          nothing: it was a 334-line stand-in with no templates, no widths,
+          no section management and no layout, beside a 3900-line customizer
+          that has all four. Deleting it is a separate decision.
+
+          Everything here is the asset modal's own behaviour against
+          `theme_research_*` and `user_theme_*`, through the subject
+          descriptor. Two things it offers that themes do not have yet are
+          hidden by the component itself: add-from-preset
+          (`add_field_from_preset` has no theme twin) and field sharing
+          (`team_research_fields`, `research_field_viewers` and
+          `research_field_access_requests` have none either). */}
       {showManager && (
-        <ThemeFieldManagerModal onClose={() => setShowManager(false)} />
+        <AssetPageFieldCustomizer
+          isOpen
+          onClose={() => setShowManager(false)}
+          assetId={themeId}
+          subject={themeSubject(themeId)}
+          subjectNoun="theme"
+          viewFilter={viewFilter}
+          currentUserId={user?.id}
+        />
       )}
     </div>
   )
