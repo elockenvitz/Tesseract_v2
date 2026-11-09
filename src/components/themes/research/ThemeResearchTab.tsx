@@ -52,6 +52,10 @@ import {
 import { OptionPicker } from '../../ui/OptionPicker'
 import { AssetPageFieldCustomizer } from '../../research/AssetPageFieldCustomizer'
 import { themeSubject } from '../../../lib/research/subject'
+/* The resolved layout stack, pointed at this theme. The Asset page reaches
+   it through the `useUserAssetPagePreferences` wrapper; both are the same
+   hook with a different subject. */
+import { useResearchPagePreferences } from '../../../hooks/useUserAssetPagePreferences'
 import { ThemeThesisSummaryView } from './ThemeThesisSummaryView'
 import { ThemeThesisHistoryView } from './ThemeThesisHistoryView'
 import { ThemeKeyReferencesSection } from './ThemeKeyReferencesSection'
@@ -137,7 +141,39 @@ export function ThemeResearchTab({
   themeId, readMode, onReadModeChange, notesSlot, notesCount,
 }: ThemeResearchTabProps) {
   const { user } = useAuth()
-  const { layout, isLoading: layoutLoading } = useThemeResearchLayout()
+  /*
+   * ── Two sources, and only one of them decides the layout ────────────────
+   *
+   * `useResearchPagePreferences` is the RESOLVED layout stack: it reads the
+   * active template out of `user_theme_page_layouts`, this reader's
+   * selection and per-theme overrides out of `user_theme_layout_selections`,
+   * and hands back which fields are on the page, in which section, in what
+   * order, at what width. It is the same resolver the Asset page uses.
+   *
+   * This page used to render `useThemeResearchLayout()` on its own, which is
+   * the RAW organisation catalogue and consults none of the above. So
+   * everything the Customize fields modal wrote about LAYOUT -- template
+   * choice, width, per-theme visibility, field order -- was saved and then
+   * ignored. It looked correct only because production holds zero template
+   * rows and zero selection rows, which makes "the raw catalogue" and
+   * "resolved with no template and no overrides" the same list.
+   *
+   * The raw catalogue is still read, for exactly two things the resolved
+   * shape does not carry: a field's `placeholder` (the editor's prompt and
+   * the empty-state line) and a section's `description`. Both are real typed
+   * columns on `theme_research_*` with no counterpart on `research_*`, so
+   * threading them through the shared resolver would widen a type that two
+   * subjects share for the benefit of one. Looked up by id instead.
+   */
+  const {
+    sections: catalogueSections,
+    fields: catalogueFields,
+    isLoading: catalogueLoading,
+  } = useThemeResearchLayout()
+  const {
+    displayedFieldsBySection,
+    isLoading: layoutStackLoading,
+  } = useResearchPagePreferences(themeSubject(themeId))
   const {
     contributions, contributors, isLoading: contribsLoading, updateVisibility,
     audienceReady,
@@ -155,6 +191,55 @@ export function ThemeResearchTab({
      theme's notes. The count has to be both, or it describes half of what
      the button opens. */
   const referenceCount = references.length + notesCount
+
+  /**
+   * The page, as the layout stack resolves it.
+   *
+   * Shaped exactly like `useThemeResearchLayout().layout` used to be -- a
+   * section row with a `fields` array of catalogue rows -- so every consumer
+   * below is unchanged. What differs is where the STRUCTURE comes from.
+   *
+   * Two filters, and both have to be here rather than left to the renderer.
+   * `is_visible` is the resolver's answer about this field on this theme: a
+   * field hidden by the template or by a per-theme override is not on the
+   * page, and `displayedFieldsBySection` deliberately keeps it in the list
+   * so the customizer can show it as available. `section_is_hidden` is the
+   * same answer one level up. The Asset page applies both at its own render.
+   *
+   * A resolved field whose catalogue row is missing is dropped rather than
+   * rendered half-built. It should not happen -- both read
+   * `theme_research_fields` -- but the two queries settle independently, so
+   * for a frame one can be ahead of the other, and a field drawn with no
+   * `placeholder` and no `field_type` is worse than a field drawn a moment
+   * later.
+   */
+  const layout = useMemo(() => {
+    const fieldById = new Map(catalogueFields.map(f => [f.id, f]))
+    const sectionById = new Map(catalogueSections.map(s => [s.id, s]))
+
+    return displayedFieldsBySection
+      .filter(section => !section.section_is_hidden)
+      .map(section => ({
+        id: section.section_id,
+        /* The resolved name, which carries a per-theme rename override;
+           the catalogue row only knows the organisation's name for it. */
+        name: section.section_name,
+        slug: section.section_slug,
+        description: sectionById.get(section.section_id)?.description ?? null,
+        fields: section.fields
+          .filter(f => f.is_visible)
+          .map(f => {
+            const raw = fieldById.get(f.field_id)
+            if (!raw) return null
+            /* The catalogue row is the typed entity and stays whole. The
+               resolved name and span are layered on top, because those are
+               the two things a template or an override can change. */
+            return { ...raw, name: f.field_name, span: f.span }
+          })
+          .filter((f): f is NonNullable<typeof f> => f !== null),
+      }))
+      .filter(section => section.fields.length > 0)
+  }, [displayedFieldsBySection, catalogueFields, catalogueSections])
   const [showManager, setShowManager] = useState(false)
 
   // One control naming the current view, as on the asset case — a row of
@@ -677,7 +762,7 @@ export function ThemeResearchTab({
           <ThemeKeyReferencesSection themeId={themeId} />
           {notesSlot}
         </div>
-      ) : layoutLoading || contribsLoading ? (
+      ) : catalogueLoading || layoutStackLoading || contribsLoading ? (
         <div className="space-y-3">
           {[...Array(2)].map((_, i) => <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse dark:bg-gray-800" />)}
         </div>
@@ -784,13 +869,18 @@ export function ThemeResearchTab({
            is the Asset page's structure drawn by the Asset page's own
            components. It was an `<h2>` over a flat stack.
 
-           Every theme field is drawn full width (span 12) because no theme
-           has a saved span yet: `user_theme_page_layouts.field_config` exists
-           as of 20261104150001 but nothing writes it, and there is no
-           `save_theme_layout_customization` to write it with. Passing 12
-           rather than skipping the grid is the point -- the moment a span can
-           be saved, this already honours it, because `ArrangeableField` is
-           the same component the Asset page hands its saved spans to. */
+           Spans come from the layout stack now, not from a hardcoded 12.
+           `user_theme_page_layouts.field_config` has existed since
+           20261104150001; what was missing was a renderer that read it, and
+           this page rendered the raw catalogue instead. `layout` above is
+           the resolver's answer, so a half-width theme field draws at half
+           width through the same `ArrangeableField` the Asset page uses.
+
+           Writing a span still needs `save_theme_layout_customization`,
+           which is not in production. So this reads a layout nothing can
+           yet save, which is the right way round: the renderer honours
+           whatever lands the moment the migration is applied, rather than
+           the migration landing on a page that ignores it. */
         <>
           {layout.map((section, sectionIdx) => {
             const collapsed = !!collapsedSections[section.slug]
@@ -827,7 +917,14 @@ export function ThemeResearchTab({
                         fieldName={field.name}
                         sectionId={section.id}
                         sectionSlug={section.slug}
-                        savedSpan={12}
+                        /* The span the layout stack resolved, not a
+                           hardcoded full row. This was 12 because nothing
+                           could save a theme span; `field_config.span` is
+                           now read through the same resolver the Asset page
+                           uses, so a half-width theme field draws at half
+                           width. `savedVisible` stays unconditional: an
+                           invisible field was already filtered out above. */
+                        savedSpan={field.span}
                         savedVisible
                       >
                         <ThemeContributionSection
@@ -855,10 +952,10 @@ export function ThemeResearchTab({
       {/* Customize fields: the ASSET page's customizer, pointed at this
           theme.
 
-          `ThemeFieldManagerModal` is still on disk and still reachable from
-          nothing: it was a 334-line stand-in with no templates, no widths,
-          no section management and no layout, beside a 3900-line customizer
-          that has all four. Deleting it is a separate decision.
+          `ThemeFieldManagerModal` was the 334-line stand-in here: no
+          templates, no widths, no section management and no layout, beside
+          a 3900-line customizer that has all four. Deleted, not left on
+          disk unreachable, so nobody wires it back in by finding it.
 
           Everything here is the asset modal's own behaviour against
           `theme_research_*` and `user_theme_*`, through the subject
