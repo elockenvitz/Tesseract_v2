@@ -6,6 +6,7 @@ import { useIsMobile } from '../../../hooks/useMediaQuery'
 // already unused before this change.
 import {
   Settings2, Users, Layers, History as HistoryIcon, Link2, Edit3, Target,
+  LayoutGrid,
 } from 'lucide-react'
 import type { ThemeReadMode } from '../../../lib/theme-workspace/modes'
 // `Button` went with the outlined "Manage" control, which is now a menu item.
@@ -19,21 +20,27 @@ import { Card } from '../../ui/Card'
  * Asset page lays its fields out in. Both degrade to a plain div with no
  * arrange provider mounted, which is exactly what this page is today.
  *
- * ── Why `ResearchArrangeProvider` is NOT mounted here yet ────────────────
+ * ── Why arranging could not be mounted until the body changed ───────────
  *
- * It takes a `ResearchSubject` as of this change, so it would compile and
- * drag. It must not be mounted while this page still renders
- * `useThemeResearchLayout()`, which is the RAW org catalogue: it reads
- * `theme_research_sections` and `theme_research_fields` directly and never
- * looks at `user_theme_layout_selections`. The provider feeds the grid
- * `sectionsForArranging` from the RESOLVED stack instead. Two field lists
- * from two sources agree only while no theme has a template or an override
- * — which is true today, and stops being true the moment one is saved, at
- * which point the page would draw one list and arrange would reorder
- * another. The body has to read the resolved stack first.
+ * The provider feeds the grid `sectionsForArranging` from the RESOLVED
+ * layout stack. This page used to render `useThemeResearchLayout()`, the RAW
+ * org catalogue, which consults neither `user_theme_page_layouts` nor
+ * `user_theme_layout_selections`. Two field lists from two sources agree
+ * only while no theme has a template or an override, so arranging would
+ * have reordered a list the page was not drawing the moment one was saved.
+ * The body reads the resolved stack now, so both halves read the same thing
+ * and arranging is mounted.
+ *
+ * Saving an arrangement still needs `save_theme_layout_customization`, which
+ * is not in production. The hook turns its absence into one plain sentence
+ * and the bar keeps the unsaved draft on screen, so the control degrades
+ * rather than losing work. The alternative -- hiding it -- is a surface the
+ * reader cannot find later, and a renderer nobody can see honouring the
+ * layout it now reads.
  */
 import {
   ResearchSectionCard, ArrangeableFieldGrid, ArrangeableField,
+  ResearchArrangeProvider, ResearchArrangeBar,
   RESEARCH_FIELD_GRID_CLASS,
 } from '../../research'
 /*
@@ -170,10 +177,19 @@ export function ThemeResearchTab({
     fields: catalogueFields,
     isLoading: catalogueLoading,
   } = useThemeResearchLayout()
+  /*
+   * One subject object for the page, not one per render.
+   *
+   * `ResearchArrangeProvider` memoizes its draft on the subject, and the
+   * hook below builds query keys from it, so a fresh `themeSubject(themeId)`
+   * in each place that needs it would be a new dependency every render.
+   */
+  const subject = useMemo(() => themeSubject(themeId), [themeId])
   const {
     displayedFieldsBySection,
+    sectionsForArranging,
     isLoading: layoutStackLoading,
-  } = useResearchPagePreferences(themeSubject(themeId))
+  } = useResearchPagePreferences(subject)
   const {
     contributions, contributors, isLoading: contribsLoading, updateVisibility,
     audienceReady,
@@ -213,11 +229,24 @@ export function ThemeResearchTab({
    * `placeholder` and no `field_type` is worse than a field drawn a moment
    * later.
    */
+  const [arranging, setArranging] = useState(false)
+
   const layout = useMemo(() => {
     const fieldById = new Map(catalogueFields.map(f => [f.id, f]))
     const sectionById = new Map(catalogueSections.map(s => [s.id, s]))
 
-    return displayedFieldsBySection
+    /*
+     * Arranging draws the sections nothing is in; reading does not.
+     *
+     * `displayedFieldsBySection` drops a section once it has no visible
+     * field, which is right for reading -- an empty heading is noise. It is
+     * wrong for arranging, because a section you cannot see is a section you
+     * cannot drag a field INTO, so moving the last field out of one would
+     * make the move permanent. Same split the Asset page makes.
+     */
+    const source = arranging ? sectionsForArranging : displayedFieldsBySection
+
+    return source
       .filter(section => !section.section_is_hidden)
       .map(section => ({
         id: section.section_id,
@@ -238,8 +267,13 @@ export function ThemeResearchTab({
           })
           .filter((f): f is NonNullable<typeof f> => f !== null),
       }))
-      .filter(section => section.fields.length > 0)
-  }, [displayedFieldsBySection, catalogueFields, catalogueSections])
+      /* Kept while arranging for the same reason as the source swap above:
+         an empty section has to stay on screen to be a drop target. */
+      .filter(section => arranging || section.fields.length > 0)
+  }, [
+    arranging, sectionsForArranging, displayedFieldsBySection,
+    catalogueFields, catalogueSections,
+  ])
   const [showManager, setShowManager] = useState(false)
 
   // One control naming the current view, as on the asset case — a row of
@@ -727,9 +761,11 @@ export function ThemeResearchTab({
               rather than reimplemented: focus management, Escape, outside
               click and arrow-key movement are already solved there, and a
               second copy would be a second set of those bugs. Export and
-              Arrange layout are absent because the theme case has neither
-              yet, and the menu hides an unavailable item rather than
-              advertising it disabled.
+              Export is still absent: the theme case has no exporter, and
+              the menu hides an unavailable item rather than advertising it
+              disabled. Arrange layout is here now that the body reads the
+              resolved layout stack -- until it did, arranging would have
+              reordered a list the page was not drawing.
             */}
             <ResearchToolbarMenu
               className="shrink-0"
@@ -739,6 +775,20 @@ export function ThemeResearchTab({
                   label: 'Customize fields',
                   icon: Settings2,
                   onSelect: () => setShowManager(true),
+                },
+                {
+                  key: 'arrange',
+                  label: 'Arrange layout',
+                  icon: LayoutGrid,
+                  onSelect: () => setArranging(true),
+                  /*
+                   * Only on your own research, and only on the document
+                   * view. Arranging writes THIS reader's selection row, so
+                   * offering it while reading someone else's research, or
+                   * the firm synthesis, would be a control that silently
+                   * rearranges a different page than the one on screen.
+                   */
+                  available: viewMode === 'thesis' && viewFilter === user?.id,
                 },
               ]}
             />
@@ -881,7 +931,13 @@ export function ThemeResearchTab({
            yet save, which is the right way round: the renderer honours
            whatever lands the moment the migration is applied, rather than
            the migration landing on a page that ignores it. */
-        <>
+        <ResearchArrangeProvider subject={subject} active={arranging}>
+          {arranging && (
+            <ResearchArrangeBar
+              subjectNoun="theme"
+              onClose={() => setArranging(false)}
+            />
+          )}
           {layout.map((section, sectionIdx) => {
             const collapsed = !!collapsedSections[section.slug]
             return (
@@ -946,7 +1002,7 @@ export function ThemeResearchTab({
               </ResearchSectionCard>
             )
           })}
-        </>
+        </ResearchArrangeProvider>
       )}
 
       {/* Customize fields: the ASSET page's customizer, pointed at this
