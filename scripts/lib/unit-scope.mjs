@@ -98,6 +98,16 @@ export const GATED_DIRS = [
   // exercises by hand, and a section that maps to no mode lands them on a
   // blank page with no error anywhere.
   'src/lib/theme-workspace',
+  // The Theme page's research body: the audience wiring, and the gates that
+  // hold a theme field card identical to an asset field card. Gated, not
+  // deferred, because its two failure modes are both silent. An audience
+  // that stages but never reaches `set_theme_contribution_audience` shows a
+  // restriction the database does not have — the `a_pin_audience` trigger
+  // RESTORES the old value and reports success. And "the theme card matches
+  // the asset card" is a claim about two files at once, so it stops being
+  // true when the ASSET side changes, with nothing on the theme side edited
+  // to notice.
+  'src/components/themes/research',
   // Stage-deadline ownership: the conflict target, the tenant filter path and
   // the query keys. Gated because every failure here is silent — a wrong
   // conflict target duplicates rows instead of replacing one, and a filter
