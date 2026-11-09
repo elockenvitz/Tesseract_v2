@@ -1,0 +1,69 @@
+-- Rollback for 20261109190002_sec_model_template_collaborations_org_scope.sql
+--
+-- WARNING: running this RESTORES an anonymous read of every organization-wide
+-- model-template share. The policies below are the verbatim production state
+-- captured before the fix applied, on 2026-11-09. They are recorded so the
+-- change is provably reversible, not because reverting is advisable.
+--
+-- The anon grant revoke is deliberately NOT undone -- see the foot of this
+-- file.
+
+begin;
+
+drop policy if exists "Users can view org-wide collaborations" on public.model_template_collaborations;
+
+create policy "Users can view org-wide collaborations"
+  on public.model_template_collaborations
+  for select
+  using (
+    ((user_id IS NULL) AND (team_id IS NULL) AND (org_node_id IS NULL))
+  );
+
+drop policy if exists "Users can view their own collaborations" on public.model_template_collaborations;
+
+create policy "Users can view their own collaborations"
+  on public.model_template_collaborations
+  for select
+  using ((user_id = auth.uid()));
+
+drop policy if exists "Users can view org node collaborations they belong to" on public.model_template_collaborations;
+
+create policy "Users can view org node collaborations they belong to"
+  on public.model_template_collaborations
+  for select
+  using (
+    ((org_node_id IS NOT NULL) AND (EXISTS ( SELECT 1
+       FROM org_chart_node_members
+      WHERE ((org_chart_node_members.node_id = model_template_collaborations.org_node_id)
+        AND (org_chart_node_members.user_id = auth.uid())))))
+  );
+
+drop policy if exists "Owners can manage template collaborations" on public.model_template_collaborations;
+
+create policy "Owners can manage template collaborations"
+  on public.model_template_collaborations
+  for all
+  using (
+    (EXISTS ( SELECT 1
+       FROM model_templates
+      WHERE ((model_templates.id = model_template_collaborations.template_id)
+        AND (model_templates.created_by = auth.uid()))))
+  );
+
+-- authenticated's prior grants. The forward migration reduced these to the
+-- four DML verbs; the default-privilege set also included TRUNCATE,
+-- REFERENCES, TRIGGER and MAINTAIN.
+grant all on public.model_template_collaborations to authenticated;
+
+-- The helper the forward migration added. Dropped last, after the policy that
+-- referenced it has been replaced above.
+drop function if exists public.model_template_in_current_org(uuid);
+
+commit;
+
+-- NOT RESTORED, on purpose:
+--
+--   grant all on public.model_template_collaborations to anon;
+--
+-- Supabase's ALTER DEFAULT PRIVILEGES grant, never a decision. Nothing in the
+-- application reads a model-template collaboration without an account.
