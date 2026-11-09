@@ -1,0 +1,26 @@
+-- Rollback for 20261109200000_sec_earnings_dates_revoke_dangerous_grants.sql
+--
+-- WARNING: running this RESTORES the ability of any authenticated user in any
+-- organization to TRUNCATE the global earnings calendar, and to attach a
+-- trigger to it. RLS does not govern either. The grants below are the verbatim
+-- production state captured before the fix applied, on 2026-11-09. They are
+-- recorded so the change is provably reversible, not because reverting is
+-- advisable.
+--
+-- The anon and PUBLIC revokes are deliberately NOT undone: neither held an ACL
+-- entry before the forward migration, so re-granting would not restore a prior
+-- state, it would create a new one.
+
+begin;
+
+grant truncate, references, trigger, maintain
+  on public.asset_earnings_dates to authenticated;
+
+comment on table public.asset_earnings_dates is
+  'Global earnings calendar. Shared across all tenants by design: an earnings date is published by the issuer and is not tenant research. Writes are denied by the absence of any INSERT/UPDATE/DELETE policy; ingestion must run as service_role, which bypasses RLS.';
+
+commit;
+
+-- Confirms the revert, if you really want it:
+--   select has_table_privilege('authenticated','public.asset_earnings_dates','TRUNCATE');
+--   -- t again, which is the hole
