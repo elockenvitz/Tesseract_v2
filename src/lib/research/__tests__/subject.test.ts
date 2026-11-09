@@ -412,14 +412,25 @@ describe('the curated asset slug list stays inside asset vocabulary', () => {
   const isTest = (p: string) =>
     p.includes('__tests__') || /\.(test|spec)\.tsx?$/.test(p)
 
+  /*
+   * `__tests__` is skipped at the DIRECTORY, and a test file before it is
+   * read. Filtering after the read cost this gate a timeout: the first
+   * version read every file under `src` and then threw most of them away,
+   * which runs in 2s alone and over 5s under full-suite load -- the same
+   * failure `holdings-parity.test.ts` already shows. The result is
+   * identical; only the work is smaller.
+   */
   const walk = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap(e => {
       const full = join(dir, e.name)
-      if (e.isDirectory()) return walk(full)
-      return /\.tsx?$/.test(e.name) ? [full] : []
+      if (e.isDirectory()) return e.name === '__tests__' ? [] : walk(full)
+      if (!/\.tsx?$/.test(e.name)) return []
+      return isTest(e.name) ? [] : [full]
     })
 
-  it('is imported only by the modules that are allowed to apply it', () => {
+  /* Still a whole-tree read, so it gets a budget rather than the 5s
+     default: timing out is indistinguishable from the gate passing. */
+  it('is imported only by the modules that are allowed to apply it', { timeout: 30_000 }, () => {
     const offenders = walk(join(process.cwd(), 'src'))
       .map(full => ({
         rel: relative(process.cwd(), full).split(sep).join('/'),
@@ -433,7 +444,6 @@ describe('the curated asset slug list stays inside asset vocabulary', () => {
           .replace(/\/\*[\s\S]*?\*\//g, '')
           .replace(/^\s*\/\/.*$/gm, ''),
       }))
-      .filter(f => !isTest(f.rel))
       /*
        * The import, not a mention: the comments left where it USED to be
        * read are the record of this fix and must not fail it.
