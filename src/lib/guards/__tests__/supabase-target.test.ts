@@ -15,6 +15,9 @@
  * must FAIL to resolve, and the two refs are pinned so a silent edit to either
  * shows up as a test change in the diff.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -147,8 +150,52 @@ describe('a complete invocation resolves to an explicit command', () => {
     expect(r.args.slice(-2)).toEqual(['--use-api', '--debug'])
   })
 
+  it('forwards --yes, which is how CI answers the production confirmation', () => {
+    const r = run(['prod', 'market-news', '--yes'])
+    expect(r.args.at(-1)).toBe('--yes')
+  })
+
   it('never resolves a ref that is not one of the two', () => {
     const refs = ['prod', 'staging'].map(e => run([e, 'market-news']).ref)
     expect(new Set(refs)).toEqual(new Set(Object.values(TARGETS)))
+  })
+})
+
+/*
+ * The CI deploy must be non-interactive.
+ *
+ * Run 42477797152 (2026-11-08) passed the allowlist, the 40-hex SHA check, the
+ * required-reviewer gate, the origin/main ancestry check and the function-exists
+ * check, printed the correct production ref, and then deployed nothing:
+ *
+ *   Confirmation required: Deploy 1 Function (target: ... - production).
+ *   This run can't ask because stdout is not a terminal.
+ *   Nothing was changed.  Re-run with --yes to confirm.
+ *
+ * `supabase/setup-cli@v1` is pinned to `version: latest`, so a CLI release can
+ * reintroduce a prompt at any time. A missing flag here does not fail loudly in
+ * review; it fails once, in production, after a human has already approved the
+ * environment gate and walked away. So it is pinned.
+ */
+describe('the gated edge-function deploy workflow', () => {
+  // Read from the repository root: under vitest `import.meta.url` is not a
+  // file: URL, so `new URL(..., import.meta.url)` throws at collection time.
+  const workflow = readFileSync(
+    join(process.cwd(), '.github', 'workflows', 'deploy-edge-function.yml'),
+    'utf8'
+  )
+  const deployLine = workflow.split(/\r?\n/).find(l => l.includes('npm run deploy:fn:prod -- '))
+
+  it('invokes the deploy script with --yes, so the CLI never waits for a terminal', () => {
+    expect(deployLine, 'the workflow no longer runs the deploy script at all').toBeTruthy()
+    expect(
+      deployLine,
+      'the CLI asks for confirmation and fails closed without a terminal, so CI must answer in advance'
+    ).toContain('--yes')
+  })
+
+  it('still passes the function as a quoted shell variable, never as a workflow expression', () => {
+    expect(deployLine!).toContain('"$IN_FUNCTION"')
+    expect(deployLine!, 'an inputs.* expression inside run: is a shell-injection seam').not.toMatch(/\$\{\{/)
   })
 })

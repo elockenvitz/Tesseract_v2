@@ -12,13 +12,27 @@
  *
  * Source assertions, because the defect is the PRESENCE of a call in a place,
  * which is exactly what a grep can state and a behavioural test cannot.
+ *
+ * ── Why the source is scanned once ───────────────────────────────────────────
+ *
+ * Two of these tests ask a question about the whole tree, and the tree is
+ * about 2800 files. Each used to walk it and then read every file again
+ * individually inside its own `.filter()`, so the file paid for the tree twice
+ * per run on top of re-reading single files for the other sixteen tests. That
+ * put it within a few hundred milliseconds of vitest's 5s default, and it
+ * timed out whenever the runner scheduled it beside another guard that walks
+ * the same tree, which made the Netlify deploy gate fail at random on a green
+ * tree.
+ *
+ * The tree is now read once per run and every assertion reads from that. The
+ * assertions and their guarantees are unchanged; only the number of times the
+ * disk is read has changed.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 const SRC = path.join(process.cwd(), 'src')
-const read = (p: string) => readFileSync(path.join(SRC, p), 'utf8')
 
 /**
  * A file's CODE, with comments removed.
@@ -30,11 +44,12 @@ const read = (p: string) => readFileSync(path.join(SRC, p), 'utf8')
  * fix, and, worse, would pass if someone deleted the comment while leaving the
  * call. Stripping comments first makes these assertions about behaviour.
  */
-const codeOf = (p: string) =>
-  read(p)
+function strip(raw: string): string {
+  return raw
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^[ \t]*\/\/.*$/gm, '')
     .replace(/([^:])\/\/.*$/gm, '$1')
+}
 
 /** Every .ts/.tsx file under src/, excluding tests. */
 function sourceFiles(dir = SRC, acc: string[] = []): string[] {
@@ -50,43 +65,89 @@ function sourceFiles(dir = SRC, acc: string[] = []): string[] {
   return acc
 }
 
+interface SourceFile {
+  /** Path relative to src, forward-slashed and normalised. */
+  rel: string
+  /** Comment-stripped text. */
+  code: string
+}
+
+/** `a/b/../c.ts` and `a\c.ts` both key as `a/c.ts`. */
+const key = (p: string) => path.normalize(p).replace(/\\/g, '/')
+
 /**
- * Every source file, walked and comment-stripped ONCE.
+ * The tree, read once per run of this file.
  *
- * Two of the rules below scan the whole tree, and each re-walked ~580 files
- * and re-stripped every one of them inside its own `it`. Alone that is fast.
- * Under the parallel guard, with 500 test files competing for the same disk,
- * the two took 9.5s and 10.7s and tripped vitest's 5s default — so both
- * reported `Test timed out` instead of a verdict.
- *
- * That is the worse half of the failure: a gate that goes red for being slow
- * is indistinguishable from one that goes red for finding something, and the
- * reflex it trains is to raise the timeout, which leaves the gate one slower
- * machine away from doing it again.
- *
- * At module scope the scan happens once, during collection, where no per-test
- * timeout applies. `viewport-sizing.test` hit this exact wall and solved it
- * this exact way.
+ * Populated by `beforeAll` and cleared by `afterAll` rather than memoised on
+ * first use. vitest runs both on every execution of this file, watch-mode
+ * re-triggers included, so a file edited between runs is re-read on the next
+ * one. A lazy memo would be correct today only because the module registry
+ * happens to be rebuilt per run, and that is not a property this guard should
+ * depend on.
  */
-const SOURCES = sourceFiles().map(f => {
-  const rel = path.relative(SRC, f).replace(/\\/g, '/')
-  return { rel, code: codeOf(rel) }
+let corpus: SourceFile[] | null = null
+
+beforeAll(() => {
+  corpus = sourceFiles().map(abs => ({
+    rel: key(path.relative(SRC, abs)),
+    code: strip(readFileSync(abs, 'utf8')),
+  }))
 })
+
+afterAll(() => {
+  corpus = null
+})
+
+/**
+ * The scanned tree.
+ *
+ * Throws rather than rescanning if the hook has not run, and throws again if
+ * the tree scanned as empty. A guard that quietly substitutes an empty tree
+ * would report PASS on every "appears nowhere" assertion below while checking
+ * nothing at all.
+ */
+function sources(): SourceFile[] {
+  if (corpus === null) {
+    throw new Error('the source tree was not scanned: beforeAll did not run')
+  }
+  if (corpus.length === 0) {
+    throw new Error('the source tree scanned as empty, which cannot be right')
+  }
+  return corpus
+}
+
+/**
+ * One file's comment-stripped code, by path relative to src.
+ *
+ * Throws when the path is not in the tree, so a file that is renamed or moved
+ * fails the assertion that names it instead of silently reading as empty.
+ */
+const codeOf = (p: string): string => {
+  const want = key(p)
+  const hit = sources().find(f => f.rel === want)
+  if (!hit) throw new Error(`${want} is not in the scanned source tree`)
+  return hit.code
+}
 
 describe('the scan these rules depend on is real', () => {
   /*
    * Both whole-tree rules below assert an empty array. If the walk returned
    * nothing — a moved root, a bad cwd — they would pass while checking no
    * files at all, which is the failure mode this repo keeps producing. This
-   * is what makes the two gates below non-vacuous.
+   * is what makes those gates non-vacuous.
+   *
+   * `sources()` already throws on a COMPLETELY empty tree. These two go
+   * further: a walk that reached three files, or one whose comment stripping
+   * silently stopped working, is not empty and would slip past that check
+   * while making every "appears nowhere" assertion meaningless.
    */
   it('reached a meaningful number of source files', () => {
-    expect(SOURCES.length).toBeGreaterThan(300)
+    expect(sources().length).toBeGreaterThan(300)
   })
 
   it('actually stripped comments, so the rules match code and not prose', () => {
-    expect(SOURCES.some(s => s.code.length > 0)).toBe(true)
-    expect(SOURCES.every(s => !/^\s*\/\/ /m.test(s.code))).toBe(true)
+    expect(sources().some(s => s.code.length > 0)).toBe(true)
+    expect(sources().every(s => !/^\s*\/\/ /m.test(s.code))).toBe(true)
   })
 })
 
@@ -98,7 +159,9 @@ describe('getPublicUrl is never used', () => {
    * publish an unauthenticated link to the object forever.
    */
   it('appears nowhere in application source', () => {
-    const offenders = SOURCES.filter(s => s.code.includes('getPublicUrl')).map(s => s.rel)
+    const offenders = sources()
+      .filter(f => f.code.includes('getPublicUrl'))
+      .map(f => f.rel)
     expect(offenders).toEqual([])
   })
 
@@ -140,9 +203,9 @@ describe('the organization logo has one resolver', () => {
   it('no surface signs template-branding directly any more', () => {
     // The five independent signers are now one. Any direct signing of this
     // bucket outside the shared cache is the defect returning.
-    const offenders = SOURCES
-      .filter(s => s.code.includes("'template-branding'") && s.code.includes('createSignedUrl'))
-      .map(s => s.rel)
+    const offenders = sources()
+      .filter(f => f.code.includes("'template-branding'") && f.code.includes('createSignedUrl'))
+      .map(f => f.rel)
     expect(offenders).toEqual([])
   })
 })

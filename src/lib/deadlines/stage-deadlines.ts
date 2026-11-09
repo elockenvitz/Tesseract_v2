@@ -28,13 +28,28 @@
  * the same stage can legitimately carry a different deadline in two different
  * workflows, so a two-column key would be wrong even if one existed.
  *
- * ── Known gap this module cannot close ───────────────────────────────────
+ * ── The server enforces the boundary. Measured, not assumed ──────────────
  *
- * The table's RLS is permissive — SELECT is `USING (true)` and INSERT only
- * checks `auth.uid() IS NOT NULL`, with no UPDATE or DELETE policy at all.
- * So the scoping here is a correctness measure in the client, not a boundary
- * the server enforces, and re-saving or deleting a deadline cannot work until
- * those policies exist. Both need a migration. See the lane report.
+ * An earlier version of this comment said the table's RLS was permissive
+ * (`SELECT USING (true)`, INSERT checking only `auth.uid() IS NOT NULL`, no
+ * UPDATE or DELETE policy at all) and that the scoping here was therefore the
+ * only thing doing the work. That was true when it was written and is no
+ * longer. Queried live on 2026-11-09, `asset_stage_deadlines` has all four
+ * policies, each an EXISTS over the owning workflow:
+ *
+ *     SELECT / DELETE  EXISTS (workflows w WHERE w.id = workflow_id
+ *                              AND w.organization_id = current_org_id())
+ *     INSERT / UPDATE  the same, AND (set_by IS NULL OR set_by = auth.uid())
+ *
+ * So the tenant boundary is the server's, and re-saving and deleting work.
+ *
+ * The client-side scoping below is kept anyway, for a reason RLS cannot
+ * address: `orgId` leads the QUERY KEY. React Query caches per key, and
+ * without the org in it a deadline fetched under one organization is served
+ * from cache after switching to another, until the refetch lands. RLS governs
+ * what the server returns, never what the client already holds. The select
+ * and filter are then defense in depth over the same boundary, which is
+ * cheap and costs one embed.
  */
 
 /** PostgREST select that pulls the owning workflow's org alongside the row.
@@ -55,6 +70,12 @@ export const STAGE_DEADLINE_CONFLICT_TARGET = 'asset_id,workflow_id,stage_id'
  *  and the row lookups are both derived from, so they cannot drift apart. */
 export const STAGE_DEADLINE_UNIQUE_COLUMNS = ['asset_id', 'workflow_id', 'stage_id'] as const
 
+/** Shown when a stage is rendered outside any workflow. Deliberately explains
+ *  the cause rather than saying "error": the fix is to open the stage from a
+ *  workflow, which the reader can act on. */
+export const NO_WORKFLOW_MESSAGE =
+  'Deadlines belong to a workflow. Open this stage from a workflow to set one.'
+
 export interface StageDeadlineRowInput {
   assetId: string
   workflowId: string
@@ -70,9 +91,9 @@ export interface StageDeadlineRowInput {
  * Throws rather than writing when `workflowId` is missing. A deadline without
  * one cannot satisfy the unique key, so the upsert would insert a second row
  * for a stage that already has a deadline instead of replacing the first —
- * and the reader, which filters on the full key, would then surface neither
- * deterministically. Failing here makes that a visible bug at the call site
- * rather than a duplicate row discovered later.
+ * and the server would refuse it anyway, because the INSERT policy resolves
+ * the organization through exactly this column. Failing here makes that a
+ * visible bug at the call site rather than a confusing `42501` later.
  */
 export function buildStageDeadlineRow(input: StageDeadlineRowInput) {
   if (!input.workflowId) {
@@ -109,7 +130,13 @@ export function stageDeadlineKey(
   return ['stage-deadline', orgId ?? null, assetId, workflowId ?? null, stageId] as const
 }
 
-/** Query key for every deadline on one asset under one workflow. */
+/**
+ * Query key for every deadline on one asset under one workflow.
+ *
+ * This is the key `InvestmentTimeline` already reads. Saving used to
+ * invalidate `['asset-deadlines', assetId]`, which no query uses, so a saved
+ * deadline did not appear on the timeline until something else refetched.
+ */
 export function workflowDeadlinesKey(
   orgId: string | null | undefined,
   assetId: string | null | undefined,

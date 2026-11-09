@@ -242,11 +242,20 @@ export const SITES = {
   'src/components/coverage/CoverageManager.tsx::org_chart_nodes::pk-filtered': 2,
   'src/components/mobile/MobileCoverage.tsx::org_chart_nodes::embed': 1,
   'src/components/projects/CreateTeamModal.tsx::org_chart_nodes::embed': 1,
-  'src/components/tabs/AssetTab.tsx::org_chart_nodes::embed': 1,
   'src/components/tabs/ProjectDetailTab.tsx::org_chart_nodes::embed': 1,
   'src/components/templates/ExcelModelTemplateManager.tsx::org_chart_nodes::embed': 1,
   'src/hooks/useContributions.ts::org_chart_nodes::embed': 2,
   'src/hooks/useLayoutCollaborations.ts::org_chart_nodes::embed': 1,
+  /*
+   * These two are the SAME audience read that used to sit inline in
+   * AssetTab.tsx, which is why that entry is gone from above. It moved into
+   * `useOrgAudienceContext.ts` so the node rows are typed once instead of
+   * re-inferred at every use, and `useThemeResearch.ts` is the theme
+   * subject's counterpart of it. The query did not change, only its home, so
+   * the review that covered the AssetTab site covers these.
+   */
+  'src/hooks/useOrgAudienceContext.ts::org_chart_nodes::embed': 1,
+  'src/hooks/useThemeResearch.ts::org_chart_nodes::embed': 1,
   'src/hooks/useModelTemplateCollaborations.ts::org_chart_nodes::embed': 1,
   'src/pages/OrganizationPage.tsx::org_chart_nodes::pk-filtered': 2,
   'src/pages/PortfoliosListPage.tsx::org_chart_nodes::embed': 1,
@@ -296,14 +305,10 @@ export const SITES = {
   // ── research_fields
   'src/components/templates/ResearchFieldsManager.tsx::research_fields::unscoped': 1,
   'src/hooks/useResearchFields.ts::research_fields::embed': 4,
-  'src/hooks/useResearchFields.ts::research_fields::pk-filtered': 1,
   'src/hooks/useResearchFields.ts::research_fields::unscoped': 2,
-  'src/hooks/useUserAssetPagePreferences.ts::research_fields::unscoped': 1,
   // ── research_sections
   'src/hooks/useResearchFields.ts::research_sections::embed': 4,
-  'src/hooks/useResearchFields.ts::research_sections::pk-filtered': 1,
   'src/hooks/useResearchFields.ts::research_sections::unscoped': 2,
-  'src/hooks/useUserAssetPagePreferences.ts::research_sections::embed': 1,
   // ── target_date_funds
   'src/pages/TDFListPage.tsx::target_date_funds::unscoped': 1,
   // ── teams
@@ -404,6 +409,39 @@ export const SITES = {
  * review that did not happen.
  */
 export const REVIEWED_RPCS = new Set([
+  /*
+   * Read from the live database on 2026-11-09, when merging main into
+   * discovery/asset-page-2 brought these call sites together.
+   *
+   * `run_due_workflow_rules()` and `run_workflow_rule(p_rule_id uuid)` are
+   * both SECURITY DEFINER with `search_path=public, pg_temp`, EXECUTE to
+   * authenticated, and both authorize before doing anything:
+   *   run_due_workflow_rules  v_actor := auth.uid()      -> 28000 if null
+   *                           v_org   := current_org_id() -> 42501 if null
+   *   run_workflow_rule       v_actor := auth.uid()      -> 28000 if null
+   *                           rule lookup joins
+   *                           w.organization_id = current_org_id()
+   *                                                      -> P0002 if absent,
+   *                           so another org's rule id reads as "not found"
+   *                           rather than running.
+   */
+  'run_due_workflow_rules',
+  'run_workflow_rule',
+
+  /*
+   * `set_theme_contribution_audience` IS NOT IN PRODUCTION. Checked on
+   * 2026-11-09: no function of that name exists in `public`.
+   *
+   * That is deliberate, not an oversight — its two migrations are held back
+   * until the frontend that writes the new visibility vocabulary has
+   * deployed, because applying them first makes production inserts fail
+   * 23514. It is listed here so the gate does not block the merge on a name
+   * it cannot read, and it must be RE-READ against the live database once
+   * those migrations are applied. Until then the theme audience picker calls
+   * an RPC that will return "function does not exist".
+   */
+  'set_theme_contribution_audience',
+
   // Read from the live database on 2026-11-06 — see the note above.
   'current_org_id',
   'end_morph_session',

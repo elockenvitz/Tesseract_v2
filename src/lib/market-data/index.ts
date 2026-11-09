@@ -9,6 +9,7 @@
  *   paging        reading a table larger than one PostgREST response
  *   asset-access  the one correct way to read `assets`, at any universe size
  *   reads         one normalized way to read a price, with its provenance
+ *   sizing-price  whether a price may size, book or apply a trade
  *
  * Nothing exported HERE talks to a network, a database or a provider. That is
  * what makes it testable against thousands of instruments in a unit test, and
@@ -104,6 +105,20 @@ export type {
   MarketDataReader,
 } from './reads'
 export { createMarketDataReader, splitSource, DEFAULT_SERIES_POINTS } from './reads'
+
+export type {
+  PriceBasis,
+  SizingPriceInput,
+  PriceVerdictCode,
+  SizingPriceVerdict,
+  AssessOptions,
+} from './sizing-price'
+export {
+  assessSizingPrice,
+  assertBookablePrice,
+  describePriceBasis,
+  UnusablePriceError,
+} from './sizing-price'
 
 export type { PageResult, PageFetcher, PagingOptions } from './paging'
 export {

@@ -1,11 +1,16 @@
 /**
  * The two reads behind the direct-messaging panel.
  *
- * They live here, out of the component, for the same reason the unread-badge
- * check does (see `unread-direct-messages.ts`): what matters about them is the
+ * They live here, out of the component, because what matters about them is the
  * NUMBER of round trips they make and how they fold the results together, and
  * neither can be tested against a component that needs auth, an organization
  * context, a router and a live Supabase client to mount.
+ *
+ * The header's unread-badge check was moved out for the same reason, into
+ * `unread-direct-messages.ts`, but that change depends on a
+ * `has_unread_direct_messages` RPC that is NOT applied to production, so it is
+ * deliberately not part of this release. Do not add a reference to that file
+ * here until its migration is applied and reconciled.
  *
  * ── What was wrong with them ─────────────────────────────────────────────
  *

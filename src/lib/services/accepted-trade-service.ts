@@ -17,6 +17,7 @@ import { deleteVariant } from './intent-variant-service'
 import { moveTradeIdea, reconcileOutcomeAfterRevert } from './trade-idea-service'
 import { FINAL_STAGE } from '../ideas/stage-model'
 import { resolveAcceptSizingBasis, computeAcceptSizing, isRefusal } from '../decisions/accept-sizing'
+import { assertBookablePrice, type PriceBasis } from '../market-data/sizing-price'
 import { resolveIdeaAfterDecision, type FanInResult } from '../decisions/decision-fan-in'
 import {
   ApproveExecuteError,
@@ -125,6 +126,32 @@ export interface CreateAcceptedTradeInput {
   delta_shares?: number | null
   notional_value?: number | null
   price_at_acceptance?: number | null
+  /**
+   * Where `price_at_acceptance` came from, and when it was true.
+   *
+   * Required in practice for any trade that carries a share quantity, because
+   * `assertTradePriceIsBookable` refuses an unsourced or undated price at the
+   * write boundary. Optional in the type so a decision recorded WITHOUT
+   * executable sizing -- an Inbox accept that could not be priced, an ad-hoc
+   * entry -- still compiles and still records the decision.
+   *
+   * `price_as_of` is when the price was TRUE, never when it was read. For a
+   * `book_mark` it is null by construction: nothing in `portfolio_holdings`
+   * records when a mark was last a market price.
+   */
+  price_basis?: PriceBasis | null
+  price_as_of?: string | null
+  /**
+   * Accept a price the policy would otherwise reject: one older than the
+   * daily-close window, or a book mark, whose age cannot be established at
+   * all. Set only where sizing against an old basis is the deliberate rule.
+   *
+   * `accept-sizing` sets it because `target = current + delta` only closes
+   * when both sides are in the same money. A correction sets it because it is
+   * re-booking a past fill at that day's price on purpose. Trade Lab's
+   * execute path does not.
+   */
+  allow_stale_basis?: boolean
   source: AcceptedTradeSource
   decision_request_id?: string | null
   lab_variant_id?: string | null
@@ -166,9 +193,95 @@ export interface CreateAcceptedTradeInput {
 const roundIntOrNull = (v: number | null | undefined): number | null =>
   v == null || !Number.isFinite(v) ? null : Math.round(v)
 
+/**
+ * The price-validity gate, at the shared write boundary.
+ *
+ * ── Why it is HERE, and not at the call sites ───────────────────────────
+ *
+ * `createAcceptedTrade` holds the only `INSERT INTO accepted_trades` in the
+ * codebase. Every other write to that table is an UPDATE of a row this
+ * function already created. Verified by grep over `src/`: the inserts are
+ * one, here; the updates are `finalizeTradeForHoldingsSource`,
+ * `updateAcceptedTradeSizing`, `revertAcceptedTrade`, `updateExecutionStatus`
+ * and `trade-reconciliation-service`. So every production path funnels
+ * through this one function --
+ *
+ *   createAdHocAcceptedTrade          ad hoc
+ *   acceptFromInboxToAcceptedTrade    inbox
+ *   bulkPromoteFromSimulation         simulation
+ *   bulkPromoteWithBatch              batch promotion
+ *   createCorrectionTrade             correction
+ *   executeSimVariants                Trade Lab
+ *
+ * -- and `applyTradeToHoldings`, which moves shares and cash, is called from
+ * inside it. Gating here is therefore complete coverage by construction
+ * rather than by enumeration, which matters because the first version of
+ * this safeguard sat in `buildAcceptedTradeInput` on the Trade Lab path
+ * alone. That path had produced 0 of the 50 priced trades in production,
+ * while both known-contaminated trades came in through ad hoc and inbox.
+ *
+ * ── It covers exactly the gap the database cannot see ──────────────────
+ *
+ * `apply_trade_to_holdings` already fails closed on the two things SQL can
+ * judge for itself:
+ *
+ *   no share quantity    returns `applied: false` and writes nothing
+ *   null or <= 0 price   RAISEs, so nothing moves
+ *
+ * What it cannot judge is whether a positive number is a REAL price. 100.00
+ * is positive. A five-month-old mark is positive. That is this gate's job,
+ * and the division of labour matters, because a decision must survive a
+ * missing price.
+ *
+ * So two cases are deliberately passed through rather than refused:
+ *
+ * A trade with no share quantity. Nothing moves, so there is nothing to
+ * protect. Three of the 53 production trades are this shape -- an Inbox
+ * accept that could not be priced, an ad-hoc entry awaiting sizing.
+ *
+ * A trade with shares and NO price. The RPC refuses the apply, the trade
+ * rests at `not_started`, and the reason lands on `execution_note` -- the
+ * behaviour `execution-truth.test.ts` pins, and the invariant this service
+ * states throughout: a decision is never lost because it could not be
+ * priced. Refusing here would delete the decision in order to prevent a
+ * write that was already impossible.
+ *
+ * What is NOT passed through is a price that is present and unverifiable.
+ * That is the dangerous shape, because it looks fine and moves money: the
+ * literal 100 that booked 16,550 shares of ABT, the 228.50 book mark that
+ * bought 743 shares where the real close bought ~510.
+ *
+ * A past transaction date is not blocked either. This judges the PRICE's
+ * effective date, not the trade's, so a correction re-booking a June fill at
+ * June's close passes with `allow_stale_basis`.
+ */
+function assertTradePriceIsBookable(input: CreateAcceptedTradeInput): void {
+  const movesPosition = input.target_shares != null || input.delta_shares != null
+  if (!movesPosition) return
+
+  // See above: absent and non-positive are the database's to refuse, and it
+  // does, without losing the decision.
+  const price = input.price_at_acceptance
+  if (price == null || !(price > 0)) return
+
+  assertBookablePrice(
+    input.asset_symbol ?? `asset ${input.asset_id}`,
+    {
+      price: input.price_at_acceptance ?? null,
+      asOf: input.price_as_of ?? null,
+      basis: input.price_basis ?? null,
+    },
+    { allowStaleBasis: input.allow_stale_basis ?? false },
+  )
+}
+
 export async function createAcceptedTrade(
   input: CreateAcceptedTradeInput
 ): Promise<AcceptedTradeWithJoins> {
+  // Before the insert, and therefore before `applyTradeToHoldings` below.
+  // Throws `UnusablePriceError`, naming the asset and the reason.
+  assertTradePriceIsBookable(input)
+
   const { data, error } = await supabase
     .from('accepted_trades')
     .insert({
@@ -482,6 +595,23 @@ export interface CreateCorrectionTradeInput {
   delta_shares?: number | null
   notional_value?: number | null
   price_at_acceptance?: number | null
+  /**
+   * Where the correction's price came from, and when it was true.
+   *
+   * A correction normally re-books a past fill at the price that was real on
+   * the fill's own date, so `price_as_of` is expected to be in the past and
+   * `allow_stale_basis` defaults to true below. That is the point: a dated
+   * historical close used deliberately is a legitimate basis, and refusing it
+   * would make it impossible to correct the very trades this lane found.
+   *
+   * What is still refused is a correction with shares and no verifiable
+   * price at all -- undated, unsourced, absent or non-positive -- because
+   * that is how the original damage was done.
+   */
+  price_basis?: PriceBasis | null
+  price_as_of?: string | null
+  /** Defaults to true. See `price_as_of`. */
+  allow_stale_basis?: boolean
   /** Action override. Defaults to the original trade's action (most
    *  corrections are same-direction sizing tweaks). */
   action?: TradeAction
@@ -535,6 +665,15 @@ export async function createCorrectionTrade(
     delta_shares: input.delta_shares ?? null,
     notional_value: input.notional_value ?? null,
     price_at_acceptance: input.price_at_acceptance ?? null,
+    price_basis: input.price_basis ?? null,
+    price_as_of: input.price_as_of ?? null,
+    /*
+     * Defaults to true, because a correction's whole job is to re-book a past
+     * fill at the price that was real on its own date. Blocking that would
+     * make the trades this lane found uncorrectable. A correction carrying
+     * shares and no verifiable price is still refused at the boundary.
+     */
+    allow_stale_basis: input.allow_stale_basis ?? true,
     // Corrections keep the original's provenance bucket — they're
     // post-reconciliation touch-ups, not fresh inbox/simulation output.
     source: (original as any).source as AcceptedTradeSource,
@@ -951,6 +1090,21 @@ export async function acceptFromInboxToAcceptedTrade(
     notional_value: computed.notional_value ?? null,
     price_at_acceptance: computed.price_used ?? null,
     /*
+     * The provenance the write boundary checks. It comes from the same
+     * normalization that produced the share count, so the number and its
+     * source cannot drift apart.
+     *
+     * `allow_stale_basis` is true because this path sizes against the book's
+     * own carrying price on purpose: `target = current + delta` only closes
+     * when both sides are measured in the same money. The gating is recorded
+     * rather than waved through -- `computed.price_gated` is true for every
+     * book mark now, and `sized.priceWarning` carries the sentence the PM
+     * sees. Undated-with-a-basis and unsourced are still refused outright.
+     */
+    price_basis: computed.price_basis ?? null,
+    price_as_of: computed.price_as_of ?? null,
+    allow_stale_basis: true,
+    /*
      * Provenance for whatever evidence this produces. Nothing observed a
      * fill and nobody attested to one — a PM decision implied it, and the
      * record says exactly that so a future broker-confirmed execution stays
@@ -1125,6 +1279,23 @@ export async function bulkPromoteFromSimulation(
       delta_shares: computed?.delta_shares ?? null,
       notional_value: computed?.notional_value ?? null,
       price_at_acceptance: computed?.price_used ?? null,
+      /*
+       * Provenance stored on the variant when it was sized, replayed here.
+       *
+       * `allow_stale_basis` is NOT set. A promotion commits a number the
+       * pipeline resolved at simulation time, and if that number has since
+       * become unverifiable the right answer is to re-size, not to book it.
+       * Twenty of the twenty-one active variants in production carry prices
+       * from before the October recovery, so this will refuse some of them
+       * loudly -- which is the intended behaviour, and the reason a variant
+       * carries its own `price_as_of` rather than being re-dated on promote.
+       */
+      price_basis: computed?.price_basis ?? null,
+      price_as_of: computed?.price_as_of ?? null,
+      // Cast the ROW, not the property: these rows come back typed `never`
+      // (the repo's ungenerated Supabase types), so reading `variant.asset`
+      // directly would add to the repo-wide error count for no benefit.
+      asset_symbol: (variant as { asset?: { symbol?: string } | null }).asset?.symbol ?? null,
       source: 'simulation',
       lab_variant_id: variant.id,
       trade_queue_item_id: variant.trade_queue_item_id,
@@ -1931,6 +2102,15 @@ export async function bulkPromoteWithBatch(params: {
       delta_shares: computed?.delta_shares ?? null,
       notional_value: computed?.notional_value ?? null,
       price_at_acceptance: computed?.price_used ?? null,
+      // Same rule as `bulkPromoteFromSimulation`: the variant's own recorded
+      // provenance, and no stale allowance. A batch promote is still a
+      // promote.
+      price_basis: computed?.price_basis ?? null,
+      price_as_of: computed?.price_as_of ?? null,
+      // Cast the ROW, not the property: these rows come back typed `never`
+      // (the repo's ungenerated Supabase types), so reading `variant.asset`
+      // directly would add to the repo-wide error count for no benefit.
+      asset_symbol: (variant as { asset?: { symbol?: string } | null }).asset?.symbol ?? null,
       source: 'simulation',
       lab_variant_id: variant.id,
       trade_queue_item_id: variant.trade_queue_item_id,

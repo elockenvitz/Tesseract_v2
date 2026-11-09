@@ -108,9 +108,12 @@ export const GATED_DIRS = [
   // true when the ASSET side changes, with nothing on the theme side edited
   // to notice.
   'src/components/themes/research',
-  // Stage-deadline ownership: the conflict target, the tenant filter path and
-  // the query keys. Gated because every failure here is silent — a wrong
-  // conflict target duplicates rows instead of replacing one, and a filter
+  // Stage-deadline identity: the conflict target, the workflow that carries
+  // both the unique key and the row's organization, the tenant filter path and
+  // the query keys. Gated because every failure here is silent — a conflict
+  // target matching no index duplicates rows instead of replacing one and
+  // fails the save with a code nobody reads; a read missing workflow_id
+  // returns another workflow's deadline rather than an error; and a filter
   // naming a column the table does not have fails the read rather than
   // widening it, so nothing looks broken until a deadline will not save.
   'src/lib/deadlines',
@@ -123,6 +126,14 @@ export const GATED_DIRS = [
   'src/lib/security',
   'src/lib/services',
   'src/lib/coverage',
+  /*
+   * `src/lib/trade-lab` had test files but no `__tests__` directory -- its
+   * suites sat beside their sources as `*.test.ts` -- so the directory came
+   * into existence with the sizing price-validity gate and was neither gated
+   * nor deferred. This is the lane that converts an approved weight into a
+   * share count and a cash movement; its tests belong in the gate.
+   */
+  'src/lib/trade-lab',
   'src/components/coverage',
   'src/components/signals',
   'src/components/mobile',
@@ -285,13 +296,15 @@ export const GATED_DIRS = [
   'src/lib/onboarding',
 
   /*
-   * `src/lib/messaging` is the read seam the direct-messaging panel and the
-   * header's unread badge share. Gated rather than deferred because what its
-   * tests assert is the NUMBER of queries each read makes, and that is the
-   * whole reason the code was moved out of the components: a regression there
-   * is invisible in review and shows up only as database load. These are also
-   * the only gates on which messages count as unread, so an ungated run of
-   * them would let a wrong badge land quietly.
+   * `src/lib/messaging` is the read seam the direct-messaging panel uses.
+   * Gated rather than deferred because what its tests assert is the NUMBER of
+   * queries each read makes, and that is the whole reason the code was moved
+   * out of the component: a regression there is invisible in review and shows
+   * up only as database load.
+   *
+   * The header's unread-badge half of this seam is NOT in this release; it
+   * needs an unapplied `has_unread_direct_messages` migration. When that lands
+   * its module joins this same directory and is gated by this entry already.
    */
   'src/lib/messaging',
 
@@ -515,7 +528,9 @@ export const DEFERRED_DIRS = [
   // every query still succeeding.
   'src/lib/storage',
   // 'src/lib/today' and its `__tests__` moved UP to the gated list.
-  'src/lib/trade-lab',
+  // 'src/lib/trade-lab' moved UP as well: it holds `normalize-sizing`, which
+  // turns an approved weight into a share count and a cash movement, and the
+  // price-validity gate that decides whether a price may do that at all.
 ]
 
 /** Kept as the old name so nothing that imports it breaks. */

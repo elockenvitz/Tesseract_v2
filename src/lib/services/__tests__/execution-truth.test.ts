@@ -169,13 +169,23 @@ const INBOX_INPUT = {
   accepted_by: 'u1',
 }
 
-/** The sizing a Trade Lab execute supplies: fully computed numbers. */
+/**
+ * The sizing a Trade Lab execute supplies: fully computed numbers.
+ *
+ * `price_basis` and `price_as_of` are REQUIRED here now, not decoration.
+ * `createAcceptedTrade` gates on price validity before its insert, so a
+ * fixture that carries shares and a bare number is refused -- which is the
+ * whole point of the gate, and was how this fixture read before. Dating it
+ * today keeps these tests about execution truth rather than about freshness.
+ */
 const SIZED_INPUT = {
   ...INBOX_INPUT,
   source: 'simulation' as const,
   target_shares: 11039,
   delta_shares: 539,
   price_at_acceptance: 308.33,
+  price_basis: 'stored_close' as const,
+  price_as_of: new Date().toISOString().slice(0, 10),
   target_weight: 7.75,
   delta_weight: 0.5,
   notional_value: 166189.86,

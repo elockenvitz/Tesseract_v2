@@ -43,6 +43,7 @@ import { currentBook, type HoldingRow } from '../holdings/portfolio-context'
 import { normalizeSizing, type NormalizationContext } from '../trade-lab/normalize-sizing'
 import { parseSizingInput, toSizingSpec } from '../trade-lab/sizing-parser'
 import type { TradeAction, ComputedValues, SizingSpec } from '../../types/trading'
+import type { PriceBasis } from '../market-data/sizing-price'
 
 /**
  * The valuation snapshot a single decision is sized against.
@@ -59,6 +60,16 @@ export interface AcceptSizingBasis {
   asOf: string | null
   /** True when the asset is not in the book — a genuinely new position. */
   isNewPosition: boolean
+  /**
+   * Which rung supplied `price`, and the date it was true.
+   *
+   * Carried explicitly rather than inferred from `isNewPosition`, because the
+   * two rungs have different dates: a held position is marked as of the
+   * holdings snapshot, while a new position is priced off the newest close on
+   * or BEFORE that snapshot date, which can be earlier.
+   */
+  priceBasis: PriceBasis
+  priceAsOf: string | null
 }
 
 export type AcceptSizingRefusal = {
@@ -68,7 +79,20 @@ export type AcceptSizingRefusal = {
 }
 
 export type AcceptSizingResult =
-  | { ok: true; computed: ComputedValues; spec: SizingSpec | null; basis: AcceptSizingBasis }
+  | {
+      ok: true
+      computed: ComputedValues
+      spec: SizingSpec | null
+      basis: AcceptSizingBasis
+      /**
+       * Set when the trade was sized against a dated but out-of-policy price.
+       *
+       * Not a refusal: this path's whole rule is to use the book's own basis.
+       * It exists so the PM is told, in words, that the number they are
+       * approving rests on a mark that is N days old.
+       */
+      priceWarning: string | null
+    }
   | AcceptSizingRefusal
 
 /**
@@ -159,6 +183,22 @@ export async function resolveAcceptSizingBasis(
       portfolioTotalValue: totals.totalValue,
       asOf: totals.asOf,
       isNewPosition: false,
+      priceBasis: 'book_mark',
+      /*
+       * NOT `totals.asOf`. The snapshot date is the day the holdings row is
+       * filed under, not the day its price was true, and
+       * `apply_trade_to_holdings` copies the previous snapshot's price
+       * forward onto today -- so the first trade in a book re-dates every
+       * mark in it without anyone re-marking anything.
+       *
+       * Passing the snapshot date here is what made the safeguard disarm
+       * itself: an untouched book warned, and a book that had been traded
+       * once reported a current price and said nothing. `assessSizingPrice`
+       * now treats a `book_mark` as undated by construction and always
+       * gates it, so this field is the honest null rather than a date that
+       * means something else.
+       */
+      priceAsOf: null,
     }
   }
 
@@ -185,7 +225,7 @@ export async function resolveAcceptSizingBasis(
     .limit(1)
     .maybeSingle()
 
-  const close = (closeRow as { close?: number } | null)?.close
+  const close = (closeRow as { close?: number; date?: string } | null)?.close
   if (close == null || !(close > 0)) {
     return {
       ok: false,
@@ -200,6 +240,8 @@ export async function resolveAcceptSizingBasis(
     portfolioTotalValue: totals.totalValue,
     asOf: totals.asOf,
     isNewPosition: true,
+    priceBasis: 'stored_close',
+    priceAsOf: (closeRow as { date?: string } | null)?.date ?? null,
   }
 }
 
@@ -246,6 +288,11 @@ export function basisFromBook(
     portfolioTotalValue: totals.totalValue,
     asOf: totals.asOf,
     isNewPosition: false,
+    priceBasis: 'book_mark',
+    // Null for the same reason as in `resolveAcceptSizingBasis`: the snapshot
+    // date is not when the mark was true, and a book mark is undated by
+    // construction.
+    priceAsOf: null,
   }
 }
 
@@ -290,6 +337,8 @@ export function computeAcceptSizing(
       // must be able to say when the book was true.
       timestamp: basis.asOf ?? new Date().toISOString(),
       source: 'close',
+      as_of: basis.priceAsOf,
+      basis: basis.priceBasis,
     },
     rounding_config: PILOT_ROUNDING,
     // Active-weight frameworks (@t / @d) need a benchmark this path does not
@@ -297,6 +346,30 @@ export function computeAcceptSizing(
     active_weight_config: null,
     has_benchmark: false,
     trigger: 'user_edit',
+    /*
+     * Fail closed on a price that cannot be verified, and GATE one that can
+     * be but is old.
+     *
+     * `allow_stale_basis` is set here and nowhere else. This path sizes
+     * against the book's own carrying price on purpose -- `target = current +
+     * delta` only closes when both sides are measured in the same money -- so
+     * a mark that is weeks old is the deliberate basis rather than a stale
+     * feed, and refusing it would block every approval on a book that has not
+     * been re-marked. What it must not do is pass silently: the verdict comes
+     * back on the result as `priceWarning`, and `price_basis` / `price_as_of`
+     * / `price_gated` are recorded on the trade so a decision sized off a
+     * four-week-old mark is findable afterwards.
+     *
+     * Undated and unsourced prices are still refused. That is not a
+     * hypothetical here: a 2026-10-05 approval on this path was sized at
+     * 228.50 because the book had been marked at 228.50 since September while
+     * AAPL closed at 332.89 -- 743 shares bought where the same instruction
+     * at the real close is ~510, and $169,776 of cash moved instead of
+     * $247,337. The mark was dated, so this gate records rather than refuses
+     * it; re-marking the books is the fix for the number itself.
+     */
+    price_enforcement: 'enforce',
+    allow_stale_basis: true,
   }
 
   const result = normalizeSizing(ctx)
@@ -315,5 +388,15 @@ export function computeAcceptSizing(
     return { ok: false, reason: 'This sizing resolves to no share change, so there is nothing to execute.' }
   }
 
-  return { ok: true, computed, spec: toSizingSpec(trimmed, parsed), basis }
+  const verdict = result.price_verdict
+  const priceWarning = verdict?.gated
+    ? `Sized against this portfolio's carrying price for ${symbolLabel(basis)}: ${verdict.reason}. ` +
+      'Re-mark the book for a current valuation.'
+    : null
+
+  return { ok: true, computed, spec: toSizingSpec(trimmed, parsed), basis, priceWarning }
 }
+
+/** The book-basis phrase for a warning, without needing the symbol passed in. */
+const symbolLabel = (basis: AcceptSizingBasis): string =>
+  basis.isNewPosition ? 'this new position' : 'this position'

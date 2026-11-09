@@ -32,9 +32,11 @@
     "typecheck:all": "tsc -b --pretty false",
     "guard:types": "node scripts/typecheck-cards.mjs",
     "guard:ci": "node scripts/ci-integrity.mjs",
+    "sec:edge-authz": "node scripts/edge-authz-guard.mjs",
     "guard:gallery": "node scripts/gallery-purity.mjs",
     "guard:copy": "node scripts/no-em-dash.mjs",
     "guard:holdings": "node scripts/holdings-collapse-audit.mjs",
+    "audit:trade-prices": "node scripts/audit-trade-price-contamination.mjs",
     "guard:tdz": "node scripts/lint-mobile-ratchet.mjs",
     "guard:unit": "node scripts/unit-guard.mjs",
     "guard:social-preview": "node scripts/guard-social-preview.mjs",
@@ -59,7 +61,11 @@
     "sec:messages": "node scripts/security-suite.mjs messages-tenant-isolation",
     "sec:audit": "node scripts/security-suite.mjs audit-events-integrity",
     "sec:notifications": "node scripts/security-suite.mjs notifications-authorization",
-    "sec:analyst": "node scripts/security-suite.mjs analyst-performance-tenant-scope"
+    "sec:analyst": "node scripts/security-suite.mjs analyst-performance-tenant-scope",
+    "sec:asset-workspace": "node scripts/security-suite.mjs asset-workspace-tenant-isolation",
+    "sec:platform-baseline": "node scripts/security-suite.mjs platform-rls-baseline",
+    "security:check": "node scripts/security-check.mjs",
+    "security:check:static": "node scripts/security-check.mjs --static"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

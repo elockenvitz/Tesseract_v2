@@ -175,18 +175,22 @@ export function useUserAssetPriority(assetId: string | undefined) {
           updated_at: new Date().toISOString()
         }, {
           /*
-           * The org-composite key, which the table does have. It is NOT
-           * sufficient on its own: the older `UNIQUE (asset_id, user_id)`
-           * still exists alongside it, and that one forbids the same user
-           * holding a priority on the same asset in two organizations. Eight
-           * users are in more than one org today, so the first of them to
-           * prioritise one asset in both gets a 23505.
+           * The org-composite key, and now the table's only unique key
+           * besides the primary. Queried live on 2026-11-09:
            *
-           * Targeting the narrower key instead would be worse — it would
-           * match the OTHER org's row and try to rewrite its organization_id,
-           * which the org-scoped UPDATE policy then refuses anyway. A loud
-           * failure beats a silent cross-tenant write, so this stays until the
-           * superseded constraint is dropped. See the lane report.
+           *     user_asset_priorities_pkey           PRIMARY KEY (id)
+           *     user_asset_priorities_org_asset_user_key
+           *       UNIQUE (organization_id, asset_id, user_id)
+           *
+           * An earlier note here warned that the superseded
+           * `UNIQUE (asset_id, user_id)` still coexisted and would raise
+           * 23505 for a user holding a priority on the same asset in two
+           * organizations. That constraint has since been dropped, so the
+           * same asset can now carry a per-org priority as intended.
+           *
+           * Do not narrow this target to `asset_id,user_id`: no such key
+           * exists any more, so PostgREST would send an ON CONFLICT that
+           * matches no index and Postgres would reject it with 42P10.
            */
           onConflict: 'organization_id,asset_id,user_id'
         })

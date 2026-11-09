@@ -4,7 +4,8 @@ import { Calendar, Clock, AlertTriangle, Check, X, Edit3 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import {
-  STAGE_DEADLINE_ORG_SELECT, STAGE_DEADLINE_ORG_FILTER, STAGE_DEADLINE_CONFLICT_TARGET,
+  STAGE_DEADLINE_ORG_SELECT, STAGE_DEADLINE_ORG_FILTER,
+  STAGE_DEADLINE_CONFLICT_TARGET, NO_WORKFLOW_MESSAGE,
   buildStageDeadlineRow, stageDeadlineKey, workflowDeadlinesKey,
 } from '../../lib/deadlines/stage-deadlines'
 import { Button } from './Button'
@@ -16,10 +17,12 @@ interface StageDeadlineManagerProps {
    * The workflow this stage belongs to.
    *
    * Part of the table's unique key, and the row's only route to an
-   * organization — `asset_stage_deadlines` has no org column of its own. The
-   * component cannot read or write correctly without it.
+   * organization — `asset_stage_deadlines` has no org column, so the server
+   * resolves tenancy through this column. Optional because the timeline's own
+   * `workflowId` is optional; when it is absent the component says why rather
+   * than writing a row the server would refuse.
    */
-  workflowId: string
+  workflowId?: string
   stageId: string
   stageName: string
   isCurrentStage: boolean
@@ -49,10 +52,11 @@ export function StageDeadlineManager({
   const queryClient = useQueryClient()
   /*
    * A deadline's organization is the one that owns its WORKFLOW — the table
-   * has no org column, and the asset side is global reference data. So every
-   * read filters through the embedded workflow, and the org id leads the query
-   * key so switching organizations refetches instead of serving the previous
-   * org's deadline from cache. See lib/deadlines/stage-deadlines.ts.
+   * has no org column, and the asset side is global reference data. The
+   * server's policies already enforce that boundary on all four commands, so
+   * the filter below is defense in depth; the org id in the QUERY KEY is not,
+   * because RLS cannot stop React Query serving the previous organization's
+   * deadline from cache after a switch. See lib/deadlines/stage-deadlines.ts.
    */
   const { currentOrgId } = useOrganization()
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -80,24 +84,29 @@ export function StageDeadlineManager({
   // Query for existing deadline
   const { data: deadline, isLoading } = useQuery({
     queryKey: stageDeadlineKey(currentOrgId, assetId, workflowId, stageId),
+    // No workflow means no row can be identified; skip the request rather than
+    // fetching some other workflow's deadline for this stage.
     enabled: !!currentOrgId && !!workflowId,
     queryFn: async () => {
+      /*
+       * These three filters cover the whole unique key
+       * (asset_id, workflow_id, stage_id), so at most one row can match. The
+       * previous query omitted workflow_id and could return a deadline set
+       * under a different workflow.
+       *
+       * The organization is filtered through the EMBEDDED workflow, never a
+       * column of this table — it has none, and an earlier pass that added
+       * one failed every read with 42703. `!inner` is load-bearing: a left
+       * join would null the embedded object and still return the deadline.
+       *
+       * maybeSingle, not single: a stage with no deadline set is the normal
+       * case, and `.single()` made every such read an HTTP 406 that the guard
+       * below then swallowed.
+       */
       const { data, error } = await supabase
         .from('asset_stage_deadlines')
         .select(STAGE_DEADLINE_ORG_SELECT)
         .eq(STAGE_DEADLINE_ORG_FILTER, currentOrgId)
-        /*
-         * maybeSingle: a stage with no deadline set is the normal case — the
-         * table holds zero rows today — and `.single()` made every such read
-         * an HTTP 406 that the guard below then swallowed.
-         *
-         * These three filters now cover the WHOLE unique key
-         * (asset_id, workflow_id, stage_id), so at most one row can match and
-         * PGRST116 can no longer be raised by a legitimate second row. The
-         * guard stays anyway: it costs nothing, and it is the difference
-         * between a null result and a thrown error if the constraint is ever
-         * relaxed.
-         */
         .eq('asset_id', assetId)
         .eq('workflow_id', workflowId)
         .eq('stage_id', stageId)
@@ -114,6 +123,7 @@ export function StageDeadlineManager({
       const { data: user } = await supabase.auth.getUser()
 
       if (!currentOrgId) throw new Error('No active organization')
+      if (!workflowId) throw new Error(NO_WORKFLOW_MESSAGE)
 
       const deadlineData = buildStageDeadlineRow({
         assetId,
@@ -138,8 +148,8 @@ export function StageDeadlineManager({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: stageDeadlineKey(currentOrgId, assetId, workflowId, stageId) })
       // The timeline reads its deadlines under this key. The previous
-      // invalidation named 'asset-deadlines', which no query uses, so the
-      // timeline kept showing the old deadline until something else refetched.
+      // invalidation named 'asset-deadlines', which no query uses, so a saved
+      // deadline did not appear until something else refetched.
       queryClient.invalidateQueries({ queryKey: workflowDeadlinesKey(currentOrgId, assetId, workflowId) })
       setIsEditing(false)
       setDeadlineDate('')
@@ -154,13 +164,10 @@ export function StageDeadlineManager({
   // Mutation to delete deadline
   const deleteDeadlineMutation = useMutation({
     mutationFn: async () => {
-      if (!currentOrgId) throw new Error('No active organization')
-      if (!workflowId) throw new Error('No workflow for this stage')
+      if (!workflowId) throw new Error(NO_WORKFLOW_MESSAGE)
       /*
-       * Scoped by the full unique key. There is no org filter because the
-       * column does not exist — the workflow id is what confines this to one
-       * organization's row, and it is supplied by the timeline, which only
-       * renders workflows the active org can see.
+       * Scoped by the full unique key. Without workflow_id this deleted every
+       * deadline for the stage across every workflow the caller could see.
        */
       const { error } = await supabase
         .from('asset_stage_deadlines')
@@ -196,6 +203,11 @@ export function StageDeadlineManager({
 
   const handleSave = () => {
     if (!deadlineDate) return
+    // Stop before the request. The server would refuse it anyway — the INSERT
+    // policy resolves the organization through workflow_id — but a refusal
+    // arrives as a bare 42501, and inventing an id to satisfy the key would
+    // write the deadline into somebody else's workflow.
+    if (!workflowId) return
     saveDeadlineMutation.mutate({ date: deadlineDate, notes })
   }
 
@@ -242,6 +254,26 @@ export function StageDeadlineManager({
     return (
       <div className={`${className}`}>
         <div className="animate-pulse h-4 bg-gray-200 rounded w-24"></div>
+      </div>
+    )
+  }
+
+  /*
+   * No workflow, no deadline — and say so.
+   *
+   * A deadline is identified by (asset, workflow, stage) and takes its
+   * organization from the workflow, so a stage rendered outside one cannot
+   * carry a deadline at all. Showing the ordinary "Set deadline" control here
+   * would offer an action that cannot succeed; the previous version did
+   * exactly that, and the save failed with a 42P10 nobody saw.
+   */
+  if (!workflowId) {
+    return (
+      <div className={`${className}`} data-testid="stage-deadline-no-workflow">
+        <div className="flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400">
+          <Calendar className="w-4 h-4" />
+          <span>{NO_WORKFLOW_MESSAGE}</span>
+        </div>
       </div>
     )
   }

@@ -12,29 +12,47 @@
  * global market data and no org-owned rows, so the authorization IS "a real
  * user, not the bare publishable key."
  *
- * ── Why the token is passed explicitly ───────────────────────────────────
+ * ── The JWT is passed EXPLICITLY, and must stay that way ─────────────────
  *
- * The first version of this gate called `userClient.auth.getUser()` with no
- * argument and relied on the client forwarding the caller's `Authorization`
- * header. That worked in the functions pinned to `@supabase/supabase-js@2`
- * and did NOT work in the two pinned to `@2.39.0` -- `market-news` and
- * `market-events` -- whose older bundled auth client resolves the no-argument
- * call through its own (empty) session store rather than through the forwarded
- * header.
+ * `getUser(token)` takes the token as an argument rather than letting the
+ * client find it on the `Authorization` header it was constructed with. That
+ * is not a style preference. The headerless form broke production twice, for
+ * two different reasons, and both are worth keeping written down.
  *
- * Measured live on 2026-11-02 with one valid, unexpired session JWT:
+ * FIRST, the pinned-version split. Measured live on 2026-11-02 with one valid,
+ * unexpired session JWT:
  *
  *     ai-chat             @2        400 "Message is required"  (past the gate)
  *     market-news         @2.39.0   401 "Unauthorized"
  *     market-events       @2.39.0   401 "Unauthorized"
  *
- * Same token, same publishable key, same gate code. Over the 24h before that,
+ * Same token, same publishable key, same gate code. The older bundled auth
+ * client resolves the no-argument call through its own (empty) session store
+ * rather than through the forwarded header. Over the 24h before that,
  * `market-news` took 45 POSTs and answered 401 to all 45 -- the news feed had
  * been dark since the gate shipped, and nothing said why.
  *
- * `getUser(token)` takes the documented single-request path: it sends the token
- * as the bearer and the client's own key as `apikey`, with no session store in
- * the way. It is version-independent, which is the point.
+ * SECOND, and worse, the dependency RANGE. On 2026-11-08 yahoo-chart-proxy
+ * version 10 refused EVERY caller, real signed-in users included. The token
+ * was valid: GoTrue's own /auth/v1/user returned `role: authenticated` for it,
+ * and market-events and market-news accepted the very same token. The cause
+ * was in the dependency. `supabase-js@2.39.0` declares its auth dependency as
+ * a RANGE, `@supabase/gotrue-js@^2.56.0`, which esm.sh resolved at bundle time
+ * to 2.119.0, whose `_getUser` reads:
+ *
+ *     return !(session?.access_token) && !this.hasCustomAuthorizationHeader
+ *       ? { data: { user: null }, error: new AuthSessionMissingError() }
+ *       : request(...)
+ *
+ * Server-side there is no session (`persistSession: false`), and
+ * `hasCustomAuthorizationHeader` is false because supabase-js 2.39.0 predates
+ * that flag and never sets it. So the headerless call could only ever fail.
+ * market-events and market-news survived purely because their bundles were
+ * built days earlier, when the same range resolved to a gotrue-js without that
+ * guard -- which is to say they were one redeploy away from the same outage.
+ *
+ * The explicit form takes `_getUser`'s first branch and depends on no flag, no
+ * stored session and no library version. Do not change it back to `getUser()`.
  *
  * ── Why a configuration failure is not a 401 ─────────────────────────────
  *
@@ -77,21 +95,22 @@ export type VerifiedUserResult =
 /**
  * The bare token out of an `Authorization` header.
  *
- * Returns null for an absent, blank, or scheme-only header. The scheme is
- * matched case-insensitively because `bearer` and `Bearer` both occur in the
- * wild, and a header that is just a token with no scheme is accepted rather
- * than rejected -- some clients send it that way and the token is what the
- * gate actually verifies.
+ * ONLY `Bearer <token>` yields a token. Absent, blank, scheme-only, another
+ * scheme (`Basic abc`) and a bare token with no scheme at all each return
+ * null. The scheme is matched case-insensitively, because `bearer` and
+ * `Bearer` both occur in the wild.
+ *
+ * An earlier version of this accepted a schemeless header as a raw token, on
+ * the grounds that some clients send it that way and the token is what the
+ * gate verifies anyway. That is the wrong trade: it means a caller sending
+ * `Authorization: Basic am9lOnBhc3M=` has that credential forwarded to the
+ * auth server as if it were a JWT. Rejecting it costs a real client one
+ * corrected header and costs this gate nothing.
  */
 export function bearerToken(authHeader: string | null | undefined): string | null {
   if (!authHeader) return null
-  const trimmed = authHeader.trim()
-  if (!trimmed) return null
-  const m = trimmed.match(/^Bearer\b\s*(.*)$/i)
-  // A header that IS the scheme and nothing else has no token. Falling through
-  // to the no-scheme branch below would send the literal string "Bearer" to
-  // the auth server as a credential, which the first version of this did.
-  const token = (m ? m[1] : trimmed).trim()
+  const match = /^Bearer[ \t]+(\S.*)$/i.exec(authHeader.trim())
+  const token = match?.[1]?.trim()
   return token ? token : null
 }
 
@@ -119,9 +138,17 @@ export async function authorizeVerifiedUser(
   authHeader: string | null,
   userClient: UserClient,
 ): Promise<VerifiedUserResult> {
+  if (!authHeader) {
+    return { ok: false, status: 401, error: 'Missing authorization header' }
+  }
+
   const token = bearerToken(authHeader)
   if (!token) {
-    return { ok: false, status: 401, error: 'Missing authorization header' }
+    // A header that is present but carries no bearer token. This used to
+    // reach getUser() and be refused there; refusing it here is the same
+    // answer without a network round trip. It is deliberately NOT reported as
+    // "missing": the header was sent, it just is not a bearer credential.
+    return { ok: false, status: 401, error: 'Unauthorized' }
   }
 
   let result: { data: { user: VerifiedUser | null }; error: unknown }

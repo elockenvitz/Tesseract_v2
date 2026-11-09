@@ -1,0 +1,114 @@
+name: Market data freshness
+
+# ── Why this is a separate workflow from ingest.yml ───────────────────────
+#
+# Because the failure mode was ingest.yml dying.
+#
+# Both ingestion jobs failed every weekday from 2026-10-06 to 2026-11-07 and
+# the product served prices the whole time: with nothing in
+# `price_history_cache` inside the app's 10-day window, every price fell
+# through to the undated `assets.current_price`, last written 2026-08-18. Of
+# 136 held symbols, 0 had a usable close, 66 showed a wrong undated price and
+# 70 had none. GOOGL displayed 142.80 against a 338.24 close.
+#
+# A check that lives inside the job that breaks cannot report that the job
+# broke. So this one runs on its own schedule and asks a different question:
+# not "did the job succeed" but "is the data the product reads current". Those
+# come apart in both directions -- a job can succeed and write nothing useful,
+# and a job can fail on a Tuesday while Monday's data is still fine.
+#
+# ── Provider-independent on purpose ──────────────────────────────────────
+#
+# It calls no market-data provider. It reads Tesseract's own tables and
+# measures their state against the same constants the application acts on. A
+# new pricing provider will write the same `price_history_cache` and the same
+# `portfolio_benchmark_weights`, so this keeps working across that change with
+# no edit -- which is the point, given a provider swap is coming.
+#
+# ── Timing ───────────────────────────────────────────────────────────────
+#
+# 23:30 UTC Mon-Fri, ninety minutes after `ingest.yml`'s 22:00 start. Long
+# enough that a normal run (~20 minutes) has finished and written, short
+# enough that a failure is still the same working day. Also runs Saturday, so
+# a Friday-night failure is not discovered on Monday.
+
+on:
+  schedule:
+    - cron: '30 23 * * 1-6'
+  # A scheduled job that has never been run by hand is a job nobody has
+  # watched fail.
+  workflow_dispatch:
+
+concurrency:
+  group: market-data-freshness
+  cancel-in-progress: false
+
+jobs:
+  freshness:
+    name: Market data freshness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No `npm install`. The check uses global fetch and nothing else, and
+      # installing the tree to run it would add minutes for nothing.
+      #
+      # `--self-test` runs every assertion a second time against thresholds
+      # nothing can meet, and fails if any assertion stays quiet. A check that
+      # cannot observe its own failure mode is decoration, and this way the
+      # proof runs on every scheduled execution rather than once at review
+      # time.
+      - name: Check market data freshness
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+        run: node scripts/check-market-data-freshness.mjs --self-test --explain
+
+  notify-failure:
+    name: Alert on stale market data
+    needs: [freshness]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const alert = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/alert-on-failure.cjs`)
+            await alert({
+              github, context,
+              subject: 'Market data is stale',
+              // A label of its own. Sharing `ingestion` would mean a
+              // stale-data alert commenting on an ingestion-failure issue and
+              // vice versa, and the two have different fixes: one is "the job
+              // broke", the other is "the job ran and the data is still not
+              // current".
+              label: 'market-data',
+              detail: [
+                'Prices shown in portfolios, trade sizing and outcomes may be',
+                'stale or undated. The run log names which symbols and how old',
+                'the newest data is.',
+                '',
+                'What this means for users, in order of severity:',
+                '',
+                '1. A held symbol with no close inside the 10-day window is',
+                '   ABSENT from the map the app builds, so every price for it',
+                '   falls through to the undated `assets.current_price`. That',
+                '   is not stale data, it is wrong data with no date on it.',
+                '2. Trade sizing refuses an undated or out-of-policy price, so',
+                '   affected names cannot be sized until this is fixed. That',
+                '   refusal is deliberate.',
+                '3. `buildWeightSeries` skips any day it cannot price to 95% of',
+                '   book value, so weight series develop holes.',
+                '',
+                'Check `ingest.yml`\'s most recent run first: this alert fires',
+                'on the DATA, so a green ingestion run with stale data means the',
+                'job ran and wrote nothing useful.',
+              ],
+            })

@@ -12,6 +12,7 @@
  */
 
 import { parseSizingInput, toSizingSpec, type SizingSpec, type SizingContext } from './sizing-parser'
+import { assessSizingPrice } from '../market-data/sizing-price'
 import type {
   TradeAction,
   ComputedValues,
@@ -44,6 +45,26 @@ export interface NormalizationContext {
   active_weight_config: ActiveWeightConfig | null
   has_benchmark: boolean
   trigger?: ConflictTrigger  // v3: What caused this normalization (for conflict events)
+  /**
+   * What to do with a price that cannot be verified.
+   *
+   * `'advisory'` (the default) keeps today's behaviour: the arithmetic refuses
+   * only a non-positive price, and the verdict rides along on the result so a
+   * preview can show it. `'enforce'` refuses an undated, unsourced or stale
+   * price outright.
+   *
+   * Advisory is the default deliberately. The normalizer runs on every
+   * keystroke in four preview components that are handed a bare number and
+   * have no provenance to pass, and refusing there would blank the preview
+   * rather than protect anything. The protection that matters is fail-closed
+   * at the point of WRITING -- `assertBookablePrice` in
+   * `execute-sim-variants-service` and `accept-sizing` -- because that is
+   * where shares, cash and holdings marks actually move. A new call site is
+   * therefore protected whether or not it remembers to set this.
+   */
+  price_enforcement?: 'advisory' | 'enforce'
+  /** Passed through to `assessSizingPrice`. See `AssessOptions`. */
+  allow_stale_basis?: boolean
 }
 
 // =============================================================================
@@ -283,6 +304,23 @@ export function normalizeSizing(ctx: NormalizationContext): NormalizedSizingResu
   let deltaShares: number
   let deltaWeight: number
 
+  /*
+   * ── The price gate ──────────────────────────────────────────────────────
+   *
+   * This used to be `if (priceValue <= 0)` and nothing else, which caught an
+   * absent price and nothing about a wrong one. `price.timestamp` was already
+   * on the context and was never read -- and every call site sets it to
+   * `new Date()`, so reading it would have proved nothing anyway.
+   *
+   * The verdict is computed here on every path so a preview can render it. It
+   * only INVALIDATES the result under `'enforce'`; a non-positive price is
+   * refused in either mode, because dividing by it is meaningless.
+   */
+  const priceVerdict = assessSizingPrice(
+    { price: price.price, asOf: price.as_of ?? null, basis: price.basis ?? null },
+    { allowStaleBasis: ctx.allow_stale_basis ?? false },
+  )
+
   const priceValue = price.price
   if (priceValue <= 0) {
     return {
@@ -290,6 +328,17 @@ export function normalizeSizing(ctx: NormalizationContext): NormalizedSizingResu
       direction_conflict: null,
       below_lot_warning: false,
       error: 'Invalid price (must be > 0)',
+      price_verdict: priceVerdict,
+    }
+  }
+
+  if ((ctx.price_enforcement ?? 'advisory') === 'enforce' && !priceVerdict.usable) {
+    return {
+      is_valid: false,
+      direction_conflict: null,
+      below_lot_warning: false,
+      error: `This trade cannot be sized: ${priceVerdict.reason ?? 'the price cannot be verified'}.`,
+      price_verdict: priceVerdict,
     }
   }
 
@@ -415,6 +464,11 @@ export function normalizeSizing(ctx: NormalizationContext): NormalizedSizingResu
     notional_value: Math.abs(roundedDeltaShares * priceValue),
     price_used: priceValue,
     price_timestamp: price.timestamp,
+    // Provenance travels with the number into `lab_variants.computed` (jsonb),
+    // so the booking guard can judge the price weeks after the sizing.
+    price_as_of: price.as_of ?? null,
+    price_basis: price.basis,
+    price_gated: priceVerdict.gated,
   }
 
   return {
@@ -423,6 +477,7 @@ export function normalizeSizing(ctx: NormalizationContext): NormalizedSizingResu
     direction_conflict: directionConflict,
     below_lot_warning: belowLotWarning,
     rounded_shares: roundedTargetShares,
+    price_verdict: priceVerdict,
   }
 }
 

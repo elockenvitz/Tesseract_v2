@@ -243,7 +243,37 @@ const MAX_ERRORS = 0
 // `AudienceNode` once instead of being re-inferred from a nested
 // `org_chart_nodes(...)` embed at every use. Fourteen errors went with it.
 // Measured by running the guard, not derived.
-const MAX_REPO_ERRORS = 8586
+//
+// ── The merge of main into discovery/asset-page-2, 2026-11-09 ────────────
+//
+// The two lines moved this number independently and in opposite directions.
+// This branch had taken it to 8586 by moving four inline queries into typed
+// modules; main had gone 8653 -> 8654 (one RPC call site), then 8654 -> 8652
+// (the price_history_cache upserts deleted), then 8652 -> 8643 (its own
+// version of the messaging and case-history extraction, worth nine).
+//
+// Neither value is right for the merged tree. Main's 8643 counts errors the
+// branch's extractions already removed; the branch's 8586 does not count the
+// RPC call site main added. Picking either side is exactly the silent slack
+// this ceiling exists to prevent, so the figure below was MEASURED by running
+// the guard against the merged tree, not computed from the two deltas.
+//
+// MEASURED: 8582. FOUR BELOW the branch's 8586, and 61 below main's 8643.
+//
+// The merge removes errors rather than adding them, because where the two
+// lines implemented the same thing twice the better-typed version won:
+//   - `useContributions.ts` keeps this branch's audience handling, which
+//     never reads `contribution_visibility_targets` from a content path.
+//     Porting main's `audienceDiffers` comparison in ADDED 6 errors, because
+//     the stored-target read infers its rows from an embed the generated
+//     types do not describe. Measured both ways: 8588 with it, 8582 without.
+//     The guarantee is unchanged -- this branch reaches it one layer up, at
+//     the caller, which `contribution-visibility-preservation.test.ts` pins.
+//   - the choice between main's and this branch's `conversation-queries.ts`
+//     moves the figure not at all, which independently confirms the two
+//     independently-written modules are type-equivalent.
+// Every one of the 15 files resolved by hand carries zero diagnostics.
+const MAX_REPO_ERRORS = 8582
 
 /**
  * A floor on real source files, now that they are counted as source files.

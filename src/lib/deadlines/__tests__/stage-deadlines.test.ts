@@ -1,16 +1,29 @@
 /**
- * Stage deadlines — ownership, keys, and the org boundary.
+ * Stage deadlines — ownership, keys, the org boundary, and the no-workflow case.
  *
- * The bug these cover: a pass added `organization_id` to every read and write
- * of `asset_stage_deadlines`. That column does not exist, so the Command
- * Center's deadline section, the timeline's deadline rendering, and setting or
- * deleting a deadline all failed with `42703`. The upsert's conflict target
- * was separately wrong — `asset_id,stage_id` matches no unique index, and the
- * real one is `(asset_id, workflow_id, stage_id)`.
+ * Three bugs are covered here, from two lanes that fixed this module in
+ * parallel. All three were silent.
+ *
+ *   · A pass added `organization_id` to every read and write of
+ *     `asset_stage_deadlines`. That column does not exist, so the Command
+ *     Center's deadline section, the timeline's deadline rendering, and
+ *     setting or deleting a deadline all failed with `42703`.
+ *   · The upsert's conflict target named `asset_id,stage_id`, which matches no
+ *     unique index. The real one is `(asset_id, workflow_id, stage_id)`, so
+ *     every save failed with `42P10` behind a generic alert.
+ *   · No read, write or delete carried `workflow_id`, so a deadline could be
+ *     read from or deleted across a different workflow than the one on screen,
+ *     and saving invalidated `['asset-deadlines', assetId]` — a key no query
+ *     uses — so the timeline kept showing the old value.
+ *
+ * Production's policies resolve a deadline's organization through its
+ * workflow, which makes `workflow_id` load-bearing for authorization too: a
+ * write without one is refused by the server.
  *
  * The source-scanning assertions at the bottom are the ones that would have
- * caught it: the pure helpers can be perfect while a call site still names a
- * column the database has never had.
+ * caught any of it. The pure helpers can be perfect while a call site still
+ * names a column the database has never had, or sends the wrong conflict
+ * target.
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -20,6 +33,7 @@ import {
   STAGE_DEADLINE_ORG_FILTER,
   STAGE_DEADLINE_CONFLICT_TARGET,
   STAGE_DEADLINE_UNIQUE_COLUMNS,
+  NO_WORKFLOW_MESSAGE,
   buildStageDeadlineRow,
   stageDeadlineKey,
   workflowDeadlinesKey,
@@ -33,6 +47,14 @@ const CALL_SITES = [
   'components/ui/InvestmentTimeline.tsx',
   'hooks/useCommandCenter.ts',
 ]
+
+const MANAGER = src('components/ui/StageDeadlineManager.tsx')
+const TIMELINE = src('components/ui/InvestmentTimeline.tsx')
+
+const input = {
+  assetId: 'asset-1', workflowId: 'wf-1', stageId: 'research',
+  deadlineDate: '2026-11-01', notes: 'check the filing', setBy: 'user-1',
+}
 
 describe('the conflict target matches the real unique constraint', () => {
   it('is exactly (asset_id, workflow_id, stage_id)', () => {
@@ -50,11 +72,6 @@ describe('the conflict target matches the real unique constraint', () => {
 })
 
 describe('the row written to the table', () => {
-  const input = {
-    assetId: 'asset-1', workflowId: 'wf-1', stageId: 'research',
-    deadlineDate: '2026-11-01', notes: 'check the filing', setBy: 'user-1',
-  }
-
   it('carries the workflow id, which is both the tenant anchor and part of the key', () => {
     expect(buildStageDeadlineRow(input)).toMatchObject({
       asset_id: 'asset-1', workflow_id: 'wf-1', stage_id: 'research',
@@ -114,9 +131,46 @@ describe('query keys keep organizations apart', () => {
       .not.toEqual(workflowDeadlinesKey('org-b', 'asset-1', 'wf-1'))
   })
 
+  it('separates two workflows on the workflow-wide key', () => {
+    expect(workflowDeadlinesKey('org-a', 'asset-1', 'wf-1'))
+      .not.toEqual(workflowDeadlinesKey('org-a', 'asset-1', 'wf-2'))
+  })
+
   it('distinguishes a missing org from the string "null"', () => {
     expect(stageDeadlineKey(undefined, 'asset-1', 'wf-1', 'research')[1]).toBeNull()
     expect(stageDeadlineKey(null, 'asset-1', 'wf-1', 'research')[1]).toBeNull()
+  })
+
+  it('distinguishes a missing workflow from the string "null"', () => {
+    expect(stageDeadlineKey('org-a', 'asset-1', undefined, 'research')[3]).toBeNull()
+  })
+})
+
+describe('an invalid workflow context', () => {
+  it('explains itself in the user\'s terms rather than saying "error"', () => {
+    expect(NO_WORKFLOW_MESSAGE).toMatch(/workflow/i)
+    expect(NO_WORKFLOW_MESSAGE).not.toMatch(/error|failed|invalid/i)
+  })
+
+  it('renders the explanation instead of a control that cannot succeed', () => {
+    expect(MANAGER).toContain('stage-deadline-no-workflow')
+    expect(MANAGER).toMatch(/if \(!workflowId\) \{[\s\S]{0,400}NO_WORKFLOW_MESSAGE/)
+  })
+
+  it('blocks the save before the request rather than inventing an id', () => {
+    const save = MANAGER.slice(MANAGER.indexOf('const handleSave'))
+    expect(save.slice(0, 500)).toMatch(/if \(!workflowId\) return/)
+    // Nothing anywhere may conjure a workflow id to satisfy the key.
+    expect(MANAGER).not.toMatch(/workflowId\s*\|\|\s*['"]/)
+    expect(MANAGER).not.toMatch(/workflowId\s*\?\?\s*['"]/)
+  })
+
+  it('does not query for a deadline it cannot identify', () => {
+    // The guard is stricter than workflow alone: the read also filters on the
+    // active organization through the embedded workflow, so firing before
+    // currentOrgId resolves would send `organization_id=eq.undefined`.
+    expect(MANAGER).toMatch(/enabled:[^\n]*!!workflowId/)
+    expect(MANAGER).toMatch(/enabled:[^\n]*!!currentOrgId/)
   })
 })
 
@@ -135,29 +189,42 @@ describe('the call sites agree with the schema', () => {
   })
 
   it('the manager upserts on the shared conflict target, not a literal', () => {
-    const body = src('components/ui/StageDeadlineManager.tsx')
-    expect(body).toContain('onConflict: STAGE_DEADLINE_CONFLICT_TARGET')
-    expect(body).not.toMatch(/onConflict:\s*['"]asset_id,stage_id['"]/)
+    expect(MANAGER).toContain('onConflict: STAGE_DEADLINE_CONFLICT_TARGET')
+    expect(MANAGER).not.toMatch(/onConflict:\s*['"]asset_id,stage_id['"]/)
   })
 
-  it('the manager requires a workflow id as a prop', () => {
-    expect(src('components/ui/StageDeadlineManager.tsx')).toMatch(/workflowId:\s*string/)
+  it('the manager takes a workflow id as a prop', () => {
+    // Optional, deliberately: the timeline's own workflowId is optional, and
+    // the component answers an absent one with NO_WORKFLOW_MESSAGE rather
+    // than offering a control whose save cannot succeed.
+    expect(MANAGER).toMatch(/workflowId\??:\s*string/)
+  })
+
+  it('reads with the full unique key, so another workflow\'s deadline cannot surface', () => {
+    const read = MANAGER.slice(MANAGER.indexOf('queryKey: stageDeadlineKey'))
+    expect(read).toMatch(/\.eq\('asset_id', assetId\)/)
+    expect(read).toMatch(/\.eq\('workflow_id', workflowId\)/)
+    expect(read).toMatch(/\.eq\('stage_id', stageId\)/)
+  })
+
+  it('scopes the delete by workflow, not just asset and stage', () => {
+    const del = MANAGER.slice(MANAGER.indexOf('deleteDeadlineMutation'))
+    expect(del).toMatch(/\.delete\(\)[\s\S]{0,400}\.eq\('workflow_id', workflowId\)/)
   })
 
   it('the timeline passes its workflow down to the manager', () => {
-    expect(src('components/ui/InvestmentTimeline.tsx')).toMatch(/workflowId=\{workflowId/)
+    expect(TIMELINE).toMatch(/workflowId=\{workflowId/)
   })
 
   it('saving invalidates the key the timeline actually reads', () => {
     // It previously invalidated 'asset-deadlines', which no query uses, so a
     // saved deadline did not appear on the timeline until something else
     // refetched.
-    const body = src('components/ui/StageDeadlineManager.tsx')
-    expect(body).toContain('workflowDeadlinesKey(')
-    expect(body).not.toMatch(/queryKey:\s*\[\s*['"]asset-deadlines['"]/)
+    expect(MANAGER).toContain('workflowDeadlinesKey(')
+    expect(MANAGER).not.toMatch(/queryKey:\s*\[\s*['"]asset-deadlines['"]/)
   })
 
   it('the timeline reads under the shared key builder', () => {
-    expect(src('components/ui/InvestmentTimeline.tsx')).toContain('workflowDeadlinesKey(')
+    expect(TIMELINE).toContain('workflowDeadlinesKey(')
   })
 })

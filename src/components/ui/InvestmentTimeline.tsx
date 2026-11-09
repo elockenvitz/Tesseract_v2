@@ -834,6 +834,10 @@ export function InvestmentTimeline({
 
   // Query to load workflow-specific stage deadlines
   const { data: stageDeadlines } = useQuery({
+    // The shared builder, so the manager's invalidation after a save names the
+    // same key this reads. They used to disagree, and a saved deadline did not
+    // appear here until something else refetched. The org leads the key so an
+    // organization switch refetches instead of serving the previous org's.
     queryKey: workflowDeadlinesKey(currentOrgId, assetId, workflowId),
     queryFn: async () => {
       if (!assetId || !workflowId || !currentOrgId) return []
@@ -1915,6 +1919,11 @@ export function InvestmentTimeline({
             stage's objective in 17px, the requirement workspace under the
             requirement it serves — so this line was a third copy, set in
             12px grey above both of them.
+
+            The ownership controls main added `workflowId` to here are not
+            lost: they moved into the action bar's `trailing` slot further
+            down, which is the only place they still render, and the prop
+            travels with them.
           */}
 
           <div className="grid grid-cols-1 gap-6">
@@ -2002,7 +2011,7 @@ export function InvestmentTimeline({
                         >
                           <StageDeadlineManager
                             assetId={assetId || ''}
-                            workflowId={workflowId || ''}
+                            workflowId={workflowId}
                             stageId={showStageDetails}
                             stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
                             isCurrentStage={showStageDetails === effectiveCurrentStage}

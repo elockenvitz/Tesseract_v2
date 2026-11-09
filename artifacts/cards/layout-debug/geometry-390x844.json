@@ -1,0 +1,1913 @@
+{
+  "viewport": {
+    "width": 390,
+    "height": 844
+  },
+  "platform": "win32",
+  "rows": [
+    {
+      "fixture": "long-label",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 0,
+        "w": 390,
+        "h": 734,
+        "top": 0,
+        "bottom": 734,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 622,
+        "w": 128,
+        "h": 28,
+        "top": 622,
+        "bottom": 649,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 657,
+        "w": 390,
+        "h": 69,
+        "top": 657,
+        "bottom": 726
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "active-risk-real",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 734,
+        "w": 390,
+        "h": 734,
+        "top": 734,
+        "bottom": 1468,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 1356,
+        "w": 128,
+        "h": 28,
+        "top": 1356,
+        "bottom": 1383,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 1391,
+        "w": 390,
+        "h": 69,
+        "top": 1391,
+        "bottom": 1460
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "six-cases",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 1468,
+        "w": 390,
+        "h": 734,
+        "top": 1468,
+        "bottom": 2202,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 2090,
+        "w": 128,
+        "h": 28,
+        "top": 2090,
+        "bottom": 2117,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 2125,
+        "w": 390,
+        "h": 69,
+        "top": 2125,
+        "bottom": 2194
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "scenario-below-bear",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 2202,
+        "w": 390,
+        "h": 734,
+        "top": 2202,
+        "bottom": 2936,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 2824,
+        "w": 128,
+        "h": 28,
+        "top": 2824,
+        "bottom": 2851,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 2859,
+        "w": 390,
+        "h": 69,
+        "top": 2859,
+        "bottom": 2928
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "scenario-at-expected",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 2936,
+        "w": 390,
+        "h": 734,
+        "top": 2936,
+        "bottom": 3670,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 3558,
+        "w": 128,
+        "h": 28,
+        "top": 3558,
+        "bottom": 3585,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 3593,
+        "w": 390,
+        "h": 69,
+        "top": 3593,
+        "bottom": 3662
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "scenario-prod-amzn",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 3670,
+        "w": 390,
+        "h": 734,
+        "top": 3670,
+        "bottom": 4404,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 4292,
+        "w": 128,
+        "h": 28,
+        "top": 4292,
+        "bottom": 4319,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 4327,
+        "w": 390,
+        "h": 69,
+        "top": 4327,
+        "bottom": 4396
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "scenario-prod-dash",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 4404,
+        "w": 390,
+        "h": 734,
+        "top": 4404,
+        "bottom": 5138,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 5026,
+        "w": 128,
+        "h": 28,
+        "top": 5026,
+        "bottom": 5053,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 5061,
+        "w": 390,
+        "h": 69,
+        "top": 5061,
+        "bottom": 5130
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "scenario-above-bull",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 5138,
+        "w": 390,
+        "h": 734,
+        "top": 5138,
+        "bottom": 5872,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 5760,
+        "w": 128,
+        "h": 28,
+        "top": 5760,
+        "bottom": 5787,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 5795,
+        "w": 390,
+        "h": 69,
+        "top": 5795,
+        "bottom": 5864
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "portfolio-framework-break",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 5872,
+        "w": 390,
+        "h": 734,
+        "top": 5872,
+        "bottom": 6606,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 6494,
+        "w": 128,
+        "h": 28,
+        "top": 6494,
+        "bottom": 6521,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 6529,
+        "w": 390,
+        "h": 69,
+        "top": 6529,
+        "bottom": 6598
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "portfolio-framework-break-unweighted",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 6606,
+        "w": 390,
+        "h": 734,
+        "top": 6606,
+        "bottom": 7340,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 7228,
+        "w": 128,
+        "h": 28,
+        "top": 7228,
+        "bottom": 7255,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 7263,
+        "w": 390,
+        "h": 69,
+        "top": 7263,
+        "bottom": 7332
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "portfolio-unwritten-position",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 7340,
+        "w": 390,
+        "h": 734,
+        "top": 7340,
+        "bottom": 8074,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 7962,
+        "w": 128,
+        "h": 28,
+        "top": 7962,
+        "bottom": 7989,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 7997,
+        "w": 390,
+        "h": 69,
+        "top": 7997,
+        "bottom": 8066
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "respond-no-target",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 8074,
+        "w": 390,
+        "h": 734,
+        "top": 8074,
+        "bottom": 8808,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 8696,
+        "w": 128,
+        "h": 28,
+        "top": 8696,
+        "bottom": 8723,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 8731,
+        "w": 390,
+        "h": 69,
+        "top": 8731,
+        "bottom": 8800
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "respond-crowded",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 8808,
+        "w": 390,
+        "h": 734,
+        "top": 8808,
+        "bottom": 9542,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 9430,
+        "w": 128,
+        "h": 28,
+        "top": 9430,
+        "bottom": 9457,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 9465,
+        "w": 390,
+        "h": 69,
+        "top": 9465,
+        "bottom": 9534
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "respond-framework-break",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 9542,
+        "w": 390,
+        "h": 734,
+        "top": 9542,
+        "bottom": 10276,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 10164,
+        "w": 128,
+        "h": 28,
+        "top": 10164,
+        "bottom": 10191,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 10199,
+        "w": 390,
+        "h": 69,
+        "top": 10199,
+        "bottom": 10268
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "portfolio-unwritten-immaterial",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 10276,
+        "w": 390,
+        "h": 734,
+        "top": 10276,
+        "bottom": 11010,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 10898,
+        "w": 128,
+        "h": 28,
+        "top": 10898,
+        "bottom": 10925,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 10933,
+        "w": 390,
+        "h": 69,
+        "top": 10933,
+        "bottom": 11002
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "portfolio-written-material",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 11010,
+        "w": 390,
+        "h": 734,
+        "top": 11010,
+        "bottom": 11744,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 11632,
+        "w": 128,
+        "h": 28,
+        "top": 11632,
+        "bottom": 11659,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 11667,
+        "w": 390,
+        "h": 69,
+        "top": 11667,
+        "bottom": 11736
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "active-risk",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 11744,
+        "w": 390,
+        "h": 734,
+        "top": 11744,
+        "bottom": 12478,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 12366,
+        "w": 128,
+        "h": 28,
+        "top": 12366,
+        "bottom": 12393,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 12401,
+        "w": 390,
+        "h": 69,
+        "top": 12401,
+        "bottom": 12470
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "scenario-price-bands",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 12478,
+        "w": 390,
+        "h": 734,
+        "top": 12478,
+        "bottom": 13212,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 13100,
+        "w": 128,
+        "h": 28,
+        "top": 13100,
+        "bottom": 13127,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 13135,
+        "w": 390,
+        "h": 69,
+        "top": 13135,
+        "bottom": 13204
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "weight-series",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 13212,
+        "w": 390,
+        "h": 734,
+        "top": 13212,
+        "bottom": 13946,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 13834,
+        "w": 128,
+        "h": 28,
+        "top": 13834,
+        "bottom": 13861,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 13869,
+        "w": 390,
+        "h": 69,
+        "top": 13869,
+        "bottom": 13938
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "crowding-spread",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 13946,
+        "w": 390,
+        "h": 734,
+        "top": 13946,
+        "bottom": 14680,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 14568,
+        "w": 128,
+        "h": 28,
+        "top": 14568,
+        "bottom": 14595,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 14603,
+        "w": 390,
+        "h": 69,
+        "top": 14603,
+        "bottom": 14672
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "active-risk-sparkline",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 14680,
+        "w": 390,
+        "h": 734,
+        "top": 14680,
+        "bottom": 15414,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 15302,
+        "w": 128,
+        "h": 28,
+        "top": 15302,
+        "bottom": 15329,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 15337,
+        "w": 390,
+        "h": 69,
+        "top": 15337,
+        "bottom": 15406
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "idea-trade",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 15414,
+        "w": 390,
+        "h": 734,
+        "top": 15414,
+        "bottom": 16148,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 16036,
+        "w": 128,
+        "h": 28,
+        "top": 16036,
+        "bottom": 16063,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 16071,
+        "w": 390,
+        "h": 69,
+        "top": 16071,
+        "bottom": 16140
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "idea-thought",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 16148,
+        "w": 390,
+        "h": 734,
+        "top": 16148,
+        "bottom": 16882,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 16770,
+        "w": 128,
+        "h": 28,
+        "top": 16770,
+        "bottom": 16797,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 16805,
+        "w": 390,
+        "h": 69,
+        "top": 16805,
+        "bottom": 16874
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "awaiting-review",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 16882,
+        "w": 390,
+        "h": 734,
+        "top": 16882,
+        "bottom": 17616,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 17504,
+        "w": 128,
+        "h": 28,
+        "top": 17504,
+        "bottom": 17531,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 17539,
+        "w": 390,
+        "h": 69,
+        "top": 17539,
+        "bottom": 17608
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "recommendation",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 17616,
+        "w": 390,
+        "h": 734,
+        "top": 17616,
+        "bottom": 18350,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 18238,
+        "w": 128,
+        "h": 28,
+        "top": 18238,
+        "bottom": 18265,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 18273,
+        "w": 390,
+        "h": 69,
+        "top": 18273,
+        "bottom": 18342
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "conviction-cohort",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 18350,
+        "w": 390,
+        "h": 734,
+        "top": 18350,
+        "bottom": 19084,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 18972,
+        "w": 128,
+        "h": 28,
+        "top": 18972,
+        "bottom": 18999,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 19007,
+        "w": 390,
+        "h": 69,
+        "top": 19007,
+        "bottom": 19076
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "target-expired",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 19084,
+        "w": 390,
+        "h": 734,
+        "top": 19084,
+        "bottom": 19818,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 19706,
+        "w": 128,
+        "h": 28,
+        "top": 19706,
+        "bottom": 19733,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 19741,
+        "w": 390,
+        "h": 69,
+        "top": 19741,
+        "bottom": 19810
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "target-reached",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 19818,
+        "w": 390,
+        "h": 734,
+        "top": 19818,
+        "bottom": 20552,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 20440,
+        "w": 128,
+        "h": 28,
+        "top": 20440,
+        "bottom": 20467,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 20475,
+        "w": 390,
+        "h": 69,
+        "top": 20475,
+        "bottom": 20544
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "no-target",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 20552,
+        "w": 390,
+        "h": 734,
+        "top": 20552,
+        "bottom": 21286,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 21174,
+        "w": 128,
+        "h": 28,
+        "top": 21174,
+        "bottom": 21201,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 21209,
+        "w": 390,
+        "h": 69,
+        "top": 21209,
+        "bottom": 21278
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "653px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "unreviewed-move",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 21286,
+        "w": 390,
+        "h": 734,
+        "top": 21286,
+        "bottom": 22020,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 21908,
+        "w": 128,
+        "h": 28,
+        "top": 21908,
+        "bottom": 21935,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 21943,
+        "w": 390,
+        "h": 69,
+        "top": 21943,
+        "bottom": 22012
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "unreviewed-size",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 22020,
+        "w": 390,
+        "h": 734,
+        "top": 22020,
+        "bottom": 22754,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 22642,
+        "w": 128,
+        "h": 28,
+        "top": 22642,
+        "bottom": 22669,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 22677,
+        "w": 390,
+        "h": 69,
+        "top": 22677,
+        "bottom": 22746
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "news",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 22754,
+        "w": 390,
+        "h": 734,
+        "top": 22754,
+        "bottom": 23488,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 23376,
+        "w": 128,
+        "h": 28,
+        "top": 23376,
+        "bottom": 23403,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 23411,
+        "w": 390,
+        "h": 69,
+        "top": 23411,
+        "bottom": 23480
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "ready-to-revisit",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 23488,
+        "w": 390,
+        "h": 734,
+        "top": 23488,
+        "bottom": 24222,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 24110,
+        "w": 128,
+        "h": 28,
+        "top": 24110,
+        "bottom": 24137,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 24145,
+        "w": 390,
+        "h": 69,
+        "top": 24145,
+        "bottom": 24214
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    },
+    {
+      "fixture": "ready-to-revisit-quiet",
+      "gap": 8,
+      "card": {
+        "x": 0,
+        "y": 24222,
+        "w": 390,
+        "h": 734,
+        "top": 24222,
+        "bottom": 24956,
+        "clientHeight": 726,
+        "scrollHeight": 726,
+        "overflow": 0
+      },
+      "lastContent": {
+        "selector": "[data-slot=\"context-open\"]",
+        "tag": "button",
+        "x": 16,
+        "y": 24844,
+        "w": 128,
+        "h": 28,
+        "top": 24844,
+        "bottom": 24871,
+        "textLength": 16,
+        "lineEstimate": 1.41,
+        "style": {
+          "fontFamily": "Inter, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif",
+          "fontSize": "13px",
+          "lineHeight": "19.5px",
+          "width": "128.172px",
+          "height": "27.5px",
+          "whiteSpace": "normal",
+          "overflow": "visible"
+        }
+      },
+      "tray": {
+        "x": 0,
+        "y": 24879,
+        "w": 390,
+        "h": 69,
+        "top": 24879,
+        "bottom": 24948
+      },
+      "container": {
+        "tag": "div",
+        "display": "flex",
+        "gap": "normal",
+        "paddingTop": "6px",
+        "paddingBottom": "8px",
+        "minHeight": "0px",
+        "height": "657px",
+        "overflow": "visible",
+        "flexGrow": "1",
+        "flexShrink": "1"
+      }
+    }
+  ]
+}
