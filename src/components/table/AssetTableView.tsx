@@ -578,6 +578,9 @@ export function AssetTableView({
             user_id: user.id,
             priority,
             updated_at: new Date().toISOString()
+            // The org-composite key, and the table's only unique key besides
+            // the primary — the superseded UNIQUE (asset_id, user_id) has
+            // been dropped. See useUserAssetPriority.ts for the live check.
           }, { onConflict: 'organization_id,asset_id,user_id' })
         if (error) throw error
       }

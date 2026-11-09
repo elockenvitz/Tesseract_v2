@@ -50,6 +50,67 @@ describe('tier assignment', () => {
     expect(tierFor(item({ titleKey: 'OVERDUE_DELIVERABLE' })).tier).toBe(3)
   })
 
+  describe('materiality is a fact, not the presence of an id', () => {
+    /*
+     * `held` read `!!portfolioId || !!assetId`, which is true of every
+     * finding that names a security -- so it could not be false, and a
+     * thesis on a name the book does not own scored as a real position.
+     * That is half of why WMT reached one of Today's four slots on nothing
+     * but its age.
+     */
+    const aged = (held?: boolean) => item({
+      titleKey: 'THESIS_STALE', severity: 'yellow',
+      context: { assetId: 'a-wmt', assetTicker: 'WMT', ...(held == null ? {} : { held }) },
+    })
+
+    it('scores a held name above an unheld one, all else equal', () => {
+      expect(tierFor(aged(true)).base).toBeGreaterThan(tierFor(aged(false)).base)
+    })
+
+    it('moves an unheld stale thesis out of the framework tier entirely', () => {
+      /*
+       * A lower score inside tier 1 still competes for tier-1 slots -- tier
+       * is the partition, score only orders within it. Demoting WMT by
+       * severity alone moved it from #3 to #4 and left it on the surface.
+       * An aged case on a name nobody owns is the claim
+       * COVERAGE_STALE_THESIS already makes, and that is tier 4.
+       */
+      expect(tierFor(aged(true)).tier).toBe(1)
+      expect(tierFor(aged(false)).tier).toBe(4)
+    })
+
+    it('leaves an evaluator that was never asked where it was', () => {
+      /* `undefined` is "not asked", not "not held". Demoting on it would be
+         a silent regression across every evaluator that has not been taught
+         to answer yet. */
+      expect(tierFor(aged()).tier).toBe(1)
+    })
+
+    it('does not credit a name merely for having an id', () => {
+      /* The old rule's exact input: an assetId, no portfolio, nothing stated.
+         It used to score identically to a real position. */
+      expect(tierFor(aged()).base).toBe(tierFor(aged(false)).base)
+      expect(tierFor(aged()).base).toBeLessThan(tierFor(aged(true)).base)
+    })
+
+    it('still credits an evaluator that names a book but not a holding', () => {
+      /* A portfolio id IS a book. Demoting every evaluator that has not yet
+         been taught to answer would be a silent regression across the
+         surface, so the id fallback stays for exactly that case. */
+      /* No weight on either, because `held` is only consulted when the
+         weight is absent -- with a number in hand the band is the number. */
+      const inBook = item({
+        titleKey: 'PROPOSAL_AWAITING_DECISION',
+        context: { portfolioId: 'p1' },
+      })
+      const nowhere = item({
+        titleKey: 'PROPOSAL_AWAITING_DECISION',
+        context: { assetId: 'a-1' },
+      })
+      expect(tierFor(inBook).base).toBeGreaterThan(tierFor(nowhere).base)
+    })
+  })
+
   it('ranks an unmapped evaluator as informational rather than dropping it', () => {
     expect(tierFor(item({ titleKey: 'SOMETHING_NEW' })).tier).toBe(4)
   })
@@ -85,14 +146,54 @@ describe('ordering', () => {
 })
 
 describe('composition', () => {
+  // Nine findings on nine DIFFERENT names. The default context is one asset,
+  // and `selectToday` now gives a name one tile -- so a fixture that shared
+  // an assetId was testing the repeat rule, not the cut.
   const many = Array.from({ length: 9 }, (_, i) =>
-    adaptDecisionItem(item({ id: `i${i}`, titleKey: 'THESIS_STALE' })))
+    adaptDecisionItem(item({
+      id: `i${i}`, titleKey: 'THESIS_STALE',
+      context: { assetId: `a-${i}`, assetTicker: `TCK${i}` },
+    })))
 
   it('surfaces a finite set and reports the rest rather than hiding them', () => {
+    // The remainder is derived, not restated: hard-coding "5" meant this
+    // case stopped describing the cut the moment the limit moved.
     const sel = selectToday(many)
-    expect(sel.surfaced).toHaveLength(TODAY_LIMIT)
-    expect(sel.alsoWatching).toHaveLength(5)
-    expect(sel.evaluated).toBe(9)
+    expect(sel.surfaced).toHaveLength(Math.min(TODAY_LIMIT, many.length))
+    expect(sel.alsoWatching).toHaveLength(Math.max(0, many.length - TODAY_LIMIT))
+    expect(sel.evaluated).toBe(many.length)
+  })
+
+  it('gives one name one tile, even when there is room for two', () => {
+    /*
+     * With seven findings and eight slots, NKE's two open ideas BOTH
+     * surfaced -- #5 and #7, same ticker, same fund, same sentence -- because
+     * there was room. `diversify` pushes a repeat as late as it can, which is
+     * the whole answer only while the pool is larger than the surface.
+     *
+     * A second tile about a name already shown is worth less than an empty
+     * cell, so it drops to Also watching where its count still shows.
+     */
+    const nke = (n: number) => adaptDecisionItem(item({
+      id: `nke-${n}`, titleKey: 'IDEA_NOT_SIMULATED',
+      context: { assetId: 'a-nke', assetTicker: 'NKE', tradeIdeaId: `t${n}` },
+    }))
+    const sel = selectToday([nke(1), nke(2), many[0]])
+    // A stale thesis outranks an unsimulated idea, so the stale one leads;
+    // the claim here is the COUNT of NKE tiles, which is one.
+    expect(sel.surfaced.map(i => i.source.context.assetId)).toEqual(['a-0', 'a-nke'])
+    expect(sel.alsoWatching).toHaveLength(1)
+    // Nothing is hidden: the count still adds up.
+    expect(sel.surfaced.length + sel.alsoWatching.length).toBe(sel.evaluated)
+  })
+
+  it('never treats two objectless findings as the same name', () => {
+    // An overdue deliverable carries no asset. Two of them are two findings,
+    // not one repeated, and both keep their slot.
+    const chore = (n: number) => adaptDecisionItem(item({
+      id: `due-${n}`, titleKey: 'OVERDUE_DELIVERABLE', context: {},
+    }))
+    expect(selectToday([chore(1), chore(2)]).surfaced).toHaveLength(2)
   })
 
   it('handles a single item without inventing supporting priorities', () => {

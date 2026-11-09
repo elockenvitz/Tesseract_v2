@@ -31,6 +31,9 @@ import type { ComposedExploreItem, ExploreItem } from '../mobile/explore-item'
 /* Size is decided by the candidate's own content, and the page budget is
    applied separately -- mobile's rule, reused rather than re-derived. */
 import { exploreCardSize, MAX_FEATURES } from '../mobile/explore-layout'
+/* What a candidate would draw. Pure, and the same resolver the tile uses, so
+   the budget below counts the pictures the reader will actually meet. */
+import { exploreVisualKind } from '../mobile/explore-visual'
 /* Type only -- this layer stays pure and never opens an engagement itself. */
 import type { EngagementTarget } from '../engagement/types'
 
@@ -113,6 +116,12 @@ export function isIdeaWorthy(item: ExploreItem): boolean {
   return !!(item.symbol || item.assetId)
 }
 
+/** A negation attached to a word, at a separator — not the letters "no" inside one. */
+const ABSENT = /(^|_)(no|missing|without)(_|$)/
+
+/** The things a desk writes. An absence of one of these is a documentation gap. */
+const RESEARCH_SUBJECT = /(research|thesis|case|evidence|note)/
+
 /**
  * Which investment question this candidate raises.
  *
@@ -130,10 +139,29 @@ export function opportunityKind(item: ExploreItem): OpportunityKind {
      is. An exact type always beats a substring guess. */
   if (sig === 'coverage_prompt') return 'coverage_gap'
 
+  /*
+   * The absence, before the subject it is an absence OF.
+   *
+   * The family rules below read the subject word and cannot see the negation
+   * attached to it. `insightSignalType` emits `no_research` for every
+   * documentation gap, `no_research` contains "research", and the
+   * `evidence|research|note` rule two lines down therefore claimed it — so 41
+   * of 90 tiles in this lens were chipped "New research" directly above the
+   * sentence "MU has no investment thesis". The chip is the first thing read
+   * on a card and it said the opposite of the finding.
+   *
+   * The thesis branch already carried this test. It only ever fired on types
+   * containing the word "thesis", and the producer's word is "research", so
+   * the one type that actually reaches here in production never met it. One
+   * rule, hoisted, applying to the whole research family.
+   *
+   * Anchored on separators rather than `includes('no')`: a bare substring
+   * matches "note", "notice" and "unknown", none of which assert an absence.
+   */
+  if (ABSENT.test(sig) && RESEARCH_SUBJECT.test(sig)) return 'no_thesis'
+
   if (sig.includes('price') || sig.includes('move') || sig.includes('drift')) return 'price_move'
-  if (sig.includes('thesis') || sig.includes('case')) {
-    return sig.includes('no_') || sig.includes('missing') ? 'no_thesis' : 'new_evidence'
-  }
+  if (sig.includes('thesis') || sig.includes('case')) return 'new_evidence'
   if (sig.includes('weight') || sig.includes('exposure') || sig.includes('active')) return 'exposure'
   if (sig.includes('evidence') || sig.includes('research') || sig.includes('note')) return 'new_evidence'
   if (sig.includes('scenario') || sig.includes('target') || sig.includes('ladder')) return 'framework'
@@ -148,14 +176,92 @@ export function opportunityKind(item: ExploreItem): OpportunityKind {
 }
 
 /**
+ * No one picture may be more than a fifth of the field.
+ *
+ * ── Why a cap here, when `diversifyExplore` deliberately refused one ──────
+ *
+ * The ranker's own note says it uses repulsion "rather than a cap", and that
+ * is right for ORDER: a hard boundary in a sequence produces a visible seam,
+ * and penalties that decay with distance let near-duplicates drift apart
+ * naturally. But repulsion only separates; it cannot reduce. Its five axes
+ * are symbol, category, subtype, source and portfolio -- it never looks at
+ * what the card DRAWS -- and when one picture is 48% of the pool, spacing it
+ * out means meeting it every other tile instead of forty times in a row.
+ *
+ * Measured live at 1920x889, 90 tiles: 43 of them drew `question`, and 41 of
+ * those printed the identical sentence "What best describes this position?".
+ * Reading down the field you meet it, on average, every other card.
+ *
+ * That is not a rendering fault and no amount of styling fixes it. 38 of
+ * those 43 names have no written case, no note, no position in the current
+ * snapshot and mostly no coverage row -- their records are identical, so
+ * their cards are identical, and drawing them differently would be inventing
+ * a difference. The honest fix is to stop printing the fortieth copy.
+ *
+ * This is membership, which is the one thing this module owns. Order is
+ * untouched: the cap keeps the FIRST `cap` of each picture in the ranker's
+ * own sequence, so what survives is what the ranker already called strongest
+ * and nothing is promoted past anything.
+ */
+const MAX_PICTURE_SHARE = 1 / 5
+
+/**
+ * ...but never fewer than this, whatever the share works out to.
+ *
+ * A thin field is not a repetitive one. Five cards of a kind on a page of
+ * twelve is a desk with five of the same problem, which is information; the
+ * rule exists for the page of ninety where it is noise.
+ */
+const MIN_PER_PICTURE = 5
+
+/**
+ * How many of any one picture the field will print.
+ *
+ * A fixed point, because the share is of the field AFTER trimming and
+ * trimming shrinks the field: capping at a fifth of ninety still leaves the
+ * flood at a quarter of what remains. Each pass recomputes the kept total
+ * and the cap it implies, and the cap strictly decreases until it stops
+ * moving -- integers bounded below by `MIN_PER_PICTURE`, so it terminates.
+ *
+ * Exported for the gate, which checks the PROPERTY ("no picture exceeds the
+ * share") rather than the number it currently produces. A case pinning 12
+ * would go quiet the day the candidate mix changes, which is exactly when it
+ * should speak.
+ */
+export function pictureBudget(kinds: readonly string[]): number {
+  const counts = new Map<string, number>()
+  for (const k of kinds) counts.set(k, (counts.get(k) ?? 0) + 1)
+  const tallies = [...counts.values()]
+
+  let cap = kinds.length
+  for (;;) {
+    const kept = tallies.reduce((sum, n) => sum + Math.min(n, cap), 0)
+    const next = Math.max(MIN_PER_PICTURE, Math.ceil(kept * MAX_PICTURE_SHARE))
+    if (next >= cap) return cap
+    cap = next
+  }
+}
+
+/**
  * The opportunity set, in the order the ranker already put it.
  */
 export function opportunitiesFrom(
   composed: readonly ComposedExploreItem[],
 ): Opportunity[] {
+  const admitted = composed.filter(c => isIdeaWorthy(c.item))
+  /* What each candidate would DRAW. Pure and deterministic on the item, the
+     same answer the tile will reach on its own -- this never renders. */
+  const kinds = admitted.map(c => exploreVisualKind(c.item))
+  const cap = pictureBudget(kinds)
+
+  const spent = new Map<string, number>()
   const out: Opportunity[] = []
-  for (const c of composed) {
-    if (!isIdeaWorthy(c.item)) continue
+  for (let i = 0; i < admitted.length; i++) {
+    const drawn = kinds[i]
+    const used = spent.get(drawn) ?? 0
+    if (used >= cap) continue
+    spent.set(drawn, used + 1)
+    const c = admitted[i]
     out.push({ composed: c, item: c.item, kind: opportunityKind(c.item) })
   }
   return out
@@ -282,17 +388,133 @@ export function opportunitySize(o: Opportunity, index: number): OpportunitySize 
  * never changes what a candidate IS, only how much room this page can spare.
  *
  * The hero is not counted against the budget: it is the lead, not a feature.
+ *
+ * ── `within`, and why a total was the wrong shape for a field ────────────
+ *
+ * A budget with no window is a budget for a PAGE, which is what mobile's
+ * Explore is: a screenful, scrolled a little. Desktop Explore is a field of
+ * ninety, and measured there the total spent its four features inside the
+ * first nine tiles and demoted every one after -- so the tail was seventy-five
+ * consecutive `medium`, four to a row, for the rest of the scroll.
+ *
+ * "Emphasis stops being emphasis past a handful" is a claim about what the
+ * reader can see at once, not about what a list may contain in total. So the
+ * budget is spent per window of `within` consecutive tiles rather than once,
+ * and a feature at rank sixty is as affordable as one at rank six.
+ *
+ * `Infinity` by default, so the mobile-shaped callers keep the exact
+ * behaviour they had and only a caller that knows it is drawing a long field
+ * asks for a window.
  */
 export function withFeatureBudget(
   sizes: readonly OpportunitySize[],
   max = MAX_FEATURES,
+  within = Infinity,
 ): OpportunitySize[] {
   let spent = 0
+  let window = 0
   return sizes.map((s, i) => {
-    if (i === 0 || s !== 'large') return s
+    if (i === 0) return s
+    /* Buckets, not a sliding window: a reader can point at where the budget
+       resets, and so can a test. A sliding window would make a tile's size
+       depend on what came after it, which is the unexplainability the size
+       rule above was written to end. */
+    if (window >= within) { window = 0; spent = 0 }
+    window += 1
+    if (s !== 'large') return s
     spent += 1
     return spent <= max ? s : 'medium'
   })
+}
+
+/**
+ * Break a run of identical cells.
+ *
+ * ── The reported symptom ─────────────────────────────────────────────────
+ *
+ * "I don't just want 4 in a line always after first few rows." Measured: 75
+ * of 90 tiles `medium`, and past about rank thirty an unbroken run of them.
+ * Four to a row, every row, to the bottom.
+ *
+ * Widening the budget recovers the features the CONTENT earned, which helps
+ * where there are any. It does nothing for a stretch where every candidate
+ * genuinely is a standard card, and on a thin corpus that is most of the
+ * field -- the material is repetitive, which is a known property of this data
+ * and not something layout should pretend otherwise about.
+ *
+ * ── What this rule does and does not claim ───────────────────────────────
+ *
+ * It does not say the promoted tile is better. It says a wall of identical
+ * cells is harder to read than a broken one, which is a fact about the page
+ * rather than about the item -- the same claim `sizeByRankWithRhythm` makes
+ * on Research, and the reason that function exists.
+ *
+ * Two properties keep it honest:
+ *
+ *   It is POSITIONAL. It counts cells, never content, so a tile cannot grow
+ *   because it happens to carry a chart -- which is the gaming the size rule
+ *   above is built to prevent.
+ *
+ *   It is SELF-LIMITING. It fires only where a run has already reached
+ *   `maxRun`, so a varied stretch is left exactly as it is and the rule
+ *   cannot add emphasis to a page that already has some. That is why it runs
+ *   after the budget rather than being folded into it: the budget decides how
+ *   much emphasis the content may have, and this only decides that a wall is
+ *   not a layout.
+ *
+ * Order is untouched. Nothing here reorders anything.
+ */
+export function withRunRhythm(
+  sizes: readonly OpportunitySize[],
+  maxRun = 7,
+  /**
+   * Which cells have something to fill a taller card with.
+   *
+   * ── Why a veto is not the gaming this rule forbids ──────────────────────
+   *
+   * The rhythm is POSITIONAL on purpose: it counts cells, never content, so a
+   * tile cannot grow because it happens to carry a chart. That property is
+   * what keeps `opportunitySize` ungameable, and it is kept exactly.
+   *
+   * What it could not see is the other direction. MEASURED live at 1920x889:
+   * the Ideas aggregate rendered at `large` -- 418px, no picture, one line of
+   * text. The rhythm had promoted it to break a run, by position, and there
+   * was nothing in it to occupy the height it was given.
+   *
+   * Growing on content and REFUSING to grow on the absence of content are not
+   * the same permission. The first lets a tile argue for itself; the second
+   * only stops size being forced onto emptiness. So this is a veto, never a
+   * promotion: a vetoed cell is SKIPPED and the rhythm looks to the next one.
+   *
+   * Precisely what that grants, because the first draft of this comment
+   * overclaimed and a test caught it: skipping a break leaves the run alive,
+   * so the NEXT break lands on a later cell -- one the unfiltered rule had
+   * passed over. The floor therefore MOVES emphasis. What it cannot do is
+   * manufacture any: no vetoed cell is ever promoted, and the total number of
+   * promotions never exceeds what the positional rule alone would make. Both
+   * are asserted in `rhythm-floor.test`.
+   *
+   * Omitted by default, so every existing caller keeps the behaviour it had.
+   */
+  canFill?: (index: number) => boolean,
+): OpportunitySize[] {
+  const out = [...sizes]
+  let run = 0
+  for (let i = 1; i < out.length; i++) {
+    if (out[i] !== out[i - 1]) { run = 1; continue }
+    run += 1
+    if (run <= maxRun) continue
+    /* The run is NOT reset on a veto. The wall is still a wall, so the rule
+       keeps looking for a cell that can break it rather than giving up on
+       this stretch because one tile in it was empty. */
+    if (canFill && !canFill(i)) continue
+    /* One step up, never two: a `medium` becomes `large`, a `compact` becomes
+       `medium`. Jumping a run of compacts straight to `large` would put a
+       feature in the middle of the quietest part of the field. */
+    out[i] = out[i] === 'compact' ? 'medium' : 'large'
+    run = 1
+  }
+  return out
 }
 
 /** The reader-facing name for a kind. One vocabulary, set in one place. */

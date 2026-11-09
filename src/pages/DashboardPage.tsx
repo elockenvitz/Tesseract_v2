@@ -8,7 +8,10 @@ import {
   TabStateManager, CANONICAL_HOME_TAB, LEGACY_DASHBOARD_ID,
 } from '../lib/tabStateManager'
 import { AssetTab } from '../components/tabs/AssetTab'
+import { UnsavedEditsPrompt } from '../components/contributions/UnsavedEditsPrompt'
+import { requestUnsavedNavigation } from '../lib/contributions/unsaved-edits-guard'
 import { IdeasApp } from '../components/ideas-app/IdeasApp'
+import { DashboardNext } from '../components/dashboard-next/DashboardNext'
 import { DashboardShell } from '../components/dashboard/DashboardShell'
 import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
 import { MobilePipeline } from '../components/mobile/MobilePipeline'
@@ -60,6 +63,7 @@ import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
 import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
 import { CoverageSummaryBanner } from '../components/coverage/CoverageSummaryBanner'
 import { PilotHomeSkeleton } from '../components/pilot/PilotHomeSkeletons'
+import { PilotSkipOnboarding } from '../components/pilot/PilotSkipOnboarding'
 import { usePilotMode } from '../hooks/usePilotMode'
 import { usePilotSeeding } from '../hooks/usePilotSeeding'
 import { usePilotEntry } from '../hooks/usePilotEntry'
@@ -616,7 +620,14 @@ export function DashboardPage() {
     return () => window.removeEventListener('decision-engine-action', handler)
   }, [])
 
+  // Guarded (UX1c-2b): switching the active main tab unmounts the current tab's
+  // content, including an open inline Investment Case editor in an AssetTab. Ask
+  // before discarding unsaved research; clean editors navigate immediately.
   const handleTabChange = (tabId: string) => {
+    requestUnsavedNavigation(() => applyTabChange(tabId))
+  }
+
+  const applyTabChange = (tabId: string) => {
     // If tab doesn't exist yet (e.g. synthetic parent from grouped tabs), create it directly
     const exists = tabs.some(tab => tab.id === tabId)
     if (!exists) {
@@ -644,6 +655,10 @@ export function DashboardPage() {
   }
 
   const handleTabClose = (tabId: string) => {
+    requestUnsavedNavigation(() => applyTabClose(tabId))
+  }
+
+  const applyTabClose = (tabId: string) => {
     if (tabId === 'dashboard') return // Can't close dashboard tab
 
     // Clean up empty notes when closing a note tab
@@ -740,6 +755,10 @@ export function DashboardPage() {
 
 
   const handleCloseTabs = (tabIds: string[]) => {
+    requestUnsavedNavigation(() => applyCloseTabs(tabIds))
+  }
+
+  const applyCloseTabs = (tabIds: string[]) => {
     const idsToClose = new Set(tabIds.filter(id => id !== 'dashboard'))
     if (idsToClose.size === 0) return
 
@@ -1108,7 +1127,8 @@ export function DashboardPage() {
         // Phones get a purpose-built asset page. AssetTab is 4,300 lines of
         // four sub-pages, view filters and analyst panels built for a wide
         // screen; see MobileAssetPage.
-        if (isMobile) return <MobileAssetPage asset={activeTab.data} onNavigate={handleSearchResult} />
+        /* Keyed: see `mobile/asset/MobileAssetPage.tsx`. */
+        if (isMobile) return <MobileAssetPage key={activeTab.id} asset={activeTab.data} onNavigate={handleSearchResult} />
         // AssetTab is the canonical deep asset workspace, and stays that way.
         //
         // Stage 2D2 briefly made a new, reduced workspace the default here.
@@ -1117,7 +1137,8 @@ export function DashboardPage() {
         // page that already holds workflow, lists, estimates, consensus,
         // projects and activity. Those lenses now route here (carrying focus,
         // book and issue in tab data); the replacement workspace is parked.
-        return <AssetTab asset={activeTab.data} onNavigate={handleSearchResult} />
+        /* Keyed: see `lib/asset-workspace/arrival-focus.ts`. */
+        return <AssetTab key={activeTab.id} asset={activeTab.data} onNavigate={handleSearchResult} />
       case 'assets-list':
         return <AssetsListPage onAssetSelect={handleSearchResult} />
       case 'portfolios-list':
@@ -1400,6 +1421,21 @@ export function DashboardPage() {
                   />
                 </>
               )}
+              {/*
+                The way out, at BOTH stages and not only at the mission.
+
+                The coverage card is `dismissible={false}` because "not now"
+                there leaves a reader on an empty home, which is right -- and
+                it meant a pilot who already knows the product had nothing to
+                press on their first screen but the one question. This is not
+                a dismiss: it finishes the guide, opens every app and lands
+                them on the full Dashboard. See `PilotSkipOnboarding`.
+
+                Outside the stage checks, so it does not move as the stage
+                changes under it, and after them because it is the quiet
+                option rather than the offer.
+              */}
+              {pilotEntry.stage !== 'loading' && <PilotSkipOnboarding />}
             </div>
           </div>
         ) : (
@@ -1409,8 +1445,26 @@ export function DashboardPage() {
            * steps writes `graduated` through an optimistic mutation — so the
            * full Dashboard appears on the same tick the mission finishes, with
            * no reload.
+           *
+           * ── The trial won, so this IS the Dashboard ────────────────────
+           *
+           * `DashboardNext` was built in a tab of its own because deciding
+           * that the Dashboard is the feed is a large claim to make about
+           * somebody's home screen, and a reader cannot decide it without
+           * being able to open both and go back. That is decided. The
+           * canonical home type renders it, the "Dashboard (new)" door in the
+           * launcher is gone, and `dashboard-next` below is a compatibility
+           * type pointing here.
+           *
+           * What this retires with it: `DashboardShell`'s `today`, `research`
+           * and `decisions` lenses had no door but this one. Today's content
+           * is in the feed as card types -- that is what `INCLUDE` in
+           * `DashboardNext` asks for -- and Research and Decisions are not,
+           * so they are now reachable only through a saved `research-v2` or
+           * `decisions-v2` tab. The shell itself is untouched and still
+           * mounts for those types; retiring IT is a separate decision.
            */
-          <DashboardShell initialLens="today" />
+          <DashboardNext />
         )
       /*
        * Ideas — the standalone application.
@@ -1435,6 +1489,26 @@ export function DashboardPage() {
       case 'idea-generator':
       case 'ideas':
         return isMobile ? renderDashboardContent() : <IdeasApp selectedIdeaId={activeTab.data?.selectedIdeaId ?? null} />
+      /*
+       * `dashboard-next` is a COMPATIBILITY tab type now, not a trial.
+       *
+       * It was the Dashboard rebuilt as the feed, in a tab of its own so a
+       * reader could open both and go back. That decided in its favour, so
+       * `today` renders `DashboardNext` above and the launcher's second door
+       * is gone. Saved sessions and deep links still carry this type, and it
+       * still means what it always meant, so it resolves to the same surface
+       * rather than to a blank.
+       *
+       * NOT an alias of `today`'s whole arm: a pilot's first run belongs to
+       * the canonical home type, and a restored trial tab is not where a
+       * pilot should meet the mission for the first time.
+       *
+       * On a phone this resolves to the phone's own feed, like `today` and
+       * `ideas` do, because the phone already IS this design and mounting a
+       * desktop shell at 390px would be the worse of the two.
+       */
+      case 'dashboard-next':
+        return isMobile ? renderDashboardContent() : <DashboardNext />
       /*
        * `ideas-v2` is a COMPATIBILITY tab type now, not an application. Its
        * launcher entry is gone, but saved sessions and deep links still carry
@@ -1625,9 +1699,15 @@ export function DashboardPage() {
           symbol: activeTab.data?.symbol ?? activeTab.data?.assets?.symbol ?? '',
           company_name: activeTab.data?.company_name ?? null,
         }
+        /* Keyed on the same grounds as the `asset` case above. This branch
+           was missed when that one was fixed: a model tab renders the SAME
+           two components, so moving between two model tabs for different
+           assets reused one instance — and here AssetTab does persist, so it
+           could write the previous asset's state under this asset's id.
+           `modelAssetId` is guarded non-null above, so the tab id is stable. */
         return isMobile
-          ? <MobileAssetPage asset={modelAsset} onNavigate={handleSearchResult} />
-          : <AssetTab asset={modelAsset} onNavigate={handleSearchResult} initialSection="models" />
+          ? <MobileAssetPage key={activeTab.id} asset={modelAsset} onNavigate={handleSearchResult} />
+          : <AssetTab key={activeTab.id} asset={modelAsset} onNavigate={handleSearchResult} initialSection="models" />
       }
       case 'text-template':
         // Text template - go to templates tab
@@ -1721,11 +1801,16 @@ export function DashboardPage() {
      * no walkthrough and no telemetry. A pilot now learns the real Dashboard
      * with the mission module on it, which is the whole point.
      *
-     * `today` rather than a blank: the callers of this function include the
+     * The HOME rather than a blank: the callers of this function include the
      * no-active-tab and unknown-type fallbacks, and a fallback that renders
      * nothing is how a reader lands on an empty page after a bad deep link.
+     *
+     * And the home is the feed now -- see the `today` arm. This was
+     * `<DashboardShell initialLens="today" />`; leaving it would have made a
+     * legacy `dashboard` tab and a bad deep link the only two ways left to
+     * open the retired Dashboard, which is the opposite of retiring it.
      */
-    return <DashboardShell initialLens="today" />
+    return <DashboardNext />
   }
 
   // Hold a minimal loading state during an org switch until pilot detection
@@ -1802,6 +1887,8 @@ export function DashboardPage() {
 
   return (
     <>
+    {/* UX1c-2b: single prompt fronting the in-app unsaved-research guard. */}
+    <UnsavedEditsPrompt />
     <Layout
       tabs={visibleTabs}
       activeTabId={activeTabId}

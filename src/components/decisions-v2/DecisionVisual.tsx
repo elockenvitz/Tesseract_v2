@@ -35,75 +35,88 @@
 import { useState } from 'react'
 import { clsx } from 'clsx'
 /* The shared tile chart. Decisions positions it on the fill; Portfolio and
-   Research mount the same component with their own anchors. `anchoredWindow`
-   is no longer imported here: the chart that used it moved, and this file's
-   own `windowSinceDecision` is self-contained. */
+   Research mount the same component with their own anchors. */
 import { TilePriceChart } from '../desktop/TilePriceChart'
-
-export interface DecisionWindow {
-  series: number[]
-  changePct: number
-  reachesDecision: boolean
-  days: number
-  /** Index of the decision within `series`, when the series reaches it. */
-  anchorIndex: number
-}
+import { AnchoredPriceChart } from '../desktop/AnchoredPriceChart'
+import { anchoredWindow, type AnchoredWindow } from '../../lib/market-data/anchored-window'
 
 /**
- * Slice a price series at the decision, reporting honestly whether it got there.
+ * ── `windowSinceDecision` is retired, and it was WRONG ───────────────────
  *
- * Pure and exported so the headline number and the drawing cannot describe
- * different windows.
+ * It was this lens's own copy of the slicing rule, kept after the shared one
+ * moved to `lib/market-data/anchored-window` on the grounds that it was
+ * "self-contained". Self-contained is how it kept the bug the shared one had
+ * already been fixed for:
+ *
+ *     const startIndex = reaches
+ *       ? Math.max(0, history.findIndex(p => Date.parse(p.date) >= decided))
+ *       : 0
+ *
+ * `findIndex` returns -1 when NO close sits at or after the decision, and
+ * `Math.max(0, -1)` is 0 -- so the slice silently became the WHOLE history
+ * while `reachesDecision` stayed true. The detail pane then captioned a
+ * year-long line "Price after decision · 364d since decision" and printed its
+ * full-history change as the since-the-decision move, for a decision taken
+ * after the last cached close. `price_history_cache` trails by design, so
+ * every decision taken since the last cached close takes that path.
+ *
+ * The shared slicer answers -1 by refusing the claim: `reachesAnchor` is
+ * false and the caption says "Price over available history" instead. Nothing
+ * about this lens's anchor is special, which is the whole argument for not
+ * having kept a second copy.
+ *
+ * Re-exported so this lens's importers name one window rule.
  */
-export function windowSinceDecision(
-  history: { date: string; close: number }[] | undefined,
-  decidedAtISO: string | null | undefined,
-): DecisionWindow | null {
-  if (!history || history.length < 2) return null
+export { anchoredWindow }
+export type { AnchoredWindow }
 
-  const decided = decidedAtISO ? Date.parse(decidedAtISO) : NaN
-  const hasAnchor = Number.isFinite(decided)
-  const first = Date.parse(history[0].date)
-  const reaches = hasAnchor && Number.isFinite(first) && first <= decided
-
-  const startIndex = reaches
-    ? Math.max(0, history.findIndex(p => Date.parse(p.date) >= decided))
-    : 0
-
-  const slice = history.slice(startIndex)
-  if (slice.length < 2 || !(slice[0].close > 0)) return null
-
-  return {
-    series: slice.map(p => p.close),
-    changePct: ((slice[slice.length - 1].close - slice[0].close) / slice[0].close) * 100,
-    reachesDecision: reaches,
-    anchorIndex: 0,
-    days: Math.round(
-      (Date.parse(slice[slice.length - 1].date) - Date.parse(slice[0].date)) / 86_400_000,
-    ),
-  }
-}
-
+/**
+ * ── The drawing is the shared one now ────────────────────────────────────
+ *
+ * What stood here was a hand-rolled SVG: a fixed 340x92 viewBox with
+ * `preserveAspectRatio="none"`, measured on the live detail pane at 636px
+ * wide -- a 1.87x horizontal stretch against 1.0x vertical. Under it the
+ * end-of-series dot (r=3) painted as an 11x6 ellipse and the DECIDED rule's
+ * "2 3" dashes came out 3.7px and 5.6px long beside vertical dashes of 2 and
+ * 3 on the same screen. It was 92px tall where Research draws 204, it had no
+ * price scale, no gridlines, no dates on its x-axis and nothing to hover.
+ *
+ * Research's chart carried the identical defect at 1.61x and was fixed; that
+ * fix never crossed the lens boundary, so this pane went on drawing the old
+ * one for another six passes. The geometry lives in
+ * `desktop/AnchoredPriceChart` now and both lenses mount it.
+ *
+ * ── The grey line is gone, and the owner called it ───────────────────────
+ *
+ * This file's header argues at length that a red line under -39.0% is the
+ * picture calling it a bad decision while the caption denies doing so, and
+ * the detail chart was held neutral on that argument. It does not survive
+ * contact with the lens it is in. The TILES in this same gallery draw the
+ * shared `TilePriceChart`, which is graded -- so a reader saw a red line on
+ * the NKE card, clicked it, and landed on a grey line of the same series.
+ * Not a different judgement: a different product. The same complaint, twice
+ * reported: "the chart is still not the same as the other lenses."
+ *
+ * The protection the rule was written for survives where it belongs.
+ * `DecisionPath` -- the lifecycle drawing, which depicts the DECISION rather
+ * than the market -- is still one ink, and `convergence.test.ts` still holds
+ * it there. A price path is a fact about a price; the object that depicts
+ * the call is where a verdict could actually be implied.
+ *
+ * ── What this lens still keeps ───────────────────────────────────────────
+ *
+ * The EXECUTION mark, which is this anchor's second date and no other
+ * lens's, and the height Research gives the same slot.
+ */
 export function PriceSinceDecision({
   w, executedOffsetPct,
 }: {
-  w: DecisionWindow
+  w: AnchoredWindow
   /** Where execution landed in the window, 0–1, when both dates are real. */
   executedOffsetPct?: number | null
 }) {
-  const W = 340
-  const H = 92
-  const min = Math.min(...w.series)
-  const max = Math.max(...w.series)
-  const span = (max - min) || 1
-  const x = (i: number) => (i * W) / Math.max(1, w.series.length - 1)
-  const y = (v: number) => 4 + (H - 14) * (1 - (v - min) / span)
-  const d = w.series.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' L')
-  const up = w.changePct >= 0
-  void up
-
-  // 4% of the window is roughly the width of the DECIDED label. Below that the
-  // two marks are the same mark.
+  // 4% of the window is roughly the width of the EXECUTED label. Below that
+  // the two marks are the same mark.
   const SEPARATION = 0.04
   const showExecution =
     executedOffsetPct != null && executedOffsetPct > SEPARATION && executedOffsetPct <= 1
@@ -111,67 +124,27 @@ export function PriceSinceDecision({
     executedOffsetPct != null && executedOffsetPct >= 0 && executedOffsetPct <= SEPARATION
 
   return (
-    <div data-testid="price-since-decision">
-      <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
-          {w.reachesDecision ? 'Price after decision' : 'Price over available history'}
-        </span>
-        <span className="ml-auto font-mono text-[10px] text-gray-500">
-          {w.reachesDecision ? `${w.days}d since decision` : `${w.days}d of history`}
-        </span>
-      </div>
-
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height: H }}
-           role="img" aria-label={`Price, ${w.changePct.toFixed(1)} percent`}>
-        {/* One ink, either direction. The DETAIL pane keeps the neutral rule
-            this file's header argues for: at full size, beside the decision's
-            own words, a coloured line reads as a verdict on the call. The
-            tile chart is coloured because a gallery is scanned, not read. */}
-        <path d={`M${d} L${W},${H} L0,${H} Z`} className="fill-slate-500 opacity-[0.09]" />
-        <path d={`M${d}`} fill="none" strokeWidth={1.6} strokeLinejoin="round"
-              className="stroke-slate-500 dark:stroke-slate-400" />
-
-        {w.reachesDecision && (
-          <>
-            <line x1={0.5} y1={0} x2={0.5} y2={H - 2} strokeWidth={1} strokeDasharray="2 3"
-                  className="stroke-gray-500 dark:stroke-gray-500" />
-            <text x={4} y={9} className="fill-gray-500 text-[8px]" style={{ letterSpacing: '.05em' }}>
-              DECIDED
-            </text>
-          </>
-        )}
-
-        {/* Execution, only where a real completion date lands inside the
-            window AND far enough from the decision to be a separate mark.
-            Same-day execution is the common case here, and two labels stacked
-            on one pixel is a smear rather than information -- the chronology
-            beside the chart already states both dates. */}
-        {showExecution && (
-          <>
-            <line x1={executedOffsetPct! * W} y1={0} x2={executedOffsetPct! * W} y2={H - 2}
-                  strokeWidth={1} strokeDasharray="1 3" className="stroke-blue-500" />
-            <text x={executedOffsetPct! * W + 4} y={9} className="fill-blue-600 text-[8px]"
-                  style={{ letterSpacing: '.05em' }}>
-              EXECUTED
-            </text>
-          </>
-        )}
-
-        <circle cx={W - 2} cy={y(w.series[w.series.length - 1])} r={3}
-                className="fill-slate-600 dark:fill-slate-300" />
-      </svg>
-
-      {/* The sign is a fact and stays. The colour is a judgment and goes. */}
-      <div className="mt-1 font-mono text-[22px] font-semibold tabular-nums tracking-tight text-gray-900 dark:text-gray-100">
-        {w.changePct >= 0 ? '+' : ''}{w.changePct.toFixed(1)}%
-      </div>
-      <p className="mt-1 text-[10px] text-gray-500">
-        {w.reachesDecision
+    <AnchoredPriceChart
+      w={w}
+      testId="price-since-decision"
+      /* Research's height for the same slot, not a number of this lens's own. */
+      height={204}
+      caption={w.reachesAnchor ? 'Price after decision' : 'Price over available history'}
+      meta={w.reachesAnchor ? `${w.days}d since decision` : `${w.days}d of history`}
+      anchorTick="decided"
+      /* Execution, only where a real completion date lands inside the window
+         AND far enough from the decision to be a separate mark. Same-day
+         execution is the common case here, and two labels stacked on one
+         pixel is a smear rather than information -- the chronology beside the
+         chart already states both dates. */
+      marks={showExecution ? [{ at: executedOffsetPct!, label: 'EXECUTED' }] : undefined}
+      note={<>
+        {w.reachesAnchor
           ? 'What the price did afterward. Not a verdict on the decision.'
           : 'History does not reach the decision date, so this is not a since-decision move.'}
         {sameDay && ' Execution completed the same day.'}
-      </p>
-    </div>
+      </>}
+    />
   )
 }
 
@@ -646,13 +619,15 @@ export function RecordGaps({
 /**
  * Price since the fill, at tile scale, scrubbable.
  *
- * ── Why a new one ────────────────────────────────────────────────────────
+ * ── Why a separate one ───────────────────────────────────────────────────
  *
- * `PriceSinceDecision` above draws the same idea at 340x92 and is NOT
- * interactive: it has no pointer handling and its `DecisionWindow` carries
- * `series: number[]` with the dates thrown away, so a tooltip has nothing to
- * name. This takes the dated points the price hook already returns, so every
- * readout can say which day it is reading.
+ * `PriceSinceDecision` above now mounts the shared `AnchoredPriceChart`, so
+ * the two are no longer different drawings of one idea -- but they still
+ * read different data. `AnchoredWindow` carries `series: number[]` with the
+ * per-point dates thrown away, so its scrub can report a price but not which
+ * day it belongs to. This takes the dated points the price hook already
+ * returns, so every readout can say which day it is reading, which is what a
+ * tile-scale plot in a gallery needs.
  *
  * Real series only. `points` comes from `usePriceHistory`, which reads
  * `price_history_cache` -- the product's canonical dated closes. If the

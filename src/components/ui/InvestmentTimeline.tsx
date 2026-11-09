@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Check, Info, AlertTriangle, Calendar, Plus, ChevronDown, Zap, Target, Clock, BrainCircuit, Settings2 } from 'lucide-react'
+import { Check, AlertTriangle, Calendar, Plus, ChevronDown, Zap, Target, Clock, BrainCircuit, Settings2 } from 'lucide-react'
 import { Badge } from './Badge'
 import { BadgeSelect } from './BadgeSelect'
 import { Button } from './Button'
@@ -11,9 +11,23 @@ import { AssignmentSelector } from './AssignmentSelector'
 import { DecisionItemCard } from './checklist/DecisionItemCard'
 import { OperationalItemCard } from './checklist/OperationalItemCard'
 import { type ProcessItemType, userName as chUserName } from './checklist/types'
+import { StageActionBar } from '../workflow/StageActionBar'
+import { RequirementsNavigator } from '../workflow/RequirementsNavigator'
+import { StageRail, type StageRailItem } from '../workflow/StageRail'
+import { RequirementWorkspace } from '../asset/work/RequirementWorkspace'
+import { StageOverview } from '../asset/work/StageOverview'
+import { PriorWorkPanel } from '../asset/work/PriorWorkPanel'
 import { supabase } from '../../lib/supabase'
-import { workflowDeadlinesKey } from '../../lib/deadlines/stage-deadlines'
 import { useAuth } from '../../hooks/useAuth'
+import { useToastOptional } from '../common/toast-context'
+import { useOrganization } from '../../contexts/OrganizationContext'
+import {
+  statusOf, resolveTransition, completionMetadata, isSatisfied,
+  type RequirementAction,
+} from '../../lib/asset-work/requirement-status'
+import {
+  STAGE_DEADLINE_ORG_SELECT, STAGE_DEADLINE_ORG_FILTER, workflowDeadlinesKey,
+} from '../../lib/deadlines/stage-deadlines'
 
 interface ChecklistItem {
   id: string
@@ -74,10 +88,81 @@ interface InvestmentTimelineProps {
   assetId?: string
   viewingStageId?: string | null
   onViewingStageChange?: (stageId: string | null) => void
+  /**
+   * The requirement the reader was working on, restored from tab state.
+   *
+   * An `asset_checklist_items.id`. Null means none selected, which is the
+   * honest first-entry state — the surface shows a stage overview rather
+   * than implying work already in progress.
+   */
+  viewingRequirementId?: string | null
+  onViewingRequirementChange?: (requirementId: string | null) => void
   workflowId?: string
   currentPriority?: string // kept for backward compatibility but not used
   onPriorityChange?: (priority: string) => void // kept for backward compatibility but not used
+  /**
+   * Switches the workspace to another run of this Process.
+   *
+   * Passed through to the prior-work panel so "open that cycle" stays
+   * inside the asset, using the page's existing process switch rather than
+   * a second navigation.
+   */
+  onOpenRun?: (workflowId: string) => void
+  /**
+   * The process's own actions menu, pushed to the far end of the rail
+   * row. It rode beside the title, where it read as part of the process
+   * NAME rather than as the row's actions.
+   */
+  headerActions?: React.ReactNode
+  /** Opens one research note, and the asset's Research mode. */
+  onOpenNote?: (noteId: string) => void
+  /** Creates a research note on the asset and opens it. See RequirementWorkspace. */
+  onCreateNote?: () => Promise<string | null>
+  creatingNote?: boolean
+  onOpenResearch?: () => void
+  /** Opens CoAnalyst on one requirement, with the context to seed it. */
+  onAnalyzeRequirement?: (ctx: {
+    requirementId: string
+    requirementText: string
+    stageLabel: string | null
+    stageObjective: string | null
+  }) => void
+  /**
+   * The Process's own identity and actions — selector, Mark Complete, the
+   * overflow menu — placed on the rail's row instead of a band above it.
+   *
+   * It is a slot and not a set of props because this component must not
+   * learn how a Process is chosen or completed; the caller keeps owning
+   * every handler. What changes is only where the row is drawn: "which
+   * Process, which stage" reads as one line, which is what it is.
+   */
+  headerSlot?: React.ReactNode
 }
+
+/**
+ * How the Process queries treat freshness.
+ *
+ * ── Why this is not `gcTime: 0` any more ────────────────────────────────
+ *
+ * Nine of these queries carried `gcTime: 0` with the note "don't cache —
+ * always fetch fresh to prevent showing stale/deleted workflow data".
+ * That does prevent stale data, by throwing the cache away the moment the
+ * component unmounts: leaving Work for Research and coming straight back
+ * refetched all nine from nothing behind a spinner, every time.
+ *
+ * `staleTime: 0` gets the same freshness guarantee — every mount
+ * revalidates — without the blank screen, because React Query serves the
+ * cached rows immediately and replaces them when the refetch lands. A
+ * deleted run can therefore be on screen for the length of one request,
+ * which is the honest trade and the one the reader asked for: these
+ * queries are keyed by workflow id, so the stale data is always the same
+ * run's, never another's.
+ */
+const WORK_QUERY_FRESHNESS = {
+  staleTime: 0,
+  gcTime: 5 * 60_000,
+  refetchOnMount: 'always',
+} as const
 
 const TIMELINE_STAGES: TimelineStage[] = [
   {
@@ -176,11 +261,31 @@ export function InvestmentTimeline({
   assetId,
   viewingStageId,
   onViewingStageChange,
+  viewingRequirementId,
+  onViewingRequirementChange,
   workflowId,
   currentPriority = 'none',
-  onPriorityChange
+  onPriorityChange,
+  headerSlot,
+  headerActions,
+  onOpenRun,
+  onOpenNote,
+  onCreateNote,
+  creatingNote,
+  onOpenResearch,
+  onAnalyzeRequirement,
 }: InvestmentTimelineProps) {
   const { user } = useAuth()
+  const toast = useToastOptional()
+  /*
+   * Requirements with a write in flight, keyed `stageId:itemId`. A ref and
+   * not state: this guards a click, and re-rendering on it would be a
+   * render per keystroke of the mouse.
+   */
+  const requirementWritesInFlight = useRef<Set<string>>(new Set())
+  // asset_stage_deadlines is org-private; scope reads to the active org and key the query on it so an
+  // org switch refetches rather than showing another org's deadlines.
+  const { currentOrgId } = useOrganization()
   const [showStageDetails, setShowStageDetails] = useState<string | null>(null)
   const [lastClickedStageId, setLastClickedStageId] = useState<string | null>(null) // Track clicked stage for focus ring
   const [hasAutoSelected, setHasAutoSelected] = useState(false) // Track if we've auto-selected on mount
@@ -190,6 +295,63 @@ export function InvestmentTimeline({
   const [newItemType, setNewItemType] = useState<ProcessItemType>('operational')
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
+  /*
+   * In-flight guard for stage advancement.
+   *
+   * `handleAdvanceStage` awaits a batch of checklist writes and then an
+   * upsert, and nothing stopped a second click landing in that window —
+   * which advances twice, two stages, from one reader's intent to move on by
+   * one. The control is disabled while it runs.
+   */
+  const [isAdvancing, setIsAdvancing] = useState(false)
+
+  /*
+   * ── Which requirement the reader is working on ─────────────────────────
+   *
+   * An `asset_checklist_items.id`, never an array index: the checklist
+   * reloads on every toggle and the rows can reorder, and a positional
+   * selection would quietly follow whichever requirement happened to land
+   * there.
+   *
+   * It starts null on purpose. Auto-selecting the first requirement would
+   * tell the reader they had been working on it.
+   *
+   * Local state, and never written anywhere — selecting is reading.
+   */
+  const [selectedRequirement, setSelectedRequirement] = useState<string | null>(
+    () => viewingRequirementId ?? null,
+  )
+
+  /*
+   * Let it go when the requirement goes.
+   *
+   * A requirement that was deleted, or that belongs to a stage the reader
+   * has navigated away from, must not leave a detail pane showing work that
+   * is no longer there. Clearing returns the surface to the stage overview,
+   * which is an honest "nothing selected" rather than a different
+   * requirement wearing the last one's place.
+   *
+   * An empty stage is not evidence of a missing requirement. On first mount
+   * `stageChecklists` is `{}` while the templates and saved items are still
+   * in flight, and recovering against it discarded the selection restored
+   * from the reader's session — then reported that null upwards, erasing it
+   * from storage too. Only a stage that has items can say a requirement is
+   * gone.
+   */
+  React.useEffect(() => {
+    if (!selectedRequirement || !showStageDetails) return
+    const stageItems = stageChecklists[showStageDetails] || []
+    if (!stageItems.length) return
+    if (!stageItems.some(i => i.id === selectedRequirement)) {
+      setSelectedRequirement(null)
+    }
+  }, [selectedRequirement, showStageDetails, stageChecklists])
+
+  /* Report the selection up so the Asset page can persist it. */
+  React.useEffect(() => {
+    onViewingRequirementChange?.(selectedRequirement)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRequirement])
   const queryClient = useQueryClient()
 
   // Helper function to get default checklist items for a stage
@@ -268,7 +430,7 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to load workflow checklist templates
@@ -352,7 +514,7 @@ export function InvestmentTimeline({
       return []
     },
     enabled: !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to load existing checklist items from DB (to get dbIds for assignment display)
@@ -371,7 +533,7 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Stage-level work request query for summary (open gaps + in-flight)
@@ -417,7 +579,7 @@ export function InvestmentTimeline({
       return data?.priority || 'none' // default to none if no priority set
     },
     enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to load workflow-specific progress for this asset
@@ -440,7 +602,7 @@ export function InvestmentTimeline({
       return data
     },
     enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Use workflow-specific priority if available, otherwise fall back to asset priority
@@ -470,7 +632,7 @@ export function InvestmentTimeline({
     },
     onError: (error) => {
       console.error('Error saving workflow priority:', error)
-      alert('Failed to save process priority. Please try again.')
+      toast.error('The priority was not saved.', { description: 'Try again in a moment.' })
     }
   })
 
@@ -519,27 +681,65 @@ export function InvestmentTimeline({
     return stages
   }, [workflowId, workflowStages, workflowChecklistTemplates])
 
-  // Query all commentary entries for the completed summary
-  const allThinkingDbIds = showStageDetails === 'completed'
+  /*
+   * Which requirements to read commentary for.
+   *
+   * ── Why this is no longer thinking-only ────────────────────────────────
+   *
+   * It was built for the completed-process summary, which shows findings
+   * from thinking requirements. But `checklist_item_comments` is not a
+   * thinking-only table: the operational card writes to it too, through its
+   * own "Add comment". Measured on AMT's 27 Mar review, the one written
+   * finding in the stage — "the ytd performance is great" — sat on an
+   * OPERATIONAL requirement, so the stage overview reported that nothing
+   * had been written against the stage while the text was one click away.
+   *
+   * Widening the id list cannot change the completed summary, which filters
+   * to `item_type === 'thinking'` itself when it groups.
+   */
+  const allCommentableDbIds = (showStageDetails === 'completed' || !selectedRequirement)
     ? timelineStages.filter(s => s.id !== 'completed').flatMap(s =>
-        (stageChecklists[s.id] || []).filter(i => i.item_type === 'thinking' && i.dbId).map(i => i.dbId!)
+        (stageChecklists[s.id] || []).filter(i => i.dbId).map(i => i.dbId!)
       )
     : []
 
-  const { data: allCommentaries = [] } = useQuery({
-    queryKey: ['all-commentaries', assetId, workflowId, allThinkingDbIds.join(',')],
+  /*
+   * The row shape, stated once.
+   *
+   * Without it the query's result infers as `never[]` — the select string is
+   * opaque to the generated types — and every field read off a commentary
+   * row is a type error. The completed-process summary has carried those
+   * errors since it was written; the stage overview reads the same rows, so
+   * naming the shape here fixes both rather than adding a second set.
+   */
+  interface CommentaryRow {
+    checklist_item_id: string
+    comment_text: string | null
+    user_id: string | null
+    created_at: string | null
+    user?: { id?: string; first_name?: string | null; last_name?: string | null; email?: string } | null
+  }
+
+  const { data: allCommentaries = [] } = useQuery<CommentaryRow[]>({
+    queryKey: ['all-commentaries', assetId, workflowId, allCommentableDbIds.join(',')],
     queryFn: async () => {
-      if (allThinkingDbIds.length === 0) return []
+      if (allCommentableDbIds.length === 0) return []
       const { data, error } = await supabase
         .from('checklist_item_comments')
         .select('checklist_item_id, comment_text, user_id, created_at, user:users!checklist_item_comments_user_id_fkey(id, first_name, last_name, email)')
-        .in('checklist_item_id', allThinkingDbIds)
+        .in('checklist_item_id', allCommentableDbIds)
         .eq('signal_type', 'commentary')
         .order('created_at', { ascending: true })
       if (error) throw error
-      return data || []
+      return (data ?? []) as unknown as CommentaryRow[]
     },
-    enabled: showStageDetails === 'completed' && allThinkingDbIds.length > 0,
+    /*
+     * Also while no requirement is open: the stage overview quotes these
+     * findings, and without them a stage where three requirements carry
+     * written analysis looks identical to one where none does. Same query,
+     * same key, one more case — not a second read path.
+     */
+    enabled: (showStageDetails === 'completed' || !selectedRequirement) && allCommentableDbIds.length > 0,
     staleTime: 30_000,
   })
 
@@ -606,7 +806,7 @@ export function InvestmentTimeline({
     },
     onError: (error) => {
       console.error('Error managing workflow progress:', error)
-      alert('Failed to update process. Please try again.')
+      toast.error('The process was not updated.', { description: 'Nothing was changed. Try again in a moment.' })
     }
   })
 
@@ -629,27 +829,29 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to load workflow-specific stage deadlines
   const { data: stageDeadlines } = useQuery({
     // The shared builder, so the manager's invalidation after a save names the
     // same key this reads. They used to disagree, and a saved deadline did not
-    // appear here until something else refetched.
-    queryKey: workflowDeadlinesKey(assetId, workflowId),
+    // appear here until something else refetched. The org leads the key so an
+    // organization switch refetches instead of serving the previous org's.
+    queryKey: workflowDeadlinesKey(currentOrgId, assetId, workflowId),
     queryFn: async () => {
-      if (!assetId || !workflowId) return []
+      if (!assetId || !workflowId || !currentOrgId) return []
       const { data, error } = await supabase
         .from('asset_stage_deadlines')
-        .select('*')
+        .select(STAGE_DEADLINE_ORG_SELECT)
+        .eq(STAGE_DEADLINE_ORG_FILTER, currentOrgId)
         .eq('asset_id', assetId)
         .eq('workflow_id', workflowId)
       if (error) throw error
       return data || []
     },
-    enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    enabled: !!assetId && !!workflowId && !!currentOrgId,
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to load workflow-specific checklist attachments
@@ -667,7 +869,7 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!assetId && !!workflowId,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Query to get content tiles for the current workflow and stage
@@ -688,7 +890,7 @@ export function InvestmentTimeline({
       return data || []
     },
     enabled: !!workflowId && !!showStageDetails,
-    gcTime: 0 // Don't cache - always fetch fresh to prevent showing stale/deleted workflow data
+    ...WORK_QUERY_FRESHNESS,
   })
 
   // Mutation to save checklist item changes
@@ -702,6 +904,16 @@ export function InvestmentTimeline({
       comment?: string
       completedAt?: string
       completedBy?: string
+      /** Released in `onSettled`, so a failed write cannot wedge the row. */
+      inFlightKey?: string
+      /** The row as it was, for putting back when the write fails. */
+      previous?: {
+        completed: boolean
+        status: 'unchecked' | 'completed' | 'na'
+        completedAt?: string
+        completedBy?: string
+        completedByUser?: ChecklistItem['completedByUser']
+      }
     }) => {
       const { error } = await supabase
         .from('asset_checklist_items')
@@ -723,10 +935,33 @@ export function InvestmentTimeline({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-workflow-checklist', assetId, workflowId] })
     },
-    onError: (error) => {
+    /*
+     * A failed write used to leave the optimistic row showing a status the
+     * database never accepted, behind a dialog the reader had to dismiss
+     * before they could see it. The row goes back to what it was, and the
+     * message says so.
+     */
+    onError: (error, vars) => {
       console.error('Error saving checklist item:', error)
-      alert('Failed to save checklist item. Please try again.')
-    }
+      /*
+       * Only the explicit-action path rolls back and reports. The stage
+       * advance also uses this mutation, to stamp requirements that were
+       * already done, and it catches and reports for itself — without
+       * this guard one failure there would raise two toasts saying
+       * different things.
+       */
+      if (!vars.previous) return
+      setStageChecklists(prev => ({
+        ...prev,
+        [vars.stageId]: prev[vars.stageId]?.map(item =>
+          item.id === vars.itemId ? { ...item, ...vars.previous } : item,
+        ) || [],
+      }))
+      toast.error('That change was not saved.', { description: 'The requirement has been put back as it was.' })
+    },
+    onSettled: (_d, _e, vars) => {
+      if (vars?.inFlightKey) requirementWritesInFlight.current.delete(vars.inFlightKey)
+    },
   })
 
   // Initialize checklists for all stages, merging with saved data and custom items
@@ -984,9 +1219,11 @@ export function InvestmentTimeline({
 
   const handleAdvanceStage = async () => {
     if (!assetId) {
-      alert('No asset ID available. Cannot advance stage.')
+      toast.error('This asset could not be identified, so the stage was not advanced.')
       return
     }
+    if (isAdvancing) return
+    setIsAdvancing(true)
 
     const currentIndex = getCurrentStageIndex()
     if (currentIndex < timelineStages.length - 1) {
@@ -1079,8 +1316,15 @@ export function InvestmentTimeline({
         setShowStageDetails(nextStage.id)
       } catch (error) {
         console.error('Error saving checklist state:', error)
-        alert('Failed to save checklist state. Please try again.')
+        toast.error('The stage advanced, but the requirement timestamps were not saved.', {
+          description: 'The requirements themselves are unchanged.',
+        })
+      } finally {
+        setIsAdvancing(false)
       }
+    } else {
+      // Nothing to advance to; release the guard rather than wedging it on.
+      setIsAdvancing(false)
     }
   }
 
@@ -1115,40 +1359,56 @@ export function InvestmentTimeline({
     }
   }
 
-  const handleChecklistToggle = (stageId: string, itemId: string) => {
+  /*
+   * One named transition, not a cycle.
+   *
+   * The caller says what it wants to happen — complete, reopen, mark not
+   * applicable, restore — and `resolveTransition` decides whether that
+   * applies from where the requirement actually is. A control can no
+   * longer be labelled one thing and do another, and a stale click that
+   * arrives after somebody else moved the row is refused with a reason
+   * instead of cycling it somewhere nobody asked for.
+   */
+  const applyRequirementAction = (
+    stageId: string,
+    itemId: string,
+    action: RequirementAction,
+  ) => {
     if (!isStageEditable(stageId)) {
-      if (workflowProgress?.is_completed) {
-        alert('This process has been marked complete. Click "Resume Process" to continue working on it.')
-      } else {
-        alert('This checklist is locked. You can only edit items from the current stage.')
-      }
+      toast.warning(
+        workflowProgress?.is_completed
+          ? 'This process is marked complete. Resume it to keep working.'
+          : 'This checklist is locked. Only the current stage can be edited.',
+      )
       return
     }
 
     if (!assetId) {
-      alert('No asset ID available. Cannot save checklist changes.')
+      toast.error('This asset could not be identified, so the change was not saved.')
       return
     }
 
     const currentItem = stageChecklists[stageId]?.find(item => item.id === itemId)
     if (!currentItem) return
 
-    // Cycle through states: unchecked -> completed -> na -> unchecked
-    const currentStatus = currentItem.status || (currentItem.completed ? 'completed' : 'unchecked')
-    let newStatus: 'unchecked' | 'completed' | 'na'
+    /* One write per requirement at a time. A second click while the first
+       is in flight would race it and could land the older status last. */
+    const inFlightKey = `${stageId}:${itemId}`
+    if (requirementWritesInFlight.current.has(inFlightKey)) return
 
-    if (currentStatus === 'unchecked') {
-      newStatus = 'completed'
-    } else if (currentStatus === 'completed') {
-      newStatus = 'na'
-    } else {
-      newStatus = 'unchecked'
+    const currentStatus = statusOf(currentItem)
+    const transition = resolveTransition(currentStatus, action)
+    if (!transition.ok || !transition.to) {
+      if (transition.reason) toast.warning(transition.reason)
+      return
     }
 
-    const newCompleted = newStatus === 'completed'
-    const isDone = newStatus === 'completed' || newStatus === 'na'
-    const newCompletedAt = isDone ? new Date().toISOString() : undefined
-    const newCompletedBy = isDone ? user?.id : undefined
+    const newStatus = transition.to
+    const meta = completionMetadata(newStatus, user?.id)
+    const newCompleted = meta.completed
+    const isDone = isSatisfied(newStatus)
+    const newCompletedAt = meta.completedAt
+    const newCompletedBy = meta.completedBy
     const newCompletedByUser = isDone && user ? {
       id: user.id,
       email: user.email || '',
@@ -1172,6 +1432,7 @@ export function InvestmentTimeline({
     }))
 
     // Save to database
+    requirementWritesInFlight.current.add(inFlightKey)
     saveChecklistItemMutation.mutate({
       assetId,
       stageId,
@@ -1180,7 +1441,17 @@ export function InvestmentTimeline({
       status: newStatus,
       comment: currentItem.comment,
       completedAt: newCompletedAt,
-      completedBy: newCompletedBy
+      completedBy: newCompletedBy,
+      /* Carried so the optimistic row can be put back if the write
+         fails, and so the guard is released on both paths. */
+      inFlightKey,
+      previous: {
+        completed: !!currentItem.completed,
+        status: currentStatus,
+        completedAt: currentItem.completedAt,
+        completedBy: currentItem.completedBy,
+        completedByUser: currentItem.completedByUser,
+      },
     })
   }
 
@@ -1262,7 +1533,20 @@ export function InvestmentTimeline({
     )
   }
 
-  if (!workflowId || workflowId === '' || workflowId === 'undefined' || workflowId === 'null' || (workflowStages && timelineStages.length === 0)) {
+  /*
+   * Two different absences, which this branch used to state as one.
+   *
+   * `AssetTab` renders this component only when `effectiveWorkflowId` is
+   * truthy — it shows its own "No Active Processes" card otherwise — so the
+   * reachable way in here is the LAST term: a process that exists but whose
+   * stages are gone (archived or ended). Saying "No Active Processes. Select
+   * a process from the dropdown above" in that case tells the reader the
+   * opposite of what is true, because a process IS selected; and it put the
+   * same headline on screen as AssetTab's guard for a different condition.
+   */
+  const hasNoProcess =
+    !workflowId || workflowId === '' || workflowId === 'undefined' || workflowId === 'null'
+  if (hasNoProcess || (workflowStages && timelineStages.length === 0)) {
     return (
       <div className={`space-y-6 ${className}`}>
         <div className="bg-white border border-gray-200 rounded-lg p-12 dark:border-gray-700 dark:bg-gray-800">
@@ -1272,9 +1556,13 @@ export function InvestmentTimeline({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">No Active Processes</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">
+              {hasNoProcess ? 'No Active Processes' : 'This process has no stages'}
+            </h3>
             <p className="text-sm text-gray-500 max-w-md dark:text-gray-400">
-              This asset is not currently assigned to any process. Select a process from the dropdown above to get started.
+              {hasNoProcess
+                ? 'This asset is not currently assigned to any process. Select a process above to get started.'
+                : 'The process selected for this asset has no stages to show — it may have been archived or ended. Pick another process above, or add stages to this one.'}
             </p>
           </div>
         </div>
@@ -1283,12 +1571,31 @@ export function InvestmentTimeline({
   }
 
   return (
-    <div className={`space-y-6 ${className}`}>
+    <div className={`space-y-3 ${className}`}>
       {/* Timeline Visualization */}
-      <div className="bg-white border border-gray-200 rounded-lg p-6 dark:border-gray-700 dark:bg-gray-800">
-        <div className="mb-4 flex items-center justify-between">
-          {/* Workflow Priority on the left */}
-          {assetId && workflowId && (
+      {/* p-6 → p-3 and mb-4 → mb-2: the stage rail card was 199px tall to
+          hold a 61px rail and a priority chip. */}
+      <div className="bg-white border border-gray-200 rounded-lg p-3 dark:border-gray-700 dark:bg-gray-800">
+        {/*
+          ── The priority chip rides the rail's row ───────────────────────
+          It had a 24px row of its own, containing one chip and nothing else,
+          directly above the stage rail. It is a PROCESS-level control, so it
+          belongs on this card rather than in the stage block below — but not
+          on a row of its own. `md:hidden` keeps the phone layout stacked,
+          where a chip beside a vertical stage list would not fit; from `md`
+          up the same chip renders inside the rail row instead.
+        */}
+        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2" data-testid="process-rail-row">
+          {/* Which Process, then which stage — one line, read left to right. */}
+          {headerSlot}
+          {/*
+            Priority is STATUS, so it shows when there is a status to show.
+            "Priority: None" was a permanent control stating the absence of
+            one, competing with the process identity beside it. Setting a
+            priority on a process that has none is done from the sidebar
+            row's own menu, which is where processes are chosen.
+          */}
+          {assetId && workflowId && effectivePriority !== 'none' && (
             <div className="flex items-center space-x-2">
               <div className="relative">
                 {(() => {
@@ -1315,7 +1622,18 @@ export function InvestmentTimeline({
                         }`}
                       >
                         <current.icon className="w-3 h-3" />
-                        <span>Process: {current.label}</span>
+                        {/*
+                          "Priority", not "Process".
+                          This chip sets the workflow's PRIORITY — its value
+                          comes from priorityConfig and its handler is
+                          handleWorkflowPriorityChange — but it rendered
+                          "Process: None" directly beneath the workflow
+                          selector, so the page appeared to carry two process
+                          controls and this one looked like the redundant copy.
+                          It is the only way to set priority; the duplication
+                          was in the label, not the function.
+                        */}
+                        <span>Priority: {current.label}</span>
                         <ChevronDown className="w-3 h-3" />
                       </button>
 
@@ -1398,194 +1716,59 @@ export function InvestmentTimeline({
             </div>
           )}
 
-        </div>
+        {/*
+          ── One stage navigation, at every width and in every state ───────
 
-        {/* Desktop Chevron Timeline - Executive Design */}
-        <div className="hidden md:block">
-          <div className="relative py-6 px-8">
-            <div className="flex items-center gap-0.5 w-full">
-              {timelineStages.map((stage, index) => {
-                const status = getStageStatus(index)
-                const isLast = index === timelineStages.length - 1
-                const isFirst = index === 0
+          The chevrons are gone. Four of them cost ~70px of a 945px viewport
+          and rendered as overlapping clip-path polygons with a blurred glow
+          layer behind the selected one — a 205-line shape to say which of
+          four steps you are on, which a row of chips says in 34px without
+          the arrow geometry breaking at narrow widths.
 
-                // Get task progress for this stage
-                const stageChecklistItems = stageChecklists[stage.id] || []
-                const completedTasks = stageChecklistItems.filter(item => isItemDone(item)).length
-                const totalTasks = stageChecklistItems.length
-                const progressPercent = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0
-
-                // Executive color schemes - minimal and sophisticated
-                const colorSchemes: Record<string, {
-                  bg: string
-                  text: string
-                  accent: string
-                  progressTrack: string
-                  progressFill: string
-                }> = {
-                  completed: {
-                    bg: 'bg-emerald-500',
-                    text: 'text-white',
-                    accent: 'text-emerald-50',
-                    progressTrack: 'bg-emerald-700/30',
-                    progressFill: 'bg-white dark:bg-gray-800'
-                  },
-                  current: {
-                    bg: 'bg-gradient-to-br from-blue-600 to-indigo-600',
-                    text: 'text-white',
-                    accent: 'text-blue-50',
-                    progressTrack: 'bg-white/20',
-                    progressFill: 'bg-white dark:bg-gray-800'
-                  },
-                  future: {
-                    bg: 'bg-slate-100',
-                    text: 'text-slate-700',
-                    accent: 'text-slate-500',
-                    progressTrack: 'bg-slate-200',
-                    progressFill: 'bg-slate-500'
-                  }
+          Nothing it carried was dropped: number, name, done/total, status
+          colour, the marker for the CURRENT stage while another is being
+          viewed, the deadline, and the same `handleStageClick`. Progress is
+          a 2px rule under each name rather than a bar inside a polygon.
+        */}
+        <div className="min-w-0 flex-1">
+          <StageRail
+            stages={timelineStages.map((stage, index) => {
+              const items = stageChecklists[stage.id] || []
+              const deadline = getStageDeadline(stage.id)
+              let deadlineLabel: StageRailItem['deadline'] = null
+              if (deadline?.deadline_date) {
+                const tone = getDeadlineStatus(deadline.deadline_date)
+                const due = new Date(deadline.deadline_date)
+                const today = new Date()
+                due.setHours(0, 0, 0, 0)
+                today.setHours(0, 0, 0, 0)
+                const days = Math.ceil((due.getTime() - today.getTime()) / 86_400_000)
+                deadlineLabel = {
+                  tone,
+                  label: days < 0 ? `${Math.abs(days)}d overdue` : days === 0 ? 'Due today' : `${days}d left`,
                 }
+              }
+              return {
+                id: stage.id,
+                label: stage.label,
+                status: getStageStatus(index) as 'completed' | 'current' | 'future',
+                done: items.filter(i => isItemDone(i)).length,
+                total: items.length,
+                deadline: deadlineLabel,
+              }
+            })}
+            selectedId={showStageDetails}
+            onSelect={(stageId, index) => {
+              const stage = timelineStages.find(s => s.id === stageId)
+              if (stage) handleStageClick(stage, index)
+            }}
+          />
+        </div>
+        {/* The row's actions, at the row's end — a sibling of the rail,
+            not a child of it, or `flex-1` on the rail pushes them onto a
+            line of their own. */}
+        {headerActions && <div className="ml-auto flex-none">{headerActions}</div>}
 
-                const colors = colorSchemes[status] || colorSchemes.future
-                const isSelected = lastClickedStageId === stage.id
-
-                // Responsive sizing for chevrons
-                const chevronArrowSize = '34px'
-
-                return (
-                  <div
-                    key={stage.id}
-                    className="relative flex items-center transition-all duration-300 flex-1 min-w-0"
-                    style={{ flexBasis: 0 }}
-                  >
-                    {/* Blue glow border for selected state */}
-                    {isSelected && (
-                      <div
-                        className="absolute pointer-events-none z-[2]"
-                        style={{
-                          top: '-5px',
-                          left: '-5px',
-                          right: '-5px',
-                          bottom: '-5px',
-                          background: 'linear-gradient(135deg, rgba(147, 197, 253, 0.9), rgba(96, 165, 250, 0.7))',
-                          clipPath: isLast
-                            ? isFirst
-                              ? 'none'
-                              : `polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, ${chevronArrowSize} 50%)`
-                            : isFirst
-                              ? `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%)`
-                              : `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%, ${chevronArrowSize} 50%)`,
-                          filter: 'blur(3px)'
-                        }}
-                      />
-                    )}
-                    <button
-                      onClick={() => handleStageClick(stage, index)}
-                      className={`
-                        relative w-full py-5 px-6 transition-all duration-300 min-w-0
-                        ${colors.bg} ${colors.text}
-                        ${isSelected
-                          ? 'z-[3]'
-                          : 'shadow-lg hover:shadow-xl hover:z-[2]'
-                        }
-                        ${isFirst ? 'rounded-l-xl' : ''}
-                        ${isLast ? 'rounded-r-xl' : ''}
-                      `}
-                      style={{
-                        clipPath: isLast
-                          ? isFirst
-                            ? 'none'
-                            : `polygon(0% 0%, 100% 0%, 100% 100%, 0% 100%, ${chevronArrowSize} 50%)`
-                          : isFirst
-                            ? `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%)`
-                            : `polygon(0% 0%, calc(100% - ${chevronArrowSize}) 0%, 100% 50%, calc(100% - ${chevronArrowSize}) 100%, 0% 100%, ${chevronArrowSize} 50%)`
-                      }}
-                    >
-                      {/* Content */}
-                      <div className="relative z-10 space-y-2.5 min-h-[85px] flex flex-col justify-center min-w-0 w-full" style={{ marginLeft: isFirst ? '0' : '16px' }}>
-
-
-                        {/* Header */}
-                        <div className="flex items-center min-w-0">
-                          {/* Stage Number - Fixed width container with checkmark for completed */}
-                          <div className="relative flex items-center justify-center w-7 h-7 rounded-md bg-black/15 text-sm font-bold flex-shrink-0 mr-2">
-                            {index + 1}
-                            {/* Completed checkmark - upper right of stage number */}
-                            {status === 'completed' && (
-                              <div className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-white rounded-full flex items-center justify-center shadow-sm dark:bg-gray-800">
-                                <Check className="w-3 h-3 text-green-600" strokeWidth={3} />
-                              </div>
-                            )}
-                            {/* Current stage indicator */}
-                            {status === 'current' && (
-                              <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white rounded-full animate-pulse shadow-sm dark:bg-gray-800" />
-                            )}
-                          </div>
-                          {/* Stage Name - Left aligned */}
-                          <h4 className="text-base font-semibold leading-tight truncate min-w-0">
-                            {stage.label}
-                          </h4>
-                        </div>
-
-                        {/* Progress */}
-                        {totalTasks > 0 ? (
-                          <div className="space-y-1.5 pr-8">
-                            <div className={`h-1.5 ${colors.progressTrack} rounded-full overflow-hidden`}>
-                              <div
-                                className={`h-full ${colors.progressFill} rounded-full transition-all duration-500`}
-                                style={{ width: `${progressPercent}%` }}
-                              />
-                            </div>
-                            <div className={`flex items-center justify-between text-xs font-semibold ${colors.accent}`}>
-                              <span className="truncate mr-2">{completedTasks}/{totalTasks} tasks</span>
-                              <span className="flex-shrink-0">{Math.round(progressPercent)}%</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="h-[34px]" /> // Spacer to match progress section height
-                        )}
-
-                        {/* Deadline */}
-                        {(() => {
-                          const deadline = getStageDeadline(stage.id)
-                          if (!deadline) return null
-
-                          const deadlineStatus = getDeadlineStatus(deadline.deadline_date)
-                          const getDaysUntilDeadline = (dateString: string) => {
-                            const deadline = new Date(dateString)
-                            const today = new Date()
-                            today.setHours(0, 0, 0, 0)
-                            deadline.setHours(0, 0, 0, 0)
-                            const diffTime = deadline.getTime() - today.getTime()
-                            return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-                          }
-
-                          const daysUntil = getDaysUntilDeadline(deadline.deadline_date)
-                          const statusText = daysUntil < 0 ? `${Math.abs(daysUntil)}d overdue` :
-                                           daysUntil === 0 ? 'Today' :
-                                           `${daysUntil}d remaining`
-
-                          const badgeStyles = {
-                            overdue: 'bg-red-600 text-white',
-                            today: 'bg-orange-500 text-white',
-                            urgent: 'bg-amber-500 text-white',
-                            upcoming: 'bg-black/10'
-                          }
-
-                          return (
-                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md ${badgeStyles[deadlineStatus]} text-xs font-semibold`}>
-                              <Calendar className="w-3 h-3" strokeWidth={2} />
-                              <span>{statusText}</span>
-                            </div>
-                          )
-                        })()}
-                      </div>
-                    </button>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
         </div>
 
         {/* Mobile Timeline */}
@@ -1692,51 +1875,56 @@ export function InvestmentTimeline({
       </div>
 
       {/* Stage Details Modal/Card */}
+      {/* `sm` padding, not the 24px `md` default: this card is the working
+          surface, and its frame should not cost more than the stage context
+          row inside it. */}
       {showStageDetails && (
-        <Card key={`${workflowId}-${showStageDetails}`} className="transition-all duration-300 animate-in fade-in slide-in-from-top-4">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className={`w-10 h-10 rounded-full ${getStageColor(getStageStatus(timelineStages.findIndex(s => s.id === showStageDetails)), timelineStages.findIndex(s => s.id === showStageDetails))} flex items-center justify-center`}>
-                {getStageStatus(timelineStages.findIndex(s => s.id === showStageDetails)) === 'completed' ? (
-                  <Check className="w-5 h-5 text-white" />
-                ) : (
-                  <Info className="w-5 h-5 text-white" />
-                )}
-              </div>
-              <div className="flex-1">
-                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {timelineStages.find(s => s.id === showStageDetails)?.label} Stage
-                </h4>
-                <p className="text-sm text-gray-600 mb-3 dark:text-gray-400">
-                  {assetSymbol && `For ${assetSymbol} • `}
-                  {timelineStages.find(s => s.id === showStageDetails)?.description}
-                </p>
-              </div>
-            </div>
+        <Card key={`${workflowId}-${showStageDetails}`} padding="sm" className="transition-all duration-300 animate-in fade-in slide-in-from-top-4">
+          {/*
+            ── One line of stage context, not a second stage header ────────
 
-            {/* Stage Assignment Section - Upper Right */}
-            {showStageDetails && showStageDetails !== 'completed' && showStageDetails !== 'outdated' && assetId && workflowId && (
-              <div className="flex-shrink-0">
-                <AssignmentSelector
-                  assetId={assetId}
-                  workflowId={workflowId}
-                  stageId={showStageDetails}
-                  type="stage"
-                >
-                  {/* Stage Deadline - Below Assigned To */}
-                  <div className="mt-2">
-                    <StageDeadlineManager
-                      assetId={assetId || ''}
-                      workflowId={workflowId}
-                      stageId={showStageDetails}
-                      stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
-                      isCurrentStage={showStageDetails === effectiveCurrentStage}
-                    />
-                  </div>
-                </AssignmentSelector>
-              </div>
-            )}
-          </div>
+            This was a 40px status disc, an 18px "<Stage> Stage" heading, a
+            description line and a right-hand block stacking assignment over
+            deadline — about 104px announcing a stage the rail directly above
+            had already named, numbered and coloured. Measured at 1920x889 the
+            first requirement sat at y=579, two thirds of the viewport spent
+            before any work.
+
+            What is kept is what the rail does NOT say: the stage's question,
+            and who owns it by when. The disc is gone because the rail already
+            carries stage status as colour and position; the heading is gone
+            because repeating a title under a title is the duplication this
+            slice exists to remove. The ownership controls are the same two
+            components with the same props — side by side instead of stacked,
+            so they cost one row rather than two.
+          */}
+          {/*
+            ── The ownership row is gone; its contents moved down one line ──
+
+            It held the stage's question on the left and ownership on the
+            right. While a requirement is open the question is suppressed —
+            the workspace quotes it as the objective — which left a 28px band
+            carrying two controls on its far right and nothing else. They
+            describe the stage that the action bar below already describes,
+            so they ride it as its `trailing` slot. Same two components, same
+            props, same place in the reading order; one fewer band.
+
+            The question keeps a line of its own only when there IS one and
+            no requirement is open, so a stage with nothing to say renders
+            nothing at all rather than punctuation or an empty row.
+          */}
+          {/*
+            The stage's question is gone from here entirely. Both surfaces
+            below now quote it where it belongs — the overview as the
+            stage's objective in 17px, the requirement workspace under the
+            requirement it serves — so this line was a third copy, set in
+            12px grey above both of them.
+
+            The ownership controls main added `workflowId` to here are not
+            lost: they moved into the action bar's `trailing` slot further
+            down, which is the only place they still render, and the prop
+            travels with them.
+          */}
 
           <div className="grid grid-cols-1 gap-6">
 
@@ -1810,25 +1998,322 @@ export function InvestmentTimeline({
                 {(() => {
                   const items = stageChecklists[showStageDetails] || []
                   const isEditable = isStageEditable(showStageDetails)
+                  /* One definition, two homes: the stage bar on the stage
+                     overview, the requirement header while one is open. */
+                  const stageOwnershipControls =
+                    showStageDetails !== 'completed' && showStageDetails !== 'outdated' && assetId && workflowId
+                      ? (
+                        <AssignmentSelector
+                          assetId={assetId}
+                          workflowId={workflowId}
+                          stageId={showStageDetails}
+                          type="stage"
+                        >
+                          <StageDeadlineManager
+                            assetId={assetId || ''}
+                            workflowId={workflowId}
+                            stageId={showStageDetails}
+                            stageName={timelineStages.find(s => s.id === showStageDetails)?.label || ''}
+                            isCurrentStage={showStageDetails === effectiveCurrentStage}
+                          />
+                        </AssignmentSelector>
+                      )
+                      : null
                   const doneCount = items.filter(i => isItemDone(i)).length
 
                   return (
                     <>
-                      <div className="mb-2 px-1 text-[10px] text-gray-400">{doneCount}/{items.length} complete</div>
-                      <div className="space-y-1.5">
-                        {items.map(item => {
-                          const props = {
-                            item, stageId: showStageDetails, assetId, workflowId, isEditable,
-                            isExpanded: expandedItemId === item.id,
-                            onToggleExpand: () => setExpandedItemId(expandedItemId === item.id ? null : item.id),
-                            onToggleStatus: () => handleChecklistToggle(showStageDetails, item.id),
-                            onRemoveCustom: item.isCustom ? () => handleRemoveCustomItem(showStageDetails, item.id) : undefined,
-                            currentUser: user,
-                          }
-                          return (item.item_type || 'operational') === 'thinking'
-                            ? <DecisionItemCard key={item.id} {...props} />
-                            : <OperationalItemCard key={item.id} {...props} />
-                        })}
+                      {/*
+                        Progress and the next action, beside the work.
+
+                        This line used to read "0/5 complete" in 10px grey and
+                        nothing else; the stage position and the advance
+                        button were 783px further down, past every
+                        requirement. The counts are the same `stageChecklists`
+                        the rail and the Work band read — no second
+                        derivation — and `onAdvance` is the existing handler.
+                      */}
+                      {/*
+                        One reading measure for the whole working column.
+
+                        "Read/Summarize News" is 19 characters and was set
+                        across 1,789 pixels, with its chevron a thousand
+                        pixels from its label. 78ch lands near 720px at this
+                        type size. The action bar shares the measure so that
+                        "4 open" and "Advance to Earnings Print" sit directly
+                        over the requirements they describe rather than a
+                        screen-width apart. Nothing about the items or the
+                        bar's behaviour changed.
+                      */}
+                      {/*
+                        ── The stage's own bar, on the stage's own screen ──
+
+                        With a requirement open this row had nothing left to
+                        say: the progress was a duplicate of the rail chip
+                        above it and the advance action belongs at the stage
+                        boundary, so all that remained was a 33px band
+                        carrying two stage-level controls over somebody's
+                        writing.
+
+                        It renders on the stage overview, where those are
+                        the screen's subject. While a requirement is open the
+                        same assignment and deadline components ride the
+                        requirement's own header row instead — same props,
+                        same behaviour, one band fewer.
+                      */}
+                      {!selectedRequirement && (
+                        <StageActionBar
+                          viewingStageId={showStageDetails}
+                          currentStageId={effectiveCurrentStage}
+                          stages={timelineStages.map(s => ({ id: s.id, label: s.label }))}
+                          isStarted={!!isWorkflowStarted}
+                          isCompleted={!!workflowProgress?.is_completed}
+                          done={doneCount}
+                          total={items.length}
+                          onAdvance={handleAdvanceStage}
+                          isAdvancing={isAdvancing}
+                          trailing={stageOwnershipControls}
+                        />
+                      )}
+                      {/*
+                        ── The requirement, not the checklist ──────────────
+
+                        Requirements were a column of accordions: opening one
+                        pushed the rest down and showed owner, notes, files
+                        and comments in about 670px, while the remaining
+                        ~900px of surface stayed empty. Now the list is a
+                        280px rail and whichever requirement is selected
+                        takes the space.
+
+                        `selectedRequirement` is an id, never an index, so
+                        the selection survives the checklist reloading and
+                        the rows reordering.
+                      */}
+                      {/*
+                        ── One list of requirements, never two ─────────────
+
+                        The rail is NAVIGATION between requirements, so it
+                        appears once there is one open. On the stage
+                        overview it was a second copy of the list the
+                        overview itself renders — the same five titles in
+                        two columns, at two weights, three inches apart —
+                        and the reader could not tell which was the subject
+                        and which the index.
+
+                        So the overview takes the full width and owns the
+                        list; opening a requirement brings the rail in
+                        beside the workspace, where it is an index to
+                        something else.
+                      */}
+                      <div className={selectedRequirement
+                        ? 'grid grid-cols-1 gap-4 lg:grid-cols-[260px_minmax(0,1fr)]'
+                        : 'grid grid-cols-1'}>
+                        {selectedRequirement && <RequirementsNavigator
+                          items={items}
+                          selectedId={selectedRequirement}
+                          onSelect={setSelectedRequirement}
+                          onAction={(id, action) => applyRequirementAction(showStageDetails, id, action)}
+                          isEditable={isEditable}
+                          /* Ids of requirements carrying a written finding,
+                             from the commentary query this surface already
+                             runs. The rail performs no read of its own. */
+                          documentedIds={new Set(allCommentaries.map(c => c.checklist_item_id))}
+                        />}
+
+                        <div className="min-w-0" data-testid="requirement-detail">
+                          {(() => {
+                            const selected = items.find(i => i.id === selectedRequirement)
+                            if (!selected) {
+                              /*
+                                ── The stage, before a requirement is open ──
+
+                                This was a dashed box reading "Pick a
+                                requirement to record what you found" — two
+                                thirds of the working surface asking the
+                                reader to choose before telling them anything
+                                to choose on. The overview answers what the
+                                stage asks, where to pick up and why, what
+                                state each requirement is in and what anyone
+                                has actually written.
+
+                                Nothing new is fetched: statuses and notes
+                                come off the rows the rail already holds, and
+                                the findings are the commentary query above.
+                                It still does not auto-select — naming the
+                                next requirement is a prompt, opening it
+                                would be a claim that work had started.
+                              */
+                              const stage = timelineStages.find(s => s.id === showStageDetails)
+                              const commentaryFor = new Map<string, typeof allCommentaries>()
+                              for (const c of allCommentaries) {
+                                const list = commentaryFor.get(c.checklist_item_id) ?? []
+                                list.push(c)
+                                commentaryFor.set(c.checklist_item_id, list)
+                              }
+                              const facts = items.map(i => ({
+                                id: i.id,
+                                text: i.text,
+                                status: i.status,
+                                completed: i.completed,
+                                hasCommentary: !!(i.dbId && commentaryFor.get(i.dbId)?.length),
+                                hasNotes: !!i.notes?.trim(),
+                                hasAttachments: !!i.attachments?.length,
+                                assigneeName: i.assignee ? chUserName(i.assignee) : null,
+                                assigneeId: i.assignee_id ?? null,
+                                dueDate: i.due_date ?? null,
+                                completedAt: i.completedAt ?? null,
+                                completedByName: i.completedByUser ? chUserName(i.completedByUser) : null,
+                              }))
+                              /* Newest first, one per requirement: the
+                                 overview quotes the latest, and the rest are
+                                 on the requirement where they were written.
+
+                                 BOTH stores, not just commentary. A thinking
+                                 requirement's work lands in
+                                 `checklist_item_comments`; an operational
+                                 one's lands in `asset_checklist_items.notes`.
+                                 Reading only the first made the overview
+                                 contradict itself — the row said
+                                 "Documented" from `hasNotes` while the list
+                                 beneath it said nothing had been written.
+                                 Seen on AAPL / Expectations after saving a
+                                 summary against "Read/Summarize News".
+
+                                 A note carries no author or timestamp of its
+                                 own, so those stay null rather than being
+                                 borrowed from the row's completion fields,
+                                 which record a different act. */
+                              const findings = items.flatMap(i => {
+                                const rows = i.dbId ? commentaryFor.get(i.dbId) ?? [] : []
+                                const latest = rows[rows.length - 1]
+                                if (latest?.comment_text) {
+                                  const u: any = Array.isArray(latest.user) ? latest.user[0] : latest.user
+                                  return [{
+                                    requirementId: i.id,
+                                    requirementText: i.text,
+                                    text: latest.comment_text,
+                                    authorName: u ? chUserName(u) : null,
+                                    when: latest.created_at
+                                      ? new Date(latest.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                                      : null,
+                                  }]
+                                }
+                                const notes = i.notes?.trim()
+                                if (!notes) return []
+                                return [{
+                                  requirementId: i.id,
+                                  requirementText: i.text,
+                                  text: notes,
+                                  authorName: null,
+                                  when: null,
+                                }]
+                              })
+                              return (
+                                <StageOverview
+                                  stage={{ label: stage?.label, description: stage?.description }}
+                                  assetSymbol={assetSymbol ?? null}
+                                  facts={facts}
+                                  findings={findings}
+                                  viewerId={user?.id ?? null}
+                                  onOpenRequirement={(id) => setSelectedRequirement(id)}
+                                />
+                              )
+                            }
+                            /*
+                              No asset, no requirement surface. The cards
+                              require an asset id and gate every query on
+                              it; rendering one without it produced a card
+                              that could read nothing and write nothing.
+                              This was previously masked by a missing-prop
+                              type error on the same object.
+                            */
+                            if (!assetId) return null
+                            const props = {
+                              item: selected, stageId: showStageDetails, assetId, workflowId,
+                              isEditable,
+                              /* `detail` renders the body with no accordion;
+                                 these two are unused in that layout but the
+                                 contract is shared with the row. */
+                              isExpanded: true,
+                              onToggleExpand: () => {},
+                              onStatusAction: (action: RequirementAction) =>
+                                applyRequirementAction(showStageDetails, selected.id, action),
+                              onRemoveCustom: selected.isCustom
+                                ? () => handleRemoveCustomItem(showStageDetails, selected.id)
+                                : undefined,
+                              currentUser: user,
+                              layout: 'detail' as const,
+                              /* The workspace heading names the requirement
+                                 17px above; the card no longer repeats it. */
+                              hideTitle: true,
+                            }
+                            const card = (selected.item_type || 'operational') === 'thinking'
+                              ? <DecisionItemCard key={selected.id} {...props} />
+                              : <OperationalItemCard key={selected.id} {...props} />
+                            /*
+                              ── The card is framed, not replaced ──────────
+                              It keeps every write it already owned: the
+                              takeaway, the notes, the status transition and
+                              its attribution. What surrounds it is the part
+                              that was missing — the objective this
+                              requirement serves, the facts that bear on it,
+                              and where to go when it is answered.
+                            */
+                            const stage = timelineStages.find(s => s.id === showStageDetails)
+                            const position = items.findIndex(i => i.id === selected.id)
+                            /* The next one to WORK on, so a finished
+                               requirement is not offered again. Falls back to
+                               the next in order when everything after it is
+                               done, and to nothing at the end of the stage. */
+                            const after = items.slice(position + 1)
+                            const nextItem = after.find(i => !isItemDone(i)) ?? after[0] ?? null
+                            return (
+                              <RequirementWorkspace
+                                /* Keyed, so the period ladder opens on the
+                                   next requirement's own horizon rather
+                                   than inheriting this one's. */
+                                key={selected.id}
+                                assetId={assetId}
+                                symbol={assetSymbol ?? null}
+                                requirementText={selected.text}
+                                stageLabel={stage?.label ?? 'this stage'}
+                                stageDescription={stage?.description ?? null}
+                                onBack={() => setSelectedRequirement(null)}
+                                next={nextItem ? { id: nextItem.id, text: nextItem.text } : null}
+                                onOpenNext={(id) => setSelectedRequirement(id)}
+                                /* What an earlier cycle wrote against the
+                                   same requirement. Read-only, matched on
+                                   the requirement's own label. */
+                                priorWorkSlot={workflowId ? (
+                                  <PriorWorkPanel
+                                    assetId={assetId}
+                                    workflowId={workflowId}
+                                    requirementText={selected.text}
+                                    onOpenRun={onOpenRun}
+                                  />
+                                ) : undefined}
+                                /* The case and the notes already written on
+                                   this name. Research still owns editing
+                                   them; these hand off. */
+                                onOpenNote={onOpenNote}
+                                onOpenResearch={onOpenResearch}
+                                onCreateNote={onCreateNote}
+                                creatingNote={creatingNote}
+                                stageControls={stageOwnershipControls}
+                                onAnalyze={onAnalyzeRequirement
+                                  ? () => onAnalyzeRequirement({
+                                    requirementId: selected.id,
+                                    requirementText: selected.text,
+                                    stageLabel: stage?.label ?? null,
+                                    stageObjective: stage?.description ?? null,
+                                  })
+                                  : undefined}
+                              >
+                                {card}
+                              </RequirementWorkspace>
+                            )
+                          })()}
+                        </div>
                       </div>
                     </>
                   )
@@ -1943,53 +2428,60 @@ export function InvestmentTimeline({
             )}
           </div>
 
-          {/* Stage Progression Actions */}
-          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                <div>Stage {currentIndex + 1} of {timelineStages.length}</div>
-                {showStageDetails === effectiveCurrentStage && (
-                  <div className="text-xs mt-1 text-blue-600">
-                    {effectiveCurrentStage === 'outdated'
-                      ? '✓ Portfolio review stage - ready to prioritize'
-                      : `${stageChecklists[effectiveCurrentStage]?.filter(item => isItemDone(item)).length || 0} of ${stageChecklists[effectiveCurrentStage]?.length || 0} items completed`
-                    }
-                  </div>
-                )}
+          {/*
+            Stage progression — what is left of it.
+
+            "Stage N of M" went: the rail directly above numbers every stage
+            and highlights the one you are on. "N of M items completed" went:
+            the rail chip, the stage action bar and the Work band all carried
+            the same number, which made four copies of one fact. The advance
+            button moved up beside the checklist it acts on.
+
+            What stays here is the step BACKWARDS, which is rare, destructive
+            of position, and correctly out of the way — and the completed
+            message, which has nowhere else to live because a finished process
+            renders no checklist.
+          */}
+          {(() => {
+            /*
+              On the current stage only — the same rule the advance control
+              follows. Both were governed by the WORKFLOW's index while this
+              card renders whichever stage the reader clicked, so browsing
+              stage 3 of a workflow sitting on stage 2 offered to move the
+              workflow backwards from a stage the reader was not looking at.
+              What regress DOES is unchanged.
+            */
+            const canRegress = currentIndex > 0 && isWorkflowStarted
+              && !workflowProgress?.is_completed
+              && showStageDetails === effectiveCurrentStage
+            const isFinished = currentIndex === timelineStages.length - 1
+              && showStageDetails === effectiveCurrentStage
+              && effectiveCurrentStage === 'completed'
+            /* An empty bordered strip is worse than no strip. */
+            if (!canRegress && !isFinished) return null
+
+            return (
+              <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex items-center justify-end gap-2">
+                  {isFinished && (
+                    <div className="mr-auto text-sm text-green-600 font-medium">
+                      🎉 Process completed!
+                    </div>
+                  )}
+                  {canRegress && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRegressStage}
+                      className="text-gray-600 hover:text-gray-800 dark:text-gray-400"
+                    >
+                      ← Move to {timelineStages[currentIndex - 1]?.label}
+                    </Button>
+                  )}
+                </div>
               </div>
-
-              {/* Stage Action Buttons */}
-              <div className="flex items-center space-x-2">
-                {currentIndex > 0 && isWorkflowStarted && !workflowProgress?.is_completed && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleRegressStage}
-                    className="text-gray-600 hover:text-gray-800 dark:text-gray-400"
-                  >
-                    ← Move to {timelineStages[currentIndex - 1]?.label}
-                  </Button>
-                )}
-
-                {currentIndex < timelineStages.length - 1 && isWorkflowStarted && !workflowProgress?.is_completed && (
-                  <Button
-                    size="sm"
-                    onClick={handleAdvanceStage}
-                    className="bg-blue-600 hover:bg-blue-700 text-white"
-                    title={timelineStages[currentIndex + 1]?.id === 'completed' ? 'Complete process' : 'Advance to next stage'}
-                  >
-                    {timelineStages[currentIndex + 1]?.id === 'completed' ? 'Complete Process ✓' : 'Advance Stage →'}
-                  </Button>
-                )}
-
-                {currentIndex === timelineStages.length - 1 && showStageDetails === effectiveCurrentStage && effectiveCurrentStage === 'completed' && (
-                  <div className="text-sm text-green-600 font-medium">
-                    🎉 Process completed!
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+            )
+          })()}
         </Card>
       )}
 

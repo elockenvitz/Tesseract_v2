@@ -1,6 +1,21 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { researchLayoutKeyPrefixes } from './useUserAssetPagePreferences'
+import { assetSubject } from '../lib/research/subject'
+
+/*
+ * These five invalidations used to be the bare literal
+ * `['user-asset-page-layouts']`, which matched by accident: it was the exact
+ * key `useUserAssetPageLayouts` happened to use. Now that the layout keys
+ * carry a subject prefix, a hand-written literal matches nothing and the
+ * sharing UI silently stops refreshing after a grant.
+ *
+ * This file is asset-only -- `layout_collaborations`, not
+ * `theme_layout_collaborations` -- so the subject is fixed here. A theme
+ * equivalent passes the theme subject instead.
+ */
+const ASSET_LAYOUT_KEYS = researchLayoutKeyPrefixes(assetSubject(undefined))
 
 export interface LayoutCollaborator {
   id: string
@@ -108,7 +123,7 @@ export function useLayoutCollaborations(layoutId?: string) {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['layout-collaborations', variables.layout_id] })
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts'] })
+      queryClient.invalidateQueries({ queryKey: ASSET_LAYOUT_KEYS.layouts })
       queryClient.invalidateQueries({ queryKey: ['layout-collab-summaries'] })
     }
   })
@@ -128,7 +143,7 @@ export function useLayoutCollaborations(layoutId?: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['layout-collaborations', layoutId] })
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts'] })
+      queryClient.invalidateQueries({ queryKey: ASSET_LAYOUT_KEYS.layouts })
       queryClient.invalidateQueries({ queryKey: ['layout-collab-summaries'] })
     }
   })
@@ -145,7 +160,7 @@ export function useLayoutCollaborations(layoutId?: string) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['layout-collaborations', layoutId] })
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts'] })
+      queryClient.invalidateQueries({ queryKey: ASSET_LAYOUT_KEYS.layouts })
       queryClient.invalidateQueries({ queryKey: ['layout-collab-summaries'] })
     }
   })
@@ -191,7 +206,7 @@ export function useLayoutCollaborations(layoutId?: string) {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['layout-collaborations', variables.layout_id] })
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts'] })
+      queryClient.invalidateQueries({ queryKey: ASSET_LAYOUT_KEYS.layouts })
       queryClient.invalidateQueries({ queryKey: ['layout-collab-summaries'] })
     }
   })
@@ -211,7 +226,7 @@ export function useLayoutCollaborations(layoutId?: string) {
     },
     onSuccess: (_, layout_id) => {
       queryClient.invalidateQueries({ queryKey: ['layout-collaborations', layout_id] })
-      queryClient.invalidateQueries({ queryKey: ['user-asset-page-layouts'] })
+      queryClient.invalidateQueries({ queryKey: ASSET_LAYOUT_KEYS.layouts })
       queryClient.invalidateQueries({ queryKey: ['layout-collab-summaries'] })
     }
   })

@@ -226,10 +226,41 @@ export function useAuth() {
   }, [user])
 
   useEffect(() => {
-    // Get initial session
-    readSession().then(session => {
-      handleAuthSession(session)
-    })
+    /*
+      ── Bootstrap must settle, whatever the stored session turns out to be ──
+
+      `loading` starts true and is only cleared at the end of
+      `handleAuthSession`. That call hung off a bare `.then`, so any rejection
+      from `getSession()` skipped it and left `loading` true for the life of
+      the page — a reader stranded on the initial loader with no error, no
+      sign-in screen and nothing to click.
+
+      `getSession()` rejects for several ordinary reasons: a persisted session
+      that will not parse, a refresh token the server has revoked, or a
+      network failure while it refreshes. An expired ACCESS token is not one
+      of them — supabase-js refreshes it from the refresh token and resolves
+      normally, which is why this path is reached less often than it looks.
+
+      Falling through to the signed-out state is a transition, not a logout:
+      `signOut()` is never called, the stored session is left alone, and
+      `onAuthStateChange` stays subscribed — so a session that failed to load
+      because the network blinked is restored the moment supabase-js recovers
+      it, without the reader losing anything.
+
+      Deliberately no timeout. A cold start that has to refresh an expired
+      token serialises ~100 `useAuth` callers behind supabase-js's single auth
+      lock and legitimately takes tens of seconds on a dev build; a timeout
+      short enough to catch a hang would sign out readers who were merely
+      waiting. The fix is to handle the rejection, not to guess a deadline.
+    */
+    readSession()
+      .then(handleAuthSession)
+      .catch(err => {
+        console.warn('Session restore failed; continuing signed out:', err)
+        /* Same path as "no session": clears the cached user and, crucially,
+           clears `loading`. Wrapped again because this one must not throw. */
+        handleAuthSession(null).catch(() => setLoading(false))
+      })
 
     // Listen for auth changes
     const {
@@ -256,7 +287,14 @@ export function useAuth() {
       */
       if (!isMaterialAuthChange(event, session?.user?.id, currentUserIdRef.current)) return
 
-      handleAuthSession(session)
+      /* Fire-and-forget, so an unhandled rejection here would both strand
+         `loading` and surface as a stray console error. `loadSessionUser`
+         already degrades to the auth user on a profile failure; this is the
+         backstop for anything it does not catch. */
+      handleAuthSession(session).catch(err => {
+        console.warn('Auth state change failed to settle:', err)
+        setLoading(false)
+      })
     })
 
     // Listen for org-switched event — re-read localStorage to update React state.

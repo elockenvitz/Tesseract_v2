@@ -169,15 +169,56 @@ describe('only a conclusion that the case holds resets the clock', () => {
   it('does not let an earlier hold outlive a later concern', () => {
     /*
      * The inverse, which the "newest wins" rule alone does not give you: a
-     * `changed` recorded AFTER a `holds` must leave the clock where the older
-     * hold put it rather than reset it forward, and the case must not read as
+     * `changed` recorded AFTER a `holds` must not leave the case reading as
      * current on the strength of a conclusion the reader has since replaced.
+     *
+     * ── Rewritten, and why ─────────────────────────────────────────────────
+     *
+     * This case used to assert `reviews.get(ASSET) === daysAgo(400)` -- that
+     * the superseded hold STAYED as the clock's answer and merely failed to
+     * move it forward. That is what the old producer did: it discarded every
+     * non-`holds` row before comparing dates, so the map held the newest HOLD
+     * rather than the newest CONCLUSION.
+     *
+     * The assertion passed for the wrong reason. Its hold was 400 days old, so
+     * the case was stale on the written date whatever the map said. Swap in a
+     * RECENT hold -- the accidental press, corrected a minute later -- and the
+     * same producer returned yesterday's date and the case read `current`
+     * while the reader's standing conclusion was that it had changed. There
+     * was no way to take an accidental press back.
+     *
+     * The clock now resolves the newest conclusion per asset FIRST and then
+     * asks whether it resets. A superseded hold is not an answer, so the asset
+     * is simply absent -- which is what makes the flag come back.
      */
     const reviews = latestReviewByAsset([
       event('changed', daysAgo(1)),
       event('holds', daysAgo(400)),
     ])
-    expect(reviews.get(ASSET)).toBe(daysAgo(400))
+    expect(reviews.get(ASSET)).toBeUndefined()
+    expect(stateOf(subject(reviews.get(ASSET) ?? null))).toBe('stale')
+  })
+
+  it('lets a reader take back an accidental hold they pressed a minute ago', () => {
+    /*
+     * The case the old rule got wrong, and the reason any of this moved.
+     *
+     * A reader presses "Still holds" by mistake on a thesis written 200 days
+     * ago and immediately presses "Changed". Both rows are today. Filtering to
+     * holds first returned today's hold, the clock read `current`, and no
+     * later conclusion could ever overturn it -- the correction was accepted,
+     * stored, and ignored.
+     */
+    /* Minutes apart, not days: the two presses are seconds of real time
+       apart and the rule has to hold at that resolution. Same-millisecond
+       rows would make the answer depend on row order, which is a different
+       question and not one the database can settle. */
+    const minutesAgo = (n: number) => new Date(FROZEN.getTime() - n * 60_000).toISOString()
+    const reviews = latestReviewByAsset([
+      event('changed', minutesAgo(0)),
+      event('holds', minutesAgo(1)),
+    ])
+    expect(reviews.get(ASSET)).toBeUndefined()
     expect(stateOf(subject(reviews.get(ASSET) ?? null))).toBe('stale')
   })
 })

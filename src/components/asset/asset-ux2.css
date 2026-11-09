@@ -1,0 +1,89 @@
+/*
+ * UX2 — scoped visual tokens for the Asset Page (Phase 1 foundation).
+ *
+ * These variables and helper classes are deliberately scoped under `.ux2-scope`
+ * (the Asset Page root) so the rest of the application's theme is untouched.
+ * No change to tailwind.config.js or src/index.css. darkMode is 'class', so the
+ * dark palette keys off an ancestor `.dark` (what the app already toggles).
+ */
+.ux2-scope{
+  /* LIGHT MODE — a crisp WHITE identity surface that floats over the grey
+     content area. The "pop" and the elegance come from the white-on-grey
+     contrast, a refined shadow and strong typography — not from a coloured
+     wash or a gradient (both read cheap here). */
+  --ux2-band:#ffffff;      /* white identity surface */
+  --ux2-band-2:#f1f4f9;    /* chips / controls on the band */
+  --ux2-band-hover:#e7ecf4;/* chip hover */
+  --ux2-band-line:rgba(15,23,42,.08); /* hairline between band and content */
+  /* Dividers INSIDE the context strip. Separate from the band hairline above,
+     which is meant to be barely there. At .08 these were ~1.1:1 on white — not
+     subtle, invisible — and once the cells spread across the row they are the
+     only cue that these are five separate facts rather than one run of text. */
+  --ux2-strip-line:rgba(15,23,42,.16);
+  --ux2-ink:#1e293b;       /* primary text on the band (slate-800) — 14.5:1 */
+  /* Eyebrow / label level. Was ink-2, which put the label, the value and the
+     sub-line all on the same slate-500 and left the strip with no hierarchy to
+     read — on a name with no rating, target or case, every character in it was
+     one flat grey. slate-600 is 7.6:1 on white, and carries 10-11px uppercase
+     type far better than 4.8:1 does. */
+  --ux2-ink-3:#475569;     /* labels on the band (slate-600) — 7.6:1 */
+  --ux2-ink-2:#64748b;     /* muted sub-line on the band (slate-500) — 4.8:1 */
+  --ux2-pos:#059669;       /* positive change (emerald-600) */
+  --ux2-neg:#dc2626;       /* negative change (red-600) */
+  --ux2-crit:#dc2626;      /* attention count pill */
+}
+.dark .ux2-scope{
+  /* DARK MODE — a solid refined navy surface (same floating-header treatment). */
+  --ux2-band:#111c30;
+  --ux2-band-2:#223150;
+  --ux2-band-hover:#344665;
+  --ux2-band-line:rgba(157,176,202,.20);
+  --ux2-strip-line:rgba(157,176,202,.34);
+  --ux2-ink:#eaf1fb;
+  --ux2-ink-3:#b9c9e0;     /* labels: between ink and ink-2, same role as light */
+  --ux2-ink-2:#8ca0bd;
+  --ux2-pos:#6ee7a8;
+  --ux2-neg:#ffb4ab;
+  --ux2-crit:#b5362a;
+}
+
+/* The identity band itself: a solid surface (white / navy) that floats over the
+   content, separated by a crisp hairline and a soft, tight shadow so it reads
+   clean and lifted rather than flat. */
+.ux2-band{
+  background:var(--ux2-band);
+  color:var(--ux2-ink);
+  border-bottom:1px solid var(--ux2-band-line);
+  box-shadow:0 1px 2px rgba(15,23,42,.04), 0 8px 24px -16px rgba(15,23,42,.18);
+}
+.dark .ux2-band{ box-shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -16px rgba(0,0,0,.6); }
+.ux2-band-ink{ color:var(--ux2-ink); }
+.ux2-band-muted{ color:var(--ux2-ink-2); }
+.ux2-pos{ color:var(--ux2-pos); }
+.ux2-neg{ color:var(--ux2-neg); }
+
+/* A control that sits on the band (Ask AI, attention trigger). */
+.ux2-band-chip{
+  display:inline-flex; align-items:center; gap:7px;
+  height:32px; padding:0 12px; border-radius:8px;
+  background:var(--ux2-band-2); color:var(--ux2-ink);
+  border:1px solid var(--ux2-band-line); font-size:13px; font-weight:500;
+}
+.ux2-band-chip:hover{ background:var(--ux2-band-hover); }
+.ux2-band-iconbtn{
+  position:relative; display:inline-flex; align-items:center; gap:7px;
+  height:32px; padding:0 11px; border-radius:8px;
+  background:var(--ux2-band-2); color:var(--ux2-ink);
+  border:1px solid var(--ux2-band-line); font-weight:600;
+}
+.ux2-band-iconbtn:hover{ background:var(--ux2-band-hover); }
+.ux2-attn-count{
+  min-width:18px; height:18px; padding:0 5px; border-radius:9px;
+  background:var(--ux2-crit); color:#fff; font-size:11px; font-weight:700;
+  display:grid; place-items:center;
+}
+
+/* Context-strip cells: match the band surface (light slate-blue / navy). */
+.ux2-strip-cell{ background:var(--ux2-band) !important; }
+.ux2-strip-cell:hover{ background:var(--ux2-band-2) !important; }
+.ux2-strip-wrap{ background:var(--ux2-band-line) !important; border-color:var(--ux2-band-line) !important; }

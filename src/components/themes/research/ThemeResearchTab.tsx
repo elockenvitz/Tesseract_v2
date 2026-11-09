@@ -1,32 +1,126 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { useIsMobile } from '../../../hooks/useMediaQuery'
+// `Star` marked the reader's own pill among the contributors; "My Research"
+// is its own perspective now, so there is nothing to mark. `UserPlus` was
+// already unused before this change.
 import {
-  Settings2, Users, Layers, Sparkles, History as HistoryIcon, Link2, Star, UserPlus,
+  Settings2, Users, Layers, History as HistoryIcon, Link2, Edit3, Target,
+  LayoutGrid,
 } from 'lucide-react'
-import { Button } from '../../ui/Button'
+import type { ThemeReadMode } from '../../../lib/theme-workspace/modes'
+// `Button` went with the outlined "Manage" control, which is now a menu item.
+import { ResearchToolbarMenu } from '../../asset/ResearchToolbarMenu'
+import { Card } from '../../ui/Card'
+/*
+ * The Asset page's own research chrome, imported rather than approximated.
+ *
+ * `ResearchSectionCard` is the section band and the alternating shade;
+ * `ArrangeableFieldGrid` / `ArrangeableField` are the twelve-column grid the
+ * Asset page lays its fields out in. Both degrade to a plain div with no
+ * arrange provider mounted, which is exactly what this page is today.
+ *
+ * ── Why arranging could not be mounted until the body changed ───────────
+ *
+ * The provider feeds the grid `sectionsForArranging` from the RESOLVED
+ * layout stack. This page used to render `useThemeResearchLayout()`, the RAW
+ * org catalogue, which consults neither `user_theme_page_layouts` nor
+ * `user_theme_layout_selections`. Two field lists from two sources agree
+ * only while no theme has a template or an override, so arranging would
+ * have reordered a list the page was not drawing the moment one was saved.
+ * The body reads the resolved stack now, so both halves read the same thing
+ * and arranging is mounted.
+ *
+ * Saving an arrangement still needs `save_theme_layout_customization`, which
+ * is not in production. The hook turns its absence into one plain sentence
+ * and the bar keeps the unsaved draft on screen, so the control degrades
+ * rather than losing work. The alternative -- hiding it -- is a surface the
+ * reader cannot find later, and a renderer nobody can see honouring the
+ * layout it now reads.
+ */
+import {
+  ResearchSectionCard, ArrangeableFieldGrid, ArrangeableField,
+  ResearchArrangeProvider, ResearchArrangeBar,
+  RESEARCH_FIELD_GRID_CLASS,
+} from '../../research'
+/*
+ * The firm's attributed record, shared with the Asset page's Firm
+ * perspective. It reads only `id`, `section`, `content`, `created_by`,
+ * `is_archived`, `updated_at` and `user` off a contribution, all of which a
+ * theme contribution has, so this is one renderer over two tables rather
+ * than a theme-shaped copy of it.
+ */
+import { OurViewSummary, type OurViewField } from '../../asset/OurViewSummary'
+import type { Contribution } from '../../../hooks/useContributions'
 import {
   ThemeContributionSection,
   type ThemeResearchActiveTab,
 } from './ThemeContributionSection'
 import { OptionPicker } from '../../ui/OptionPicker'
-import { ThemeFieldManagerModal } from './ThemeFieldManagerModal'
+import { AssetPageFieldCustomizer } from '../../research/AssetPageFieldCustomizer'
+import { themeSubject } from '../../../lib/research/subject'
+/* The resolved layout stack, pointed at this theme. The Asset page reaches
+   it through the `useUserAssetPagePreferences` wrapper; both are the same
+   hook with a different subject. */
+import { useResearchPagePreferences } from '../../../hooks/useUserAssetPagePreferences'
 import { ThemeThesisSummaryView } from './ThemeThesisSummaryView'
 import { ThemeThesisHistoryView } from './ThemeThesisHistoryView'
 import { ThemeKeyReferencesSection } from './ThemeKeyReferencesSection'
 import {
   useThemeResearchLayout,
   useThemeContributionsV2,
+  type ThemeContributionVisibility,
 } from '../../../hooks/useThemeResearch'
 import { useThemeKeyReferences } from '../../../hooks/useThemeKeyReferences'
 import { useAuth } from '../../../hooks/useAuth'
+/*
+ * The Asset page's audience control, imported rather than approximated — the
+ * fourth piece of asset research chrome this page now shares. It is
+ * subject-agnostic by construction (`saved`, `nodesFor`, `memberCounts`,
+ * `nodeById`, `onApply`) and knows nothing about assets, so a theme-shaped
+ * copy of it would differ only by drifting.
+ */
+import { AudiencePicker } from '../../contributions/AudiencePicker'
+import { useOrgAudienceContext } from '../../../hooks/useOrgAudienceContext'
+import { type AudienceNode } from '../../../lib/contributions/audience-reach'
+import { TabStateManager } from '../../../lib/tabStateManager'
+/* The Asset page's perspective resolver, not a second set of rules. It is
+   pure and tested, which is why it lives in lib rather than in a component. */
+import { initialResearchView } from '../../../lib/desktop-asset/research-view'
 
 interface ThemeResearchTabProps {
   themeId: string
   themeIsPublic: boolean
+  /**
+   * Which read mode is open, owned by `ThemeTab`.
+   *
+   * Lifted out of here because the page has to be able to LAND on one: a note
+   * opened from the dashboard, and a tab persisted on the old Notes section,
+   * both arrive asking for the notes. Local state could not be told, so both
+   * landed on the thesis with the thing they asked for one control away.
+   */
+  readMode: ThemeReadMode
+  onReadModeChange: (next: ThemeReadMode) => void
+  /**
+   * The theme's notes, rendered under References beneath the links.
+   *
+   * A slot rather than a component reference because the notes surface
+   * already exists in `ThemeTab` and carries its own editor state
+   * (`showNoteEditor`, `selectedNoteId`, the dashboard deep link). Passing it
+   * in moves where the reader finds it without rebuilding it, and without
+   * this pane having to own note state it would then have to keep in sync.
+   */
+  notesSlot: React.ReactNode
+  /**
+   * How many notes `notesSlot` holds, for the count in the read-mode row.
+   *
+   * Passed in rather than counted here for the same reason as the slot: the
+   * query lives in `ThemeTab`. Without it the count would say "links" while
+   * the surface below showed links AND notes, which is the kind of number
+   * that quietly stops matching what it is next to.
+   */
+  notesCount: number
 }
-
-type ThesisViewMode = 'all' | 'summary' | 'history' | 'references'
 
 function tabLabel(author: { first_name: string | null; last_name: string | null; email: string | null } | null | undefined, fallback = 'User'): string {
   if (!author) return fallback
@@ -41,18 +135,206 @@ function shortName(author: { first_name: string | null; last_name: string | null
   return author.first_name || author.email?.split('@')[0] || fallback
 }
 
-export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabProps) {
+export function ThemeResearchTab({
+  /*
+   * `themeIsPublic` is no longer read. It used to gate the per-field
+   * visibility select, and it gated it BACKWARDS: a theme that was not public
+   * forced its research to 'org', the WIDEST reach, while a public theme was
+   * the only one offered a choice. A theme's publicity governs who can see the
+   * theme, not who can read one analyst's research on it, which is what the
+   * audience picker now decides. Left on the props so callers still compile;
+   * removing it is a separate change.
+   */
+  themeId, readMode, onReadModeChange, notesSlot, notesCount,
+}: ThemeResearchTabProps) {
   const { user } = useAuth()
-  const { layout, isLoading: layoutLoading } = useThemeResearchLayout()
-  const { contributors, isLoading: contribsLoading } = useThemeContributionsV2(themeId)
+  /*
+   * ── Two sources, and only one of them decides the layout ────────────────
+   *
+   * `useResearchPagePreferences` is the RESOLVED layout stack: it reads the
+   * active template out of `user_theme_page_layouts`, this reader's
+   * selection and per-theme overrides out of `user_theme_layout_selections`,
+   * and hands back which fields are on the page, in which section, in what
+   * order, at what width. It is the same resolver the Asset page uses.
+   *
+   * This page used to render `useThemeResearchLayout()` on its own, which is
+   * the RAW organisation catalogue and consults none of the above. So
+   * everything the Customize fields modal wrote about LAYOUT -- template
+   * choice, width, per-theme visibility, field order -- was saved and then
+   * ignored. It looked correct only because production holds zero template
+   * rows and zero selection rows, which makes "the raw catalogue" and
+   * "resolved with no template and no overrides" the same list.
+   *
+   * The raw catalogue is still read, for exactly two things the resolved
+   * shape does not carry: a field's `placeholder` (the editor's prompt and
+   * the empty-state line) and a section's `description`. Both are real typed
+   * columns on `theme_research_*` with no counterpart on `research_*`, so
+   * threading them through the shared resolver would widen a type that two
+   * subjects share for the benefit of one. Looked up by id instead.
+   */
+  const {
+    sections: catalogueSections,
+    fields: catalogueFields,
+    isLoading: catalogueLoading,
+  } = useThemeResearchLayout()
+  /*
+   * One subject object for the page, not one per render.
+   *
+   * `ResearchArrangeProvider` memoizes its draft on the subject, and the
+   * hook below builds query keys from it, so a fresh `themeSubject(themeId)`
+   * in each place that needs it would be a new dependency every render.
+   */
+  const subject = useMemo(() => themeSubject(themeId), [themeId])
+  const {
+    displayedFieldsBySection,
+    sectionsForArranging,
+    isLoading: layoutStackLoading,
+  } = useResearchPagePreferences(subject)
+  const {
+    contributions, contributors, isLoading: contribsLoading, updateVisibility,
+    audienceReady,
+  } = useThemeContributionsV2(themeId)
+  /* One org-chart fetch for the whole page, shared with every field's badge
+     and with the Asset page. See useOrgAudienceContext. */
+  const {
+    context: userOrgContext,
+    nodesFor: audienceNodesFor,
+    memberCounts: audienceMemberCounts,
+    nodeById: audienceNodeById,
+  } = useOrgAudienceContext()
   const { references } = useThemeKeyReferences(themeId)
+  /* References holds two kinds of thing now: the theme's links and the
+     theme's notes. The count has to be both, or it describes half of what
+     the button opens. */
+  const referenceCount = references.length + notesCount
+
+  /**
+   * The page, as the layout stack resolves it.
+   *
+   * Shaped exactly like `useThemeResearchLayout().layout` used to be -- a
+   * section row with a `fields` array of catalogue rows -- so every consumer
+   * below is unchanged. What differs is where the STRUCTURE comes from.
+   *
+   * Two filters, and both have to be here rather than left to the renderer.
+   * `is_visible` is the resolver's answer about this field on this theme: a
+   * field hidden by the template or by a per-theme override is not on the
+   * page, and `displayedFieldsBySection` deliberately keeps it in the list
+   * so the customizer can show it as available. `section_is_hidden` is the
+   * same answer one level up. The Asset page applies both at its own render.
+   *
+   * A resolved field whose catalogue row is missing is dropped rather than
+   * rendered half-built. It should not happen -- both read
+   * `theme_research_fields` -- but the two queries settle independently, so
+   * for a frame one can be ahead of the other, and a field drawn with no
+   * `placeholder` and no `field_type` is worse than a field drawn a moment
+   * later.
+   */
+  const [arranging, setArranging] = useState(false)
+
+  const layout = useMemo(() => {
+    const fieldById = new Map(catalogueFields.map(f => [f.id, f]))
+    const sectionById = new Map(catalogueSections.map(s => [s.id, s]))
+
+    /*
+     * Arranging draws the sections nothing is in; reading does not.
+     *
+     * `displayedFieldsBySection` drops a section once it has no visible
+     * field, which is right for reading -- an empty heading is noise. It is
+     * wrong for arranging, because a section you cannot see is a section you
+     * cannot drag a field INTO, so moving the last field out of one would
+     * make the move permanent. Same split the Asset page makes.
+     */
+    const source = arranging ? sectionsForArranging : displayedFieldsBySection
+
+    return source
+      .filter(section => !section.section_is_hidden)
+      .map(section => ({
+        id: section.section_id,
+        /* The resolved name, which carries a per-theme rename override;
+           the catalogue row only knows the organisation's name for it. */
+        name: section.section_name,
+        slug: section.section_slug,
+        description: sectionById.get(section.section_id)?.description ?? null,
+        fields: section.fields
+          .filter(f => f.is_visible)
+          .map(f => {
+            const raw = fieldById.get(f.field_id)
+            if (!raw) return null
+            /* The catalogue row is the typed entity and stays whole. The
+               resolved name and span are layered on top, because those are
+               the two things a template or an override can change. */
+            return { ...raw, name: f.field_name, span: f.span }
+          })
+          .filter((f): f is NonNullable<typeof f> => f !== null),
+      }))
+      /* Kept while arranging for the same reason as the source swap above:
+         an empty section has to stay on screen to be a drop target. */
+      .filter(section => arranging || section.fields.length > 0)
+  }, [
+    arranging, sectionsForArranging, displayedFieldsBySection,
+    catalogueFields, catalogueSections,
+  ])
   const [showManager, setShowManager] = useState(false)
 
   // One control naming the current view, as on the asset case — a row of
   // analyst pills does not survive 390px.
   const isMobileViewport = useIsMobile()
-  const [viewFilter, setViewFilter] = useState<ThemeResearchActiveTab>('aggregated')
-  const [viewMode, setViewMode] = useState<ThesisViewMode>('all')
+  /*
+   * ── Whose research the page opens on ────────────────────────────────────
+   *
+   * This was `useState('aggregated')`, which is the exact defect
+   * `initialResearchView` was written to delete from the Asset page: the
+   * reader landed on the FIRM summary, so opening a theme showed everyone
+   * else's case and the reader's own work was one click away and looked
+   * missing. `'aggregated'` is a sentinel for "undecided", never a default.
+   *
+   * Three sources, in priority order:
+   *   1. a perspective the reader CHOSE here before, restored from tab state;
+   *   2. otherwise the reader's own id, which is in hand on the first render
+   *      (`ProtectedRoute` only mounts this tree once `user` is non-null), so
+   *      no effect and no flicker;
+   *   3. `'aggregated'` only when there is no reader at all.
+   *
+   * A default is never persisted. Saving one would keep sending the reader
+   * somewhere they never picked, which is the outcome the default exists to
+   * prevent.
+   */
+  const researchSeed = useRef(initialResearchView({
+    arriving: TabStateManager.loadTabState(themeId)?.themeResearchViewFilter ?? null,
+    userId: user?.id ?? null,
+  })).current
+  const [viewFilter, setViewFilter] =
+    useState<ThemeResearchActiveTab>(researchSeed.filter)
+  const [viewChosen, setViewChosen] = useState<boolean>(researchSeed.chosen)
+
+  /** Every perspective change made by a person, as opposed to resolved. */
+  const chooseViewFilter = useCallback((next: ThemeResearchActiveTab) => {
+    setViewChosen(true)
+    setViewFilter(next)
+  }, [])
+
+  /* Only a CHOSEN perspective is written. `themeResearchViewFilter` is its own
+     key for the same reason `themeResearchRead` is: `activeTab` carries a mode
+     and cannot also carry a user id. */
+  useEffect(() => {
+    if (!viewChosen || !themeId) return
+    const saved = TabStateManager.loadTabState(themeId) ?? {}
+    TabStateManager.saveTabState(themeId, { ...saved, themeResearchViewFilter: viewFilter })
+  }, [themeId, viewFilter, viewChosen])
+
+  /* A reader with no id at mount (seed undecided) settles onto their own view
+     the moment auth lands, without overriding a real choice. */
+  useEffect(() => {
+    if (researchSeed.decided || viewChosen) return
+    if (user?.id && viewFilter === 'aggregated') setViewFilter(user.id)
+  }, [user?.id, viewFilter, viewChosen, researchSeed.decided])
+  /* `viewMode` was local state here with four values, all / summary / history
+     / references. It is now the page's `readMode` with three, because
+     "Summary" merged into the aggregated perspective the same way the asset
+     page's "AI summary" merged into Firm: both answered "what does the desk
+     think" from the same contributions, one on each axis. */
+  const viewMode = readMode
+  const setViewMode = onReadModeChange
 
   // Analyst pills: contributors + current user if not already there
   const analysts = useMemo(() => {
@@ -75,6 +357,13 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
     return list
   }, [contributors, user?.id])
 
+  /* Split so the bar can offer "My Research" as its own perspective rather
+     than leaving the reader's own case as a name among the contributors. The
+     Asset page's bar is built the same way, and the asymmetry is the point:
+     one of these is editable and the other four are not. */
+  const selfAnalyst = useMemo(() => analysts.find(a => a.isSelf) ?? null, [analysts])
+  const otherAnalysts = useMemo(() => analysts.filter(a => !a.isSelf), [analysts])
+
   // If selected analyst disappears, snap back to aggregated
   useEffect(() => {
     if (viewFilter === 'aggregated') return
@@ -82,6 +371,159 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
   }, [analysts, viewFilter])
 
   const viewingOther = viewFilter !== 'aggregated' && viewFilter !== user?.id
+
+  /*
+   * ── Who can read this analyst's theme research ──────────────────────────
+   *
+   * One audience for the page, exactly as on the asset case: the picker sits
+   * on this bar and every field's save is written under it. Per-field
+   * audiences are not offered because they were not honoured — the column was
+   * inert until `20261104140000_theme_contribution_audience.sql`.
+   *
+   * Three pieces of state, and the third is the one that matters:
+   *   - the live SELECTION, which the picker commits into;
+   *   - `savedAudience`, what the server holds, kept apart so the picker can
+   *     show the current audience including groups the author could no longer
+   *     pick;
+   *   - `rehydratedVisibilityRef`, which distinguishes a LOAD from a user's
+   *     choice. Without it the level-change effect below wipes the targets
+   *     the load just restored, in the same render, and the next content save
+   *     writes `targetIds: []` -- destroying the restriction while the badge
+   *     still shows a lock. That is a defect this product has already had on
+   *     the asset page; it is not being rebuilt here.
+   */
+  const [sharedVisibility, setSharedVisibility] = useState<ThemeContributionVisibility>('firm')
+  const [sharedTargetIds, setSharedTargetIds] = useState<string[]>([])
+  const [hasInitializedVisibility, setHasInitializedVisibility] = useState(false)
+  const rehydratedVisibilityRef = useRef<ThemeContributionVisibility | null>(null)
+  const [savedAudience, setSavedAudience] =
+    useState<{ visibility: ThemeContributionVisibility; targetIds: string[] } | null>(null)
+
+  useEffect(() => {
+    if (hasInitializedVisibility || !user?.id) return
+    const own = contributions.find(c => c.created_by === user.id)
+    if (!own) return
+    const level = own.visibility
+    // Before the state, so the effect below can tell this was a load.
+    rehydratedVisibilityRef.current = level
+    const ids = (own.visibility_targets ?? []).map(t => t.node_id).filter(Boolean)
+    setSharedVisibility(level)
+    setSharedTargetIds(ids)
+    setSavedAudience({ visibility: level, targetIds: ids })
+    setHasInitializedVisibility(true)
+  }, [user?.id, contributions, hasInitializedVisibility])
+
+  // A different theme is different research, so nothing carries over.
+  useEffect(() => {
+    setHasInitializedVisibility(false)
+    rehydratedVisibilityRef.current = null
+    setSavedAudience(null)
+    setSharedVisibility('firm')
+    setSharedTargetIds([])
+  }, [themeId])
+
+  // A team id is not a department id, so a level change cannot carry targets.
+  useEffect(() => {
+    if (rehydratedVisibilityRef.current === sharedVisibility) return
+    setSharedTargetIds([])
+  }, [sharedVisibility])
+
+  /**
+   * Commit the picker's draft.
+   *
+   * Written to the server HERE rather than deferred to the next content save.
+   * On the asset page the toolbar choice is persisted by that next save, which
+   * means changing only who can see your work and then leaving changes
+   * nothing; there is no reason to reproduce that. Research with nothing saved
+   * yet has no row to update, and `updateVisibility` reports that as an empty
+   * result rather than an error -- the level is then applied by the first save.
+   */
+  const handleAudienceApply = async (next: { visibility: ThemeContributionVisibility; targetIds: string[] }) => {
+    // The ref first, so the level-change effect does not read this as a
+    // user-driven level change and wipe the ids set in the same batch.
+    rehydratedVisibilityRef.current = next.visibility
+    setSharedVisibility(next.visibility)
+    setSharedTargetIds(next.targetIds)
+    /*
+     * Deliberately NOT wrapped in try/catch. A rejection propagates to
+     * AudiencePicker, which shows the server's own words in the panel and
+     * keeps the draft, so a refused audience cannot look like a saved one.
+     * `setSavedAudience` is after the await for the same reason: on a refusal
+     * it never runs, so the footer keeps stating what is actually stored.
+     */
+    const written = await updateVisibility({
+      visibility: next.visibility, targetIds: next.targetIds,
+    })
+    /*
+     * Only claim it is SAVED when a row was actually written.
+     *
+     * An author who opens the picker before writing anything has no row to
+     * update, so `updateVisibility` returns []. Setting `savedAudience` there
+     * would make the panel's footer read "Saved: Growth Team" while the
+     * database holds nothing -- an unwritten audience looking saved, which is
+     * the same class of lie as a refused one looking saved. Left null, the
+     * picker falls back to the live selection and the first content save is
+     * what writes it.
+     */
+    if (written.length > 0) {
+      setSavedAudience({ visibility: next.visibility, targetIds: next.targetIds })
+    }
+  }
+
+  /*
+   * Which sections are folded shut, by slug.
+   *
+   * The Asset page keeps the same state and for the same reason: a section
+   * header you cannot collapse is a heading, and a research document whose
+   * headings are only headings makes the reader scroll past every section to
+   * reach the one they want. Per-slug rather than per-id so a reader's
+   * collapse survives the template being re-pointed at a renamed section.
+   *
+   * Not persisted, on either page. It is where you are in a document, not a
+   * preference about the document.
+   */
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({})
+  const toggleSection = (slug: string) =>
+    setCollapsedSections(prev => ({ ...prev, [slug]: !prev[slug] }))
+
+  /*
+   * The template's fields, flattened for the firm's attributed record.
+   *
+   * A theme contribution's `section` IS the field slug, so each field maps to
+   * exactly one key. On the Asset page several template slugs alias one
+   * contribution section, which is why `sectionKeys` is a list there; here it
+   * is a list of one, and writing it any other way would make this surface
+   * the second thing that decides where a theme's prose lives.
+   */
+  const ourViewFields = useMemo<OurViewField[]>(
+    () => layout.flatMap(section =>
+      section.fields.map(field => ({
+        slug: field.slug,
+        label: field.name,
+        sectionKeys: [field.slug],
+      }))
+    ),
+    [layout],
+  )
+
+  /*
+   * Theme contributions in the shape the shared record reads.
+   *
+   * The only difference is the author: a theme contribution carries `author`,
+   * an asset contribution carries `user`. Everything else the record touches
+   * is spelled the same on both tables. The cast is narrow and deliberate --
+   * this is not an asset contribution and must never be passed anywhere that
+   * would write it back as one.
+   */
+  const firmRecord = useMemo(
+    () => contributions.map(c => ({
+      ...c,
+      user: c.author
+        ? { id: c.author.id, first_name: c.author.first_name, last_name: c.author.last_name }
+        : undefined,
+    })) as unknown as Contribution[],
+    [contributions],
+  )
 
   return (
     <div className="space-y-3">
@@ -94,30 +536,83 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
           unlabelled icons: a stack, a sparkle, a clock and a chain, which is
           not a legible way to offer Summary, Changes and Links. Both are
           pickers now, and the modes carry their names. */}
-      <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
-          {/* Left: analyst pills */}
+      {/* ── The bar, as the Asset page draws it ────────────────────────────
+          It was a rounded, bordered grey card sitting inside the pane. The
+          Asset page's equivalent is a full-width band on the page surface
+          with a bottom hairline, which is what makes it read as page chrome
+          rather than as the first item of content.
+
+          Full-bleed: the negative margins cancel the scrollport's padding,
+          which `ThemeTab` writes per breakpoint. Sticky, so the perspective
+          and read-mode controls stay reachable down a long case -- the Asset
+          page gets that by keeping the bar outside its scrollport; this one
+          is inside the pane that owns it, and `sticky` gets the same result
+          without lifting three controls into the page.
+
+          `-top-4`, NOT `top-0`, and that is the whole difference the page
+          was still showing. A sticky element's offset is measured from its
+          scroll container's PADDING box, and `ThemeTab`'s scrollport is
+          `py-4`. With `top-0` the bar was pinned 16px below the nav's
+          hairline -- permanently, at scroll position zero as well -- so the
+          `-mt-4` beside it was overridden and a grey band sat between the
+          active mode tab and the bar. Measured: nav hairline y=298, bar top
+          y=314. The Asset page's bar starts flush on its nav's hairline
+          (286 and 286) because it is OUTSIDE the scrollport and needs no
+          offset at all. `-top-4` cancels that padding, so the bar sits on
+          the hairline statically and stays there while the case scrolls.
+
+          `mb-4` rather than `mb-3`: the Asset page leaves 16px between its
+          bar and the first thing below it (its scrollport's own `py-4`), and
+          the pane's `space-y-3` only contributes 12px. Adjoining margins
+          collapse to the larger, so 16 is what this has to say. */}
+      <div className="-mx-3 sm:-mx-6 lg:-mx-8 -mt-4 mb-4 px-3 sm:px-6 lg:px-8 py-2 sticky -top-4 z-[5] bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        {/* flex-wrap lets the perspective (left) and the read/utility controls
+            (right) drop to a second row on narrow widths instead of
+            overflowing, which is what the Asset page's bar does. */}
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          {/* Left: whose research */}
           <div className="flex items-center gap-3 min-w-0 flex-1 sm:flex-none flex-wrap">
             <span className="hidden sm:inline text-xs text-gray-400 uppercase tracking-wide font-medium">View</span>
             {isMobileViewport ? (
               <OptionPicker
                 label="Whose view"
                 value={viewFilter}
-                onChange={setViewFilter}
+                onChange={chooseViewFilter}
                 className="min-w-0"
                 options={[
-                  { value: 'aggregated', label: 'Our View', hint: 'All contributors' },
-                  ...analysts.map(a => ({
-                    value: a.id,
-                    label: a.name,
-                    hint: a.isSelf ? 'You' : undefined,
-                  })),
+                  ...(selfAnalyst ? [{ value: selfAnalyst.id, label: 'My Research' }] : []),
+                  { value: 'aggregated', label: 'Firm', hint: 'All contributors' },
+                  ...otherAnalysts.map(a => ({ value: a.id, label: a.name })),
                 ]}
               />
             ) : analysts.length <= 5 ? (
               <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1 dark:bg-gray-800">
+                {/* My Research first, then Firm, then everyone else -- the
+                    Asset page's order and the Asset page's two names.
+
+                    "Our View" is gone. It was one label doing two jobs: it
+                    had to mean both "the firm's view" and "not yours", and
+                    the reader's OWN view had no pill of its own, only a name
+                    among the analysts. Two explicit perspectives is what the
+                    asset case settled on, and "Firm" is the word the rest of
+                    the product uses for this scope -- visibility is
+                    team | division | firm, so "Team" or "Our" would name the
+                    narrowest while showing the widest. */}
+                {selfAnalyst && (
+                  <button
+                    onClick={() => chooseViewFilter(selfAnalyst.id)}
+                    className={clsx(
+                      'px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
+                      viewFilter === selfAnalyst.id
+                        ? 'bg-primary-600 text-white shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
+                    )}
+                  >
+                    My Research
+                  </button>
+                )}
                 <button
-                  onClick={() => setViewFilter('aggregated')}
+                  onClick={() => chooseViewFilter('aggregated')}
                   className={clsx(
                     'px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
                     viewFilter === 'aggregated'
@@ -126,20 +621,19 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
                   )}
                 >
                   <Users className="w-3.5 h-3.5" />
-                  Our View
+                  Firm
                 </button>
-                {analysts.map(a => (
+                {otherAnalysts.map(a => (
                   <button
                     key={a.id}
-                    onClick={() => setViewFilter(a.id)}
+                    onClick={() => chooseViewFilter(a.id)}
                     className={clsx(
                       'px-3 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-1.5',
                       viewFilter === a.id
                         ? 'bg-primary-600 text-white shadow-sm'
-                        : a.isSelf ? 'text-primary-600 hover:text-primary-700' : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
+                        : 'text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
                     )}
                   >
-                    {a.isSelf && viewFilter !== a.id && <Star className="w-3 h-3 text-primary-500" />}
                     {a.shortName}
                   </button>
                 ))}
@@ -147,19 +641,40 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
             ) : (
               <select
                 value={viewFilter}
-                onChange={(e) => setViewFilter(e.target.value)}
+                onChange={(e) => chooseViewFilter(e.target.value)}
                 className="w-full sm:w-auto px-3 h-9 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:text-gray-300 dark:bg-gray-800"
               >
-                <option value="aggregated">Our View (All Contributors)</option>
-                {analysts.map(a => (
+                {/* The same two names as the pills above; this is the other
+                    arm of one control, so they cannot differ. */}
+                {selfAnalyst && <option value={selfAnalyst.id}>My Research</option>}
+                <option value="aggregated">Firm</option>
+                {otherAnalysts.map(a => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
               </select>
             )}
           </div>
 
-          {/* Right: view mode + manage */}
+          {/* Right: who can read it, then how to read it, then the overflow */}
           <div className="flex items-center gap-2 min-w-0">
+            {/* Only in the author's own view, and placed first so the read-mode
+                buttons do not shift when it appears — both are the Asset
+                page's choices. Someone reading a colleague's research must not
+                be offered a control over who can see it. */}
+            {/* `audienceReady` is false until the audience migrations are
+                applied. Hiding the control is the honest state: it cannot
+                store a restriction yet, and a picker that silently does
+                nothing is the defect this feature was built to remove. */}
+            {audienceReady && viewFilter === user?.id && (
+              <AudiencePicker
+                saved={savedAudience ?? { visibility: sharedVisibility, targetIds: sharedTargetIds }}
+                nodesFor={(v) => audienceNodesFor(v) as AudienceNode[]}
+                memberCounts={audienceMemberCounts}
+                nodeById={audienceNodeById}
+                isLoading={!userOrgContext}
+                onApply={handleAudienceApply}
+              />
+            )}
             {isMobileViewport ? (
               <OptionPicker
                 label="Show"
@@ -168,100 +683,353 @@ export function ThemeResearchTab({ themeId, themeIsPublic }: ThemeResearchTabPro
                 align="right"
                 className="min-w-0"
                 options={[
-                  { value: 'all',        label: 'All sections' },
-                  { value: 'summary',    label: 'Summary' },
-                  { value: 'history',    label: 'Changes' },
-                  { value: 'references', label: 'Links', count: references.length },
+                  { value: 'thesis',  label: 'Investment Case' },
+                  { value: 'changes', label: 'History' },
+                  { value: 'notes',   label: 'Artifacts', count: referenceCount },
                 ]}
               />
             ) : (
-              <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
-                {([
-                  { mode: 'all',        label: 'All',      Icon: Layers,       active: 'text-primary-600' },
-                  { mode: 'summary',    label: 'Summary',  Icon: Sparkles,     active: 'text-purple-600' },
-                  { mode: 'history',    label: 'Changes',  Icon: HistoryIcon,  active: 'text-primary-600' },
-                  { mode: 'references', label: 'Links',    Icon: Link2,        active: 'text-primary-600' },
-                ] as const).map(({ mode, label, Icon, active }) => (
-                  <button
-                    key={mode}
-                    onClick={() => setViewMode(mode)}
-                    className={clsx(
-                      'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors',
-                      viewMode === mode
-                        ? clsx('bg-white shadow-sm dark:bg-gray-800', active)
-                        : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400',
-                    )}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {label}
-                    {mode === 'references' && references.length > 0 && (
-                      <span className="tabular-nums text-[10px] text-gray-400">{references.length}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
+              <>
+                {/* One divider, not two, and in the same place the Asset page
+                    puts it: what is to the left is status about THIS view,
+                    what is to the right is how to read it. That is one
+                    boundary. */}
+                <div className="mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
+                <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-0.5 dark:bg-gray-800">
+                  {/* Three, with the Asset page's OWN three words, not
+                      near-synonyms of them. They were Thesis / Changes /
+                      References, which named the same three things in a
+                      different vocabulary, and a reader moving between the
+                      two pages had to learn that "Changes" here is "History"
+                      there. One nav, one set of names:
+
+                        Investment Case   the case itself
+                        History           what changed in it, and when
+                        Artifacts         the material it rests on
+
+                      The persisted keys stay `thesis`/`changes`/`notes`,
+                      because they are written into saved tab state
+                      (`themeResearchRead`) and into `LEGACY_SECTION_MODE`.
+                      Renaming a stored value to tidy a label would strand
+                      every reader who left the page on one.
+
+                      Sizing and the label breakpoint are the Asset page's:
+                      `px-2 py-1.5 text-sm`, and the words appear from `xl` so
+                      a narrow desktop keeps three compact icons with their
+                      titles intact rather than wrapping the bar. */}
+                  {([
+                    { mode: 'thesis',  label: 'Investment Case', Icon: Layers },
+                    { mode: 'changes', label: 'History',         Icon: HistoryIcon },
+                    { mode: 'notes',   label: 'Artifacts',       Icon: Link2 },
+                  ] as const).map(({ mode, label, Icon }) => (
+                    <button
+                      key={mode}
+                      onClick={() => setViewMode(mode)}
+                      title={label}
+                      className={clsx(
+                        'relative flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
+                        viewMode === mode
+                          ? 'bg-white shadow-sm text-primary-600 dark:bg-gray-700 dark:text-primary-400'
+                          : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 dark:text-gray-400',
+                      )}
+                    >
+                      <Icon className="w-4 h-4" />
+                      <span className="hidden xl:inline">{label}</span>
+                      {mode === 'notes' && referenceCount > 0 && (
+                        /* The Asset page's count: a filled blue pill, not a
+                           grey number, so it reads as a quantity of things
+                           waiting rather than as part of the label. */
+                        <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
+                          {referenceCount}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setShowManager(true)}
+            {/*
+              The overflow.
+
+              "Manage" was an outlined button on the bar, at the same visual
+              weight as the controls that decide how the case is read, for a
+              one-shot action nobody uses twice in a sitting. Behind `⋯` it
+              costs no permanent width and its label is spelled out instead of
+              living in an aria-label.
+
+              It is the Asset page's own `ResearchToolbarMenu`, imported
+              rather than reimplemented: focus management, Escape, outside
+              click and arrow-key movement are already solved there, and a
+              second copy would be a second set of those bugs. Export and
+              Export is still absent: the theme case has no exporter, and
+              the menu hides an unavailable item rather than advertising it
+              disabled. Arrange layout is here now that the body reads the
+              resolved layout stack -- until it did, arranging would have
+              reordered a list the page was not drawing.
+            */}
+            <ResearchToolbarMenu
               className="shrink-0"
-              aria-label="Manage fields"
-            >
-              <Settings2 className="w-4 h-4 sm:mr-1" />
-              <span className="hidden sm:inline">Manage</span>
-            </Button>
+              items={[
+                {
+                  key: 'customize',
+                  label: 'Customize fields',
+                  icon: Settings2,
+                  onSelect: () => setShowManager(true),
+                },
+                {
+                  key: 'arrange',
+                  label: 'Arrange layout',
+                  icon: LayoutGrid,
+                  onSelect: () => setArranging(true),
+                  /*
+                   * Only on your own research, and only on the document
+                   * view. Arranging writes THIS reader's selection row, so
+                   * offering it while reading someone else's research, or
+                   * the firm synthesis, would be a control that silently
+                   * rearranges a different page than the one on screen.
+                   */
+                  available: viewMode === 'thesis' && viewFilter === user?.id,
+                },
+              ]}
+            />
           </div>
         </div>
       </div>
 
       {/* Content area */}
-      {viewMode === 'summary' ? (
-        <ThemeThesisSummaryView themeId={themeId} viewFilter={viewFilter} />
-      ) : viewMode === 'history' ? (
+      {viewMode === 'changes' ? (
         <ThemeThesisHistoryView themeId={themeId} viewFilter={viewFilter} />
-      ) : viewMode === 'references' ? (
-        <ThemeKeyReferencesSection themeId={themeId} />
-      ) : layoutLoading || contribsLoading ? (
+      ) : viewMode === 'notes' ? (
+        /* ── References: the links AND the notes, in one place ───────────
+           Notes was a seventh tab of the page. It is here rather than beside
+           Thesis because a note and a link are the same kind of thing to a
+           reader: the material the case rests on, as opposed to the case.
+
+           Links first because they are one-line rows and the notes surface
+           below opens a full editor; putting the editor above would push
+           the links off the screen whenever a note was open. */
+        <div className="space-y-8">
+          <ThemeKeyReferencesSection themeId={themeId} />
+          {notesSlot}
+        </div>
+      ) : catalogueLoading || layoutStackLoading || contribsLoading ? (
         <div className="space-y-3">
           {[...Array(2)].map((_, i) => <div key={i} className="h-32 bg-gray-100 rounded-lg animate-pulse dark:bg-gray-800" />)}
         </div>
-      ) : (
-        layout.map(section => (
-          <section key={section.id} className="space-y-2">
-            <div className="px-1">
-              <h2 className="text-sm font-semibold text-gray-900 dark:text-white">{section.name}</h2>
-              {section.description && (
-                <p className="text-xs text-gray-500 dark:text-gray-400">{section.description}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              {section.fields.length === 0 ? (
-                <div className="bg-gray-50 border border-dashed border-gray-300 rounded-lg p-6 text-center dark:border-gray-600 dark:bg-gray-900">
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    No fields in this section yet. Click "Manage" to add one.
-                  </p>
+      ) : viewFilter === 'aggregated' ? (
+        /* ══ Firm ═════════════════════════════════════════════════════════
+           The Asset page's Firm perspective in the same three parts, in the
+           same order, and the order is the argument:
+
+             a notice      this is read-only, and here is the way back
+             a synthesis   generated, and labelled as generated
+             the record    every contributor's own words, attributed
+
+           It was none of those. The theme's Firm view rendered the synthesis
+           and then the SAME editable field stack the reader's own view
+           renders, with each field's card quietly listing other people's
+           prose underneath. So "Firm" and "My Research" were the same screen
+           with different contents in the boxes, there was nothing saying the
+           firm view is not yours to edit, and the firm's position was a thing
+           you assembled yourself by reading down nine cards.
+
+           Nothing is synthesised here that was not synthesised before, and
+           nothing is authored. `OurViewSummary` quotes; it never merges two
+           analysts into a firm opinion. */
+        contributions.length === 0 ? (
+          /* Empty, and it says which perspective is empty. "No research yet"
+             on a page with a My Research tab reads as "you have not written
+             anything", which is a different and possibly false claim. */
+          <Card padding="none">
+            <div className="flex flex-col items-center justify-center py-16 px-6">
+              <div className="relative mb-6">
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary-50 to-primary-100 flex items-center justify-center">
+                  <Target className="w-10 h-10 text-primary-400" />
                 </div>
-              ) : (
-                section.fields.map(field => (
-                  <ThemeContributionSection
-                    key={field.id}
-                    themeId={themeId}
-                    themeIsPublic={themeIsPublic}
-                    field={field}
-                    activeTab={viewFilter}
-                    hideWhenEmpty={viewingOther}
-                    onTabChange={setViewFilter}
-                  />
-                ))
+                <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-white shadow-md flex items-center justify-center border border-gray-100 dark:border-gray-800 dark:bg-gray-800">
+                  <Users className="w-4 h-4 text-gray-400" />
+                </div>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2 dark:text-white">No team research yet</h3>
+              <p className="text-sm text-gray-500 text-center max-w-sm mb-6 dark:text-gray-400">
+                No one has written on this theme yet. Switch to your own view to start documenting the case.
+              </p>
+              {user?.id && (
+                <button
+                  onClick={() => chooseViewFilter(user.id)}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+                >
+                  <Target className="w-4 h-4" />
+                  Start Your Research
+                </button>
               )}
             </div>
-          </section>
-        ))
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {user?.id && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  Read-only firm view: a generated synthesis, and each analyst's own research. Not a firm-authored conclusion.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => chooseViewFilter(user.id)}
+                  className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-primary-700"
+                >
+                  <Edit3 className="h-4 w-4" />
+                  Edit my research
+                </button>
+              </div>
+            )}
+
+            {/* ── The synthesis, which used to be its own read mode ──────
+                "Summary" was a fourth button in the row above, and it
+                answered the same question this perspective does, from the
+                same contributions. The asset page merged its equivalent into
+                Firm for exactly that reason; this is the same merge. It
+                belongs between the notice and the record because it is a
+                reading OF the words below it. */}
+            <ThemeThesisSummaryView themeId={themeId} viewFilter={viewFilter} />
+
+            {/* ── The record ────────────────────────────────────────────
+                Every visible field of the org's own theme template, with
+                each contributor's opening claim under it, by name and by
+                date. This is the part the theme page had no equivalent of,
+                and it is the part that answers "what does the desk think".
+
+                It reports on `ourViewFields`, which is the TEMPLATE, so a
+                firm that adds a theme field sees it here. The synthesis
+                above reads a fixed handful of sections, so on its own it
+                would silently omit everything a firm added. */}
+            <OurViewSummary
+              contributions={firmRecord}
+              fields={ourViewFields}
+              currentUserId={user?.id}
+              onOpenAnalyst={chooseViewFilter}
+              mode="full"
+              className="px-1"
+            />
+          </div>
+        )
+      ) : (
+        /* ══ One analyst's document: the reader's own, or someone else's ══
+           Sections are cards with an uppercase collapsible band and an
+           alternating shade, and fields sit in the twelve-column grid, which
+           is the Asset page's structure drawn by the Asset page's own
+           components. It was an `<h2>` over a flat stack.
+
+           Spans come from the layout stack now, not from a hardcoded 12.
+           `user_theme_page_layouts.field_config` has existed since
+           20261104150001; what was missing was a renderer that read it, and
+           this page rendered the raw catalogue instead. `layout` above is
+           the resolver's answer, so a half-width theme field draws at half
+           width through the same `ArrangeableField` the Asset page uses.
+
+           Writing a span still needs `save_theme_layout_customization`,
+           which is not in production. So this reads a layout nothing can
+           yet save, which is the right way round: the renderer honours
+           whatever lands the moment the migration is applied, rather than
+           the migration landing on a page that ignores it. */
+        <ResearchArrangeProvider subject={subject} active={arranging}>
+          {arranging && (
+            <ResearchArrangeBar
+              subjectNoun="theme"
+              onClose={() => setArranging(false)}
+            />
+          )}
+          {layout.map((section, sectionIdx) => {
+            const collapsed = !!collapsedSections[section.slug]
+            return (
+              <ResearchSectionCard
+                key={section.id}
+                name={section.name}
+                description={section.description}
+                shaded={sectionIdx % 2 === 1}
+                collapsed={collapsed}
+                onToggle={() => toggleSection(section.slug)}
+                /* The grid comes from `ArrangeableFieldGrid` below, which is
+                   also the drop target once arranging exists, so the card
+                   must not draw a second one around it. */
+                grid={false}
+              >
+                <ArrangeableFieldGrid
+                  sectionId={section.id}
+                  sectionSlug={section.slug}
+                  fieldIds={section.fields.map(f => f.id)}
+                  className={RESEARCH_FIELD_GRID_CLASS}
+                >
+                  {section.fields.length === 0 ? (
+                    <div className="xl:col-span-12 bg-gray-50 border border-dashed border-gray-300 rounded-lg p-6 text-center dark:border-gray-600 dark:bg-gray-900">
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        No fields in this section yet. Add one from Customize fields.
+                      </p>
+                    </div>
+                  ) : (
+                    section.fields.map(field => (
+                      <ArrangeableField
+                        key={field.id}
+                        fieldId={field.id}
+                        fieldName={field.name}
+                        sectionId={section.id}
+                        sectionSlug={section.slug}
+                        /* The span the layout stack resolved, not a
+                           hardcoded full row. This was 12 because nothing
+                           could save a theme span; `field_config.span` is
+                           now read through the same resolver the Asset page
+                           uses, so a half-width theme field draws at half
+                           width. `savedVisible` stays unconditional: an
+                           invisible field was already filtered out above. */
+                        savedSpan={field.span}
+                        savedVisible
+                      >
+                        <ThemeContributionSection
+                          themeId={themeId}
+                          field={field}
+                          activeTab={viewFilter}
+                          hideWhenEmpty={viewingOther}
+                          onTabChange={chooseViewFilter}
+                          /* Omitted entirely when the server cannot hold an
+                             audience, so a save preserves whatever is stored
+                             instead of asserting a level the CHECK refuses. */
+                          sharedVisibility={audienceReady ? sharedVisibility : undefined}
+                          sharedTargetIds={sharedTargetIds}
+                        />
+                      </ArrangeableField>
+                    ))
+                  )}
+                </ArrangeableFieldGrid>
+              </ResearchSectionCard>
+            )
+          })}
+        </ResearchArrangeProvider>
       )}
 
+      {/* Customize fields: the ASSET page's customizer, pointed at this
+          theme.
+
+          `ThemeFieldManagerModal` was the 334-line stand-in here: no
+          templates, no widths, no section management and no layout, beside
+          a 3900-line customizer that has all four. Deleted, not left on
+          disk unreachable, so nobody wires it back in by finding it.
+
+          Everything here is the asset modal's own behaviour against
+          `theme_research_*` and `user_theme_*`, through the subject
+          descriptor. Two things it offers that themes do not have yet are
+          hidden by the component itself: add-from-preset
+          (`add_field_from_preset` has no theme twin) and field sharing
+          (`team_research_fields`, `research_field_viewers` and
+          `research_field_access_requests` have none either). */}
       {showManager && (
-        <ThemeFieldManagerModal onClose={() => setShowManager(false)} />
+        <AssetPageFieldCustomizer
+          isOpen
+          onClose={() => setShowManager(false)}
+          assetId={themeId}
+          subject={themeSubject(themeId)}
+          subjectNoun="theme"
+          viewFilter={viewFilter}
+          currentUserId={user?.id}
+        />
       )}
     </div>
   )

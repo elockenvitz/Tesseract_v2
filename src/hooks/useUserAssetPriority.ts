@@ -174,6 +174,24 @@ export function useUserAssetPriority(assetId: string | undefined) {
           reason: reason || null,
           updated_at: new Date().toISOString()
         }, {
+          /*
+           * The org-composite key, and now the table's only unique key
+           * besides the primary. Queried live on 2026-11-09:
+           *
+           *     user_asset_priorities_pkey           PRIMARY KEY (id)
+           *     user_asset_priorities_org_asset_user_key
+           *       UNIQUE (organization_id, asset_id, user_id)
+           *
+           * An earlier note here warned that the superseded
+           * `UNIQUE (asset_id, user_id)` still coexisted and would raise
+           * 23505 for a user holding a priority on the same asset in two
+           * organizations. That constraint has since been dropped, so the
+           * same asset can now carry a per-org priority as intended.
+           *
+           * Do not narrow this target to `asset_id,user_id`: no such key
+           * exists any more, so PostgREST would send an ON CONFLICT that
+           * matches no index and Postgres would reject it with 42P10.
+           */
           onConflict: 'organization_id,asset_id,user_id'
         })
         .select()

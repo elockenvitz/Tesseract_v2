@@ -65,7 +65,14 @@ export interface CoverageResearchCandidate {
   /** `researchCopy`, unchanged. */
   headline: string
   body: string
-  prompt: string
+  /**
+   * Absent where the framing has no coherent question to ask.
+   *
+   * `framingWantsJudgment` is false for `no_case` and `incomplete_case`, so
+   * `researchCopy` emits no prompt for either. This field follows it rather
+   * than forcing a sentence to exist.
+   */
+  prompt?: string
 
   /** The facts behind the framing, as the rule produced them. */
   facts: {

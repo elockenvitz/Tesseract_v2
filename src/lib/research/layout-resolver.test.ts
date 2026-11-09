@@ -4,6 +4,9 @@ import {
   normalizePresetFieldId,
   extractPresetSlug,
   fieldConfigMatchesField,
+  overrideDiffersFromBaseline,
+  reorderedSectionOverrides,
+  catalogFieldOrder,
   toCanonicalPresetId,
   type ResolveLayoutInput,
   type AvailableField,
@@ -357,6 +360,325 @@ describe('resolveLayout', () => {
 // ============================================================================
 // toCanonicalPresetId
 // ============================================================================
+
+describe('overrideDiffersFromBaseline', () => {
+  /*
+   * Two callers depend on this and must not drift apart: the save, which
+   * drops no-op overrides so that setting a page back by hand genuinely
+   * returns it to the template, and the status chip, which decides
+   * whether to label the page "Custom layout".
+   *
+   * Both directions of an error are bad and neither is visible. Too
+   * eager and a real setting is pruned away as tidying — the reader's
+   * layout silently deleted. Too cautious and the stock stays PINNED to
+   * an override that merely agrees with today's template, so a later
+   * template change skips it with nothing to explain why.
+   */
+  const base = { span: 6, is_visible: true, section_id: 'sec-1', display_order: 2 }
+
+  it('keeps an override for a field the template says nothing about', () => {
+    expect(overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true }, undefined)).toBe(true)
+  })
+
+  it('drops an override that repeats the template exactly', () => {
+    expect(
+      overrideDiffersFromBaseline(
+        { field_id: 'f1', is_visible: true, span: 6, section_id: 'sec-1', display_order: 2 },
+        base,
+      ),
+    ).toBe(false)
+  })
+
+  it('drops an override that states nothing but visibility it already had', () => {
+    expect(overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true }, base)).toBe(false)
+  })
+
+  it.each([
+    ['a different span', { span: 4 }],
+    ['being hidden', { is_visible: false }],
+    ['a different section', { section_id: 'sec-2' }],
+    ['a different position', { display_order: 5 }],
+  ])('keeps an override that states %s', (_label, patch) => {
+    expect(
+      overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, ...patch }, base),
+    ).toBe(true)
+  })
+
+  it('reads a legacy width as the span it means', () => {
+    /* The dangerous case. An override written before spans existed says
+       `width: 'half'` and no span at all. Comparing only `span` reads it
+       as saying nothing, prunes it, and silently widens a field the
+       reader narrowed years ago — a data loss with no error. */
+    expect(overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, width: 'half' }, base))
+      .toBe(false)
+    expect(
+      overrideDiffersFromBaseline(
+        { field_id: 'f1', is_visible: true, width: 'half' },
+        { ...base, span: 12 },
+      ),
+    ).toBe(true)
+    expect(
+      overrideDiffersFromBaseline(
+        { field_id: 'f1', is_visible: true, width: 'full' },
+        { ...base, span: 12 },
+      ),
+    ).toBe(false)
+  })
+
+  it('lets a span win over a legacy width on the same override', () => {
+    /* The resolver prefers span over width when both are present, so
+       this must agree with it or the two would disagree about whether a
+       page is customized. */
+    expect(
+      overrideDiffersFromBaseline(
+        { field_id: 'f1', is_visible: true, span: 6, width: 'full' },
+        base,
+      ),
+    ).toBe(false)
+  })
+
+  it('treats a template that never stated a span as the full row', () => {
+    /* A field the template does not size draws full width, so an
+       override saying 12 is agreeing with it, not overriding it. */
+    expect(
+      overrideDiffersFromBaseline(
+        { field_id: 'f1', is_visible: true, span: 12 },
+        { is_visible: true },
+      ),
+    ).toBe(false)
+    expect(
+      overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, span: 6 }, { is_visible: true }),
+    ).toBe(true)
+  })
+
+  it('ignores an unusable span rather than treating it as a difference', () => {
+    /* `field_overrides` is jsonb written by several versions of this
+       app. A 0 or a 7.5 cannot be drawn and the resolver rejects it in
+       favour of the next source, so it is not a real instruction here
+       either. */
+    expect(
+      overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, span: 0 }, base),
+    ).toBe(false)
+    expect(
+      overrideDiffersFromBaseline({ field_id: 'f1', is_visible: true, span: 99 }, base),
+    ).toBe(false)
+  })
+})
+
+describe('catalogFieldOrder', () => {
+  /*
+   * The defect: the catalogue query sorted on `research_fields.display_order`
+   * alone, which is only meaningful within a section. In the live database the
+   * first field of all three default sections carries 0, so three rows tied
+   * and Postgres picked. Arrival order then decided the Default template's
+   * section order, which is how it disagreed with the asset page.
+   *
+   * These rows are the real eight, with the real numbers.
+   */
+  const SECTION = { thesis: 0, catalysts: 1, forecasts: 2 }
+  const CATALOG = [
+    { name: 'Business Model', section_display_order: SECTION.thesis, display_order: 0 },
+    { name: 'Thesis', section_display_order: SECTION.thesis, display_order: 1 },
+    { name: 'Where Different', section_display_order: SECTION.thesis, display_order: 2 },
+    { name: 'Risks to Thesis', section_display_order: SECTION.thesis, display_order: 3 },
+    { name: 'Key Catalysts', section_display_order: SECTION.catalysts, display_order: 0 },
+    { name: 'Rating', section_display_order: SECTION.forecasts, display_order: 0 },
+    { name: 'Price Targets', section_display_order: SECTION.forecasts, display_order: 1 },
+    { name: 'Estimates', section_display_order: SECTION.forecasts, display_order: 2 },
+  ]
+
+  const sorted = (rows: typeof CATALOG) => [...rows].sort(catalogFieldOrder).map(r => r.name)
+
+  it('groups by section before ordering within it', () => {
+    expect(sorted(CATALOG)).toEqual([
+      'Business Model', 'Thesis', 'Where Different', 'Risks to Thesis',
+      'Key Catalysts',
+      'Rating', 'Price Targets', 'Estimates',
+    ])
+  })
+
+  it('gives the same answer whatever order the rows arrive in', () => {
+    // The three display_order-0 rows are the tie that Postgres used to break.
+    const want = sorted(CATALOG)
+    expect(sorted([...CATALOG].reverse())).toEqual(want)
+    expect(sorted([...CATALOG].sort((a, b) => a.name.localeCompare(b.name)))).toEqual(want)
+    expect(sorted([...CATALOG].sort((a, b) => b.name.localeCompare(a.name)))).toEqual(want)
+  })
+
+  it('does not let a low field number jump a section boundary', () => {
+    // Rating is 0 in Forecasts; Risks to Thesis is 3 in Thesis. Section wins.
+    expect(catalogFieldOrder(
+      { section_display_order: 2, display_order: 0, name: 'Rating' },
+      { section_display_order: 0, display_order: 3, name: 'Risks to Thesis' },
+    )).toBeGreaterThan(0)
+  })
+
+  it('breaks a total tie by name instead of leaving it to the database', () => {
+    expect(catalogFieldOrder(
+      { section_display_order: 0, display_order: 0, name: 'Alpha' },
+      { section_display_order: 0, display_order: 0, name: 'Beta' },
+    )).toBeLessThan(0)
+    // And is a real total order: never 0 for two differently-named rows.
+    expect(catalogFieldOrder(
+      { section_display_order: 0, display_order: 0, name: 'Beta' },
+      { section_display_order: 0, display_order: 0, name: 'Alpha' },
+    )).toBeGreaterThan(0)
+  })
+
+  it('treats a missing number as 0, the column’s own default', () => {
+    expect(catalogFieldOrder(
+      { display_order: null, name: 'A' },
+      { section_display_order: 0, display_order: 0, name: 'A' },
+    )).toBe(0)
+    expect(catalogFieldOrder(
+      { section_display_order: null, display_order: 5, name: 'A' },
+      { section_display_order: 1, display_order: 0, name: 'A' },
+    )).toBeLessThan(0)
+  })
+
+  it('is symmetric, so the sort is stable in either direction', () => {
+    for (const a of CATALOG) {
+      for (const b of CATALOG) {
+        // Summed rather than negated: -Math.sign(0) is -0, and Object.is
+        // equality treats that as different from 0.
+        expect(Math.sign(catalogFieldOrder(a, b)) + Math.sign(catalogFieldOrder(b, a))).toBe(0)
+      }
+    }
+  })
+})
+
+describe('reorderedSectionOverrides', () => {
+  /*
+   * `display_order` is absolute, so a reorder has to number every
+   * section. Right while the order differs from the template's; wrong
+   * once it does not, because then the stock carries explicit positions
+   * that merely repeat the template and will silently refuse to follow
+   * it when it changes.
+   */
+  const baseline: Record<string, number> = { a: 0, b: 1, c: 2 }
+  const baselineOrderOf = (id: string) => baseline[id] ?? null
+
+  it('numbers every section when the order really differs', () => {
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['b', 'a', 'c'],
+        currentOverrides: [],
+        baselineOrderOf,
+      }),
+    ).toEqual([
+      { section_id: 'b', display_order: 0 },
+      { section_id: 'a', display_order: 1 },
+      { section_id: 'c', display_order: 2 },
+    ])
+  })
+
+  it('writes nothing at all when the order is already the template order', () => {
+    /* The nudge-down-then-back-up case. This used to leave one explicit
+       position per section behind, pinning the stock forever. */
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['a', 'b', 'c'],
+        currentOverrides: [
+          { section_id: 'a', display_order: 0 },
+          { section_id: 'b', display_order: 1 },
+          { section_id: 'c', display_order: 2 },
+        ],
+        baselineOrderOf,
+      }),
+    ).toEqual([])
+  })
+
+  it('keeps what an override says apart from its position', () => {
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['a', 'b', 'c'],
+        currentOverrides: [
+          { section_id: 'a', display_order: 0, name_override: 'Bull case' },
+          { section_id: 'b', display_order: 1, is_hidden: true },
+          { section_id: 'c', display_order: 2 },
+        ],
+        baselineOrderOf,
+      }),
+    ).toEqual([
+      { section_id: 'a', name_override: 'Bull case' },
+      { section_id: 'b', is_hidden: true },
+    ])
+  })
+
+  it('drops an is_hidden:false the template does not need', () => {
+    /* Against a template that does not hide the section it says nothing;
+       against one that does, it is the only way to ask for it back. */
+    const args = {
+      orderedSectionIds: ['a', 'b', 'c'],
+      currentOverrides: [{ section_id: 'b', display_order: 1, is_hidden: false }],
+      baselineOrderOf,
+    }
+    expect(reorderedSectionOverrides(args)).toEqual([])
+    expect(
+      reorderedSectionOverrides({ ...args, templateHidesSection: id => id === 'b' }),
+    ).toEqual([{ section_id: 'b', is_hidden: false }])
+  })
+
+  it('keeps explicit positions when a baseline position is unknown', () => {
+    /* A section the template says nothing about and that carries no
+       display_order of its own. "This is the baseline" cannot be
+       established, so the reader's arrangement is written rather than
+       guessed at. */
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['a', 'b', 'unknown'],
+        currentOverrides: [],
+        baselineOrderOf,
+      }),
+    ).toEqual([
+      { section_id: 'a', display_order: 0 },
+      { section_id: 'b', display_order: 1 },
+      { section_id: 'unknown', display_order: 2 },
+    ])
+  })
+
+  it('keeps explicit positions when two sections share a baseline position', () => {
+    /* They have no defined order between them, so the order on screen
+       cannot be proven to be the baseline one. */
+    const tied = (id: string) => ({ a: 0, b: 0, c: 2 }[id] ?? null)
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['a', 'b', 'c'],
+        currentOverrides: [],
+        baselineOrderOf: tied,
+      })
+    ).toEqual([
+      { section_id: 'a', display_order: 0 },
+      { section_id: 'b', display_order: 1 },
+      { section_id: 'c', display_order: 2 },
+    ])
+  })
+
+  it('never drops an override for a section the reorder did not mention', () => {
+    /* The stored array is replaced wholesale, and the ordered list only
+       holds what the page is drawing — so rebuilding from it alone
+       deleted the rename and hidden flag of anything off screen. */
+    const offScreen = { section_id: 'z', name_override: 'Appendix', is_hidden: true }
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['b', 'a'],
+        currentOverrides: [offScreen],
+        baselineOrderOf,
+      }),
+    ).toContainEqual(offScreen)
+  })
+
+  it('carries an off-screen override through a no-op reorder too', () => {
+    const offScreen = { section_id: 'z', name_override: 'Appendix' }
+    expect(
+      reorderedSectionOverrides({
+        orderedSectionIds: ['a', 'b', 'c'],
+        currentOverrides: [{ section_id: 'a', display_order: 0 }, offScreen],
+        baselineOrderOf,
+      }),
+    ).toEqual([offScreen])
+  })
+})
 
 describe('toCanonicalPresetId', () => {
   it('is the same function as normalizePresetFieldId', () => {

@@ -81,6 +81,13 @@ export interface AssetDecisionRow {
   portfolioId: string | null
   portfolioName: string | null
   decisionNote: string | null
+  /** The idea this was raised on, so a surface can tell that a listed request
+   *  and a live idea are the SAME piece of work rather than two.
+   *
+   *  Optional so existing fixtures that predate it still satisfy the type; the
+   *  hook always populates it, and a consumer treats absent as "unknown idea"
+   *  (which simply means nothing is deduplicated against it). */
+  ideaId?: string | null
 }
 
 export interface AssetWorkspaceData {
@@ -196,7 +203,7 @@ export function useAssetWorkspace(
         // Decisions reach the asset through the idea they were raised on, so
         // the embed is inner-joined and filtered rather than fetched wide.
         supabase.from('decision_requests')
-          .select('id, status, requested_action, reviewed_at, decision_note, portfolio_id, portfolios(name), trade_queue_items!inner(asset_id)')
+          .select('id, status, requested_action, reviewed_at, decision_note, portfolio_id, portfolios(name), trade_queue_items!inner(id, asset_id)')
           .eq('trade_queue_items.asset_id', assetId!)
           .order('created_at', { ascending: false }).limit(8),
       ])
@@ -288,6 +295,7 @@ export function useAssetWorkspace(
         portfolioId: r.portfolio_id ?? null,
         portfolioName: r.portfolios?.name ?? null,
         decisionNote: r.decision_note ?? null,
+        ideaId: r.trade_queue_items?.id ?? null,
       }))
 
       return out

@@ -28,45 +28,39 @@
 
 import { useRef } from 'react'
 import {
-  DesktopModule, DesktopStat, DesktopSection, DesktopColumns, DeepLinks, DeepLink,
+  DesktopModule, DesktopSection, DesktopColumns, DeepLinks, DeepLink,
 } from '../desktop/DesktopModule'
 import { clsx } from 'clsx'
-import { ArrowDown, ArrowUpRight, MoreHorizontal, PencilLine } from 'lucide-react'
+import { TONE_INK } from '../../lib/semantic-tone'
+import { ArrowDown, ArrowUpRight, MessageSquare, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
-import { useRecordThesisReview, type ThesisReviewOutcome } from '../../hooks/useThesisReview'
+import { ThesisVerdictBar } from '../desktop/ThesisVerdictBar'
 import { useRecordObjectView } from '../../hooks/useObjectViewCursor'
 import { openAsset } from '../../lib/desktop-asset'
-import { openIdea, ideasTabFor } from '../../lib/desktop-ideas'
+import { openIdeaDetail } from '../../lib/navigation/open-idea'
 
-/**
- * The three conclusions, in the order a reader reaches them.
- *
- * Wording matters here: each is a statement about the CASE, not an instruction
- * to the reader. "Needs work" says the document cannot be judged as written --
- * which is a different fact from the case having broken, and the two were
- * previously both unsayable.
+/*
+ * The three conclusions, their colours and the standing-answer styling all
+ * moved to `ThesisVerdictBar` with their reasoning intact, because the asset
+ * workspace needs the same verb and two copies of a vocabulary is how two
+ * vocabularies start.
  */
-const REVIEW_CHOICES: ReadonlyArray<{ outcome: ThesisReviewOutcome; label: string }> = [
-  { outcome: 'holds', label: 'Still holds' },
-  { outcome: 'changed', label: 'Changed' },
-  { outcome: 'needs_work', label: 'Needs work' },
-]
 
-/**
- * Research → Ideas.
+/*
+ * Research -> the idea itself: the Idea Pipeline, with the idea's detail open.
  *
  * Offered only when the asset actually carries a live, non-terminal idea. A
  * standing "Go to Ideas" button on every name would be a link, not an action --
  * and on the many names with no open idea it would land nowhere.
+ *
+ * The destination is `openIdeaDetail`, not the Ideas lens. See the note on the
+ * same button in `decisions-v2/DecisionDetail.tsx`: the lens is a gallery for
+ * finding work, and this reader has already found it. The `issue` caption does
+ * not travel, because the Pipeline's modal has nowhere to show it.
  */
-function routeToIdea(ideaId: string, issue: string) {
-  const request = { ideaId, focus: 'thesis' as const, issue, origin: 'research' }
-  window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: ideasTabFor(request) }))
-  openIdea(request)
-}
 import {
   stateOf, whyItMatters, primaryActionFor, targetFor, issueFor,
-  SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS,
+  SECTION_LABEL, ALL_SECTIONS, CORE_SECTIONS, STATE_TONE,
   dateWords, ageKindOf, thesisDateKindOf,
   type ResearchSubject, type ResearchDateWords,
 } from '../../lib/desktop-research'
@@ -174,9 +168,8 @@ export function ResearchDetail({
       : intent === 'book' && detail?.portfolioName ? 'book'
       : 'case'
 
-  const {
-    record: recordReview, isPending: reviewPending, isDone: reviewDone,
-  } = useRecordThesisReview(subject.assetId)
+  /* The review hooks, the standing-answer rule and the correction path all
+     live in `ThesisVerdictBar` now. See the note at its call site below. */
 
   /*
    * This is a genuine view: the detail pane is mounted, which only happens
@@ -200,7 +193,7 @@ export function ResearchDetail({
   return (
     <div ref={root} data-testid="research-detail" className="pb-12">
       {arrivedFor && (
-        <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-[12px] text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+        <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-[13px] text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
           <span className="font-semibold">
             Opened from {ORIGIN_LABEL[arrivedFrom ?? ''] ?? 'another surface'}:
           </span>{' '}
@@ -211,31 +204,91 @@ export function ResearchDetail({
       {/* header */}
       <div className="border-b border-gray-200 bg-white px-6 pt-5 dark:border-white/10 dark:bg-[#141a25]">
         <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
-          <div className="flex min-w-0 items-baseline gap-2.5">
+          {/*
+            ONE ticker row, and this is it.
+
+            The deck used to draw its own above this one -- ticker, state and
+            a claim -- so opening AMZN from Today gave "AMZN / THESIS MAY BE
+            STALE / <claim>" and then, 75px below, "AMZN / Amazon.com, Inc."
+            with its own figures and its own sentence saying the same thing
+            in different words. `WorkDeck` now yields the identity to the lens
+            (`ownHeader`), which means the state badge it carried has to live
+            here instead, or opening a name would no longer say why it
+            surfaced.
+
+            The badge is `issueFor` and `STATE_TONE` -- the same two functions
+            the rail badges with -- so the card you clicked and the header you
+            land on cannot word or colour the same state differently.
+          */}
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <span className="font-black text-[30px] leading-[1.05] tracking-[-0.035em]">
               {subject.symbol ?? '—'}
             </span>
             {subject.companyName && (
               <span className="truncate text-[13px] font-medium text-gray-500">{subject.companyName}</span>
             )}
+            <span
+              data-testid="detail-state"
+              className={clsx(
+                'text-[11px] font-bold uppercase tracking-widest',
+                TONE_INK[STATE_TONE[stateOf(subject)]],
+              )}
+            >
+              {issueFor(subject)}
+            </span>
           </div>
-          <div className="ml-auto flex flex-wrap gap-2">
-            {subject.daysSinceReview != null && (
-              <DesktopStat value={`${subject.daysSinceReview}d`} label={age.last} />
-            )}
-            <DesktopStat value={String(subject.evidenceCount)} label="Evidence" />
-            {subject.newSinceReview > 0 && (
-              <DesktopStat value={`+${subject.newSinceReview}`} label={capitalize(age.since)} tone="warn" />
-            )}
-            {detail?.weightPct != null && (
-              <DesktopStat value={`${detail.weightPct.toFixed(1)}%`} label="Weight" />
-            )}
-          </div>
+          {/*
+            No figure trio here.
+
+            It was `340d LAST UPDATED / 1 EVIDENCE / 14.2% WEIGHT`, sitting
+            directly above a band reading `340d SINCE UPDATE / +9.7% PRICE /
+            None NEW RESEARCH / 14.2% HELD`. The same three numbers, twice,
+            about eighty pixels apart -- and the evidence pair read as a
+            contradiction, because one counts everything on record and the
+            other counts what arrived since the thesis, and nothing on screen
+            said so.
+
+            The band wins: it has the price move as well, and it names the
+            window it measures over. The total count is not lost -- the
+            "Evidence on record" section below carries it, under a heading
+            that says which question it answers.
+          */}
         </div>
 
-        <p className="mt-3 max-w-[84ch] text-[13px] text-gray-700 dark:text-gray-300">{why}</p>
+        {/*
+          The headline sentence survives only where nothing below states it.
 
-        <div className="mt-3 flex flex-wrap items-center gap-1 pb-3">
+          With a thesis on file it read "Thesis last updated 340 days ago;
+          the stock has moved +9.7% since" -- directly above a band reading
+          `340d SINCE UPDATE / +9.7% PRICE`. The same two numbers, in prose,
+          eighty pixels above the figures themselves, and worse: it took the
+          age from one date and the price move from the window the chart
+          actually measured, then joined them with "since" as though they
+          shared a moment. There the band wins: it states the figures, names
+          its window, and carries the one sentence worth reading -- "No new
+          research since the thesis was last updated. The thesis is simply
+          due a look."
+
+          But the band is gated on `thesisUpdatedAt`. A coverage name with no
+          thesis has no band, so deleting this outright left "why am I here"
+          unanswered on exactly the subject that most needs it -- the one
+          with nothing written about it. `whyItMatters` is also still used by
+          the gallery tiles and the AI context.
+        */}
+        {!subject.thesisUpdatedAt && (
+          <p className="mt-2 max-w-[80ch] text-[13px] leading-relaxed text-gray-700 dark:text-gray-300">
+            {why}
+          </p>
+        )}
+
+        {/*
+          Three groups, not one run of controls: the step, the verdict, the
+          tools. `flex-1` on the outer two is what actually centres the
+          middle one -- `mx-auto` beside an `ml-auto` sibling does not, and
+          measured, it left the verdict 170px off centre.
+        */}
+        <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 pb-4">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
           <button
             type="button"
             onClick={runPrimary}
@@ -246,6 +299,7 @@ export function ResearchDetail({
               ? <PencilLine className="h-3.5 w-3.5 opacity-70" />
               : <ArrowDown className="h-3.5 w-3.5 opacity-70" />}
           </button>
+          </div>
           {/*
             The verb this surface never had, now with all three answers.
 
@@ -260,86 +314,119 @@ export function ResearchDetail({
             it and are not going to rewrite it right now. Each writes one event
             and touches no thesis text.
           */}
-          {subject.thesisUpdatedAt && (
-            <span className="inline-flex items-center gap-0.5" data-slot="research-thesis-review">
-              <span className="pl-1 pr-1.5 text-[11px] font-medium uppercase tracking-wide text-gray-400">
-                Reviewed
-              </span>
-              {REVIEW_CHOICES.map(choice => (
-                <button
-                  key={choice.outcome}
-                  type="button"
-                  data-slot={`research-review-${choice.outcome}`}
-                  onClick={() => recordReview(choice.outcome)}
-                  disabled={reviewPending || reviewDone}
-                  className="rounded-md px-2.5 py-2 text-[12px] font-medium text-gray-600 hover:bg-gray-100 disabled:opacity-60 dark:text-gray-300 dark:hover:bg-gray-800"
-                >
-                  {choice.label}
-                </button>
-              ))}
-              {(reviewPending || reviewDone) && (
-                <span className="pl-1 text-[12px] text-gray-500">
-                  {reviewDone ? 'Recorded' : 'Recording…'}
-                </span>
-              )}
-            </span>
-          )}
-          {target && (
-            <button
-              type="button"
-              onClick={() => askAI(target)}
-              className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
-            >
-              Ask AI
-            </button>
-          )}
           {/*
-            Create, in the same row as the other ways forward.
+            The verdict sits in the MIDDLE of the bar, not trailing the
+            primary action.
 
-            The workbench and the card now offer the same control in the same
-            language; what differs is only what the object supports and what
-            the reader reached for. A live idea on the name unlocks the
-            recommendation form, which is why the menu is told about it.
+            It read "Review thesis | REVIEWED Still holds Changed Needs
+            work", which put a past-tense label a few pixels from a button
+            asking you to do the thing -- so the row appeared to say the
+            review had already happened. The label is now the question the
+            three buttons answer, and the group centres itself between the
+            action on the left and the tools on the right, which is also
+            what makes it the thing the eye lands on.
           */}
-          <CreateMenu
-            intent={intent}
-            context={{
-              assetId: subject.assetId,
-              symbol: subject.symbol,
-              hasLiveIdea: !!detail?.liveIdea,
-            }}
-          />
-          {detail?.liveIdea && (
-            <button
-              type="button"
-              onClick={() => routeToIdea(
-                detail.liveIdea!.id,
-                `${subject.symbol ?? 'Asset'} — ${issueFor(subject)}`,
-              )}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
-            >
-              {detail.liveIdea.action
-                ? `Open the ${detail.liveIdea.action} idea`
-                : 'Open the idea'}
-              <ArrowUpRight className="h-3 w-3 opacity-70" />
-            </button>
+          {/*
+            Extracted to `ThesisVerdictBar`, not re-styled.
+
+            The asset workspace needed the same verb -- a reader who arrives
+            at a name from a finding reads the case there and could not say
+            what they concluded. Copying this block would put the wording,
+            the colours, the standing-answer rule and the correction path in
+            two files. All of the reasoning that used to live here moved with
+            it, verbatim.
+          */}
+          {subject.thesisUpdatedAt && (
+            <ThesisVerdictBar assetId={subject.assetId} />
           )}
-          {teamable && (
-            <>
-              <span className="text-[11px] text-gray-300 dark:text-gray-700">·</span>
+
+          {/*
+            Tools, right-aligned as a set.
+
+            Ask AI, Create and Discuss are not steps in the review -- they
+            are what you reach for alongside it -- and interleaving them
+            with the verdict made one undifferentiated run of nine controls.
+            `ml-auto` on the first one pushes the whole group right; where
+            the verdict is absent (a name with no thesis) it still does.
+          */}
+          <span className="flex min-w-0 flex-1 items-center justify-end gap-1">
+            {detail?.liveIdea && (
+              <button
+                type="button"
+                onClick={() => openIdeaDetail(detail.liveIdea!.id)}
+                className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+              >
+                {detail.liveIdea.action
+                  ? `Open the ${detail.liveIdea.action} idea`
+                  : 'Open the idea'}
+                <ArrowUpRight className="h-3 w-3 opacity-70" />
+              </button>
+            )}
+            {target && (
+              <button
+                type="button"
+                onClick={() => askAI(target)}
+                className="rounded-md px-3 py-2 text-[13px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              >
+                Ask AI
+              </button>
+            )}
+            {/*
+              Create, in the same row as the other ways forward.
+
+              The workbench and the card now offer the same control in the
+              same language; what differs is only what the object supports
+              and what the reader reached for. A live idea on the name
+              unlocks the recommendation form, which is why the menu is told
+              about it.
+            */}
+            <CreateMenu
+              intent={intent}
+              context={{
+                assetId: subject.assetId,
+                symbol: subject.symbol,
+                hasLiveIdea: !!detail?.liveIdea,
+              }}
+            />
+            {/*
+              "Team" named an audience, not an action, so it was the one
+              control here nobody could predict the result of. It opens a
+              thread on this object -- `discuss` is what the function has
+              always been called -- so the button says that.
+            */}
+            {teamable && (
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
-                Team
+                <MessageSquare className="h-3.5 w-3.5 opacity-70" />
+                Discuss
               </button>
-            </>
-          )}
-          <button type="button" aria-label="More actions"
-                  className="ml-auto grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]">
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+            )}
+            {/*
+              There is no overflow control here, deliberately.
+
+              A `MoreHorizontal` button sat in this slot from the day the bar
+              was drawn and had no `onClick`, no menu state and no popover --
+              it hovered, it focused, it was announced to assistive tech as
+              "More actions", and clicking it did nothing. Reported as a bug;
+              it was never wired, so there was no regression to fix.
+
+              It is removed rather than filled because nothing was waiting to
+              go in it. Every action this header offers already has its own
+              labelled control beside it -- the idea, Ask AI, Create, Discuss
+              -- and "Open full asset" is a deep link at the foot of the page.
+              An overflow menu is for actions that exist and do not fit, and
+              there were none of either.
+
+              If one is wanted later, the candidate is deferring this name
+              from the deck, which `src/lib/attention-state` already supports
+              and this surface does not expose. That is a capability with a
+              write path and per-user state, not a slot to be backfilled, so
+              it arrives with its own tests or not at all.
+            */}
+          </span>
         </div>
       </div>
 
@@ -351,7 +438,17 @@ export function ResearchDetail({
         in since we wrote it. Stacking put the new facts above the belief they
         contradict and pushed the belief off the first screen.
       */}
-      <div className="px-6 pb-10 pt-5">
+      {/*
+        One rhythm down the page.
+
+        Measured, the bands were 20px / 24px / 24px apart with a 125px
+        figure strip between two of them, so the page read as four things
+        of equal importance crowded together rather than as a header, a
+        summary and the body. The body now starts a clear step below the
+        band, and the two columns are spaced further apart than the sections
+        WITHIN a column -- which is what makes them read as two columns.
+      */}
+      <div className="px-6 pb-12 pt-7">
         {/*
           What has changed since the thesis was written.
 
@@ -370,6 +467,7 @@ export function ResearchDetail({
             window={window}
             arrivals={newEvidence.length}
             weightPct={detail?.weightPct ?? subject.weightPct ?? null}
+            portfolioName={detail?.portfolioName ?? null}
           />
         )}
 
@@ -382,6 +480,11 @@ export function ResearchDetail({
           order beside it.
         */}
         <DesktopColumns
+          /* 1.25fr rather than the primitive's 1.62fr: at 1920 that was 933px
+             of column for a claim set that reads at about 400, and the chart
+             -- the one thing here that genuinely wants width -- was squeezed
+             into the remainder. */
+          className="gap-x-12 gap-y-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(380px,1fr)]"
           lead={<>
             {leadPanel === 'price' && (
               <DesktopSection id="price" title={caseDate.priceSince} lead>
@@ -413,35 +516,54 @@ export function ResearchDetail({
             </button>
           }
         >
+          {/*
+            The case reads as a document now, not as a stack of fragments.
+
+            It was: 9px caps label, 13px claim, 12px detail, 10px byline --
+            four type sizes per section, repeated three times, 14px apart,
+            with the byline directly under the prose so each section ended
+            in grey metadata and the next began immediately. Nothing told
+            the eye where one claim stopped.
+
+            A section is a label with its attribution ON THE SAME LINE, then
+            the claim, with a hairline down the left binding the two. The
+            attribution moves out of the reading path -- who wrote it is a
+            qualifier, not the last word of the argument.
+          */}
           {sections.length > 0 ? (
-            <div className="flex flex-col gap-3.5">
+            <div className="flex flex-col gap-5">
               {sections.map(sec => (
-                <div key={sec.section}>
-                  <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500">
-                    {SECTION_LABEL[sec.section] ?? sec.section}
+                <div
+                  key={sec.section}
+                  className="border-l-2 border-gray-200 pl-3.5 dark:border-white/10"
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-gray-600 dark:text-gray-400">
+                      {SECTION_LABEL[sec.section] ?? sec.section}
+                    </span>
                     {!(CORE_SECTIONS as readonly string[]).includes(sec.section) && (
-                      <span className="ml-1.5 font-medium normal-case tracking-normal text-gray-400">
+                      <span className="rounded bg-gray-100 px-1.5 py-px text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:bg-white/[0.07] dark:text-gray-400">
                         supporting
                       </span>
                     )}
+                    <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
+                      {sec.authorName ? `${sec.authorName} · ` : ''}
+                      {new Date(sec.updatedAt).toLocaleDateString()}
+                    </span>
                   </div>
-                  <p className="mt-1 max-w-[84ch] whitespace-pre-line text-[13px] leading-relaxed text-gray-800 dark:text-gray-200">
-                    {sec.content || <span className="italic text-gray-500">Empty.</span>}
+                  <p className="mt-1.5 max-w-[80ch] whitespace-pre-line text-[15px] leading-[1.65] text-gray-800 dark:text-gray-200">
+                    {sec.content || <span className="italic text-gray-400">Empty.</span>}
                   </p>
                   {sec.supportingDetail && (
-                    <p className="mt-1 max-w-[84ch] text-[12px] leading-relaxed text-gray-600 dark:text-gray-400">
+                    <p className="mt-2 max-w-[80ch] text-[13px] leading-relaxed text-gray-600 dark:text-gray-400">
                       {sec.supportingDetail}
                     </p>
                   )}
-                  <div className="mt-1 text-[10px] text-gray-500">
-                    {sec.authorName ? `${sec.authorName} · ` : ''}
-                    {new Date(sec.updatedAt).toLocaleDateString()}
-                  </div>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-[12px] text-gray-600 dark:text-gray-400">
+            <p className="text-[13px] text-gray-600 dark:text-gray-400">
               No thesis on file for {subject.symbol ?? 'this name'} yet.
               {subject.evidenceCount > 0 && ` ${subject.evidenceCount} research item${subject.evidenceCount === 1 ? '' : 's'} exist${subject.evidenceCount === 1 ? 's' : ''} against it.`}
             </p>
@@ -456,7 +578,7 @@ export function ResearchDetail({
               panel that outranks the case. Implementation debt should not be
               the loudest thing in an investment workspace. */}
           {state === 'stale' && (
-            <p className="mt-3 text-[10px] text-gray-500">
+            <p className="mt-3 text-[11px] text-gray-500">
               Saving a section is what moves the thesis date; there is no
               separate &ldquo;reviewed, no change&rdquo; record.
             </p>
@@ -468,6 +590,32 @@ export function ResearchDetail({
             </p>
           )}
         </DesktopSection>
+
+            {/*
+              What backs the case belongs UNDER the case, not beside the
+              chart.
+
+              Measured at 1920: the lead column was 933px wide and 456px
+              tall holding one 244px section -- 212px of dead height and
+              about 530px of dead width -- while the context column ran the
+              full 456px with three stacked blocks. The split was not the
+              problem; the division of material was. The lead column is the
+              ARGUMENT (what we say, and what is on record for it) and the
+              context column is the MARKET (what the price did, and what
+              arrived since). That fills both and reads in the order a
+              reader actually asks.
+            */}
+            {priorEvidence.length > 0 && (
+              <DesktopSection
+                id="evidence"
+                title="Evidence on record"
+                meta={`${priorEvidence.length}`}
+              >
+                <div className="flex flex-col gap-2.5">
+                  {priorEvidence.slice(0, 8).map(e => <EvidenceRow key={e.id} item={e} />)}
+                </div>
+              </DesktopSection>
+            )}
           </>}
 
           context={<>
@@ -483,42 +631,38 @@ export function ResearchDetail({
                 <div className="flex flex-col gap-2">
                   {newEvidence.map(e => <EvidenceRow key={e.id} item={e} isNew />)}
                 </div>
-                <p className="mt-2.5 text-[10px] text-gray-500">
+                <p className="mt-2.5 text-[11px] text-gray-500">
                   Dated after {caseDate.sinceThe.replace(/^since /, '')}. Whether each supports or
                   challenges it is not recorded — that is the review.
                 </p>
               </DesktopModule>
             )}
 
+            {/*
+              No "Price" title over it: the chart's own caption already says
+              "Price since the last update", which is the same word plus the
+              thing a bare "Price" leaves out -- which price, measured from
+              when. Two headings for one chart is the module announcing what
+              the chart is about to announce.
+            */}
             {window && leadPanel !== 'price' && (
-              <DesktopModule title="Price">
-                <PriceSinceReview w={window} since={thesisDate} />
+              <DesktopModule>
+                {/* Taller here than the 166 a tile gets: this column is ~590px
+                    wide, and a 3.5:1 plot reads as a strip rather than a
+                    chart. It also closes most of the ragged height left when
+                    the argument column is the longer of the two. */}
+                <PriceSinceReview w={window} since={thesisDate} height={204} />
               </DesktopModule>
             )}
 
-            {/* A list of titles and dates. It never needed chrome. */}
-            {priorEvidence.length > 0 && (
-              <DesktopSection
-                id="evidence"
-                title="Evidence on record"
-                meta={`${priorEvidence.length}`}
-              >
-                <div className="flex flex-col gap-2">
-                  {priorEvidence.slice(0, 8).map(e => <EvidenceRow key={e.id} item={e} />)}
-                </div>
-              </DesktopSection>
-            )}
+            {/*
+              "Held in" is gone, not moved.
 
-            {/* Team is an action, and it already sits in the header. A module
-                explaining how threads work is not investment context. */}
-            {detail?.portfolioName && leadPanel !== 'book' && (
-              <DesktopSection title="Held in">
-                <p className="text-[12px] text-gray-700 dark:text-gray-300">
-                  {detail.portfolioName}
-                  {detail.weightPct != null && ` · ${detail.weightPct.toFixed(1)}% of the book`}
-                </p>
-              </DesktopSection>
-            )}
+              It read "Global Equity · 14.2% of the book" -- the same weight
+              the figure band states four inches above it, plus a portfolio
+              name. The band's own `held` figure now carries the name, so the
+              fact is stated once, where the reader already is.
+            */}
           </>}
         />
 
@@ -527,7 +671,7 @@ export function ResearchDetail({
           {detail?.liveIdea && (
             <DeepLink
               label="Open idea"
-              onClick={() => routeToIdea(detail.liveIdea!.id, why)}
+              onClick={() => openIdeaDetail(detail.liveIdea!.id)}
             />
           )}
         </DeepLinks>
@@ -538,31 +682,46 @@ export function ResearchDetail({
 
 /* ------------------------------------------------------------------ pieces */
 
+/**
+ * One note on the record.
+ *
+ * ── Why the prior items lost their boxes ──────────────────────────────────
+ *
+ * Eight bordered rectangles in a 300px column is a stack of cards, each
+ * claiming to be an object worth opening, for what is a title, a date and
+ * two lines of preview. The box now marks the ONE distinction that matters
+ * here -- arrived after the case was written, or before it -- so a new item
+ * reads as arriving from outside and the rest read as a list.
+ *
+ * The author moves onto the title's baseline for the same reason it did in
+ * the case: a byline on its own line makes every row three lines tall and
+ * ends each one in grey.
+ */
 function EvidenceRow({ item, isNew }: { item: { title: string | null; content: string | null; createdAt: string; authorName: string | null }; isNew?: boolean }) {
+  const preview = stripHtml(item.content ?? '')
   return (
     <div className={clsx(
-      'rounded-lg border px-3 py-2',
       isNew
-        ? 'border-amber-200 bg-amber-50/50 dark:border-amber-900/40 dark:bg-amber-950/20'
-        : 'border-gray-200 dark:border-white/10',
+        ? 'rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 dark:border-amber-900/40 dark:bg-amber-950/20'
+        : 'border-b border-gray-100 pb-2.5 last:border-0 last:pb-0 dark:border-white/[0.06]',
     )}>
       <div className="flex items-baseline gap-2">
-        <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-gray-900 dark:text-gray-100">
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-900 dark:text-gray-100">
           {item.title || 'Untitled note'}
         </span>
-        <span className="font-mono text-[10px] text-gray-500">
+        <span className="shrink-0 font-mono text-[11px] tabular-nums text-gray-400 dark:text-gray-500">
           {new Date(item.createdAt).toLocaleDateString()}
         </span>
       </div>
       {/* Notes are stored as rich text; the shared stripper is what every
           other preview in the app uses, so this reads the same everywhere. */}
-      {stripHtml(item.content ?? '') && (
-        <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-gray-600 dark:text-gray-400">
-          {stripHtml(item.content ?? '')}
+      {preview && (
+        <p className="mt-1 line-clamp-2 text-[11px] leading-[1.5] text-gray-600 dark:text-gray-400">
+          {preview}
         </p>
       )}
       {item.authorName && (
-        <div className="mt-1 text-[10px] text-gray-500">{item.authorName}</div>
+        <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">{item.authorName}</div>
       )}
     </div>
   )
@@ -580,7 +739,7 @@ function EvidenceRow({ item, isNew }: { item: { title: string | null; content: s
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 function SinceReview({
-  age, caseDate, days, window: w, arrivals, weightPct,
+  age, caseDate, days, window: w, arrivals, weightPct, portfolioName,
 }: {
   /** Words for the subject's age. */
   age: ResearchDateWords
@@ -590,14 +749,16 @@ function SinceReview({
   window: { changePct: number; reachesAnchor: boolean } | null
   arrivals: number
   weightPct: number | null
+  /** Named beside the weight, so "Held in" needs no section of its own. */
+  portfolioName: string | null
 }) {
   const move = w?.reachesAnchor ? w.changePct : null
   return (
     <section
       data-testid="since-review"
-      className="mb-6 border-b border-gray-200 pb-5 dark:border-white/10"
+      className="mb-8 border-b border-gray-200 pb-6 dark:border-white/10"
     >
-      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
         {capitalize(caseDate.sinceThe)}
       </h3>
       <div className="mt-3 flex flex-wrap items-baseline gap-x-10 gap-y-4">
@@ -614,11 +775,14 @@ function SinceReview({
           tone={arrivals > 0 ? 'review' : undefined}
         />
         {weightPct != null && (
-          <Fact value={`${weightPct.toFixed(1)}%`} label="held" />
+          <Fact
+            value={`${weightPct.toFixed(1)}%`}
+            label={portfolioName ? `held in ${portfolioName}` : 'held'}
+          />
         )}
       </div>
       {arrivals === 0 && (
-        <p className="mt-3 text-[12px] text-gray-500">
+        <p className="mt-3 text-[13px] text-gray-500">
           No new research {caseDate.sinceThe}. The thesis is simply due a look.
         </p>
       )}
@@ -633,12 +797,12 @@ function Fact({
     <div>
       <div className={clsx(
         'font-semibold leading-none tabular-nums tracking-tight',
-        lead ? 'text-[26px]' : 'text-[18px]',
+        lead ? 'text-[30px]' : 'text-[20px]',
         tone === 'review' ? 'text-amber-700 dark:text-amber-400' : 'text-gray-900 dark:text-gray-100',
       )}>
         {value}
       </div>
-      <div className="mt-1.5 text-[10px] uppercase tracking-wider text-gray-500">{label}</div>
+      <div className="mt-1.5 text-[11px] uppercase tracking-wider text-gray-500">{label}</div>
     </div>
   )
 }

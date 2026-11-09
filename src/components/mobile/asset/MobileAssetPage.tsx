@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Briefcase, FileText, Layers, ListChecks, TrendingUp } from 'lucide-react'
+import { MobileInvestmentSnapshot } from './MobileInvestmentSnapshot'
+import { MobileDecisionMemory } from './MobileDecisionMemory'
 import { MobileCaseView } from './MobileCaseView'
 import { TickerQuoteBadge } from '../TickerQuoteBadge'
 import { ExpandableText } from '../ExpandableText'
+import { pipelineTabFor } from '../../../lib/desktop-ideas'
 import { useAssetTradeIdeas } from '../../../hooks/useAssetTradeIdeas'
 import { useAssetRecentDecisions, getDecisionLabel } from '../../../hooks/useAssetRecentDecisions'
 import { useAssetHeaderContext } from '../../../hooks/useAssetHeaderContext'
@@ -19,13 +22,35 @@ interface MobileAssetPageProps {
    * the target editor" with no new router state and no duplicated navigation
    * plumbing. See `lib/signals/feed-actions.ts`.
    */
-  asset: { id: string; symbol: string; company_name?: string | null; focus?: 'cases' | 'target' | 'thesis' }
+  asset: {
+    id: string
+    symbol: string
+    company_name?: string | null
+    focus?: 'cases' | 'target' | 'thesis'
+    /**
+     * Stamped per `openAsset` call, so a SECOND request to an already-open
+     * asset is distinguishable from the one this page already acted on.
+     * See `lib/desktop-asset/navigate.ts`.
+     */
+    focusRequestId?: string | null
+    /** Seeds the book scope when the reader arrives from a portfolio surface. */
+    portfolioId?: string | null
+  }
   onNavigate?: (result: any) => void
 }
 
-type SubPage = 'case' | 'decisions' | 'lists'
+type SubPage = 'snapshot' | 'case' | 'decisions' | 'lists'
 
+/*
+ * Four tabs now, and Snapshot leads.
+ *
+ * The phone landed on Case, which answers "what do we think" before "what do
+ * we own" — and a reader opening a name on their phone usually wants the
+ * second question first. Snapshot answers all four domains at a glance and
+ * taps through to the others, matching the desktop landing decision from 2A.
+ */
 const SUB_PAGES: { key: SubPage; label: string; icon: typeof FileText }[] = [
+  { key: 'snapshot', label: 'Snapshot', icon: Briefcase },
   { key: 'case', label: 'Case', icon: FileText },
   { key: 'decisions', label: 'Decisions', icon: TrendingUp },
   { key: 'lists', label: 'Lists', icon: Layers },
@@ -41,16 +66,65 @@ const SUB_PAGES: { key: SubPage; label: string; icon: typeof FileText }[] = [
  * was tried on the dashboard and did not converge; this reuses the same hooks
  * and rebuilds only the surface.
  *
- * Three tabs, because they answer the three questions worth asking on a phone:
- * what do we think (Case), what are we doing about it (Decisions), and where
- * does it sit (Lists). Process/workflow stays on desktop — stage management is
- * a wide control and a poor fit for a thumb.
+ * Four tabs, because they answer the four questions worth asking on a phone:
+ * where does this stand (Snapshot), what do we think (Case), what are we doing
+ * about it (Decisions), and where does it sit (Lists). Process/workflow stays
+ * on desktop — stage management is a wide control and a poor fit for a thumb.
  */
 export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
-  // Every focus lands on the case sub-page: cases, targets and thesis fields
-  // all live there. It is still state rather than derived, so the reader can
-  // move away and the deep link does not drag them back.
-  const [subPage, setSubPage] = useState<SubPage>('case')
+  /*
+   * A focus still lands on Case — cases, targets and thesis fields all live
+   * there, so a feed card saying "edit the target" must not land on Snapshot.
+   * Without a focus the landing tab is Snapshot.
+   *
+   * It is state rather than derived, so the reader can move away and the deep
+   * link does not drag them back.
+   */
+  const [subPage, setSubPage] = useState<SubPage>(asset.focus ? 'case' : 'snapshot')
+
+  /*
+   * Book scope, owned here so Snapshot and Decision Memory share it. Seeded
+   * from the arriving portfolio, so a tap from a portfolio lens lands already
+   * scoped to that book rather than organization-wide.
+   */
+  const [bookId, setBookId] = useState<string | null>(asset.portfolioId ?? null)
+
+  /*
+   * ── A SECOND arrival at an already-open asset ────────────────────────────
+   *
+   * Both values above are seeded once, at mount. That was enough while the
+   * shell rendered this page unkeyed, because nothing ever remounted it — and
+   * that was the bug: one instance was reused when the reader moved to a
+   * DIFFERENT asset, carrying the previous asset's tab and, worse, its
+   * `bookId` into panels that scope a position by it.
+   *
+   * Keying by tab fixed the contamination and gave each asset its own mount.
+   * It also means a new navigation to an asset that is ALREADY open no longer
+   * remounts anything, so a feed card saying "edit the target" on the name
+   * already on screen would land nowhere. This effect is that case, and only
+   * that case.
+   *
+   * A ref is the right store here, where it would be wrong on desktop. The
+   * desktop page is unmounted whenever the reader visits another tab, so its
+   * consumed-arrival record has to outlive the component and lives in tab
+   * state. This page keeps nothing across an unmount by design — it has no
+   * persistence at all — so the only window in which a repeat request must be
+   * told from a replay is the one the instance is alive for, which is exactly
+   * a ref's lifetime.
+   */
+  const appliedFocusRequest = useRef<string | null>(asset.focusRequestId ?? null)
+  useEffect(() => {
+    const requestId = asset.focusRequestId ?? null
+    if (!requestId || requestId === appliedFocusRequest.current) return
+    appliedFocusRequest.current = requestId
+    /* Only a focused request moves the tab; a plain re-open leaves the reader
+       wherever they were. */
+    if (asset.focus) setSubPage('case')
+    /* The book is re-seeded even when absent, because the descriptor writes
+       it explicitly either way — inheriting the previous sender's book would
+       scope this asset to a portfolio the new request did not ask for. */
+    setBookId(asset.portfolioId ?? null)
+  }, [asset.focusRequestId, asset.focus, asset.portfolioId])
 
   return (
     <div className="h-full flex flex-col bg-gray-50 dark:bg-gray-950">
@@ -83,6 +157,7 @@ export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
               type="button"
               onClick={() => setSubPage(p.key)}
               aria-current={active}
+              data-testid={`mobile-asset-tab-${p.key}`}
               className={clsx(
                 'flex-1 flex items-center justify-center gap-1.5 h-9 rounded-lg text-sm font-medium transition-colors no-touch-target',
                 active
@@ -97,12 +172,41 @@ export function MobileAssetPage({ asset, onNavigate }: MobileAssetPageProps) {
         })}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-3 pb-safe space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-2 pb-safe space-y-2">
+        {subPage === 'snapshot' && (
+          <MobileInvestmentSnapshot
+            assetId={asset.id}
+            symbol={asset.symbol}
+            portfolioId={bookId}
+            onSelectBook={setBookId}
+            onOpenSubPage={setSubPage}
+            onNavigate={onNavigate}
+          />
+        )}
+
         {subPage === 'case' && (
           <MobileCaseView assetId={asset.id} symbol={asset.symbol} focus={asset.focus} />
         )}
 
-        {subPage === 'decisions' && <DecisionsPanel assetId={asset.id} onNavigate={onNavigate} />}
+        {subPage === 'decisions' && (
+          <>
+            {/*
+              * Decision Memory above the in-flight lists.
+              *
+              * "What did we decide, and did it actually happen" is the
+              * question this tab's name promises, and the lists below answer
+              * only "what is open". The timeline is the same component the
+              * desktop uses, scoped to the same book.
+              */}
+            <MobileDecisionMemory
+              assetId={asset.id}
+              portfolioId={bookId}
+              symbol={asset.symbol}
+              onNavigate={onNavigate}
+            />
+            <DecisionsPanel assetId={asset.id} onNavigate={onNavigate} />
+          </>
+        )}
 
         {subPage === 'lists' && <ListsPanel assetId={asset.id} onNavigate={onNavigate} />}
       </div>
@@ -214,9 +318,13 @@ function InFlightList({
         <button
           key={idea.id}
           type="button"
-          onClick={() =>
-            onNavigate?.({ id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue', data: null })
-          }
+          /* The row is a specific idea, but the descriptor was hand-rolled with
+             `data: null`, so every card in the list opened the same bare
+             Pipeline and discarded the `idea.id` it was sitting on. */
+          onClick={() => {
+            const tab = pipelineTabFor(idea.id)
+            if (tab) onNavigate?.(tab)
+          }}
           className="w-full text-left rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 active:bg-gray-50 dark:active:bg-gray-800"
         >
           <div className="flex items-center gap-2 mb-1.5">
@@ -277,10 +385,20 @@ function InFlightList({
           {idea.rationale && <ExpandableText text={idea.rationale} lines={3} />}
 
           <p className="mt-1.5 text-[11px] text-gray-400 truncate">
+            {/*
+              Each part is conditional, and the date one especially.
+
+              This read `{` · ${formatAsOf(idea.updated_at)}`}` — appended
+              unconditionally. `formatAsOf` is typed as taking a string and
+              returns its argument back when the date will not parse, so an
+              idea with no `updated_at` rendered the literal text
+              "No portfolio · undefined" to the reader. The type said it could
+              not happen; the data disagreed.
+            */}
             {idea.portfolio?.name ?? 'No portfolio'}
             {idea.creator &&
               ` · ${[idea.creator.first_name, idea.creator.last_name].filter(Boolean).join(' ')}`}
-            {` · ${formatAsOf(idea.updated_at)}`}
+            {idea.updated_at && ` · ${formatAsOf(idea.updated_at)}`}
           </p>
         </button>
       ))}
@@ -413,9 +531,19 @@ function ListsPanel({
 }
 
 /** Snapshot dates are calendar days; time of day would be noise. */
-function formatAsOf(date: string): string {
+/**
+ * A short date, or an empty string.
+ *
+ * The parameter was `date: string` and the fallback was `return date`, so an
+ * `undefined` that the type said was impossible came straight back out and was
+ * interpolated into the page as the word "undefined". The signature now admits
+ * what callers actually pass, and an unparseable value yields nothing rather
+ * than echoing itself — a date that cannot be read is not a date to show.
+ */
+function formatAsOf(date: string | null | undefined): string {
+  if (!date) return ''
   const parsed = new Date(date)
-  if (Number.isNaN(parsed.getTime())) return date
+  if (Number.isNaN(parsed.getTime())) return ''
   return parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 }
 

@@ -13,6 +13,7 @@ import type { DecisionItem } from '../../engine/decisionEngine/types'
 import { ENGAGEMENT_EVENT } from '../../lib/engagement'
 import type { EngagementRequest } from '../../lib/engagement'
 import { adaptDecisionItem } from '../../lib/today'
+import { VISUAL_SLOT } from '../../lib/today'
 import { TodayTile } from './TodayTile'
 
 const decision = (over: Partial<DecisionItem> = {}): DecisionItem => ({
@@ -94,18 +95,27 @@ describe('TodayTile', () => {
     expect(requests[0].target.contextChips?.length).toBeGreaterThan(0)
   })
 
-  it('carries all three engagement slots on the same seam', () => {
-    // Discuss was withheld here so that scattering the affordance would not
-    // pre-empt the communication-pane review. That review question is now
-    // settled in the product -- the Ideas field carries Respond / Ask AI /
-    // Discuss -- so Today withholding it was the inconsistency rather than the
-    // caution, and a finding could only be raised with the team by opening it.
-    //
-    // Still one seam: `discuss()` raises an EngagementRequest and the existing
-    // CommunicationPane answers it. No second messaging system is introduced.
+  /*
+   * ── Rewritten: Today's tiles are about assets, and assets lost Discuss ──
+   *
+   * This asserted that Today carried Discuss alongside Ask AI, on the
+   * reasoning that withholding it was an inconsistency with the Ideas field.
+   * That reasoning was sound while an asset could hold a thread.
+   *
+   * It cannot now. `messages` SELECT is `organization_id = current_org_id()`
+   * and the table has no participant column, so a thread on an asset is
+   * readable by the whole organisation and cannot be scoped to a team. The
+   * consistency the case was defending is preserved -- every surface lost it
+   * at once, because they all gate on `canDiscuss` -- but it is consistency
+   * about its ABSENCE on shared records now.
+   *
+   * Ask AI is untouched and is asserted here precisely so that this cannot
+   * pass by the whole control row having gone away.
+   */
+  it('carries Ask AI, and no Discuss on an object that cannot scope a thread', () => {
     renderTile()
     expect(screen.getByRole('button', { name: /Ask AI/ })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^Discuss$/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Discuss$/ })).not.toBeInTheDocument()
   })
 
   it('opens the object from the card body, and calls that overview', () => {
@@ -162,51 +172,42 @@ describe('TodayTile', () => {
     expect(screen.getByText(/No structured action yet/)).toBeInTheDocument()
   })
 
-  it('keeps personal and shared dispositions visibly apart', () => {
+  /*
+   * ── The menu lost its two section headers, and these cases with them ───
+   *
+   * The headers said "Personal — only affects your view" and "Shared —
+   * changes the workflow for everyone", and under the second one sat a
+   * forty-word paragraph explaining why there were no shared actions. The
+   * cases below pinned all of it.
+   *
+   * What they were protecting is still protected, and it is worth saying
+   * exactly what: a control that LOOKS like a shared mutation and performs
+   * none is worse than no control, because the reader believes their team's
+   * revisit date moved. No such control is rendered -- there is no Defer,
+   * and the surviving items say "for me". What is gone is the essay about
+   * the absence, which no reader opening a three-item menu needed to read.
+   */
+  it('dismisses for the reader, and says so in the words on the item', () => {
     const h = renderTile()
     fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
-
-    expect(screen.getByText(/Personal — only affects your view/)).toBeInTheDocument()
-    expect(screen.getByText(/Shared — changes the workflow for everyone/)).toBeInTheDocument()
-
-    // An asset has no shared revisit date, so no shared Defer is offered.
-    expect(screen.queryByText('Defer the item')).not.toBeInTheDocument()
-    expect(screen.getByText(/no shared revisit date to move/)).toBeInTheDocument()
-
-    fireEvent.click(screen.getByText('Dismiss for me'))
+    fireEvent.click(screen.getByText('Hide this for me'))
     expect(h.onDismiss).toHaveBeenCalledTimes(1)
   })
 
-  it('never renders a clickable shared action Today cannot perform', () => {
-    // A control that looks like a shared mutation and performs none is worse
-    // than no control: the user believes their team's revisit date moved.
+  it('never renders a shared action Today cannot perform', () => {
     renderTile(decision({
       titleKey: 'PROPOSAL_AWAITING_DECISION',
       context: { assetId: 'a-amzn', assetTicker: 'AMZN', tradeIdeaId: 'tq-1' },
     }))
     fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
-
     expect(screen.queryByRole('button', { name: /Defer/ })).not.toBeInTheDocument()
-    expect(screen.getByText(/Today cannot move it yet/)).toBeInTheDocument()
-    expect(screen.getByText(/defer it from the trade queue/)).toBeInTheDocument()
-  })
-
-  it('does not offer Snooze as a substitute for the shared action', () => {
-    renderTile(decision({
-      titleKey: 'PROPOSAL_AWAITING_DECISION',
-      context: { assetId: 'a-amzn', assetTicker: 'AMZN', tradeIdeaId: 'tq-1' },
-    }))
-    fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
-    // Snooze stays where it belongs -- under Personal, and never renamed.
-    expect(screen.getByText('Snooze 1 day')).toBeInTheDocument()
-    expect(screen.queryByText(/Defer the item/)).not.toBeInTheDocument()
   })
 
   it('snoozes for the chosen duration, and never calls it Defer', () => {
     const h = renderTile()
     fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
-    fireEvent.click(screen.getByText('Snooze 3 days'))
-    expect(h.onSnooze).toHaveBeenCalledWith(expect.anything(), 72)
+    fireEvent.click(screen.getByText('Remind me in 1 week'))
+    expect(h.onSnooze).toHaveBeenCalledWith(expect.anything(), 168)
   })
 
   it('renders the archetype the problem calls for', () => {
@@ -299,5 +300,220 @@ describe('TodayTile', () => {
     // more than the exact size, which differs featured vs supporting.
     expect(id.className).toMatch(/font-black/)
     expect(id.className).toMatch(/tracking-\[-0\.035em\]/)
+  })
+})
+
+/*
+ * Two things the reader notices before they notice any content: four buttons
+ * repeated on every tile, and the surface re-arranging itself seven seconds
+ * after it painted.
+ */
+describe('the action row costs nothing until it is approached', () => {
+  it('hides every verb at rest, the primary included', () => {
+    // Fading only the secondaries left "Review thesis" and "Simulate idea"
+    // as the loudest marks on the surface. At rest the tile shows its
+    // finding; the actions arrive when the reader does.
+    const { container } = renderTile()
+    const row = container.querySelector('[data-testid="today-actions"]')!
+    expect(row.className).toMatch(/opacity-0/)
+    expect(row.className).toMatch(/group-hover:opacity-100/)
+    /*
+     * Tabbing in must reveal them too, or the keyboard path has no actions --
+     * but CLICKING one must not pin them.
+     *
+     * `:focus-within` matches mouse-click focus, and a clicked button keeps
+     * focus until something else takes it, so clicking a pager tab or Ask AI
+     * left that tile's row showing with the pointer on the other side of the
+     * page. `:focus-visible` is the reader this was for.
+     */
+    expect(row.className).toMatch(/group-has-\[:focus-visible\]:opacity-100/)
+    expect(row.className).not.toMatch(/group-focus-within:opacity-100/)
+    expect(row.contains(screen.getByRole('button', { name: /Review thesis/ }))).toBe(true)
+  })
+
+  it('takes the row out of flow, so hovering moves nothing', () => {
+    // It used to reserve 60px whether or not anything in it was visible, so
+    // the space was spent either way. Out of flow, the tile is the same
+    // height hovered and not.
+    const { container } = renderTile()
+    const row = container.querySelector('[data-testid="today-actions"]')!
+    expect(row.className).toMatch(/absolute/)
+  })
+
+  it('sits on the eyebrow, never on the tile\'s bottom edge', () => {
+    /*
+     * Pinned to the bottom it kept landing on the one control it shared the
+     * card with: full width it covered the chart, and stopped at 48% it still
+     * covered "See the full chart" on any tile whose body stacks rather than
+     * splits -- the link sat under the scrim and could not be clicked.
+     *
+     * The position was the defect, not its width, so the assertion is about
+     * position: top, never bottom.
+     */
+    const { container } = renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
+    }), { featured: true })
+    const row = container.querySelector('[data-testid="today-actions"]')!
+    expect(row.className).toMatch(/(^|\s)top-0(\s|$)/)
+    expect(row.className).not.toMatch(/bottom-0/)
+  })
+
+  it('leaves the visual portal clickable while the row is up', () => {
+    // The portal is the control that was being buried. It must not share an
+    // ancestor with the action row, or it is under the scrim again.
+    const { container } = renderTile(decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
+    }), { featured: true })
+    const row = container.querySelector('[data-testid="today-actions"]')!
+    const portal = container.querySelector('[data-testid="visual-portal"]')!
+    expect(portal).not.toBeNull()
+    expect(row.contains(portal)).toBe(false)
+  })
+
+  it('anchors the reveal on the tile, not on the row', () => {
+    // `group-hover:` resolves against the nearest ancestor marked `group`.
+    // Without it on the article the row never un-hides -- the whole
+    // mechanism is dead and every other assertion here still passes.
+    const { container } = renderTile()
+    expect(container.querySelector('article')?.className).toMatch(/(^|\s)group(\s|$)/)
+  })
+
+  it('does not clip the overflow menu to the card', () => {
+    // A 288px panel opened from inside an `overflow-hidden` box was cut off:
+    // the snooze presets were unreachable on every tile.
+    const { container } = renderTile()
+    expect(container.querySelector('article')?.className).not.toMatch(/overflow-hidden/)
+  })
+
+  it('offers three plain choices, with no briefing to read first', () => {
+    /*
+     * It was two sections -- "Personal — only affects your view", four items
+     * each with its own explanatory hint, "Shared — changes the workflow for
+     * everyone", and a forty-word paragraph about why there are no shared
+     * actions. Six lines of prose to put something off until next week.
+     *
+     * Every sentence was true, which is how it got there, and none of it was
+     * a decision the reader was making. Whose view it leaves is carried by
+     * the words on the item instead.
+     */
+    renderTile()
+    fireEvent.click(screen.getByRole('button', { name: /More actions/ }))
+    const labels = screen.getAllByRole('button')
+      .map(b => (b.textContent ?? '').trim())
+      .filter(t => /^(Hide this|Remind me)/.test(t))
+    expect(labels).toEqual(['Hide this for me', 'Remind me in 1 day', 'Remind me in 1 week'])
+
+    for (const gone of [/only affects your view/i, /changes the workflow for everyone/i, /no shared revisit date/i]) {
+      expect(screen.queryByText(gone)).not.toBeInTheDocument()
+    }
+  })
+
+  it('keeps the body clear of the overlay on a tile with no slack', () => {
+    // The row is out of flow, so this padding is the only thing between it
+    // and the last line of content.
+    const { container } = renderTile()
+    expect(container.querySelector('[data-body]')?.className).toMatch(/\bpb-3\b/)
+  })
+})
+
+describe('the analysis zone is one fixed slot', () => {
+  it('gives every archetype the same slot, so a swap costs nothing', () => {
+    // Measured: aging 107px, scenario 122px, review-window taller again --
+    // which is why replacing one with another moved every tile below it.
+    // `createdAt` is what the aging track is built from -- no enrichment.
+    const drawsNow = decision({
+      titleKey: 'PROPOSAL_AWAITING_DECISION',
+      chips: [{ label: 'Ticker', value: 'CLOV' }],
+      createdAt: new Date(Date.now() - 62 * 86_400_000).toISOString(),
+    })
+    const h = (c: HTMLElement) => (c.querySelector('[data-archetype]') as HTMLElement).style.height
+    expect(h(renderTile(drawsNow, { featured: true }).container)).toBe(`${VISUAL_SLOT.featured}px`)
+    expect(h(renderTile(drawsNow, { wide: true }).container)).toBe(`${VISUAL_SLOT.compact}px`)
+  })
+
+})
+
+/**
+ * Paging between the pictures a finding can draw.
+ *
+ * The data half of this is enrichment's (`visuals`); what the tile owes the
+ * reader is a way to reach the alternatives without leaving the card, and a
+ * promise that reaching for them does not move the page.
+ */
+describe('a tile pages between its pictures', () => {
+  /** A finding whose price path leads and whose framework is one tab away. */
+  const two = () => {
+    const item = adaptDecisionItem(decision())
+    const price = { archetype: 'review-window' as const, caption: 'Price since the thesis', window: '210d',
+      reviewWindow: { series: [100, 110, 130], changePct: 30, reachesAnchor: true, anchorLabel: 'thesis' } }
+    const cases = { archetype: 'scenario' as const, caption: 'Price against the framework', window: '3 cases',
+      scenario: { cases: [{ name: 'Bear', price: 90 }, { name: 'Bull', price: 180 }], spot: 130 } }
+    return { ...item, visual: price, visuals: [price, cases] }
+  }
+
+  it('draws one tab per picture, named for the question it answers', () => {
+    renderTile(decision(), { item: two() } as never)
+    const tabs = screen.getAllByTestId('visual-pager-tab')
+    expect(tabs.map(t => t.getAttribute('data-archetype'))).toEqual(['review-window', 'scenario'])
+    expect(tabs.map(t => (t.textContent ?? '').trim())).toEqual(['Price', 'Cases'])
+  })
+
+  it('swaps the picture, and the portal follows it', () => {
+    // Paging to the framework must not leave a portal still offering the
+    // chart -- the control under a picture has to open what is drawn.
+    const { container } = renderTile(decision(), { item: two() } as never)
+    expect(container.querySelector('[data-archetype]')?.getAttribute('data-archetype'))
+      .toBe('review-window')
+    expect(screen.getByTestId('visual-portal').textContent).toMatch(/full chart/i)
+
+    fireEvent.click(screen.getAllByTestId('visual-pager-tab')[1])
+
+    expect(container.querySelector('[data-archetype]')?.getAttribute('data-archetype'))
+      .toBe('scenario')
+    expect(screen.getByTestId('visual-portal').textContent).toMatch(/price cases/i)
+  })
+
+  it('costs no height: the slot is the same before and after a swap', () => {
+    // The whole reason the strip shares the portal's row.
+    const { container } = renderTile(decision(), { item: two(), featured: true } as never)
+    const h = () => (container.querySelector('[data-archetype]') as HTMLElement).style.height
+    const before = h()
+    fireEvent.click(screen.getAllByTestId('visual-pager-tab')[1])
+    expect(h()).toBe(before)
+    expect(before).toBe(`${VISUAL_SLOT.featured}px`)
+  })
+
+  it('draws no strip for a tile with one picture', () => {
+    // A single dead tab is worse than no tab: it implies something to page to.
+    renderTile()
+    expect(screen.queryByTestId('visual-pager')).not.toBeInTheDocument()
+  })
+
+  it('offers arrows, so the gesture is obvious without reading the segments', () => {
+    /*
+     * The first version was three words in the same 10px letter-spaced
+     * uppercase that every caption and axis label on this surface uses, and
+     * it was reported back as "no carousels still". It worked and nobody
+     * could see it. Arrows are what make a pager look like a pager.
+     */
+    renderTile(decision(), { item: two() } as never)
+    const arrows = screen.getAllByTestId('visual-pager-arrow')
+    expect(arrows.map(a => a.getAttribute('data-dir'))).toEqual(['-1', '1'])
+  })
+
+  it('wraps at both ends, so neither arrow is ever dead', () => {
+    const { container } = renderTile(decision(), { item: two() } as never)
+    const arch = () => container.querySelector('[data-archetype]')?.getAttribute('data-archetype')
+    const [prev, next] = screen.getAllByTestId('visual-pager-arrow')
+
+    expect(arch()).toBe('review-window')
+    fireEvent.click(prev)                 // backwards off the start
+    expect(arch()).toBe('scenario')
+    fireEvent.click(next)                 // forwards off the end
+    expect(arch()).toBe('review-window')
   })
 })

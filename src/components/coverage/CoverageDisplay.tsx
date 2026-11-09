@@ -2,7 +2,9 @@ import { Users, Star, Shield, UserCheck, User, FileText, AlertCircle } from 'luc
 import { clsx } from 'clsx'
 import { formatDistanceToNow } from 'date-fns'
 
-interface CoverageRecord {
+/* Exported so callers that merely PASS coverage through — the Investment
+   Snapshot does — can type it instead of reaching for `any`. */
+export interface CoverageRecord {
   id: string
   user_id?: string | null
   analyst_name: string
@@ -14,7 +16,7 @@ interface CoverageRecord {
   updated_at: string
 }
 
-interface ThesisStatus {
+export interface ThesisStatus {
   userId: string
   hasThesis: boolean
   lastUpdated?: string

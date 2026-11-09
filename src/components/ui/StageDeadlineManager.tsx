@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Calendar, Clock, AlertTriangle, Check, X, Edit3 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import {
+  STAGE_DEADLINE_ORG_SELECT, STAGE_DEADLINE_ORG_FILTER,
   STAGE_DEADLINE_CONFLICT_TARGET, NO_WORKFLOW_MESSAGE,
   buildStageDeadlineRow, stageDeadlineKey, workflowDeadlinesKey,
 } from '../../lib/deadlines/stage-deadlines'
@@ -48,6 +50,15 @@ export function StageDeadlineManager({
   const [deadlineDate, setDeadlineDate] = useState('')
   const [notes, setNotes] = useState('')
   const queryClient = useQueryClient()
+  /*
+   * A deadline's organization is the one that owns its WORKFLOW — the table
+   * has no org column, and the asset side is global reference data. The
+   * server's policies already enforce that boundary on all four commands, so
+   * the filter below is defense in depth; the org id in the QUERY KEY is not,
+   * because RLS cannot stop React Query serving the previous organization's
+   * deadline from cache after a switch. See lib/deadlines/stage-deadlines.ts.
+   */
+  const { currentOrgId } = useOrganization()
   const dropdownRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -72,10 +83,10 @@ export function StageDeadlineManager({
 
   // Query for existing deadline
   const { data: deadline, isLoading } = useQuery({
-    queryKey: stageDeadlineKey(assetId, workflowId, stageId),
+    queryKey: stageDeadlineKey(currentOrgId, assetId, workflowId, stageId),
     // No workflow means no row can be identified; skip the request rather than
     // fetching some other workflow's deadline for this stage.
-    enabled: !!workflowId,
+    enabled: !!currentOrgId && !!workflowId,
     queryFn: async () => {
       /*
        * These three filters cover the whole unique key
@@ -83,16 +94,23 @@ export function StageDeadlineManager({
        * previous query omitted workflow_id and could return a deadline set
        * under a different workflow.
        *
-       * No organization filter: the column does not exist, and the server's
-       * policies resolve tenancy through the workflow already.
+       * The organization is filtered through the EMBEDDED workflow, never a
+       * column of this table — it has none, and an earlier pass that added
+       * one failed every read with 42703. `!inner` is load-bearing: a left
+       * join would null the embedded object and still return the deadline.
+       *
+       * maybeSingle, not single: a stage with no deadline set is the normal
+       * case, and `.single()` made every such read an HTTP 406 that the guard
+       * below then swallowed.
        */
       const { data, error } = await supabase
         .from('asset_stage_deadlines')
-        .select('*')
+        .select(STAGE_DEADLINE_ORG_SELECT)
+        .eq(STAGE_DEADLINE_ORG_FILTER, currentOrgId)
         .eq('asset_id', assetId)
         .eq('workflow_id', workflowId)
         .eq('stage_id', stageId)
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
       return data as StageDeadline | null
@@ -104,6 +122,7 @@ export function StageDeadlineManager({
     mutationFn: async ({ date, notes: deadlineNotes }: { date: string; notes: string }) => {
       const { data: user } = await supabase.auth.getUser()
 
+      if (!currentOrgId) throw new Error('No active organization')
       if (!workflowId) throw new Error(NO_WORKFLOW_MESSAGE)
 
       const deadlineData = buildStageDeadlineRow({
@@ -127,11 +146,11 @@ export function StageDeadlineManager({
       return data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: stageDeadlineKey(assetId, workflowId, stageId) })
+      queryClient.invalidateQueries({ queryKey: stageDeadlineKey(currentOrgId, assetId, workflowId, stageId) })
       // The timeline reads its deadlines under this key. The previous
       // invalidation named 'asset-deadlines', which no query uses, so a saved
       // deadline did not appear until something else refetched.
-      queryClient.invalidateQueries({ queryKey: workflowDeadlinesKey(assetId, workflowId) })
+      queryClient.invalidateQueries({ queryKey: workflowDeadlinesKey(currentOrgId, assetId, workflowId) })
       setIsEditing(false)
       setDeadlineDate('')
       setNotes('')
@@ -160,8 +179,8 @@ export function StageDeadlineManager({
       if (error) throw error
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: stageDeadlineKey(assetId, workflowId, stageId) })
-      queryClient.invalidateQueries({ queryKey: workflowDeadlinesKey(assetId, workflowId) })
+      queryClient.invalidateQueries({ queryKey: stageDeadlineKey(currentOrgId, assetId, workflowId, stageId) })
+      queryClient.invalidateQueries({ queryKey: workflowDeadlinesKey(currentOrgId, assetId, workflowId) })
     },
     onError: (error) => {
       console.error('Error deleting deadline:', error)

@@ -98,11 +98,46 @@ describe('the type lens', () => {
   })
 
   /**
-   * No Signals lens until the machine-derived producers are reachable from
-   * desktop. A tab over a feed that cannot produce a signal is a dead label.
+   * ── The rail grew a second band, and the rule it was pinned to changed ──
+   *
+   * This asserted the exact four post lenses, under the heading "no Signals
+   * lens until the machine-derived producers are reachable from desktop".
+   * They are reachable now -- `useDesktopAttentionFeed` builds scenario,
+   * research and recommendation candidates, and the Dashboard turns the last
+   * two on -- so the condition the case was guarding has been met rather
+   * than abandoned.
+   *
+   * What the case was really protecting is the rule that a chip must have
+   * something behind it, and a frozen list is a weak way to say that: it
+   * fails on every addition, correct or not, and says nothing about whether
+   * the chip works. So it is rewritten as the rule itself -- every lens
+   * selects either post types or card types, and the two bands are exactly
+   * that split. A lens that selected neither would be a label over the whole
+   * feed, which is what "a dead label" meant.
+   *
+   * `all` is the deliberate exception and is named, not excused: it selects
+   * nothing because it means everything.
    */
-  it('does not offer a lens the feed cannot fill', () => {
-    expect(IDEA_LENSES.map(l => l.key)).toEqual(['all', 'trade_ideas', 'thoughts', 'prompts'])
+  it('gives every lens something to select, and sorts the rail by which', () => {
+    for (const l of IDEA_LENSES) {
+      if (l.key === 'all') {
+        expect(l.types, 'All is unfiltered by design').toBeNull()
+        expect(l.cardTypes).toBeNull()
+        continue
+      }
+      const selects = !!l.types || !!l.cardTypes || !!l.othersOnly
+      expect(selects, `${l.key} is a chip with nothing behind it`).toBe(true)
+      /* Never both. A chip that mixed post types and card types would be the
+         mixed-candidate-set problem the lens exists to prevent. */
+      expect(!!l.types && !!l.cardTypes, `${l.key} selects posts AND cards`).toBe(false)
+      /* The band follows what it selects: post types before the rule, cards
+         and the desk's own posts after it. */
+      expect(l.group, l.key).toBe(l.types ? 'post' : 'signal')
+    }
+    /* And the rail is ORDERED by band, so the divider is drawn once. */
+    const groups = IDEA_LENSES.map(l => l.group)
+    expect(groups.indexOf('post')).toBe(0)
+    expect(groups.lastIndexOf('post')).toBeLessThan(groups.indexOf('signal'))
   })
 
   it('falls back to All for an unknown key rather than throwing', () => {

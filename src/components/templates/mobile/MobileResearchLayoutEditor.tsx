@@ -107,6 +107,18 @@ function useLayoutCatalog() {
   const { sections, isLoading: sectionsLoading } = useResearchSections()
   const { fields, isLoading: fieldsLoading } = useResearchFields()
 
+  /*
+   * Section positions, so the phone derives the SAME default the desktop
+   * does. `useResearchFields` sorts by name and the desktop catalogue sorts by
+   * the field's own display_order, and the index was the default's order — so
+   * the two surfaces agreed on which fields the default holds and disagreed on
+   * what order they come in. Passing order makes the agreement real.
+   */
+  const sectionOrderById = useMemo(
+    () => new Map(sections.map((s) => [s.id, s.display_order])),
+    [sections],
+  )
+
   const systemDefault = useMemo(
     () =>
       buildSystemDefaultLayout(
@@ -114,9 +126,11 @@ function useLayoutCatalog() {
           field_id: f.id,
           field_slug: f.slug,
           section_id: f.section_id ?? '',
+          section_display_order: sectionOrderById.get(f.section_id ?? ''),
+          field_display_order: f.display_order ?? 0,
         })),
       ),
-    [fields],
+    [fields, sectionOrderById],
   )
 
   return {

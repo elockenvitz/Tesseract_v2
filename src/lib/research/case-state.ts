@@ -920,7 +920,7 @@ export function researchCopy(input: {
   portfolioName?: string | null
   weightPct?: number | null
   held?: boolean
-}): { headline: string; body: string; prompt: string } {
+}): { headline: string; body: string; prompt?: string } {
   const { symbol, issue, portfolioName, weightPct, held } = input
   const days = issue.daysSinceReview
   const verb = anchorVerb(issue.anchoredOn)
@@ -1034,7 +1034,27 @@ export function researchCopy(input: {
           .map(x => CORE_SECTION_LABEL[x].toLowerCase()).join(', ')} ${written ? 'is' : 'has been written'}${
           written ? '' : ''
         }${exposure ? `. It is ${exposure}` : ''}.`,
-        prompt: 'What best describes this position?',
+        /**
+         * No prompt. See `framingWantsJudgment`, which already returns false
+         * for this framing and for `incomplete_case`.
+         *
+         * The question survived there after the Respond pane was removed from
+         * both, and Explore picked it up: `exploreVisualFor` takes `question`
+         * as its last resort, so every unweighted no-thesis tile drew "What
+         * best describes this position?" as its PICTURE. MEASURED live: the
+         * identical sentence on LLY, MU, HD, CSCO and every other name in the
+         * same state.
+         *
+         * The reason it was removed is the reason it should not be drawn: the
+         * four answers were on four different axes -- an investment state, a
+         * portfolio history, a coverage assignment and a work status -- so no
+         * single question was being asked. A missing thesis is not a claim to
+         * agree or disagree with; it is work nobody has done, and the primary
+         * action already says so.
+         *
+         * A tile with nothing further to add now adds nothing, which `kind:
+         * 'none'` calls the honest answer far more often than it was used.
+         */
       }
     }
 
@@ -1046,7 +1066,8 @@ export function researchCopy(input: {
         } written; ${missingNames.join(' and ')} ${missingNames.length === 1 ? 'is' : 'are'} not${
           exposure ? `. It is ${exposure}` : ''
         }.`,
-        prompt: 'What best describes this position?',
+        /* No prompt, for the same reason as `no_case` above:
+           `framingWantsJudgment` is already false here. */
       }
 
     default:

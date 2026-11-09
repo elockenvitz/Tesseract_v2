@@ -22,5 +22,5 @@ export {
 export type { IdeaTier, IdeaScore } from './rank'
 export { IDEA_TIER_LABEL, scoreIdea, compareIdeas } from './rank'
 
-export { openIdea, subscribeToOpenIdea, ideasTabFor, OPEN_IDEA_EVENT } from './navigate'
+export { openIdea, subscribeToOpenIdea, ideasTabFor, pipelineTabFor, OPEN_IDEA_EVENT } from './navigate'
 export type { OpenIdeaRequest, IdeaFocus } from './navigate'

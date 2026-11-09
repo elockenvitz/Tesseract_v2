@@ -73,15 +73,21 @@ import {
 } from 'lucide-react'
 import { SCENARIO_PRESETS, METRIC_PRESETS } from './FieldTypeRenderers'
 import {
-  useUserAssetPagePreferences,
-  useUserAssetPageLayouts,
+  useResearchPagePreferences,
+  useResearchPageLayouts,
+  researchLayoutKeyPrefixes,
   type FieldWithPreference,
   type LayoutWithSharing,
   type SectionOverride,
   type FieldOverride
 } from '../../hooks/useUserAssetPagePreferences'
 import { useResearchFields } from '../../hooks/useResearchFields'
-import { fieldConfigMatchesField, SYSTEM_DEFAULT_FIELD_SLUGS } from '../../lib/research/layout-resolver'
+import { assetSubject, type ResearchSubject } from '../../lib/research/subject'
+/* `SYSTEM_DEFAULT_FIELD_SLUGS` is no longer imported here: the Default
+   template's membership is the subject's answer, via `isOnDefaultTemplate`
+   below, not a curated asset slug list. */
+import { fieldConfigMatchesField, FULL_SPAN, asSpan, spanFromWidth, type FieldWidth } from '../../lib/research/layout-resolver'
+import { spanLabel } from '../../lib/research/field-span'
 import { useAuth } from '../../hooks/useAuth'
 
 // Draft state types for local changes before saving
@@ -90,6 +96,18 @@ interface DraftFieldOverride {
   is_visible: boolean
   section_id?: string
   display_order?: number
+  /**
+   * The field's width, in twelfths. Carried through unchanged — this
+   * screen does not set it, but the save RPC replaces the whole overrides
+   * array, so a span it does not carry is a span it deletes.
+   *
+   * `number`, not `FieldSpan`: it comes from and goes back to jsonb
+   * without being inspected, and narrowing a value this screen never
+   * reads would only invite a cast. `asSpan` narrows it where it is drawn.
+   */
+  span?: number
+  /** The same, as older layouts stored it. Carried for the same reason. */
+  width?: FieldWidth
 }
 
 interface DraftSectionOverride {
@@ -271,6 +289,21 @@ interface AssetPageFieldCustomizerProps {
   onClose: () => void
   assetId?: string
   assetName?: string
+  /**
+   * What this is a customizer FOR.
+   *
+   * Defaults to the asset subject built from `assetId`, so every existing
+   * asset call site is unchanged. The Theme page passes
+   * `themeSubject(themeId)` and gets this same modal against the theme
+   * tables -- which is the whole point of the subject layer, and the reason
+   * this file was not cloned.
+   *
+   * `assetId` and `assetName` remain because the copy and the audit metadata
+   * use them; when a subject is passed, `assetId` should be the same id.
+   */
+  subject?: ResearchSubject
+  /** What to call the thing in the UI. "asset" unless told otherwise. */
+  subjectNoun?: string
   /** Current view filter: 'aggregated' or a user ID */
   viewFilter?: 'aggregated' | string
   /** Current user's ID */
@@ -286,11 +319,24 @@ export function AssetPageFieldCustomizer({
   assetName,
   viewFilter = 'aggregated',
   currentUserId,
-  onOpenTemplates
+  onOpenTemplates,
+  subject,
+  subjectNoun = 'asset'
 }: AssetPageFieldCustomizerProps) {
   // Can only change layout when viewing own view (not aggregated or other users' views)
   const isViewingOwnView = viewFilter === currentUserId
   const canChangeLayout = isViewingOwnView
+
+  /* An asset unless told otherwise. `useMemo` so the descriptor identity is
+     stable across renders and does not retrigger the queries keyed off it. */
+  const activeSubject = useMemo(
+    () => subject ?? assetSubject(assetId),
+    [subject, assetId],
+  )
+  const layoutKeyPrefixes = useMemo(
+    () => researchLayoutKeyPrefixes(activeSubject),
+    [activeSubject],
+  )
 
   const {
     fieldsWithPreferences,
@@ -314,15 +360,18 @@ export function AssetPageFieldCustomizer({
     reorderSections,
     reorderFieldsInSection,
     isUpdating
-  } = useUserAssetPagePreferences(assetId)
+  } = useResearchPagePreferences(activeSubject)
 
   const {
     layouts,
     isLoading: layoutsLoading,
     saveLayout
-  } = useUserAssetPageLayouts()
+  } = useResearchPageLayouts(activeSubject)
 
-  const { createField, deleteField, isDeleting: isDeletingField } = useResearchFields()
+  /* Only `createField` and `deleteField` follow the subject; the rest of
+     that hook is asset-only, and this component uses only those two. */
+  const { createField, deleteField, isDeleting: isDeletingField } =
+    useResearchFields(activeSubject)
   const { user } = useAuth()
   const [fieldToDelete, setFieldToDelete] = useState<{ id: string; name: string } | null>(null)
   const queryClient = useQueryClient()
@@ -616,10 +665,30 @@ export function AssetPageFieldCustomizer({
   const hasFieldOverrides = assetFieldOverrides.length > 0
 
   // Get template field IDs for comparison - uses DRAFT layout for preview
+  /**
+   * Is this field on the Default template?
+   *
+   * The subject's answer, not the curated asset slug list this file read at
+   * five sites. That list is asset vocabulary: the theme catalogue slugs
+   * its risks field `risks` where the asset list spells it
+   * `risks_to_thesis`, so a theme asked "is this on the default?" was told
+   * no about a field that is the whole point of the default. The mismatch
+   * was invisible -- the field stayed in the catalogue and stayed offered
+   * here, it just never rendered.
+   */
+  const isOnDefaultTemplate = useCallback(
+    (field: { field_slug: string; is_system?: boolean | null }) =>
+      activeSubject.descriptor.isInSystemDefault({
+        slug: field.field_slug,
+        is_system: field.is_system,
+      }),
+    [activeSubject],
+  )
+
   const templateFieldIds = useMemo(() => {
     if (isDraftUsingDefault) {
       // Default template = universal fields
-      return new Set(fieldsWithPreferences.filter(f => SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug)).map(f => f.field_id))
+      return new Set(fieldsWithPreferences.filter(f => isOnDefaultTemplate(f)).map(f => f.field_id))
     }
     if (draftActiveLayout?.field_config && draftActiveLayout.field_config.length > 0) {
       return new Set(draftActiveLayout.field_config.map(fc => fc.field_id))
@@ -735,7 +804,7 @@ export function AssetPageFieldCustomizer({
         return draftOverride.is_visible
       }
       if (isDraftUsingDefault) {
-        return SYSTEM_DEFAULT_FIELD_SLUGS.has(field.field_slug)
+        return isOnDefaultTemplate(field)
       }
       if (layoutConfig) {
         return layoutConfig.is_visible
@@ -771,6 +840,16 @@ export function AssetPageFieldCustomizer({
           section_id: targetSectionId,
           is_visible: isVisible,
           display_order: displayOrder,
+          /* Draft first, then the saved layout, then a full row — so a
+             span the reader just arranged shows before it is saved. The
+             legacy `width` steps keep layouts stored before spans drawing
+             as they did; see `layout-resolver`, which resolves in the same
+             order and is the authority for what the page actually renders. */
+          span: asSpan(draftOverride?.span)
+            ?? asSpan(config.span)
+            ?? (draftOverride?.width ? spanFromWidth(draftOverride.width) : null)
+            ?? (config.width ? spanFromWidth(config.width) : null)
+            ?? FULL_SPAN,
           isFromTemplate: true,
           isAddedViaOverride: false
         })
@@ -813,7 +892,7 @@ export function AssetPageFieldCustomizer({
         section.fields.forEach(field => {
           // For default template, only include universal fields (unless overridden)
           const draftOverride = draftFieldOverrides.get(field.field_id)
-          const isInTemplate = SYSTEM_DEFAULT_FIELD_SLUGS.has(field.field_slug)
+          const isInTemplate = isOnDefaultTemplate(field)
           const isAddedViaOverride = draftOverride?.is_visible === true && !isInTemplate
 
           if (!isInTemplate && !isAddedViaOverride) return
@@ -928,7 +1007,7 @@ export function AssetPageFieldCustomizer({
         // Calculate template default visibility based on DRAFT selection
         let templateDefaultVisibility: boolean
         if (isDraftUsingDefault) {
-          templateDefaultVisibility = SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug)
+          templateDefaultVisibility = isOnDefaultTemplate(f)
         } else if (draftActiveLayout?.field_config) {
           const layoutConfig = draftActiveLayout.field_config.find(fc => fc.field_id === f.field_id)
           templateDefaultVisibility = layoutConfig?.is_visible ?? false
@@ -990,7 +1069,7 @@ export function AssetPageFieldCustomizer({
     const map = new Map<string, boolean>()
     fieldsWithPreferences.forEach(f => {
       if (isDraftUsingDefault) {
-        map.set(f.field_id, SYSTEM_DEFAULT_FIELD_SLUGS.has(f.field_slug))
+        map.set(f.field_id, isOnDefaultTemplate(f))
       } else if (draftActiveLayout?.field_config) {
         const fc = draftActiveLayout.field_config.find(c => c.field_id === f.field_id)
         map.set(f.field_id, fc?.is_visible ?? false)
@@ -1057,6 +1136,16 @@ export function AssetPageFieldCustomizer({
     })
     setHasUnsavedChanges(true)
   }
+
+  /*
+   * Setting a field's width moved to `ResearchLayoutEditor`, which draws
+   * the fields as the grid they form. The write it performs is the same
+   * one this function did — `width` on the field's override row, carrying
+   * the field's current visibility so a width change cannot flip it — and
+   * it merges onto the saved overrides for the same reason.
+   *
+   * What stays here is reading the value: the row shows "Half" as a label.
+   */
 
   const handleClearOverrides = () => {
     setDraftFieldOverrides(new Map())
@@ -1358,21 +1447,26 @@ export function AssetPageFieldCustomizer({
       // Check if this field is from the template
       const isFromTemplate = templateFieldIds.has(fieldId)
 
+      /*
+        Spread what is already there rather than listing the keys to keep.
+        Rebuilding the override from `section_id` and `display_order`
+        dropped `span`, so hiding an arranged field and showing it again
+        silently returned it to full width — and the save RPC replaces the
+        whole array, so the loss persisted.
+      */
       if (isFromTemplate) {
         // Field is from template - set is_visible: false to hide it (this is an override)
         newMap.set(fieldId, {
+          ...existing,
           field_id: fieldId,
-          is_visible: false,
-          section_id: existing?.section_id,
-          display_order: existing?.display_order
+          is_visible: false
         })
       } else {
         // Field was added as an override - mark for removal (will be cleaned up on save)
         newMap.set(fieldId, {
+          ...existing,
           field_id: fieldId,
           is_visible: false,
-          section_id: existing?.section_id,
-          display_order: existing?.display_order,
           _removeFromDatabase: true // Flag to indicate this should be removed entirely
         } as DraftFieldOverride & { _removeFromDatabase?: boolean })
       }
@@ -1589,7 +1683,21 @@ export function AssetPageFieldCustomizer({
           field_id: fieldId,
           is_visible: override.is_visible,
           section_id: override.section_id,
-          display_order: override.display_order
+          display_order: override.display_order,
+          /*
+            Span is not this screen's to set — it is arranged on the page —
+            but the RPC REPLACES the `field_overrides` array it is handed.
+            Omitting span here would reset every field this customizer
+            touches to full width, silently undoing the arrangement. It is
+            read out of the draft and handed straight back.
+
+            Both keys travel. `span` is what is written now; `width` is
+            what older layouts stored, and dropping it would widen a field
+            saved before spans existed the first time its visibility
+            changed. `layout-resolver` prefers span and falls back to width.
+          */
+          span: override.span,
+          width: override.width
         })
       })
 
@@ -1657,7 +1765,10 @@ export function AssetPageFieldCustomizer({
         section_id: f.section_id || section.section_id,
         is_visible: f.is_visible,
         display_order: sIdx * 1000 + fIdx,
-        is_collapsed: f.is_collapsed ?? false
+        is_collapsed: f.is_collapsed ?? false,
+        /* Carried through on save, or saving the current page as a new
+           template would silently reset every field to full width. */
+        span: f.span ?? FULL_SPAN
       }))
     )
 
@@ -1808,10 +1919,10 @@ export function AssetPageFieldCustomizer({
       // Refresh the field list so the new field appears in the Field Library
       // The user can then drag it to their layout if they want it visible
       // Use invalidateQueries to properly match queries with additional key parts (user id, version)
-      await queryClient.invalidateQueries({ queryKey: ['available-research-fields'] })
+      await queryClient.invalidateQueries({ queryKey: layoutKeyPrefixes.fields })
       await queryClient.invalidateQueries({ queryKey: ['research-fields'] })
       // Force refetch to ensure data is immediately available
-      await queryClient.refetchQueries({ queryKey: ['available-research-fields'], exact: false })
+      await queryClient.refetchQueries({ queryKey: layoutKeyPrefixes.fields, exact: false })
       await queryClient.refetchQueries({ queryKey: ['research-fields'], exact: false })
 
       // Reset and close dialog
@@ -1842,7 +1953,7 @@ export function AssetPageFieldCustomizer({
             </div>
             <p className="text-xs text-gray-400 mt-0.5">
               {assetName ? <span className="text-gray-500 dark:text-gray-400">{assetName}</span> : null}
-              {assetName ? ' · ' : ''}Changes here apply to this asset only.
+              {assetName ? ' · ' : ''}Changes here apply to this {subjectNoun} only.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -3534,6 +3645,32 @@ function SortableFieldRow({
           )}
         </div>
       </div>
+
+      {/*
+        ── Width is read here, and set by arranging the page ───────────
+
+        This used to be a button: "Full" / "Half", 10px, at the end of the
+        row. It was the only way to change how the page was arranged, and
+        asked to do that a reader could not tell it was the control — the
+        word named a state, the row named a field, and nothing showed the
+        page being produced. It is now a label; the page is arranged by
+        dragging the fields on the page itself (Arrange layout).
+
+        The value is unchanged: the same `span` in the layout's existing
+        `field_config` / `field_overrides` jsonb. Showing it here keeps
+        the field list honest about what the layout says without being a
+        second place to change it. A full-width field says nothing, because
+        full width is the default and every row would carry the same word.
+      */}
+      {field.is_visible && field.span !== FULL_SPAN && (
+        <span
+          data-testid={`field-span-${field.field_id}`}
+          title={`${spanLabel(field.span)} — change this with Arrange layout`}
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-gray-400 dark:text-gray-500"
+        >
+          {spanLabel(field.span)}
+        </span>
+      )}
 
       {/* Revert button - for overridden fields (shown on hover) */}
       {isOverridden && onRevertField && (

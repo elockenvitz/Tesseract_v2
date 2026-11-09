@@ -196,10 +196,15 @@ const MAX_ERRORS = 0
 // reason: deleting two hand-rolled fan-in implementations in favour of
 // `resolveIdeaAfterDecision` removed the loosely-typed `as any` track scans
 // they each carried.
+// 8653 -> 8652: removing the dead price-target history query from
+// ThesisHistoryView took its `target_price` error with it.
+// 8652 -> 8638: removing the research_field_presets query and the
+// all-sections read it existed to serve, and replacing three membership
+// `.single()` lookups with the current-org context, took fourteen more.
 //
-// → 8654 for ONE new error, deliberately, with the atomic organization delete.
-// The ops portal's two-statement delete became a single `delete_organization`
-// RPC, and that one `supabase.rpc(...)` call produces
+// → 8654 on main, for ONE new error, deliberately, with the atomic
+// organization delete. The ops portal's two-statement delete became a single
+// `delete_organization` RPC, and that one `supabase.rpc(...)` call produces
 //   TS2345: Argument of type '{ p_organization_id: string }' is not assignable
 //           to parameter of type 'undefined'
 // It is one more instance of an existing class, not a new kind of wrongness:
@@ -210,25 +215,65 @@ const MAX_ERRORS = 0
 // true. `set_message_pinned` is declared and its call site at
 // MessagingSection.tsx:389 still errors, as does mark_conversation_read at
 // DirectMessaging.tsx:367. The `Functions` block is not wired into
-// supabase-js's `rpc` overloads at all.
+// supabase-js's `rpc` overloads at all. Typing the RPC surface properly would
+// clear it along with its three neighbours — a separate change, since it
+// touches unrelated call sites.
 //
-// So the feature costs exactly one error of an existing kind, and typing the
-// RPC surface properly would clear this one along with its three neighbours —
-// a separate change, since it touches unrelated call sites. Raised knowingly
-// rather than left as slack, which is the failure this ceiling exists to
-// prevent.
-// 2026-11-07: lowered 8654 -> 8652. Deleting the two browser upserts into
-// `price_history_cache` from usePositionLifecycle.ts removed two errors of an
-// existing kind. The guard asks for the ground to be held rather than left as
-// slack, so it is held.
-// 2026-11-08: lowered 8652 -> 8643. The direct-messaging reads and the
-// case-history read moved out of their components into modules where the row
-// shapes are declared instead of inferred from an embed the generated types do
-// not describe. Nine errors went with the inline code. Measured by running the
-// guard, not derived: the commit this is ported from claimed eleven, but that
-// figure included the header unread-badge module, which is NOT in this release
-// because it depends on an unapplied migration.
-const MAX_REPO_ERRORS = 8643
+// → 8639 where those two lines met. This branch had taken the ceiling to 8638
+// and main had raised it to 8654; both moved from 8653, so neither value is
+// right for the merge. 8638 + main's one RPC error = 8639, and that is the
+// MEASURED figure after merging, not the arithmetic — the guard was run and
+// reported it. Resolving a ceiling conflict by picking a side is how a ratchet
+// silently gains slack, which is exactly what this number exists to prevent.
+//
+// → 8638: the Our View summary replaced two inline `coverage?.map(c =>
+// c.user_id)` reads with one annotated memo. The `coverage` query selects an
+// embed the generated row type does not describe, so its rows infer as `never`
+// and each inline read carried its own error. Measured, not arithmetic.
+// 8621 -> 8619: `question` was missing from both `Record<VisualPrimitive, ...>`
+// maps (`tile-engine/presentation` and `tile-engine/adopt/project`), which
+// TypeScript had been reporting all along. A ratchet that only ever rises
+// spends every gain silently, so it comes down with them.
+// 8611 -> 8600: the direct-messaging and unread-badge reads moved out of their
+// components into `src/lib/messaging`, where the row shapes are declared
+// instead of inferred from an embed the generated types do not describe. Eleven
+// errors went with the inline code. Measured by running the guard, not derived.
+// 8600 -> 8586: the Asset page's inline org-chart query moved into
+// `src/hooks/useOrgAudienceContext.ts`, where the node rows are typed as
+// `AudienceNode` once instead of being re-inferred from a nested
+// `org_chart_nodes(...)` embed at every use. Fourteen errors went with it.
+// Measured by running the guard, not derived.
+//
+// ── The merge of main into discovery/asset-page-2, 2026-11-09 ────────────
+//
+// The two lines moved this number independently and in opposite directions.
+// This branch had taken it to 8586 by moving four inline queries into typed
+// modules; main had gone 8653 -> 8654 (one RPC call site), then 8654 -> 8652
+// (the price_history_cache upserts deleted), then 8652 -> 8643 (its own
+// version of the messaging and case-history extraction, worth nine).
+//
+// Neither value is right for the merged tree. Main's 8643 counts errors the
+// branch's extractions already removed; the branch's 8586 does not count the
+// RPC call site main added. Picking either side is exactly the silent slack
+// this ceiling exists to prevent, so the figure below was MEASURED by running
+// the guard against the merged tree, not computed from the two deltas.
+//
+// MEASURED: 8582. FOUR BELOW the branch's 8586, and 61 below main's 8643.
+//
+// The merge removes errors rather than adding them, because where the two
+// lines implemented the same thing twice the better-typed version won:
+//   - `useContributions.ts` keeps this branch's audience handling, which
+//     never reads `contribution_visibility_targets` from a content path.
+//     Porting main's `audienceDiffers` comparison in ADDED 6 errors, because
+//     the stored-target read infers its rows from an embed the generated
+//     types do not describe. Measured both ways: 8588 with it, 8582 without.
+//     The guarantee is unchanged -- this branch reaches it one layer up, at
+//     the caller, which `contribution-visibility-preservation.test.ts` pins.
+//   - the choice between main's and this branch's `conversation-queries.ts`
+//     moves the figure not at all, which independently confirms the two
+//     independently-written modules are type-equivalent.
+// Every one of the 15 files resolved by hand carries zero diagnostics.
+const MAX_REPO_ERRORS = 8582
 
 /**
  * A floor on real source files, now that they are counted as source files.

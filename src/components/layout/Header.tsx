@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Plus, Shield, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun, Microscope, Scale, Landmark } from 'lucide-react'
+import { Bell, Mail, User, Users, Settings, LogOut, ChevronDown, Menu, Lightbulb, Building2, FileText, Target, Calendar, FolderKanban, TrendingUp, Briefcase, List, Repeat, LineChart, FolderOpen, ListTodo, BookOpen, Plus, Shield, Beaker, Lock, Sparkles, Tag, StickyNote, Search, Sun } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../hooks/useAuth'
 import { useNotifications } from '../../hooks/useNotifications'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useMorphSession } from '../../hooks/useMorphSession'
 import { supabase } from '../../lib/supabase'
+import { readUnreadDirectMessages } from '../../lib/messaging/unread-direct-messages'
 import { GlobalSearch } from '../search/GlobalSearch'
 import { FeedbackWidget } from '../feedback/FeedbackWidget'
 import { MorphBanner } from '../support/MorphBanner'
@@ -136,47 +137,40 @@ export function Header({
     ? { ...(user as any), ...morphTargetUser }
     : (user as any))
 
-  // Check for unread direct messages (conversation_messages table only)
+  /*
+   * Check for unread direct messages (conversation_messages table only).
+   *
+   * The 1+N loop that used to be inline here is now one RPC. See
+   * `src/lib/messaging/unread-direct-messages.ts` for the measurement and for
+   * why there is still a fallback path.
+   *
+   * ── On the interval ─────────────────────────────────────────────────────
+   *
+   * 5s with `staleTime: 0` meant this badge was the most frequently executed
+   * query in the product. 20s, because the thing it drives is a dot on an
+   * icon, and because the two responsiveness paths that actually matter are
+   * kept:
+   *
+   *   - `refetchOnWindowFocus` is retained, so coming back to the tab checks
+   *     immediately. That is how a returning reader notices, not the timer.
+   *   - Sending or reading a message invalidates this key directly, so the
+   *     badge reacts to the reader's own actions without waiting.
+   *
+   * `staleTime` is 15s rather than 0 so focus and interval cannot both fire a
+   * request within the same few seconds; with 0 they did.
+   *
+   * This is NOT the path that would make incoming chat feel live. That needs
+   * `conversation_messages` in the realtime publication, which it is not in,
+   * and which is a separate decision. The subscription below is wired to that
+   * table today and has therefore never delivered an event.
+   */
   const { data: hasUnreadDirectMessages, refetch: refetchDirectMessagesUnstable } = useQuery({
     queryKey: ['unread-direct-messages', user?.id],
-    queryFn: async () => {
-      if (!user?.id) return false
-
-      // Check direct messages by getting user's conversations
-      const { data: userConversations, error: convError } = await supabase
-        .from('conversation_participants')
-        .select('conversation_id, last_read_at')
-        .eq('user_id', user.id)
-
-      if (convError) {
-        console.error('Error fetching user conversations for notification:', convError)
-        return false
-      }
-
-      if (!userConversations || userConversations.length === 0) {
-        return false
-      }
-
-      // Check each conversation for unread messages
-      for (const conv of userConversations) {
-        const { count } = await supabase
-          .from('conversation_messages')
-          .select('*', { count: 'exact', head: true })
-          .eq('conversation_id', conv.conversation_id)
-          .neq('user_id', user.id)
-          .gt('created_at', conv.last_read_at || '1970-01-01')
-
-        if (count && count > 0) {
-          return true
-        }
-      }
-
-      return false
-    },
+    queryFn: () => readUnreadDirectMessages(user!.id),
     enabled: !!user?.id,
-    refetchInterval: 5000, // Check every 5 seconds for near-instant notification
+    refetchInterval: 20000,
     refetchOnWindowFocus: true,
-    staleTime: 0,
+    staleTime: 15000,
   })
 
   // Stable ref for refetch to avoid re-creating realtime subscription on every render
@@ -533,16 +527,77 @@ export function Header({
                       event contracts are untouched -- only the labels the user
                       reads change, which is the smallest safe way to retire
                       "Ideas V2" and "Book". */}
+                  {/*
+                    RESEARCH, PORTFOLIO AND DECISIONS ARE NOT LISTED HERE.
+
+                    They were, and each one opened `DashboardShell` on its own
+                    lens -- the SAME component with the same props the lens bar
+                    inside Dashboard already mounts. Clicking "Research" here
+                    and clicking Dashboard -> Research produced an identical
+                    screen, except this one spent a second tab on it. There was
+                    no answer to "why would I go to one rather than the other",
+                    because there was no difference.
+
+                    So the lens bar is the only way in, and these three are
+                    reachable in one click from Dashboard. The `research-v2` /
+                    `portfolio-v2` / `decisions-v2` tab types still exist and
+                    still render: saved sessions and deep links carry them, and
+                    `DashboardPage` mounts each on its lens exactly as before.
+                    This removes a duplicate DOOR, not a surface.
+
+                    Global search never offered these three (`useObjectSearch`
+                    lists Dashboard, Ideas and Today only), so this menu was
+                    the single duplicate door and there is no second one left
+                    behind.
+
+                    The grid stays `grid-cols-3` with two entries. The "More"
+                    group below is also three across, and shared column edges
+                    with one empty cell reads better than two icon grids on
+                    different tracks in one menu.
+                  */}
                   <div className="px-4 pb-2">
                     <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Decision OS</span>
                   </div>
                   <div className="grid grid-cols-3 gap-1 px-2 pb-3">
                     {[
                       { id: 'today', title: 'Dashboard', type: 'today', icon: Sun, color: 'text-blue-600', bg: 'bg-blue-50' },
-                      { id: 'ideas', title: 'Ideas', type: 'ideas', icon: Lightbulb, color: 'text-purple-600', bg: 'bg-purple-50' },
-                      { id: 'research-v2', title: 'Research', type: 'research-v2', icon: Microscope, color: 'text-sky-600', bg: 'bg-sky-50' },
-                      { id: 'portfolio-v2', title: 'Portfolio', type: 'portfolio-v2', icon: Scale, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                      { id: 'decisions-v2', title: 'Decisions', type: 'decisions-v2', icon: Landmark, color: 'text-slate-600', bg: 'bg-slate-100' },
+                      /*
+                        AND "IDEAS" WAS HERE, FOR THE SAME REASON AS THE THREE
+                        ABOVE.
+
+                        `DashboardNext` carries Ideas and Explore as its two
+                        lenses, behind one bar, and "Dashboard" above opens it.
+                        So this was a door onto a lens of the surface the entry
+                        beside it already opened -- the duplicate-door case the
+                        note at the top of this menu removed `research-v2`,
+                        `portfolio-v2` and `decisions-v2` for.
+
+                        The `ideas` tab type still exists and still renders:
+                        saved sessions and deep links carry it, and
+                        `IdeasAppPage` mounts on it exactly as before. This
+                        removes a door, not a surface.
+
+                        Global search's own `ideas` entry goes with it, for the
+                        same reason and in the same commit. Unlike the three
+                        above, Ideas WAS listed there, so leaving it would have
+                        left the second door standing and made this half a fix.
+                      */
+                      /*
+                        A THIRD ENTRY WAS HERE, AND IT DECIDED.
+
+                        "Dashboard (new)" opened `DashboardNext` in a tab of
+                        its own, on purpose and temporarily: the Dashboard
+                        rebuilt as the feed was being decided, and a reader
+                        cannot decide that without being able to open both and
+                        go back. The note said this entry would disappear when
+                        it did, "either because the trial lost or because
+                        'Dashboard' above starts opening it."
+
+                        The second one. "Dashboard" above opens it now, so
+                        this was a second door onto the same surface -- which
+                        is what the note at the top of this menu removed three
+                        other entries for.
+                      */
                     ].map(item => (
                       <button
                         key={item.id}

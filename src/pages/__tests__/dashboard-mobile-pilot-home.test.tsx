@@ -45,6 +45,11 @@ vi.mock('../../hooks/usePilotMission', () => {
 vi.mock('@tanstack/react-query', () => ({
   useQuery: () => ({ data: undefined, isLoading: false, error: null, refetch: () => {} }),
   useQueryClient: () => ({ invalidateQueries: () => {}, setQueryData: () => {}, getQueryData: () => undefined }),
+  /* The phone's pilot home now carries `PilotSkipOnboarding`, and
+     `usePilotProgress` behind it opens a mutation. Nothing here presses it,
+     so the stub only has to exist -- see `pilot-skip-onboarding` for the
+     cases that drive it. */
+  useMutation: () => ({ mutate: () => {}, mutateAsync: async () => {}, isPending: false }),
 }))
 vi.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: 'u1' } }) }))
 vi.mock('../../contexts/OrganizationContext', () => ({

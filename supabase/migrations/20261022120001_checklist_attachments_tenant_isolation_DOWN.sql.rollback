@@ -1,0 +1,55 @@
+-- =============================================================================
+-- ROLLBACK — asset_checklist_attachments tenant isolation
+--
+-- Restores production's pre-migration state exactly as it stood on
+-- 2026-10-22, read from pg_policy rather than from the original migration
+-- (the two had drifted: the shipped migration wrote `USING (true)` for SELECT,
+-- production carried the `EXISTS (… assets …)` form under a different name).
+--
+-- READ THIS BEFORE RUNNING IT
+--
+-- Applying this rollback REOPENS cross-organization read and write of
+-- attachment metadata. `assets` is globally readable, so every predicate below
+-- reduces to true for any authenticated user of any organization. Run it only
+-- to unblock a production incident, and only until the forward fix can be
+-- re-applied.
+--
+-- There is no data to restore. The table held zero rows when the forward
+-- migration was authored, so nothing was deleted, rewritten or backfilled, and
+-- rows created after it are unaffected by either direction.
+--
+-- The anon grant is NOT restored. It was inert, it violates CLAUDE.md, and no
+-- application path uses it. If something genuinely depends on it, that is a
+-- finding, not a rollback step.
+-- =============================================================================
+
+BEGIN;
+
+DROP POLICY IF EXISTS asset_checklist_attachments_select ON asset_checklist_attachments;
+DROP POLICY IF EXISTS asset_checklist_attachments_insert ON asset_checklist_attachments;
+DROP POLICY IF EXISTS asset_checklist_attachments_update ON asset_checklist_attachments;
+DROP POLICY IF EXISTS asset_checklist_attachments_delete ON asset_checklist_attachments;
+
+-- Production state as of 2026-10-22, verbatim. Note the absent TO clause:
+-- these applied to PUBLIC, which is reproduced here faithfully.
+CREATE POLICY "Users can view attachments for assets they have access to"
+  ON asset_checklist_attachments
+  FOR SELECT
+  USING (EXISTS (SELECT 1 FROM assets WHERE assets.id = asset_checklist_attachments.asset_id));
+
+CREATE POLICY "Users can insert attachments for assets they have access to"
+  ON asset_checklist_attachments
+  FOR INSERT
+  WITH CHECK (EXISTS (SELECT 1 FROM assets WHERE assets.id = asset_checklist_attachments.asset_id));
+
+CREATE POLICY "Users can update their own attachments"
+  ON asset_checklist_attachments
+  FOR UPDATE
+  USING (uploaded_by = auth.uid());
+
+CREATE POLICY "Users can delete their own attachments"
+  ON asset_checklist_attachments
+  FOR DELETE
+  USING (uploaded_by = auth.uid());
+
+COMMIT;

@@ -3,12 +3,44 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
+import {
+  assertVisibilityNamesAnAudience,
+  type AudienceVisibility,
+} from '../lib/contributions/audience-reach'
 
 // =========================================================================
 // Types
 // =========================================================================
 
-export type ThemeContributionVisibility = 'org' | 'shared'
+/**
+ * Who can read a piece of theme research.
+ *
+ * ── This used to be ('org' | 'shared'), and it meant nothing ─────────────
+ *
+ * The column existed and the policy ignored it. Production's SELECT policy
+ * was `... AND (visibility = 'shared' OR organization_id = current_org_id())`,
+ * and every row's `organization_id` IS the current org for anyone who can
+ * reach it, so the second half was always true: every piece of theme research
+ * was readable by the whole organization whatever its visibility said. All
+ * six rows were 'org'; 'shared' had none.
+ *
+ * So this is not a renaming. It is the same five scopes the asset page has,
+ * now backed by a policy that actually restricts
+ * (`20261104140000_theme_contribution_audience.sql`), with the targets in
+ * `theme_contribution_visibility_targets` and every write going through
+ * `set_theme_contribution_audience`.
+ *
+ * An alias, deliberately: a second copy of the union is how the two pages
+ * drift apart again. See `src/lib/contributions/audience-reach.ts`.
+ */
+export type ThemeContributionVisibility = AudienceVisibility
+
+/** One group a contribution is shared with. Mirrors the asset page's
+ *  `VisibilityTarget`. */
+export interface ThemeVisibilityTarget {
+  node_id: string
+  node?: { id: string; name: string; color?: string | null; node_type?: string } | null
+}
 
 export type ThemeFieldType =
   | 'rich_text'
@@ -55,6 +87,10 @@ export interface ThemeContribution {
   created_by: string
   organization_id: string
   visibility: ThemeContributionVisibility
+  /** The groups a non-firm audience names. `[]` at a non-firm level means the
+   *  restriction reaches nobody but its author — see
+   *  `assertVisibilityNamesAnAudience`. */
+  visibility_targets?: ThemeVisibilityTarget[]
   is_pinned: boolean
   is_archived: boolean
   pinned_by: string | null
@@ -264,6 +300,86 @@ export function useThemeResearchFieldMutations() {
 // Contributions per theme
 // =========================================================================
 
+/**
+ * Can the server hold a theme audience yet?
+ *
+ * The two audience migrations
+ * (`20261104140000_theme_contribution_audience.sql` and its RPC) are not
+ * applied in every environment, and the frontend has to work in both. The
+ * vocabulary is the part that cannot straddle: the old CHECK admits
+ * `('org','shared')` and the new one admits the five levels, and the two sets
+ * are disjoint, so a brand-new contribution's `visibility` is either accepted
+ * or rejected with 23514 depending purely on which migration state the
+ * database is in.
+ *
+ * This answers that question once per session, from the table the same
+ * migration creates. `false` when the answer is not in yet, because the
+ * fallback has to be the behaviour that works everywhere: write the legacy
+ * value and offer no audience control. A control that promises a restriction
+ * the database cannot store is the original defect, and offering one
+ * optimistically would reintroduce it one layer up.
+ *
+ * It self-heals: the moment the migration lands, this flips and the picker
+ * appears, with no second deploy.
+ */
+export function useThemeAudienceCapability(): boolean {
+  const { data } = useQuery({
+    queryKey: ['theme-audience-capability'],
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: false,
+    queryFn: async (): Promise<boolean> => {
+      // `limit(1)` so this costs nothing; only the ERROR is of interest.
+      const { error } = await supabase
+        .from('theme_contribution_visibility_targets')
+        .select('contribution_id')
+        .limit(1)
+      return !error
+    },
+  })
+  return data ?? false
+}
+
+/** What `set_theme_contribution_audience` reports it stored. */
+export interface ThemeContributionAudience {
+  contribution_id: string
+  visibility: ThemeContributionVisibility
+  node_ids: string[]
+  node_count: number
+}
+
+/**
+ * Change who can read a piece of theme research.
+ *
+ * The ONLY way the client may do this, for the same reason as on the asset
+ * page: `theme_contributions_v2.visibility` is pinned against direct UPDATE
+ * by the `a_pin_audience` trigger, which silently RESTORES the old value. A
+ * `.update({ visibility })` therefore reports success and changes nothing —
+ * the worst of the three possible outcomes, because the UI then shows a
+ * restriction the database does not have.
+ *
+ * Errors are thrown, never swallowed. The server's message names the actual
+ * refusal ("a team audience must name at least one group", "2 target(s) are
+ * groups you do not belong to"), and "please try again" contradicts every one
+ * of them.
+ */
+async function setThemeContributionAudience(
+  contributionId: string,
+  visibility: ThemeContributionVisibility,
+  targetIds: string[]
+): Promise<ThemeContributionAudience> {
+  const { data, error } = await supabase.rpc('set_theme_contribution_audience', {
+    p_contribution_id: contributionId,
+    p_visibility: visibility,
+    p_node_ids: targetIds,
+  } as never)
+
+  if (error) {
+    throw new Error(error.message || 'Could not change who can see this research.')
+  }
+  return (data ?? null) as unknown as ThemeContributionAudience
+}
+
 export function useThemeContributionsV2(themeId: string | undefined) {
   const { user } = useAuth()
   const { currentOrgId } = useOrganization()
@@ -273,6 +389,28 @@ export function useThemeContributionsV2(themeId: string | undefined) {
     queryKey: ['theme-contributions-v2', themeId],
     enabled: !!themeId,
     queryFn: async (): Promise<ThemeContribution[]> => {
+      /*
+       * ── Why the targets are NOT an embed ────────────────────────────────
+       *
+       * They were, for one commit, and it took the whole page down. PostgREST
+       * resolves `visibility_targets:theme_contribution_visibility_targets(..)`
+       * at request time, and that table does not exist until
+       * `20261104140000_theme_contribution_audience.sql` is applied. An
+       * unknown embedded relation is not an empty embed -- it is a 400 on the
+       * WHOLE request, so every contribution vanished and the page said "No
+       * team research yet" about research that was sitting in the table.
+       *
+       * Measured: GET .../theme_contributions_v2?select=*,visibility_targets:
+       * theme_contribution_visibility_targets(...) -> 400.
+       *
+       * So the contributions are read on their own, and the audience is a
+       * SECOND request that is allowed to fail. Research is the thing a reader
+       * came for; who else can see it is an annotation on it. An annotation
+       * must never be able to hide the thing it annotates.
+       *
+       * This also makes the two halves of this feature deploy in either
+       * order, which nothing else in it does.
+       */
       const { data, error } = await supabase
         .from('theme_contributions_v2')
         .select('*')
@@ -280,7 +418,10 @@ export function useThemeContributionsV2(themeId: string | undefined) {
         .eq('is_archived', false)
         .order('created_at', { ascending: true })
       if (error) throw error
-      const rows = (data || []) as ThemeContribution[]
+      const rows = ((data || []) as ThemeContribution[]).map(r => ({
+        ...r,
+        visibility_targets: [] as ThemeVisibilityTarget[],
+      }))
 
       const userIds = [...new Set(rows.map(r => r.created_by))]
       if (userIds.length === 0) return rows
@@ -291,9 +432,40 @@ export function useThemeContributionsV2(themeId: string | undefined) {
         .in('id', userIds)
       if (uErr) throw uErr
       const byId = new Map((users || []).map(u => [u.id, u]))
-      return rows.map(r => ({ ...r, author: byId.get(r.created_by) ?? null }))
+
+      /*
+       * The audience, separately and softly. If the targets table is not
+       * there yet the error is swallowed and every row keeps `[]`, which is
+       * exactly what a firm-wide audience looks like -- so the page degrades
+       * to the behaviour it had before this feature rather than to a blank
+       * screen.
+       *
+       * It is NOT thrown, and that is the whole point of splitting it out.
+       */
+      const byContribution = new Map<string, ThemeVisibilityTarget[]>()
+      const { data: targets, error: tErr } = await supabase
+        .from('theme_contribution_visibility_targets')
+        .select('contribution_id, node_id, node:org_chart_nodes(id, name, color, node_type)')
+        .in('contribution_id', rows.map(r => r.id))
+      if (!tErr) {
+        for (const t of (targets ?? []) as unknown as Array<
+          ThemeVisibilityTarget & { contribution_id: string }
+        >) {
+          const list = byContribution.get(t.contribution_id) ?? []
+          list.push({ node_id: t.node_id, node: t.node ?? null })
+          byContribution.set(t.contribution_id, list)
+        }
+      }
+
+      return rows.map(r => ({
+        ...r,
+        author: byId.get(r.created_by) ?? null,
+        visibility_targets: byContribution.get(r.id) ?? [],
+      }))
     }
   })
+
+  const audienceReady = useThemeAudienceCapability()
 
   useEffect(() => {
     if (!themeId) return
@@ -312,9 +484,33 @@ export function useThemeContributionsV2(themeId: string | undefined) {
       section: string
       content?: string
       supporting_detail?: string | null
+      /**
+       * Omit to PRESERVE the contribution's current audience.
+       *
+       * This used to default to `'org'`, so every content save restated the
+       * visibility. That was harmless only because the column was inert; now
+       * that it restricts, a prose edit that restates the audience is a prose
+       * edit that can destroy one. Absence means "leave it alone", exactly as
+       * on the asset page.
+       */
       visibility?: ThemeContributionVisibility
+      /** Required when `visibility` is given and not `'firm'`. Ignored otherwise. */
+      targetIds?: string[]
       draft_content?: string | null
     }) => {
+      /*
+       * An explicit level is the only thing that may touch the audience.
+       * `undefined` is preservation; `[]` is not a substitute for it.
+       *
+       * Ignored outright when the server cannot hold an audience: the RPC
+       * does not exist and the CHECK would refuse the word, so honouring a
+       * level here could only turn a prose save into a 23514. Saving the
+       * prose is what the analyst asked for.
+       */
+      const isVisibilityChange = audienceReady && input.visibility !== undefined
+      if (isVisibilityChange) {
+        assertVisibilityNamesAnAudience(input.visibility!, input.targetIds ?? [])
+      }
       if (!themeId) throw new Error('Missing themeId')
       if (!user?.id) throw new Error('Not signed in')
       if (!currentOrgId) throw new Error('Missing organization')
@@ -331,21 +527,40 @@ export function useThemeContributionsV2(themeId: string | undefined) {
       if (selErr) throw selErr
 
       if (existing) {
+        /* The generated types do not describe this table, so `existing` comes
+           back as `never`. Narrowed once, here, rather than cast at each use:
+           the id is the only field selected. */
+        const existingId = (existing as unknown as { id: string }).id
         const patch: Record<string, any> = {}
         if (input.content !== undefined)           patch.content = input.content
         if (input.supporting_detail !== undefined) patch.supporting_detail = input.supporting_detail
-        if (input.visibility !== undefined)        patch.visibility = input.visibility
+        /* `visibility` is NOT in the patch, and must not be: the pin trigger
+           reverts it and the write would silently do nothing. It goes through
+           the RPC below. */
         if (input.draft_content !== undefined) {
           patch.draft_content = input.draft_content
           patch.draft_updated_at = input.draft_content === null ? null : new Date().toISOString()
         }
-        if (Object.keys(patch).length === 0) return existing as { id: string }
-        const { error } = await supabase
-          .from('theme_contributions_v2')
-          .update(patch)
-          .eq('id', (existing as any).id)
-        if (error) throw error
-        return existing as { id: string }
+        if (Object.keys(patch).length > 0) {
+          const { error } = await supabase
+            .from('theme_contributions_v2')
+            .update(patch)
+            .eq('id', existingId)
+          if (error) throw error
+        }
+
+        /*
+         * After the content write, so a refused audience change cannot
+         * discard the prose just typed. The two are not atomic with each
+         * other, deliberately: losing an edit to a rejected visibility choice
+         * is the worse failure. Same choice as `saveContribution`.
+         */
+        if (isVisibilityChange) {
+          await setThemeContributionAudience(
+            existingId, input.visibility!, input.targetIds ?? []
+          )
+        }
+        return { id: existingId }
       }
 
       const { data, error } = await supabase
@@ -355,13 +570,37 @@ export function useThemeContributionsV2(themeId: string | undefined) {
           section: input.section,
           content: input.content ?? '',
           supporting_detail: input.supporting_detail ?? null,
-          visibility: input.visibility ?? 'org',
+          /*
+           * A new row has no prior audience to preserve, so the default is
+           * the widest -- the same reach every pre-existing row had.
+           *
+           * WHICH WORD that is depends on the migration state, and getting it
+           * wrong is a 23514 on the analyst's first save in a field. 'firm'
+           * once the five-level CHECK is in; the legacy 'org' until then,
+           * which is the only value the old CHECK admits. This is the one
+           * place the two vocabularies meet, and it is why `audienceReady`
+           * exists.
+           *
+           * The pin trigger is BEFORE UPDATE, so an INSERT may still write
+           * the column; the target ROWS cannot be written directly and go
+           * through the RPC below.
+           */
+          visibility: audienceReady ? (input.visibility ?? 'firm') : 'org',
           created_by: user.id,
           organization_id: currentOrgId,
         })
         .select('id')
         .single()
       if (error) throw error
+
+      /* Fail closed: if this throws, the row exists as restricted with no
+         targets, which is readable by its author alone. The thrown error says
+         why rather than leaving a lock the server will not honour. */
+      if (isVisibilityChange && input.visibility !== 'firm') {
+        await setThemeContributionAudience(
+          (data as { id: string }).id, input.visibility, input.targetIds ?? []
+        )
+      }
       return data as { id: string }
     },
     onSuccess: () => {
@@ -373,6 +612,47 @@ export function useThemeContributionsV2(themeId: string | undefined) {
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('theme_contributions_v2').delete().eq('id', id)
       if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['theme-contributions-v2', themeId] })
+    }
+  })
+
+  /**
+   * Change the audience of research that already exists, with no content edit.
+   *
+   * The picker's Apply needs this: on the asset page the toolbar picker is
+   * persisted by the next content save, which means a reader who only changes
+   * who can see their work and then leaves has changed nothing. Here the
+   * change is written when it is made, for every one of the author's own
+   * contributions on this theme — the picker is a page-level control, so a
+   * per-field audience would be a promise the control does not make.
+   */
+  const updateVisibility = useMutation({
+    mutationFn: async ({
+      visibility, targetIds,
+    }: { visibility: ThemeContributionVisibility; targetIds: string[] }) => {
+      if (!user?.id) throw new Error('Not signed in')
+      /* Refused loudly rather than silently dropped: unlike a prose save,
+         changing the audience IS the whole request, so reporting success
+         would be the lie. The control is hidden when this is false, so
+         reaching here means something went around it. */
+      if (!audienceReady) {
+        throw new Error(
+          'Audiences are not enabled on this server yet. Your research stays visible to the firm.'
+        )
+      }
+      assertVisibilityNamesAnAudience(visibility, targetIds)
+
+      const own = (query.data || []).filter(c => c.created_by === user.id)
+      /* Nothing written yet is not a failure: the level is held by the page
+         and applied by the first save. Returning [] says so rather than
+         throwing at someone who opened the picker first. */
+      const results: ThemeContributionAudience[] = []
+      for (const c of own) {
+        results.push(await setThemeContributionAudience(c.id, visibility, targetIds))
+      }
+      return results
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['theme-contributions-v2', themeId] })
@@ -437,6 +717,10 @@ export function useThemeContributionsV2(themeId: string | undefined) {
     upsertContribution: upsertContribution.mutateAsync,
     isUpserting: upsertContribution.isPending,
     deleteContribution: deleteContribution.mutateAsync,
+    updateVisibility: updateVisibility.mutateAsync,
+    isUpdatingVisibility: updateVisibility.isPending,
+    /** False until the audience migrations are applied; the picker hides. */
+    audienceReady,
     togglePin: togglePin.mutateAsync,
     currentOrgId,
   }

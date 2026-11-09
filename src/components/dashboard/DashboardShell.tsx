@@ -50,6 +50,8 @@ import {
   subscribeToDashboardFocus,
   type DashboardFocusTarget, type FocusSource, type RailCard,
 } from '../../lib/dashboard/focus'
+import { subscribeToOpenIdea } from '../../lib/desktop-ideas/navigate'
+import { subscribeToOpenResearch } from '../../lib/desktop-research/navigate'
 import { WorkDeck } from './WorkDeck'
 
 export type DashboardLens = 'today' | 'ideas' | 'research' | 'portfolio' | 'decisions'
@@ -117,6 +119,51 @@ function rememberLens(lens: DashboardLens): void {
   try { sessionStorage.setItem(LENS_KEY, lens) } catch { /* non-fatal */ }
 }
 
+/** Where the expanded card survives leaving the tab. Session-scoped, like the lens. */
+const DECK_KEY = 'tesseract:dashboard-deck'
+
+/**
+ * The expanded card has to survive leaving the Dashboard, because leaving it
+ * is part of the work.
+ *
+ * ── The measured problem ─────────────────────────────────────────────────
+ *
+ * The workspace's own primary action for most states is "Edit on the asset",
+ * which opens the Asset tab. Coming back landed the reader on the Today
+ * deck: `lens` was remembered and `deck` was not, so the tab restored and
+ * the thing they had open inside it did not. Every hop out to write -- which
+ * is the one thing this surface sends you away to do -- cost the reader
+ * their place and a scroll back to the tile.
+ *
+ * Restored only on the default arrival, exactly as `restoreLens` is: an
+ * explicitly-addressed lens is a deep link, and a remembered card must not
+ * override where someone was deliberately sent.
+ *
+ * Every field is plain JSON -- ids, strings, and the rail's closes arrays --
+ * so this stores the state itself rather than a key to re-fetch it. A
+ * malformed or hand-edited value restores nothing rather than throwing: the
+ * reader loses their place, which is the old behaviour, instead of the shell.
+ */
+function restoreDeck(initial: DashboardLens): DeckState | null {
+  if (initial !== 'today') return null
+  try {
+    const raw = sessionStorage.getItem(DECK_KEY)
+    if (!raw) return null
+    const d = JSON.parse(raw) as DeckState
+    if (!d?.target?.objectId || !d?.active?.objectId) return null
+    if (!(d.target.originLens in LENS_ORDER_SET)) return null
+    if (!(d.active.workspaceLens in LENS_ORDER_SET)) return null
+    return { ...d, rail: Array.isArray(d.rail) ? d.rail : [] }
+  } catch { return null }
+}
+
+function rememberDeck(deck: DeckState | null): void {
+  try {
+    if (deck) sessionStorage.setItem(DECK_KEY, JSON.stringify(deck))
+    else sessionStorage.removeItem(DECK_KEY)
+  } catch { /* non-fatal */ }
+}
+
 /** The valid lens names, so a stale or hand-edited value cannot be restored. */
 const LENS_ORDER_SET: Record<string, true> = {
   today: true, ideas: true, research: true, portfolio: true, decisions: true,
@@ -154,11 +201,65 @@ export function DashboardShell({
    * Stage 3B carried one `lens` doing both jobs, which is why a card opened
    * from Today offered "All research" as the way back.
    */
-  const [deck, setDeck] = useState<DeckState | null>(null)
+  const [deck, setDeck] = useState<DeckState | null>(() => restoreDeck(initialLens))
+
+  /**
+   * An arrival raised from inside the shell, which outranks the tab's own.
+   *
+   * The tab carries the selection it was opened with, and that is the right
+   * default for the life of the tab. But a cross-lens jump happens later and
+   * means something different -- "this idea, now" -- so it has to be able to
+   * override a `selectedIdeaId` the tab has been holding since it opened.
+   * Cleared when the lens reports it has opened the object, exactly as the
+   * tab's own selection is.
+   */
+  const [arrival, setArrival] = useState<ShellArrival | null>(null)
+
+  /* Back, and choosing a lens by hand, both set this to null -- which clears
+     the stored value, so leaving the workspace deliberately is remembered
+     just as accurately as staying in it. */
+  useEffect(() => { rememberDeck(deck) }, [deck])
 
   useEffect(() => subscribeToDashboardFocus(req => {
     setLens(req.target.originLens)
     setDeck({ ...req, active: req.target })
+  }), [])
+
+  /**
+   * Crossing between lenses is a move inside this shell, not a new tab.
+   *
+   * ── The defect, measured ─────────────────────────────────────────────────
+   *
+   * Decisions' "Open the idea", Research's "Open idea" and Portfolio's two
+   * cross-links all fired the same pair: a `decision-engine-action` tab
+   * descriptor for `ideas-v2` / `research-v2`, plus the typed event, on the
+   * theory that whichever applied would win and the other would be a no-op.
+   *
+   * The typed event never applied. Only `IdeasWorkspace` and
+   * `ResearchWorkspace` subscribed to it, and this shell renders ONE lens at a
+   * time -- so a reader on Decisions had no Ideas workspace mounted to hear
+   * it. Every single click therefore fell through to the tab descriptor and
+   * the app grew a second Dashboard tab: same shell, same lens bar, and (see
+   * `initialLens` below) often the very lens they were already looking at.
+   * The reader's report was "it opens another tab that shows the same
+   * workspace screen", and that is exactly what it did.
+   *
+   * The shell is the only thing that knows a lens exists to switch to, so the
+   * shell is what listens. `subscribeToOpenIdea` marks the request taken, the
+   * caller reads that back synchronously, and the tab descriptor is sent only
+   * when nothing was mounted to answer -- which is the genuine handoff case,
+   * from the Asset page or a surface outside the Dashboard entirely.
+   */
+  useEffect(() => subscribeToOpenIdea(r => {
+    setLens('ideas')
+    setDeck(null)
+    setArrival({ lens: 'ideas', ideaId: r.ideaId, focus: r.focus ?? null, issue: r.issue ?? null, origin: r.origin ?? null })
+  }), [])
+
+  useEffect(() => subscribeToOpenResearch(r => {
+    setLens('research')
+    setDeck(null)
+    setArrival({ lens: 'research', assetId: r.assetId, issue: r.issue ?? null, origin: r.origin ?? null })
   }), [])
 
   /**
@@ -226,11 +327,22 @@ export function DashboardShell({
     },
   }))
 
-  /** Choosing a lens by hand is navigation: it leaves the deck. */
+  /** Choosing a lens by hand is navigation: it leaves the deck, and it leaves
+   *  behind whatever object a cross-lens jump had opened. */
   const chooseLens = (id: DashboardLens) => {
     setLens(id)
     setDeck(null)
+    setArrival(null)
   }
+
+  /** The lens has opened what it was handed, from wherever that came. */
+  const focusConsumed = () => {
+    setArrival(null)
+    onFocusConsumed?.()
+  }
+
+  const arrivedIdeaId = arrival?.lens === 'ideas' ? arrival.ideaId ?? null : null
+  const arrivedAssetId = arrival?.lens === 'research' ? arrival.assetId ?? null : null
 
   const browseLens = deck?.target.originLens ?? lens
   const workLens = deck?.active.workspaceLens ?? null
@@ -250,22 +362,22 @@ export function DashboardShell({
     if (l === 'today') return <TodayPage />
     if (l === 'ideas') return (
       <IdeasWorkspace
-        selectedIdeaId={selectedIdeaId ?? null}
-        focus={(focus as any) ?? null}
-        issue={deck?.active.issue ?? issue ?? null}
+        selectedIdeaId={arrivedIdeaId ?? selectedIdeaId ?? null}
+        focus={((arrivedIdeaId ? arrival?.focus : focus) as any) ?? null}
+        issue={deck?.active.issue ?? (arrivedIdeaId ? arrival?.issue : issue) ?? null}
         focusObjectId={focusObjectId}
         intent={deck?.target.source?.intent}
-        onFocusConsumed={onFocusConsumed}
+        onFocusConsumed={focusConsumed}
       />
     )
     if (l === 'research') return (
       <ResearchWorkspace
-        selectedAssetId={selectedAssetId ?? null}
-        issue={deck?.active.issue ?? issue ?? null}
-        origin={deck?.active.origin ?? origin ?? null}
+        selectedAssetId={arrivedAssetId ?? selectedAssetId ?? null}
+        issue={deck?.active.issue ?? (arrivedAssetId ? arrival?.issue : issue) ?? null}
+        origin={deck?.active.origin ?? (arrivedAssetId ? arrival?.origin : origin) ?? null}
         focusObjectId={focusObjectId}
         intent={deck?.target.source?.intent}
-        onFocusConsumed={onFocusConsumed}
+        onFocusConsumed={focusConsumed}
       />
     )
     if (l === 'portfolio') return (
@@ -373,6 +485,28 @@ export function DashboardShell({
               activeId={activeId}
               onRotate={rotate}
               intent={deck.target.source?.intent}
+              /*
+                Every lens whose pane draws its own identity row.
+
+                Measured live, both of the ones added here printed the deck's
+                header and then said the same thing again a few pixels below:
+                Decisions gave "NKE / sell · Awaiting decision / The Barbero
+                Fund / Mar 13, 2026" and then the same four facts at three
+                times the size; Portfolio gave "JNJ / No thesis on file /
+                28.2% of the book in JNJ, with no thesis behind it." and then
+                that sentence again, verbatim, 40px down. That is the
+                two-ticker bug `ownHeader` exists for, in the two lenses it
+                was never applied to.
+
+                What Portfolio gives up is the focus INTENT chip ("Position",
+                "Framework"), which only this header renders. Research made
+                that trade first and it holds here: `PortfolioWorkspace` is
+                not passed the intent and does nothing with it, so the chip
+                was a label naming a mode the surface did not enter. The way
+                to honour an intent is to open on the part the reader reached
+                for, which is a behaviour, not a badge.
+              */
+              ownHeader={workLens === 'research' || workLens === 'decisions' || workLens === 'portfolio'}
             >
               {renderLens(workLens, activeId)}
             </WorkDeck>
@@ -403,6 +537,22 @@ function originOf(source: FocusSource | null | undefined): React.CSSProperties |
   const x = ((r.left + r.width / 2) / Math.max(1, window.innerWidth)) * 100
   const y = ((r.top + r.height / 2) / Math.max(1, window.innerHeight)) * 100
   return { transformOrigin: `${x.toFixed(1)}% ${y.toFixed(1)}%` }
+}
+
+/**
+ * An object handed to a lens from another lens, in this shell, after mount.
+ *
+ * Deliberately narrow: only the two lenses that can receive a typed arrival
+ * are representable, so this cannot grow into a second, parallel idea of
+ * "what the Dashboard is looking at" beside the deck.
+ */
+interface ShellArrival {
+  lens: Extract<DashboardLens, 'ideas' | 'research'>
+  ideaId?: string | null
+  assetId?: string | null
+  focus?: string | null
+  issue?: string | null
+  origin?: string | null
 }
 
 /** What the shell holds while a card is expanded. */

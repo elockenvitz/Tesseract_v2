@@ -1,0 +1,20 @@
+-- Rollback for 20261106150000_workflow_collaborations_tenant_scope.sql
+--
+-- Restores the policy exactly as read from pg_policies on 2026-11-06, including
+-- TO public. This reopens the cross-organization metadata read; use it only to
+-- undo a bad deploy, not as a resting state.
+
+DROP POLICY IF EXISTS "Users can view workflow collaborations they have access to"
+  ON public.workflow_collaborations;
+
+CREATE POLICY "Users can view workflow collaborations they have access to"
+  ON public.workflow_collaborations
+  FOR SELECT
+  TO public
+  USING (
+    user_id = auth.uid()
+    OR invited_by = auth.uid()
+    OR workflow_id IN (
+      SELECT workflows.id FROM public.workflows WHERE workflows.created_by = auth.uid()
+    )
+  );

@@ -70,6 +70,37 @@ export interface OpenAssetRequest {
 export const OPEN_ASSET_EVENT = 'tesseract:open-asset' as const
 
 /**
+ * A unique id per navigation request, so the receiver can tell a NEW intent
+ * from one it already acted on.
+ *
+ * ── Why the descriptor needs this ─────────────────────────────────────────
+ *
+ * `focus` is written into TAB DATA, and tab data is durable: the shell merges
+ * it into the open tab and keeps it there. Only the active tab renders, so
+ * moving to another tab unmounts the Asset page and returning remounts it —
+ * at which point the focus effect read the same `focus` again and re-applied
+ * it, overwriting wherever the reader had since navigated. A reader who
+ * arrived from "Edit on the asset", went to History, and came back was put
+ * back in Research, forever.
+ *
+ * The focus value alone cannot distinguish the cases, because "open this
+ * asset in Research again" and "this tab was once opened in Research" are the
+ * same two fields. An id that changes per call can: the receiver stores the
+ * last one it consumed, so a replayed descriptor is recognisably the same
+ * request and a genuinely new one — even to the same asset and the same
+ * focus — is recognisably different.
+ *
+ * Not a timestamp alone: two sends inside the same millisecond would collide
+ * and the second would be swallowed. A counter makes it unique within the
+ * session, and the time prefix keeps it readable in a saved session.
+ */
+let focusRequestSeq = 0
+export function nextFocusRequestId(): string {
+  focusRequestSeq += 1
+  return `${Date.now().toString(36)}-${focusRequestSeq.toString(36)}`
+}
+
+/**
  * Two dispatches, no timer.
  *
  * The first is the tab descriptor on the shell's own channel, which is what
@@ -118,6 +149,12 @@ export function assetTabFor(request: OpenAssetRequest) {
       symbol: request.symbol ?? null,
       company_name: request.companyName ?? null,
       focus: request.focus ?? 'overview',
+      /*
+       * Stamped per call, never reused. The receiver consumes a focus once
+       * per id, so this is what stops a remount replaying the arrival and
+       * what lets the same lens send a reader to the same place twice.
+       */
+      focusRequestId: nextFocusRequestId(),
       portfolioId: request.portfolioId ?? null,
       portfolioName: request.portfolioName ?? null,
       issue: request.issue ?? null,

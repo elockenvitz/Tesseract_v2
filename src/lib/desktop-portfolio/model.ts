@@ -47,6 +47,40 @@ export interface PositionFrame {
   ladder: CurrentLadder | null
   /** A live, undecided idea on this asset IN THIS PORTFOLIO. */
   liveIdea: LiveIdea | null
+  /**
+   * The market price this line is judged against, and the close it came from.
+   *
+   * ── The defect this closes ──────────────────────────────────────────────
+   *
+   * `Position.price` is `portfolio_holdings.price`: the price that was in the
+   * file the book was uploaded from, carrying that upload's own date. It is
+   * the right number for the book's market value, and it is NOT a current
+   * price. On this project AAPL sits in Large Cap Core at 175.50 as of
+   * 2025-08-02 while the newest stored close is 330.32.
+   *
+   * Every framework claim in this module was made against that number, so
+   * the lens reported AAPL as 14.4% BELOW a bear case of 205 while the asset
+   * page, reading the stored close, reported it ABOVE a bull case of 285.
+   * Same name, same ladder, opposite verdicts, one click apart. Reported as
+   * exactly that.
+   *
+   * `price_history_cache` is the product's canonical stored market price and
+   * is already what Research, Today, Ideas, `lib/outcomes/current-price` and
+   * the asset page measure against. So the frame carries it, and `spotOf`
+   * below is the one place that decides what "spot" means here.
+   *
+   * Null where nothing is stored for the name, which is the honest answer for
+   * cash and for a name with no cached history: the fallback is then the
+   * holding's own price, exactly as before.
+   */
+  mark: Mark | null
+}
+
+/** A dated market price, as `price_history_cache` stores it. */
+export interface Mark {
+  price: number
+  /** The close's own date, `YYYY-MM-DD`. Never the day it was read. */
+  asOf: string
 }
 
 export interface LiveIdea {
@@ -59,7 +93,24 @@ export interface LiveIdea {
 
 export const EMPTY_FRAME: PositionFrame = {
   thesisUpdatedAt: null, daysSinceReview: null,
-  newEvidence: 0, evidenceCount: 0, ladder: null, liveIdea: null,
+  newEvidence: 0, evidenceCount: 0, ladder: null, liveIdea: null, mark: null,
+}
+
+/**
+ * The price a judgment about this line is made against.
+ *
+ * The stored close where the name has one, and the holding's own price where
+ * it does not. ONE function, because the alternative is what this replaced:
+ * `gapOf`, `breakPct`, `outsideBy` and the asset page each reading a price of
+ * their own and disagreeing about the same position.
+ *
+ * Returns 0 rather than null for "no usable price", so every caller's
+ * existing `> 0` guard keeps working unchanged.
+ */
+export function spotOf(p: Position, f: PositionFrame = EMPTY_FRAME): number {
+  const mark = f.mark?.price
+  if (mark != null && Number.isFinite(mark) && mark > 0) return mark
+  return p.price > 0 ? p.price : 0
 }
 
 /**
@@ -152,11 +203,12 @@ export function gapOf(p: Position, f: PositionFrame = EMPTY_FRAME): GapState {
   // The framework claim comes before the document claim: a stock trading
   // through its own bull case is a live disagreement with the view, whereas a
   // stale review date is only a disagreement with the calendar.
-  if (p.price > 0 && f.ladder?.valid) {
+  const spot = spotOf(p, f)
+  if (spot > 0 && f.ladder?.valid) {
     const bull = rung(f.ladder, 'Bull')
     const bear = rung(f.ladder, 'Bear')
-    if (bull != null && p.price > bull) return 'above-bull'
-    if (bear != null && p.price < bear) return 'below-bear'
+    if (bull != null && spot > bull) return 'above-bull'
+    if (bear != null && spot < bear) return 'below-bear'
   }
 
   if (!f.thesisUpdatedAt) return p.weightPct >= MATERIAL_PCT ? 'no-framework' : 'aligned'
@@ -167,11 +219,12 @@ export function gapOf(p: Position, f: PositionFrame = EMPTY_FRAME): GapState {
 
 /** How far past the framework spot has travelled, as a percent of the rung. */
 export function breakPct(p: Position, f: PositionFrame): number | null {
-  if (!f.ladder?.valid || !(p.price > 0)) return null
+  const spot = spotOf(p, f)
+  if (!f.ladder?.valid || !(spot > 0)) return null
   const bull = rung(f.ladder, 'Bull')
   const bear = rung(f.ladder, 'Bear')
-  if (bull != null && p.price > bull && bull > 0) return ((p.price - bull) / bull) * 100
-  if (bear != null && p.price < bear && bear > 0) return ((p.price - bear) / bear) * 100
+  if (bull != null && spot > bull && bull > 0) return ((spot - bull) / bull) * 100
+  if (bear != null && spot < bear && bear > 0) return ((spot - bear) / bear) * 100
   return null
 }
 
@@ -307,7 +360,10 @@ export function targetFor(p: Position, f: PositionFrame = EMPTY_FRAME, portfolio
   const chips: { label: string; value: string }[] = []
   chips.push({ label: 'Weight', value: `${p.weightPct.toFixed(1)}%` })
   if (portfolioName) chips.push({ label: 'Portfolio', value: portfolioName })
-  if (p.price > 0) chips.push({ label: 'Spot', value: `$${p.price.toFixed(2)}` })
+  /* The marked price, not the upload's -- the same number the gap claim above
+     is made from, so the chip cannot contradict the issue it sits beside. */
+  const spot = spotOf(p, f)
+  if (spot > 0) chips.push({ label: 'Spot', value: `$${spot.toFixed(2)}` })
   if (f.ladder?.valid) {
     const bull = rung(f.ladder, 'Bull'), bear = rung(f.ladder, 'Bear')
     if (bear != null && bull != null) {

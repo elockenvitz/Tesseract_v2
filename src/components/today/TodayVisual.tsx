@@ -40,9 +40,10 @@
 import { useId, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { ArrowRight } from 'lucide-react'
+import { useWidth } from '../../lib/charts/use-width'
 import { indexAtClientX } from '../../lib/charts/scrub'
 import { moveTone } from '../../lib/charts/tone'
-import type { TodayVisual as Visual } from '../../lib/today'
+import { VISUAL_SLOT, visualPlotHeight, type TodayVisual as Visual } from '../../lib/today'
 
 export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boolean }) {
   // No visual is better than an apology. The user should never read
@@ -64,9 +65,10 @@ export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boo
     */
     <div
       className={clsx(
-        'border-t border-gray-200/80 dark:border-white/[0.08]',
+        'flex flex-col overflow-hidden border-t border-gray-200/80 dark:border-white/[0.08]',
         compact ? 'mt-2 pt-2' : 'mt-3 pt-3',
       )}
+      style={{ height: compact ? VISUAL_SLOT.compact : VISUAL_SLOT.featured }}
       data-archetype={visual.archetype}
     >
       <div className="flex items-baseline gap-2 mb-1.5">
@@ -78,7 +80,11 @@ export function TodayVisual({ visual, compact }: { visual: Visual; compact?: boo
         </span>
       </div>
 
-      <Body visual={visual} compact={compact} />
+      {/* The slot is fixed, so the body owns whatever height is left after
+          the caption. `min-h-0` or a flex child refuses to shrink. */}
+      <div className="min-h-0 flex-1">
+        <Body visual={visual} compact={compact} />
+      </div>
 
       {visual.note && (
         <div className="mt-1.5 text-[10px] leading-snug text-gray-500 dark:text-gray-500">
@@ -153,76 +159,87 @@ function Exposure({ v }: { v: Visual }) {
  */
 function Aging({ v, compact }: { v: Visual; compact?: boolean }) {
   const a = v.aging!
-  const track = useRef<HTMLDivElement | null>(null)
-  const [pick, setPick] = useState<number | null>(null)
 
+  /*
+   * ── Why this is no longer a bar ─────────────────────────────────────────
+   *
+   * It was a 1px rule with a 3px amber run on it and a dot at each end,
+   * captioned "OPEN FOR / 220 days" directly beneath a metric reading
+   * "220d OPEN". Three complaints in a row came back about it, and they
+   * were right twice over: it restated a number the strip had already
+   * printed, and at 3px of ink across 600px it read as a progress bar --
+   * the one shape on a dashboard that means "wait", which is the opposite
+   * of what a finding about neglect should say.
+   *
+   * A dial says the same fact in a shape nothing else on the surface uses,
+   * and it puts the figure where the eye lands first instead of in a margin.
+   * The arc is the elapsed share of a year; the number inside is the thing
+   * itself; the ring behind is the year it is measured against. Past a year
+   * the arc closes and the label says so rather than silently rescaling.
+   *
+   * It is still the LAST resort -- enrich.ts now prefers a real price path
+   * wherever one exists -- so this draws only for a name with no history at
+   * all. For that tile it is the only picture available, and it should at
+   * least be a good one.
+   */
   const YEAR = 365
-  const capped = Math.min(a.days, YEAR)
   const over = a.days > YEAR
-  const at = (d: number) => (Math.min(d, YEAR) / YEAR) * 100
+  const frac = Math.min(1, a.days / YEAR)
 
-  /* Quarter marks, so the length can be read rather than estimated. */
-  const ticks = [91, 182, 273].filter(d => d < Math.max(capped, 60))
+  const size = compact ? 92 : 126
+  const stroke = compact ? 9 : 12
+  const R = (size - stroke) / 2
+  const C = 2 * Math.PI * R
+  // Hot past six months: a case nobody has touched for half a year is the
+  // finding, and the ring is the only thing on this tile that can say so.
+  const hot = a.days >= 182
+
+  const [from, to] = [a.milestones[0], a.milestones[a.milestones.length - 1]]
 
   return (
-    <div>
-      <div className="flex h-[14px] items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
-        <span>written</span>
-        <span className="font-mono tracking-normal normal-case text-gray-500">
-          {pick != null
-            ? `${Math.round(pick)}d in`
-            : over ? 'over a year' : `${a.days}d`}
-        </span>
-        <span>today</span>
+    <div className="flex h-full items-center justify-center gap-5" data-testid="aging-dial">
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90">
+          <circle
+            cx={size / 2} cy={size / 2} r={R} fill="none" strokeWidth={stroke}
+            className="stroke-gray-200 dark:stroke-white/[0.07]"
+          />
+          <circle
+            cx={size / 2} cy={size / 2} r={R} fill="none" strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeDasharray={`${(C * frac).toFixed(2)} ${C.toFixed(2)}`}
+            className={hot
+              ? 'stroke-amber-500 dark:stroke-amber-400'
+              : 'stroke-slate-400 dark:stroke-slate-500'}
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className={clsx(
+            'font-mono font-semibold leading-none tabular-nums tracking-[-0.02em] text-gray-900 dark:text-gray-100',
+            compact ? 'text-[21px]' : 'text-[29px]',
+          )}>
+            {over ? '1yr+' : a.days}
+          </span>
+          <span className="mt-1 text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+            {over ? 'and counting' : 'days'}
+          </span>
+        </div>
       </div>
 
-      <div
-        ref={track}
-        data-testid="aging-track"
-        className={clsx('relative mt-1.5 w-full cursor-crosshair', compact ? 'h-[20px]' : 'h-[26px]')}
-        onPointerMove={e => {
-          if (e.pointerType !== 'mouse' || !track.current) return
-          const r = track.current.getBoundingClientRect()
-          if (r.width <= 0) return
-          const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
-          setPick(f * YEAR)
-        }}
-        onPointerLeave={() => setPick(null)}
-      >
-        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-slate-200 dark:bg-white/10" />
-
-        {/* The quarters. Faint, and only where they fit inside the run. */}
-        {ticks.map(d => (
-          <i key={d} className="absolute top-1/2 h-[7px] w-px -translate-y-1/2 bg-slate-300 dark:bg-white/20"
-             style={{ left: `${at(d)}%` }} />
-        ))}
-
-        {/* The run itself. Amber because an unreviewed case IS the finding
-            here -- this is the severity palette doing its actual job, not a
-            price wearing it. */}
-        <div
-          className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-amber-500/80 dark:bg-amber-400/70"
-          style={{ left: 0, width: `${at(a.days)}%` }}
-        />
-        <span className="absolute left-0 top-1/2 h-[10px] w-[10px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[2px] border-slate-500 bg-white dark:border-slate-400 dark:bg-[#141a25]" />
-        <span
-          className={clsx(
-            'absolute top-1/2 w-[2px] -translate-x-1/2 -translate-y-1/2',
-            over ? 'h-[18px] bg-rose-600' : 'h-[14px] bg-amber-600 dark:bg-amber-400',
-          )}
-          style={{ left: `${at(a.days)}%` }}
-        />
-
-        {pick != null && (
-          <span className="pointer-events-none absolute inset-y-0 w-px bg-slate-900 dark:bg-white"
-                style={{ left: `${at(pick)}%` }} />
-        )}
-      </div>
-
-      <div className="mt-1 flex items-baseline justify-between text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
-        <span className="font-mono tracking-normal normal-case">0</span>
-        <span className="font-mono tracking-normal normal-case">6 months</span>
-        <span className="font-mono tracking-normal normal-case">{over ? '1yr+' : '1 year'}</span>
+      {/* The two ends of the span, named. The ring says how far; this says
+          from what to what, which the old track spent a whole row on. */}
+      <div className="min-w-0 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
+        <div className="truncate">
+          <span className="text-gray-400 dark:text-gray-500">from </span>
+          <span className="font-medium text-gray-700 dark:text-gray-300">{from?.label}</span>
+        </div>
+        <div className="truncate">
+          <span className="text-gray-400 dark:text-gray-500">to </span>
+          <span className="font-medium text-gray-700 dark:text-gray-300">{to?.label}</span>
+        </div>
+        <div className="mt-1.5 text-[10px] text-gray-400 dark:text-gray-500">
+          {over ? 'more than a year' : `${Math.round(frac * 100)}% of a year`}
+        </div>
       </div>
     </div>
   )
@@ -275,6 +292,9 @@ function ExpectedReturn({ v }: { v: Visual }) {
 
 /* ----------------------------------------------------------- review window */
 
+/* `useWidth` moved to lib/charts so the Research detail's plot draws in the
+   same real-pixel coordinate system this one does, rather than a copy. */
+
 /**
  * Price across the window the caption names, with the review anchor marked.
  *
@@ -306,14 +326,83 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
    * readability, not symmetry -- if a tile ever needs a taller plot than its
    * prose, the plot wins.
    */
-  const h = compact ? 84 : 118
-  const W = 320
+  /*
+   * Sized to the slot, not to a wish.
+   *
+   * The zone is a fixed box now (VISUAL_SLOT), and this plot was built back
+   * when it could push the card as tall as it liked. At 84 the compact
+   * version needed 84 + a 24px read-out under a 20px caption inside a 126px
+   * slot with 8px of padding: ten pixels too many, and `overflow-hidden`
+   * took them off the bottom -- so TSLA's "-7.0%" and AAPL's "+27.6%", the
+   * one number the chart exists to state, were sliced in half.
+   *
+   *   compact   172 - 8 padding - 20 caption - 24 read-out = 120
+   *   featured  224 - 12        - 20         - 24          = 168
+   *
+   * The slot grew because the plot was the thing being squeezed: a 72px band
+   * of price across a 340px column reads as a sparkline decoration, not as a
+   * chart you interrogate. It is now the tallest thing on the tile, which is
+   * the right order of billing for a surface whose whole claim is what the
+   * price has done since you last looked.
+   */
+  /*
+   * Derived from the slot, including the note.
+   *
+   * This was `compact ? 118 : 166`, worked out by hand in the comment above
+   * against a slot that has a note row the arithmetic never subtracted. On a
+   * window that does not reach its anchor the note renders below this plot
+   * inside the same fixed box, the plot does not give the room back, and the
+   * read-out line — the percentage this chart exists to state — was pushed
+   * onto the words. `visualPlotHeight` owns the subtraction now, so the
+   * drawing code cannot hold a height the slot does not have.
+   */
+  const h = visualPlotHeight({ compact, hasNote: !!v.note })
+
+  /*
+   * ── Why this plot looked cheap, and the one line that caused it ─────────
+   *
+   * It drew into a fixed 320-unit `viewBox` and set
+   * `preserveAspectRatio="none"`, so the browser stretched those 320 units
+   * across whatever width the column happened to be. On the lead tile that
+   * is 724px: a horizontal scale of 2.26x against a vertical scale of 1x.
+   *
+   * Everything that is supposed to be round or square came out smeared.
+   * The end-of-series dot rendered as a flat ellipse 2.26 units wide for
+   * every 1 unit tall. The inspected-point dot did too. The dash pattern on
+   * the anchor rule stretched to 2.26x its length horizontally while the
+   * vertical dashes beside it stayed 1x, so two dashed lines on the same
+   * chart had visibly different dashes. Stroke widths survived only because
+   * every one of them carries `vectorEffect="non-scaling-stroke"` -- a patch
+   * over the same wound.
+   *
+   * This is the difference between a chart and a picture of a chart, and it
+   * is why the surface never read like Robinhood or Coinbase however much
+   * detail was added to it. Those plots are drawn in device pixels.
+   *
+   * So: measure the box, draw 1:1, and delete `preserveAspectRatio`. The
+   * geometry below is now in real CSS pixels -- a circle of r=3.5 is 7px
+   * across on screen, a 3px dash is 3px long, and a gridline put on a half
+   * pixel lands on a device pixel instead of straddling two and rendering
+   * as a 2px smudge.
+   */
+  const [box, boxW] = useWidth<HTMLDivElement>(320)
+  const W = Math.max(1, Math.round(boxW))
+
+  /*
+   * Breathing room, top and bottom.
+   *
+   * The series used to run from 4px to h-8, which put the extremes almost on
+   * the frame: a high that touches the top edge reads as clipped rather than
+   * as the high. 12px keeps both peaks inside the plot and gives the fill
+   * somewhere to go.
+   */
+  const PAD = 12
   const min = Math.min(...r.series)
   const max = Math.max(...r.series)
   const span = (max - min) || 1
-  const x = (i: number) => (i * W) / Math.max(1, r.series.length - 1)
-  const y = (val: number) => 4 + (h - 12) * (1 - (val - min) / span)
-  const d = r.series.map((val, i) => `${x(i).toFixed(1)},${y(val).toFixed(1)}`).join(' L')
+  const x = (i: number) => (i * (W - 1)) / Math.max(1, r.series.length - 1)
+  const y = (val: number) => PAD + (h - PAD * 2) * (1 - (val - min) / span)
+  const d = r.series.map((val, i) => `${x(i).toFixed(2)},${y(val).toFixed(2)}`).join(' L')
   const up = r.changePct >= 0
   const tone = moveTone(r.changePct)
   // A gradient is referenced by id and a feed mounts many of these; `useId`
@@ -332,7 +421,18 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
   const hi = Math.max(...r.series)
   const lo = Math.min(...r.series)
   const first = r.series[0]
-  const frame = !compact
+  /*
+   * The frame is not a luxury of the wide tile.
+   *
+   * It was `!compact`, so the two supporting tiles drew a bare coloured line
+   * and nothing else: no scale, no gridlines, no mark for where the window
+   * starts. A reader could see that TSLA fell and AAPL rose and could not
+   * read a single level off either -- which is what "too remedial" means.
+   * Everything below already exists; it was simply switched off on the tiles
+   * most likely to be read.
+   */
+  const frame = true
+  const gutter = compact ? 34 : 38
   const ticks: { v: number; tag: string }[] = []
   for (const t of [{ v: hi, tag: 'H' }, { v: first, tag: 'open' }, { v: lo, tag: 'L' }]) {
     if (ticks.some(u => Math.abs(y(u.v) - y(t.v)) < 11)) continue
@@ -372,11 +472,13 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
   return (
     <div>
      <div className="relative flex items-start gap-2">
+      <div ref={box} className="min-w-0 flex-1">
       <svg
         ref={plot}
         viewBox={`0 0 ${W} ${h}`}
-        preserveAspectRatio="none"
-        className={clsx('min-w-0 flex-1 cursor-crosshair', tone)}
+        width={W}
+        height={h}
+        className={clsx('block w-full cursor-crosshair', tone)}
         style={{ height: h }}
         role="img"
         aria-label={`Price over the window, ${r.changePct.toFixed(1)} percent`}
@@ -393,32 +495,58 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
             <stop offset="100%" stopColor="currentColor" stopOpacity={up ? 0.02 : 0.24} />
           </linearGradient>
         </defs>
+        {/* Half-pixel centres, so a 1px rule lands ON a device pixel rather
+            than straddling two and rendering as a grey 2px smudge. This is
+            the single most visible difference between a crisp chart and a
+            soft one, and it was unavailable while the plot was stretched. */}
         {frame && [0.25, 0.5, 0.75].map(f => (
           <line
-            key={f} x1="0" x2={W} y1={h * f} y2={h * f}
+            key={f} x1="0" x2={W} y1={Math.round(h * f) + 0.5} y2={Math.round(h * f) + 0.5}
             className="stroke-gray-200/70 dark:stroke-white/[0.07]"
-            strokeWidth="1" vectorEffect="non-scaling-stroke"
+            strokeWidth="1"
           />
         ))}
+        {/*
+          The level the window STARTED at, drawn across the plot.
+
+          The gutter already prints this number beside the axis, but a figure
+          in a margin does not answer the question the chart is there for --
+          is the price above or below where it was when you last wrote? A rule
+          at that level answers it without reading anything: everything above
+          the line is gain since the anchor, everything below is give-back.
+        */}
+        <line
+          x1={0} x2={W} y1={Math.round(y(first)) + 0.5} y2={Math.round(y(first)) + 0.5}
+          strokeWidth={1} strokeDasharray="3 3"
+          className="stroke-slate-400/80 dark:stroke-slate-500/80"
+        />
         <path d={`M${d} L${W},${h} L0,${h} Z`} fill={`url(#${gid})`} />
-        <path d={`M${d}`} fill="none" stroke="currentColor" strokeWidth={2.25}
-              vectorEffect="non-scaling-stroke" strokeLinejoin="round" className={tone} />
+        {/* Round caps and joins. A 2px polyline through 360 points has a
+            join at every point; mitred, they spike at each reversal, which
+            is the fuzz that reads as a cheap plot at a glance. */}
+        <path d={`M${d}`} fill="none" stroke="currentColor" strokeWidth={2}
+              strokeLinejoin="round" strokeLinecap="round" className={tone} />
         {r.reachesAnchor && (
-          <line x1={0.5} y1={0} x2={0.5} y2={h - 2} strokeWidth={1} strokeDasharray="2 3"
+          <line x1={0.5} y1={0} x2={0.5} y2={h} strokeWidth={1} strokeDasharray="3 3"
                 className="stroke-gray-400 dark:stroke-gray-600" />
         )}
         {/* The inspected point, drawn only while it is being inspected. */}
         {picked != null && at != null && (
           <>
             <line
-              x1={x(picked)} y1={0} x2={x(picked)} y2={h}
+              x1={Math.round(x(picked)) + 0.5} y1={0} x2={Math.round(x(picked)) + 0.5} y2={h}
               strokeWidth={1} className="stroke-gray-400 dark:stroke-gray-500"
             />
-            <circle cx={x(picked)} cy={y(at)} r={3} className="fill-blue-600" />
+            {/* A white collar lifts the mark off the series instead of
+                letting it sit in the line's own ink. Round, now that the
+                coordinate system is square. */}
+            <circle cx={x(picked)} cy={y(at)} r={5} className="fill-white dark:fill-[#161d2a]" />
+            <circle cx={x(picked)} cy={y(at)} r={3.5} fill="currentColor" className={tone} />
           </>
         )}
-        <circle cx={W - 2} cy={y(r.series[r.series.length - 1])} r={3.5} fill="currentColor" />
+        <circle cx={W - 3.5} cy={y(r.series[r.series.length - 1])} r={3.5} fill="currentColor" />
       </svg>
+      </div>
 
       {/*
         The anchor's label, as HTML rather than as SVG <text>.
@@ -444,7 +572,7 @@ function ReviewWindow({ v, compact }: { v: Visual; compact?: boolean }) {
       {/* The price scale. Outside the plot, so a level can be read off the
           gridline it sits on without anything overlapping the series. */}
       {frame && (
-        <div className="relative w-[38px] shrink-0" style={{ height: h }} aria-hidden>
+        <div className="relative shrink-0" style={{ height: h, width: gutter }} aria-hidden>
           {ticks.map(t => (
             <div
               key={t.tag}
@@ -538,6 +666,38 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
   const at = (p: number) => ((p - lo) / span) * 100
   const beyond = sc.spot > bull || sc.spot < bear
 
+  /*
+   * Which rungs get a printed label.
+   *
+   * A four-case framework puts two rungs close together and the labels
+   * collide: AAPL at 1920x889 printed "BEBAR5Sa0B310" where BEAR 205 and
+   * BASE 230 overlapped. Two true labels on top of each other are worse than
+   * one, because the result is neither.
+   *
+   * So a label is kept only if it clears the last one kept. The rung LINE is
+   * always drawn -- nothing is hidden from the chart, only from the axis --
+   * and running the pointer across the band reads any level exactly. The
+   * extremes are what the axis is for, so bear and bull are always kept and
+   * a middle rung yields to them rather than the other way round.
+   *
+   * The gap is in percent of band width and is wider when the column is
+   * narrower, because a label's width in percent grows as the band shrinks.
+   */
+  const LABEL_GAP = compact ? 26 : 15
+  const labelled = (() => {
+    const sorted = [...sc.cases].sort((a2, b2) => a2.price - b2.price)
+    if (sorted.length <= 2) return sorted
+    const last = sorted[sorted.length - 1]
+    const kept = [sorted[0]]
+    for (const c of sorted.slice(1, -1)) {
+      if (at(c.price) - at(kept[kept.length - 1].price) < LABEL_GAP) continue
+      if (at(last.price) - at(c.price) < LABEL_GAP) continue
+      kept.push(c)
+    }
+    kept.push(last)
+    return kept
+  })()
+
   /** Which side of the desk's thinking a level falls on. */
   const zoneOf = (p: number) => {
     if (p < bear) return 'below the bear case'
@@ -552,10 +712,10 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
   }
 
   return (
-    <div>
+    <div className="flex h-full flex-col">
       {/* One line, one height, whether or not a level is being read -- so
           running across the band never moves the card. */}
-      <div className="flex h-[14px] items-baseline justify-between overflow-hidden whitespace-nowrap text-[9px] font-medium uppercase tracking-[0.08em] text-gray-400">
+      <div className="flex h-[14px] shrink-0 items-baseline justify-between overflow-hidden whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.08em] text-gray-500 dark:text-gray-400">
         <span>{scrub == null ? 'Bear' : ''}</span>
         {scrub != null && (
           <span
@@ -575,7 +735,11 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
       <div
         ref={band}
         data-testid="scenario-band"
-        className={clsx('relative mt-1.5 w-full cursor-crosshair', compact ? 'h-[34px]' : 'h-[46px]')}
+        /* It was 34px of band under a 455px-wide caption -- a hairline asked
+           to carry the whole finding. The slot above is fixed, so taking the
+           remaining height costs nothing and the band reads as a range
+           instead of a rule. */
+        className={clsx('relative mt-1.5 w-full flex-1 cursor-crosshair', compact ? 'min-h-[34px]' : 'min-h-[46px]')}
         onPointerMove={e => {
           if (e.pointerType !== 'mouse' || !band.current) return
           const r = band.current.getBoundingClientRect()
@@ -587,21 +751,31 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
         }}
         onPointerLeave={() => setScrub(null)}
       >
-        {/* Outside the range the desk underwrote. Marked, not painted. */}
-        <div className="absolute inset-y-0 left-0 bg-rose-500/[0.07] dark:bg-rose-400/[0.10]"
+        {/*
+          Outside the range the desk underwrote. Marked, not painted -- but
+          marked enough to see: at 7% alpha the hatching was invisible on a
+          white card, so "the price is above the bull case" was carried by
+          the sentence alone and the picture said nothing.
+
+          The outside is now a flat neutral wash and the inside is the only
+          coloured region, which is the fact worth colouring: the band IS the
+          desk's thinking, and everything outside it is territory nobody
+          wrote a case for.
+        */}
+        <div className="absolute inset-y-0 left-0 rounded-l-[2px] bg-gray-500/[0.07] dark:bg-white/[0.05]"
              style={{ width: `${at(bear)}%` }} />
-        <div className="absolute inset-y-0 right-0 bg-rose-500/[0.07] dark:bg-rose-400/[0.10]"
+        <div className="absolute inset-y-0 right-0 rounded-r-[2px] bg-gray-500/[0.07] dark:bg-white/[0.05]"
              style={{ left: `${at(bull)}%` }} />
 
         {/* What the desk underwrote, bear to bull, because that is what the
             axis IS: the left edge is the case we lose in. */}
         <div
-          className="absolute inset-y-0 bg-gradient-to-r from-rose-500/[0.16] via-slate-400/[0.10] to-emerald-500/[0.16] dark:from-rose-400/[0.18] dark:via-white/[0.07] dark:to-emerald-400/[0.18]"
+          className="absolute inset-y-0 rounded-[2px] bg-gradient-to-r from-rose-500/30 via-slate-400/[0.18] to-emerald-500/30 dark:from-rose-400/30 dark:via-white/[0.12] dark:to-emerald-400/30"
           style={{ left: `${at(bear)}%`, width: `${Math.max(0, at(bull) - at(bear))}%` }}
         />
 
         {sc.cases.map(c => (
-          <i key={c.name} className="absolute inset-y-0 w-[2px] bg-slate-400 dark:bg-white/35"
+          <i key={c.name} className="absolute inset-y-0 w-px bg-slate-500/70 dark:bg-white/45"
              style={{ left: `${at(c.price)}%` }} />
         ))}
 
@@ -629,21 +803,48 @@ function Scenario({ v, compact }: { v: Visual; compact?: boolean }) {
       </div>
 
       {/*
-        The rungs, named and priced, under the band rather than inside it.
+        The rungs, named and priced, each UNDER THE LINE IT NAMES.
 
-        They were absolutely positioned at the band's own baseline, so on a
-        narrow column the three numbers overlapped each other and the price
-        mark. A row underneath cannot collide with the geometry it labels.
+        ── Why this moved twice ──────────────────────────────────────────
+        They began absolutely positioned at the band's own baseline, where on
+        a narrow column the three numbers overlapped each other and the price
+        mark. The fix was a `justify-between` row underneath -- which cannot
+        collide, and also cannot be right: it pins the first label to the
+        left edge, the last to the right edge and the rest evenly between,
+        wherever the rungs actually are. Measured on AMZN at 1920x889, the
+        bull rung sat at 55% of the band with "BULL 180" printed at 100%, and
+        the base rung at 31% with "BASE 120" at 50%. Every label named a line
+        it was nowhere near, which is most of what made the object unreadable.
+
+        So they are positioned at their own rung again, but on their own row
+        where nothing can overlap the geometry, and centred on the rung with
+        the end labels clamped inside the box rather than hanging off it. Two
+        rungs priced close together still crowd; that is a legible crowd of
+        two true labels, not three false ones.
       */}
-      <div className="mt-1 flex items-baseline justify-between font-mono text-[9px] tabular-nums text-gray-500">
-        {[...sc.cases].sort((a2, b2) => a2.price - b2.price).map(c => (
-          <span key={c.name} className="truncate">
-            <span className="font-sans uppercase tracking-[0.06em] text-gray-400">
-              {c.name}
-            </span>{' '}
-            {c.price.toFixed(0)}
-          </span>
-        ))}
+      {/* 9px grey-on-white mono was not small-and-quiet, it was unreadable.
+          11px and real ink; the rung NAMES stay lighter so the figure leads. */}
+      <div className="relative mt-1 h-[13px] shrink-0 font-mono text-[11px] font-medium tabular-nums text-gray-700 dark:text-gray-300">
+        {labelled.map(c => {
+          const x = at(c.price)
+          return (
+            <span
+              key={c.name}
+              data-testid="scenario-rung-label"
+              data-rung={c.name}
+              className={clsx(
+                'absolute top-0 whitespace-nowrap',
+                x <= 8 ? 'translate-x-0' : x >= 92 ? '-translate-x-full' : '-translate-x-1/2',
+              )}
+              style={{ left: `${Math.min(100, Math.max(0, x))}%` }}
+            >
+              <span className="font-sans text-[10px] uppercase tracking-[0.06em] text-gray-500 dark:text-gray-400">
+                {c.name}
+              </span>{' '}
+              {c.price.toFixed(0)}
+            </span>
+          )
+        })}
       </div>
     </div>
   )

@@ -4,11 +4,10 @@ import { Compass, Lightbulb } from 'lucide-react'
 import { IdeasExplore } from './IdeasExplore'
 import { IdeasExploreBrowse } from './IdeasExploreBrowse'
 import { IdeasWorkPane } from './IdeasWorkPane'
-import { ArticleReader } from '../mobile/ArticleReader'
+import { BackToSection } from '../desktop/BackToSection'
 import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
-import { selectionFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
-import { exploreOpen, type ExploreOpen } from '../../lib/desktop-ideas/explore-open'
-import { openAsset } from '../../lib/desktop-asset/navigate'
+import { selectionFor, selectionForStory, type IdeasSelection } from '../../lib/desktop-ideas/selection'
+import { exploreOpen } from '../../lib/desktop-ideas/explore-open'
 import { openIdeaDetail } from '../../lib/navigation/open-idea'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import { usePromptResolve } from '../../hooks/usePromptResolve'
@@ -150,15 +149,6 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
    */
   const resolver = useDesktopAttentionFeed('all')
 
-  /**
-   * The open story, if any.
-   *
-   * A story is read, not worked on, and `resolveExploreItem` has said so since
-   * it was written. It gets the reader the product already has rather than a
-   * second one, and deliberately NOT the workspace — putting an article there
-   * for the sake of consistency would make the workspace a browser.
-   */
-  const [article, setArticle] = useState<Extract<ExploreOpen, { do: 'article' }> | null>(null)
 
   return (
     <div className="flex h-full flex-col bg-white dark:bg-gray-900">
@@ -221,7 +211,7 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
         <div className="flex h-full">
         <div
           className={clsx(
-            'min-w-0 border-r border-gray-200 dark:border-gray-700',
+            'flex min-w-0 flex-col border-r border-gray-200 dark:border-gray-700',
             /*
              * ~42% with a floor and a ceiling, not a bare percentage.
              *
@@ -238,10 +228,25 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
              * Split mode is left exactly as it was — this pane is already the
              * narrower half and has no width to give away.
              */
-            splitOpen ? 'w-[42%] min-w-[30rem] max-w-[40rem]' : 'w-full border-r-0 px-2',
+            /* ~30% between 20rem and 26rem, down from ~42% between 30 and 40.
+               26rem is under the 34rem that `.gallery-region` and the rail
+               gutter are keyed on, so the rail is one column with a 12px
+               gutter at every window width. See `DashboardNext` for the full
+               reasoning; the two shells share this geometry deliberately. */
+            splitOpen ? 'w-[30%] min-w-[20rem] max-w-[26rem]' : 'w-full border-r-0 px-2',
           )}
         >
-        <div className={clsx('h-full', mode !== 'explore' && 'hidden')}>
+        {/* The way back, over the column it widens rather than over the pane
+            it closes. See `BackToSection`. */}
+        {splitOpen && (
+          <div className="flex shrink-0 items-center border-b border-gray-200 px-3 py-1.5 dark:border-gray-700">
+            <BackToSection
+              backTo={MODES.find(m => m.key === mode)?.label ?? 'Ideas'}
+              onBack={() => { setSelected(null); setWorkMode(null); setSplitOpen(false) }}
+            />
+          </div>
+        )}
+        <div className={clsx('min-h-0 flex-1', mode !== 'explore' && 'hidden')}>
           <IdeasExploreBrowse
             selectedKey={selected?.selection.key ?? null}
             /*
@@ -256,7 +261,21 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
                 openWorkspace(open.selection, null, null)
                 return
               }
-              if (open.do === 'article') { setArticle(open); return }
+              /*
+               * The story opens in the workspace, not over it.
+               *
+               * This used to read "a story is read, not worked on ... putting
+               * an article there for the sake of consistency would make the
+               * workspace a browser", and the overlay followed from it. The
+               * reader overruled it with the case it missed: a story here is
+               * surfaced because the desk owns the name, so the question it
+               * raises is whether the case still holds -- and the overlay hid
+               * the case to show the story. See `selectionForStory`.
+               */
+              if (open.do === 'article') {
+                openWorkspace(selectionForStory(open), null, null)
+                return
+              }
               if (open.do === 'navigate') {
                 /*
                  * The shell's own tab channel — the same descriptor `openAsset`
@@ -272,7 +291,7 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
             }}
           />
         </div>
-        <div className={clsx('h-full', mode === 'explore' && 'hidden')}>
+        <div className={clsx('min-h-0 flex-1', mode === 'explore' && 'hidden')}>
         <IdeasExplore
           selectedKey={selected?.selection.key ?? null}
           onSelect={entry => {
@@ -344,24 +363,6 @@ export function IdeasApp(_props: { selectedIdeaId?: string | null } = {}) {
         </div>
       </div>
 
-      {/* Portalled and full-screen, over whichever mode the reader was in. The
-          same component the phone uses — its directory is historical, it holds
-          no phone-specific layout, and a second reader would be a second
-          answer to a question this product has already answered. */}
-      {article && (
-        <ArticleReader
-          open
-          url={article.url}
-          fallbackTitle={article.title ?? undefined}
-          fallbackSource={article.source ?? undefined}
-          desk={article.desk}
-          onClose={() => setArticle(null)}
-          /* The route the story's own tile would have taken. */
-          onOpenAsset={(assetId, symbol) => {
-            if (assetId) openAsset({ assetId, symbol })
-          }}
-        />
-      )}
     </div>
   )
 }

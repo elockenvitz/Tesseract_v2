@@ -123,7 +123,21 @@ export function CuratePanel({
       ref={ref}
       role="dialog"
       aria-label="Curate feed"
-      className="absolute left-0 top-full z-40 mt-2 w-[34rem] rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
+      /*
+        Anchored to the button's RIGHT edge, not its left.
+        *
+        It was `left-0`, which was fine while Curate sat near the left of a
+        full-width band. The rail now draws at the right-hand end of the
+        Dashboard's own bar, so a 34rem panel hung off the button's left edge
+        and ran past the window: measured at 1920, it opened at x=1812 and
+        was 436px wider than the screen, with its facets unreachable.
+        *
+        `right-0` puts the panel's right edge on the button's, so it opens
+        INTO the page from wherever the button is. At the left-hand end of a
+        band it still has the whole width to grow into, so this is correct in
+        both positions rather than a swap of one clipping for another.
+      */
+      className="absolute right-0 top-full z-40 mt-2 w-[34rem] rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
     >
       <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2.5 dark:border-gray-700">
         <div>

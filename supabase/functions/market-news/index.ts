@@ -30,18 +30,31 @@
  *   { symbols: string[], limit?: number, lookbackDays?: number }
  *
  * Returns:
- *   { items: NewsItem[], sources: { name, ok, configured, count }[] }
+ *   { items: NewsItem[], sources: { name, ok, configured, count, note? }[] }
  *
  * `configured` is reported separately from `ok` because a source with no API
  * key returns an empty list without erroring, which is indistinguishable from
  * a working source on a quiet news day. Alpha Vantage sat dark that way and
  * nothing in the response said so.
  *
+ * `note` is the next layer of the same problem. A source can be configured,
+ * `ok`, and still return nothing because the PROVIDER refused -- Alpha Vantage
+ * answers 200 with prose where the data should be. `note` carries that prose.
+ *
  * `NewsItem` matches src/lib/financial-data/types.ts so the client can treat
  * these identically to any other provider's output.
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
+/*
+ * `@2`, not `@2.39.0`. The pin was the difference between the functions whose
+ * authorization gate works and the two whose gate rejected every signed-in
+ * reader: 2.39.0's bundled auth client resolves a no-argument `getUser()`
+ * through its own empty session store instead of the forwarded Authorization
+ * header. `_shared/verified-user.ts` no longer depends on that behaviour -- it
+ * passes the token explicitly -- but the pin bought nothing and every other
+ * function in this project already tracks `@2`, so it goes.
+ */
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { requirePublishableKey } from '../_shared/publishable-key.ts'
 import { authorizeVerifiedUser } from '../_shared/verified-user.ts'
 
@@ -170,18 +183,70 @@ async function fromFinnhub(symbols: string[], from: string, to: string): Promise
 }
 
 /**
+ * Somewhere for a source to say why it came back empty.
+ *
+ * One object per request, handed in rather than held at module scope: an
+ * isolate serves many requests and a module-level note would outlive the one
+ * it describes.
+ */
+interface SourceNote { note?: string }
+
+/**
+ * Alpha Vantage never returns an HTTP error. It returns 200 with a different
+ * SHAPE -- no `feed` key, and one of three prose fields instead -- so the
+ * obvious `Array.isArray(data?.feed) ? data.feed : []` turns "your key is
+ * invalid" and "you have used your 25 requests for today" into the same empty
+ * list a genuinely quiet news day produces.
+ *
+ * Measured live on 2026-11-02, this source reported `ok: true, configured:
+ * true, count: 0` while every other source returned stories. Alpha Vantage is
+ * the ONLY source carrying sentiment and relevance scores, so with it dark the
+ * feed silently falls back to ranking on recency alone -- and the response said
+ * nothing was wrong. Same class of defect as the `configured` field that was
+ * added above it, one level deeper.
+ *
+ * So: read the prose field and pass it back. `note` appearing on a source is
+ * the provider explaining itself.
+ */
+function alphaVantageComplaint(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined
+  const d = data as Record<string, unknown>
+  // `Information` is the rate-limit and plan message, `Note` the older
+  // throttle message, `Error Message` a bad key or a bad parameter.
+  for (const field of ['Information', 'Note', 'Error Message']) {
+    const v = d[field]
+    if (typeof v === 'string' && v.trim()) return `${field}: ${v.trim()}`
+  }
+  return undefined
+}
+
+/**
  * Alpha Vantage is the only one of the sources returning sentiment and a
  * per-ticker relevance score, which is why it is worth a key: those feed the
  * feed's ranking directly instead of news being ordered on recency alone.
  */
-async function fromAlphaVantage(symbols: string[]): Promise<NewsItem[]> {
+async function fromAlphaVantage(symbols: string[], out: SourceNote): Promise<NewsItem[]> {
   const key = Deno.env.get('ALPHAVANTAGE_API_KEY')
-  if (!key) return []
+  if (!key) {
+    out.note = 'ALPHAVANTAGE_API_KEY is not set'
+    return []
+  }
   try {
     const data = await fetchJson(
       `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${encodeURIComponent(symbols.join(','))}&limit=50&apikey=${key}`
     )
-    const feed = Array.isArray(data?.feed) ? data.feed : []
+    const complaint = alphaVantageComplaint(data)
+    if (complaint) {
+      // The provider's own words. They never contain the key -- the key is
+      // only ever in the query string, which is not echoed back.
+      out.note = complaint
+      return []
+    }
+    if (!Array.isArray(data?.feed)) {
+      out.note = 'the response carried no `feed` array and no explanation'
+      return []
+    }
+    const feed = data.feed
     return feed.flatMap((a: any) => {
       if (!a?.title || !a?.url) return []
       // "20240115T120000" → ISO
@@ -210,7 +275,10 @@ async function fromAlphaVantage(symbols: string[]): Promise<NewsItem[]> {
         imageUrl: a.banner_image || undefined,
       }]
     })
-  } catch {
+  } catch (thrown) {
+    // `fetchJson` throws the status for a non-2xx, which for this provider is
+    // unusual enough to be worth saying out loud rather than swallowing.
+    out.note = `the request failed: ${thrown instanceof Error ? thrown.message : String(thrown)}`
     return []
   }
 }
@@ -486,8 +554,13 @@ serve(async (req) => {
     })
   }
 
-  // Verify a real signed-in user before any external API call or cache write.
-  // The bare anon key resolves to no user and is rejected (see verified-user.ts).
+  /*
+   * A real signed-in user, before any external API call or cache write. The
+   * gateway admits the publishable key that ships in the browser bundle, so
+   * without this an anonymous caller runs up a paid provider bill and writes
+   * the shared cache. See `_shared/verified-user.ts` for why the token is
+   * passed explicitly and why a key-configuration failure is a 503.
+   */
   const authHeader = req.headers.get('Authorization')
   const userClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -496,9 +569,10 @@ serve(async (req) => {
   )
   const authz = await authorizeVerifiedUser(authHeader, userClient)
   if (!authz.ok) {
-    return new Response(JSON.stringify({ error: authz.error }), {
-      status: authz.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return new Response(
+      JSON.stringify(authz.status === 503 ? { error: authz.error, reason: authz.reason } : { error: authz.error }),
+      { status: authz.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
   }
 
   let body: { symbols?: unknown; limit?: unknown; lookbackDays?: unknown }
@@ -541,9 +615,10 @@ serve(async (req) => {
 
   // All four in parallel; a rejection becomes an empty list rather than a
   // failed response.
+  const alphaVantage: SourceNote = {}
   const settled = await Promise.allSettled([
     withTimeout(fromFinnhub(symbols, fmt(from), fmt(to)), SOURCE_TIMEOUT_MS),
-    withTimeout(fromAlphaVantage(symbols), SOURCE_TIMEOUT_MS),
+    withTimeout(fromAlphaVantage(symbols, alphaVantage), SOURCE_TIMEOUT_MS),
     withTimeout(fromYahoo(symbols), SOURCE_TIMEOUT_MS),
     withTimeout(fromYahooRss(symbols), SOURCE_TIMEOUT_MS),
   ])
@@ -615,6 +690,10 @@ serve(async (req) => {
       ok: settled[i].status === 'fulfilled',
       configured: configured[name] ?? true,
       count: lists[i].length,
+      // Only Alpha Vantage answers 200 with a complaint instead of data, so
+      // only Alpha Vantage needs somewhere to put it. The others either return
+      // stories or throw, and `ok: false` already says which.
+      ...(name === 'alphavantage' && alphaVantage.note ? { note: alphaVantage.note } : {}),
     })),
   }
 

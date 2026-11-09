@@ -70,6 +70,16 @@ export const PRIMITIVE_COMPONENTS: Record<VisualPrimitive, string | null> = {
   last_look: 'src/components/signals/Sparkline.tsx',
   workflow: 'src/components/signals/VerdictBar.tsx',
   quote: 'src/components/signals/CasePane.tsx',
+  /**
+   * The question archetype, which this map never listed.
+   *
+   * `Record<VisualPrimitive, ...>` had been reporting the omission all along;
+   * it is a pre-existing error in the repo-wide count, fixed here alongside
+   * the identical gap in `adopt/project.ts`. `QuestionVisual` lives in
+   * `ExploreVisual.tsx` rather than in `signals/`, which is presumably how it
+   * was missed when the archetype landed.
+   */
+  question: 'src/components/mobile/ExploreVisual.tsx',
   price_trend: 'src/components/signals/Sparkline.tsx',
   /** Typography carries it. The honest answer more often than it is used. */
   none: null,

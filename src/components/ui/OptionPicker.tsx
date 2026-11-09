@@ -98,8 +98,20 @@ export function OptionPicker<T extends string>({
     >
       {prefix && <span className="text-gray-400 shrink-0">{prefix}</span>}
       <span className="truncate">{selected?.label ?? label}</span>
-      {selected?.count != null && selected.count > 0 && (
-        <span className="text-[10px] tabular-nums text-gray-400 shrink-0">{selected.count}</span>
+      {/* The slot is RESERVED whenever this option carries a count at all,
+          and merely empty at 0. Rendering nothing until the count is non-zero
+          let an async count appear and widen the trigger after paint, shoving
+          the label beside it -- a hitch, not a layout. An invisible element
+          keeps its box; an absent one gives it up. */}
+      {selected?.count != null && (
+        <span
+          className={clsx(
+            'text-[10px] tabular-nums text-gray-400 shrink-0',
+            selected.count === 0 && 'invisible',
+          )}
+        >
+          {selected.count || 0}
+        </span>
       )}
       <ChevronDown
         className={clsx('h-3 w-3 shrink-0 text-gray-400 transition-transform', open && 'rotate-180')}

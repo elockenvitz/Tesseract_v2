@@ -1,7 +1,7 @@
 export { ContributionSection } from './ContributionSection'
 export { ThesisContainer } from './ThesisContainer'
 export { ThesisSummaryView } from './ThesisSummaryView'
-export { ThesisUnifiedSummary } from './ThesisUnifiedSummary'
+export { ThesisUnifiedSummary, AISetupNotice } from './ThesisUnifiedSummary'
 export { ThesisHistoryView } from './ThesisHistoryView'
 export { EvolutionOverview } from './EvolutionOverview'
 export { EvolutionTimeline } from './EvolutionTimeline'

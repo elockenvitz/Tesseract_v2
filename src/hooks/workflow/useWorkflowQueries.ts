@@ -74,9 +74,33 @@ export function useWorkflowQueries({
           *,
           creator:created_by(email, first_name, last_name),
           favorites:workflow_favorites(id),
-          collaborators:workflow_collaborators(id, user_id, permission)
+          collaborators:workflow_collaborations(id, user_id, permission)
         `)
-        .or(`created_by.eq.${userId},is_public.eq.true,collaborators.user_id.eq.${userId}`)
+        /*
+         * Visibility is left to RLS, which computes exactly the set this
+         * query used to try to express.
+         *
+         * The filter here was
+         *   .or(`created_by.eq.X,is_public.eq.true,collaborators.user_id.eq.X`)
+         * and PostgREST rejected the whole request with PGRST100, "failed to
+         * parse logic tree": a dotted name inside or= is read as a json path
+         * on a column of the base table, and `workflows` has no
+         * `collaborators` column. A top-level or= cannot reference an
+         * embedded resource at all, so there is no spelling of this that
+         * works.
+         *
+         * It is also redundant. The SELECT policy on `workflows` is
+         *   organization_id = current_org_id()
+         *   AND (is_public OR created_by = auth.uid()
+         *        OR user_has_workflow_access(id, auth.uid())
+         *        OR (parent_workflow_id IS NOT NULL
+         *            AND user_has_workflow_access(parent_workflow_id, auth.uid())))
+         * and user_has_workflow_access covers creator, collaborator
+         * (workflow_collaborations), stakeholder, and public-within-org. So
+         * the database already returns mine + public + collaborating +
+         * stakeholding, scoped to the caller's current organization, and it
+         * covers the stakeholder case the broken filter never did.
+         */
         .is('parent_workflow_id', null)
         .order('name')
 
@@ -210,11 +234,15 @@ export function useWorkflowQueries({
       if (!selectedWorkflowId) return []
 
       const { data, error } = await supabase
-        .from('workflow_collaborators')
+        .from('workflow_collaborations')
         .select(`
           *,
-          user:users(id, email, first_name, last_name)
+          user:users!workflow_collaborations_user_id_fkey(id, email, first_name, last_name)
         `)
+        /* The fkey hint is load-bearing: workflow_collaborations has two
+           foreign keys to users (user_id and invited_by), so a bare
+           user:users(...) is rejected with PGRST201, "more than one
+           relationship was found". */
         .eq('workflow_id', selectedWorkflowId)
         .order('created_at')
 

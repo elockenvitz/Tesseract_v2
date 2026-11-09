@@ -170,17 +170,35 @@ describe('a content save cannot change the audience', () => {
     expect(targetWrites()).toEqual([])
   })
 
-  it('issues NO audience write when the audience is unchanged', async () => {
+  /*
+   * Rewritten, not deleted, in the merge of main into discovery/asset-page-2.
+   *
+   * It used to pass `visibility: 'team'` and `targetIds: ['team-1']` — the
+   * values already stored — and assert no RPC followed. That tested main's
+   * implementation, which read the stored targets back and compared them.
+   *
+   * This branch reaches the same guarantee one layer up and more strictly:
+   * the content paths never reference `contribution_visibility_targets` at
+   * all (enforced by `contribution-visibility-preservation.test.ts`), and a
+   * content save simply does not send a visibility. `ContributionSection` is
+   * separately tested to omit it unless the parent owns the picker. So an
+   * absent visibility — not a matching one — is what "a prose save" looks
+   * like here, and that is what is asserted.
+   *
+   * Keeping main's version would have forced a target-table read back into
+   * the content path, which is the thing the other suite forbids.
+   */
+  it('issues NO audience write when the save carries no visibility', async () => {
     const { result } = renderHook(() => useContributions({ assetId: 'a1' }), { wrapper })
 
     await result.current.saveContribution.mutateAsync({
       content: 'new prose',
       sectionKey: 'thesis',
-      visibility: 'team',          // same as stored
-      targetIds: ['team-1'],       // same as stored
+      // No visibility and no targetIds: undefined is preservation.
     })
 
     expect(env.rpcs).toEqual([])
+    expect(targetWrites()).toEqual([])
   })
 
   it('routes a deliberate audience change in the same save through the RPC', async () => {

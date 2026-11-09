@@ -41,9 +41,12 @@ A custom linter (`scripts/tenant-boundary-lint.mjs`) verifies the
 invariants programmatically: every non-exempt table has RLS on,
 every org-scoped table has `organization_id NOT NULL`, every such
 table has at least one policy. A second linter
-(`scripts/frontend-tenant-lint.mjs`) scans React/TS code for
-`supabase.from(...)` calls that lack an org filter on org-scoped
-tables.
+(`scripts/frontend-tenant-lint.mjs`) parses React/TS code for reads
+of org-scoped tables that lack an org filter, including reads made
+through a renamed client and tables pulled in through a PostgREST
+embed, and fails when one is not registered against a recorded
+policy in `scripts/lib/tenant-allowlist.mjs`. It is bookkeeping, not
+the boundary: the boundary is RLS.
 
 ## Consequences
 

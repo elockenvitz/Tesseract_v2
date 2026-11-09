@@ -73,11 +73,49 @@ export const GATED_DIRS = [
   'src/lib/navigation',
   'src/lib/ops',
   'src/lib/guards',
+  // The research-editing safety net: the audience picker, the inline editor
+  // and the unsaved-work guard. Gated because every failure here is silent —
+  // an audience that stages but never saves, or a nav gesture that drops an
+  // edit, looks exactly like success.
+  'src/components/contributions',
+  // Audience reachability: who a group actually reaches, now that membership
+  // is inherited. An understated count makes an author share more narrowly
+  // than they meant; an overstated one, more widely. Neither throws.
+  'src/lib/contributions',
+  // Whose move it is. Mislabelling a decision request sends an analyst after
+  // something the server will refuse, or leaves a PM unaware a book is waiting
+  // on them — and both read as a quiet UI, not as an error.
+  'src/lib/asset-work',
+  'src/components/asset/work',
+  // Which mode renders which destination. A sub-page that maps to no mode,
+  // or a mode that lands on a destination another mode renders, is a nav
+  // button that appears to do nothing — and the three Work sub-pages share
+  // one surface, so a missing anchor is a section nobody can reach.
+  'src/lib/asset-workspace',
+  // The Theme page's counterpart of the above, plus the migration off its six
+  // old tabs. Gated for the migration: it only ever runs for a reader
+  // returning to a tab a previous build saved, which is the one path nobody
+  // exercises by hand, and a section that maps to no mode lands them on a
+  // blank page with no error anywhere.
+  'src/lib/theme-workspace',
+  // The Theme page's research body: the audience wiring, and the gates that
+  // hold a theme field card identical to an asset field card. Gated, not
+  // deferred, because its two failure modes are both silent. An audience
+  // that stages but never reaches `set_theme_contribution_audience` shows a
+  // restriction the database does not have — the `a_pin_audience` trigger
+  // RESTORES the old value and reports success. And "the theme card matches
+  // the asset card" is a claim about two files at once, so it stops being
+  // true when the ASSET side changes, with nothing on the theme side edited
+  // to notice.
+  'src/components/themes/research',
   // Stage-deadline identity: the conflict target, the workflow that carries
-  // both the unique key and the row's organization, and the query keys. Gated
-  // because every failure here is silent — a conflict target matching no index
-  // fails the save with a code nobody reads, and a read missing workflow_id
-  // returns another workflow's deadline rather than an error.
+  // both the unique key and the row's organization, the tenant filter path and
+  // the query keys. Gated because every failure here is silent — a conflict
+  // target matching no index duplicates rows instead of replacing one and
+  // fails the save with a code nobody reads; a read missing workflow_id
+  // returns another workflow's deadline rather than an error; and a filter
+  // naming a column the table does not have fails the read rather than
+  // widening it, so nothing looks broken until a deadline will not save.
   'src/lib/deadlines',
   'src/hooks/ideas',
   'src/hooks/mobile',
@@ -198,6 +236,31 @@ export const GATED_DIRS = [
   'src/lib/capture',
   'src/components/notes',
   'src/components/tabs',
+  /*
+   * The Asset page's own surfaces: the Snapshot, the Decision Memory summary
+   * and Our View.
+   *
+   * Arrived across increments 2B–2E and were left unlisted the whole way —
+   * exactly the silent disappearance this accounting exists to catch, and the
+   * guard caught it rather than a person. Gated rather than deferred because
+   * every failure mode here is a claim about the firm's own record: that a
+   * failed read is not an empty history, that an execution nobody observed is
+   * not reported as observed, and that one analyst's opinion is not rendered
+   * as the firm's position.
+   */
+  'src/components/asset/__tests__',
+  /*
+   * The Research layout surfaces: Supporting Research, the layout status
+   * chip and the section controls inside arrange mode.
+   *
+   * Left unlisted since Supporting Research arrived, which is the silent
+   * disappearance this accounting exists to catch — the guard caught it
+   * rather than a person. Gated rather than deferred because every
+   * failure here is a wrong claim about the reader's own page: that it
+   * is following a template it is actually overriding, or that a rename
+   * survived a change it did not.
+   */
+  'src/components/research/__tests__',
   'src/components/layout',  'src/hooks/__tests__',
   'src/components/communication',
 
@@ -356,6 +419,47 @@ export const GATED_DIRS = [
    * with it.
    */
   'src/lib/today',
+  /*
+   * The research layer: the layout resolver, the case state, field types and
+   * spans, and now `subject.ts` -- the registry naming which tables an asset's
+   * research page reads and which a theme's does.
+   *
+   * It was deferred by history, in the same pass that ungated `src/lib/today`:
+   * everything not already gated went onto the deferred list that day. The
+   * subject registry is what makes it worth revisiting, because its failure
+   * mode is not a broken screen. A descriptor pointing a theme at an asset
+   * table would read ANOTHER SUBJECT'S rows under the theme's policies, and
+   * every query would keep succeeding. `subject.test.ts` is the only thing
+   * that observes it, and a test that cannot fail the gate is decoration.
+   *
+   * Matched as a subtree, so `src/lib/research/__tests__` comes with it.
+   * Verified before gating: 18 files / 525 tests pass, so this gates a green
+   * directory rather than importing a known failure.
+   */
+  'src/lib/research',
+  /*
+   * The Dashboard-as-feed trial's own shell. Two things in it are worth
+   * gating and neither announces a failure.
+   *
+   * `place` decides whether one reader's selected name is handed to the next
+   * reader to sign in on the same browser -- signing out does not reload this
+   * application, so an unkeyed store would do exactly that, and it would look
+   * like a convenience working correctly.
+   *
+   * The lens and the work pane coming back after a tab switch are the other
+   * half, and they are asserted across a real unmount, which is the event the
+   * tab host actually performs.
+   */
+  'src/components/dashboard-next/__tests__',
+  /*
+   * The Ideas application's own shell: the way back out of the work pane,
+   * the feed rail, and the Explore tile.
+   *
+   * Gated because the failures here are all navigational and all quiet -- an
+   * exit that points away from the column it widens, a tile that resolves to
+   * nothing, a rail that loses the reader's place. None of them throws.
+   */
+  'src/components/ideas-app/__tests__',
 
 ]
 
@@ -374,6 +478,15 @@ export const GATED_DIRS = [
 export const DEFERRED_DIRS = [
   'src/components/asset-v2',
   'src/components/dashboard',
+  /*
+   * The entries above are matched EXACTLY, so `src/components/dashboard` does
+   * not cover `src/components/dashboard/__tests__`. Both of the pairs below
+   * were unclassified for that reason -- a subdirectory appearing beside an
+   * already-deferred directory, which is precisely the case the exact match
+   * is designed to surface rather than absorb. Deferred to match the sibling
+   * each one sits beside; neither is a new judgement about the tests.
+   */
+  'src/components/dashboard/__tests__',
   'src/components/decisions-v2',
   'src/components/desktop',
   'src/components/ideas-v2',
@@ -394,6 +507,7 @@ export const DEFERRED_DIRS = [
   'src/lib/attention-state',
   'src/lib/dashboard/__tests__',
   'src/lib/desktop-asset',
+  'src/lib/desktop-asset/__tests__',
   'src/lib/desktop-decisions',
   // 'src/lib/desktop-ideas' moved UP to the gated list: the standalone Ideas
   // lane now holds the assertions that Explore and the feed resolve to the same
@@ -409,8 +523,9 @@ export const DEFERRED_DIRS = [
   'src/lib/permissions/__tests__',
   'src/lib/portfolio',
   'src/lib/portfolio/__tests__',
-  'src/lib/research',
-  'src/lib/research/__tests__',
+  // 'src/lib/research' and its `__tests__` moved UP to the gated list: the
+  // subject registry's failure mode is reading another subject's rows with
+  // every query still succeeding.
   'src/lib/storage',
   // 'src/lib/today' and its `__tests__` moved UP to the gated list.
   // 'src/lib/trade-lab' moved UP as well: it holds `normalize-sizing`, which

@@ -80,17 +80,55 @@ const SEVERITY_WEIGHT: Record<string, number> = {
   red: 0.30, orange: 0.20, yellow: 0.12, blue: 0.04, gray: 0,
 }
 
+/**
+ * Findings that are framework decay when capital is behind them and coverage
+ * housekeeping when it is not.
+ *
+ * ── Why a tier move and not just a lower score ────────────────────────────
+ *
+ * Tier is a hard partition and score only orders within it, so a demotion
+ * that stays inside tier 1 still competes for tier-1 slots. WMT's thesis was
+ * 373 days old on a name the book does not hold, the price had moved -0.3%,
+ * and dropping its severity moved it from #3 to #4 on Today -- still one of
+ * four slots on the most prominent surface in the product, still describing
+ * nothing that happened.
+ *
+ * An aged case on a name nobody owns is the same claim `COVERAGE_STALE_THESIS`
+ * already makes, and that sits at tier 4. So it lands there: reported, counted
+ * as evaluated, visible in Also watching, and not interrupting anybody.
+ */
+const HOUSEKEEPING_WHEN_UNHELD: Record<string, TodayTier> = {
+  THESIS_STALE: 4,
+}
+
 export function tierFor(item: DecisionItem): { tier: TodayTier; base: number } {
   const mapped = item.titleKey ? TIER[item.titleKey] : undefined
-  const { tier, base } = mapped ?? UNTIERED
+  const { base } = mapped ?? UNTIERED
+  /* Only where the evaluator actually answered. `undefined` means it was
+     never asked, and silently demoting every evaluator that has not been
+     taught to answer would be a regression across the whole surface. */
+  const demoted = item.titleKey && item.context.held === false
+    ? HOUSEKEEPING_WHEN_UNHELD[item.titleKey]
+    : undefined
+  const tier = demoted ?? (mapped ?? UNTIERED).tier
 
   const severity = SEVERITY_WEIGHT[item.severity] ?? 0
 
   // Materiality: how much of the book this concerns. Mobile's banding is used
   // unchanged so "3% is meaningfully bigger than 0.8%" means the same thing on
-  // both products. `held` is true when the item concerns a real position.
+  // both products.
+  //
+  // `held` was `!!portfolioId || !!assetId`, which is true of every finding
+  // that names a security and therefore could never be false -- a thesis on a
+  // name the book does not own scored as a real position. An evaluator that
+  // knows the answer now states it, and the id fallback is kept only for the
+  // evaluators that do not: a portfolio id IS a book, and the alternative
+  // would silently demote every finding nobody has taught to answer yet.
   const weight = item.context.proposedWeight ?? null
-  const materiality = materialityBand(weight, !!item.context.portfolioId || !!item.context.assetId)
+  const materiality = materialityBand(
+    weight,
+    item.context.held ?? !!item.context.portfolioId,
+  )
 
   // Recency as a bounded modifier, never the sort key — an old unresolved
   // high-impact item loses this component and keeps everything else.
@@ -115,12 +153,28 @@ export function compareTodayItems(a: TodayItem, b: TodayItem): number {
 /**
  * How many items Today shows.
  *
- * Finite is a product promise, not a performance concern. Four is the number
- * the approved composition uses: one featured plus three supporting. Anything
- * beyond it is real and is reported as evaluated-but-not-surfaced rather than
+ * Finite is a product promise, not a performance concern. Anything beyond the
+ * limit is real and is reported as evaluated-but-not-surfaced rather than
  * hidden.
+ *
+ * TWENTY, and the arithmetic is still the grid's. The lead takes eight
+ * columns and #2 rides the four beside it; every tile after that is a third
+ * of a row, so a clean field needs the remainder to be a multiple of three.
+ * 1 + 1 + 18 does that, the same way 1 + 1 + 6 did at eight.
+ *
+ * It went 4 -> 8 -> 20 for the same reason each time, and the reason is not
+ * "more is better". Four was the approved composition, one featured plus
+ * three supporting, and on a real desk it left findings the reader WANTED
+ * sitting under "Also watching" -- a summary line, not a surface. Eight
+ * cleared the fold and stopped there, which made Today a page that ends: a
+ * reader who had worked through it had no way to keep going except to leave.
+ *
+ * Twenty is a page you can scroll through. It is still finite, still ranked,
+ * and nothing is promoted to fill it -- a desk with six real findings shows
+ * six. The cost of a high limit is paid in rows that do not exist, not in
+ * invented content, which is why the number can be generous.
  */
-export const TODAY_LIMIT = 4
+export const TODAY_LIMIT = 20
 
 export interface TodaySelection {
   surfaced: TodayItem[]
@@ -130,11 +184,55 @@ export interface TodaySelection {
   evaluated: number
 }
 
+/**
+ * One name, one tile — enforced at the cut, not just in the ordering.
+ *
+ * `diversify` pushes a repeat as late as it can, which is the whole answer
+ * while the pool is larger than the surface. It is not an answer when the
+ * desk has fewer findings than there are slots: with seven findings and eight
+ * tiles, NKE's two open ideas BOTH surfaced, as #5 and #7 -- same ticker,
+ * same fund, same sentence, because there was room for them.
+ *
+ * A second tile about a name the reader has already seen is worth less than
+ * an empty cell, so the repeat drops to Also watching, where its count still
+ * shows and nothing is hidden. Findings with no object -- an overdue
+ * deliverable carries no asset -- are never repeats and always keep their
+ * slot.
+ */
+function objectKey(item: TodayItem): string | null {
+  return item.source.context.assetId ?? item.ticker ?? null
+}
+
+/**
+ * The cut itself: at most `limit` tiles, at most one per name.
+ *
+ * Exported because the page performs its own cut -- it expands rollups and
+ * diversifies before slicing -- and a rule that lives only in `selectToday`
+ * is a rule the production surface does not have. That is exactly how NKE
+ * reached the live field twice while `selectToday`'s tests were green.
+ */
+export function cutToday(
+  ordered: readonly TodayItem[], limit: number,
+): { surfaced: TodayItem[]; overflow: TodayItem[] } {
+  const surfaced: TodayItem[] = []
+  const overflow: TodayItem[] = []
+  const seen = new Set<string>()
+
+  for (const item of ordered) {
+    const key = objectKey(item)
+    if (surfaced.length >= limit || (key && seen.has(key))) {
+      overflow.push(item)
+      continue
+    }
+    if (key) seen.add(key)
+    surfaced.push(item)
+  }
+
+  return { surfaced, overflow }
+}
+
 export function selectToday(items: TodayItem[]): TodaySelection {
   const ranked = [...items].sort(compareTodayItems)
-  return {
-    surfaced: ranked.slice(0, TODAY_LIMIT),
-    alsoWatching: ranked.slice(TODAY_LIMIT),
-    evaluated: ranked.length,
-  }
+  const { surfaced, overflow } = cutToday(ranked, TODAY_LIMIT)
+  return { surfaced, alsoWatching: overflow, evaluated: ranked.length }
 }

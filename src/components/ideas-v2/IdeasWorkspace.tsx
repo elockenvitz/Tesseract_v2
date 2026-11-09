@@ -19,6 +19,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { clsx } from 'clsx'
+import { GALLERY_GROUND } from '../../lib/ui/surface'
 import {
   useIdeaScan, useScanExposure, useScanFramework, useScanOpenPrice, useIdeaDetail,
   type ScanFrame,
@@ -382,8 +384,17 @@ export function IdeasWorkspace({
     change from removing the caller.
   */
 
+  /* The ground is stated on the scroll box below, not inherited. That element
+     is the parallel of `TodayPage`'s, which carries `bg-gray-100
+     dark:bg-[#070a10]`. Left transparent, the Ideas field showed through to
+     the shell's `bg-gray-50/60` -- about #fcfcfd against white cards, so
+     measured live the tiles had no edge at all. Same two tokens as Today, so
+     the two fields read as one surface. */
   return (
-    <div className="h-full overflow-y-auto" data-testid="ideas-lens">
+    <div
+      className={clsx('h-full overflow-y-auto', GALLERY_GROUND)}
+      data-testid="ideas-lens"
+    >
       {/*
         No header here. `DesktopGallery` inside `OpportunityGrid` draws the
         heading and the note, and this component drew a second `Ideas` above
@@ -575,10 +586,14 @@ export function toRailCard(
 
   It was built from `spanForRank` so its placeholders would occupy the columns
   the authored grid was about to occupy -- a fade rather than a re-layout. That
-  property still matters and is still honoured, one level down: `OpportunityGrid`
-  renders `GallerySkeleton` sized by `opportunitySize`, the same function the
-  loaded field uses. The skeleton moved to the field because the loading state
+  property still matters and is still honoured, one level down, in
+  `OpportunityGrid`. The skeleton moved to the field because the loading state
   belongs to whoever is doing the loading.
+
+  It is sized by INDEX, not by `opportunitySize`. Sizing a placeholder by the
+  content function needs an item the skeleton does not have yet; the attempt to
+  do it anyway, via a cast stand-in, is what crashed the app. See the note on
+  that branch in `OpportunityGrid`.
 */
 
 /*

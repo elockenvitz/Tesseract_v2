@@ -5,10 +5,10 @@
  * different weights in different books, and every number here belongs to one.
  */
 
-export type { PositionFrame, LiveIdea, GapState, RouteTo } from './model'
+export type { PositionFrame, LiveIdea, GapState, RouteTo, Mark } from './model'
 export {
   EMPTY_FRAME, GAP_LABEL, MATERIAL_PCT,
-  gapOf, toneForGap, breakPct, whyItMatters, primaryActionFor,
+  gapOf, spotOf, toneForGap, breakPct, whyItMatters, primaryActionFor,
   issueFor, seedPromptFor, targetFor,
   tierOf, scoreOf, comparePositions,
 } from './model'

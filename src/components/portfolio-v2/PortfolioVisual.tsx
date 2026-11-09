@@ -21,8 +21,24 @@
  */
 
 import { clsx } from 'clsx'
+import { LABEL } from '../desktop/DesktopModule'
 import type { CurrentLadder } from '../../lib/signals/current-ladder'
 import type { SemanticTone } from '../../lib/semantic-tone'
+
+/*
+ * ── Why the labels come from the panel grammar ────────────────────────────
+ *
+ * Both of these visuals are embedded in desktop workspace panes -- the asset
+ * workspace, the position detail, the portfolio workspace and the asset
+ * snapshot, every one of them a wide surface -- and they were the smallest
+ * type on any of them: 9px captions and 10px figures, set as local literals
+ * where nobody would look for them.
+ *
+ * MEASURED after the workspace's own scale was lifted: ten elements in the
+ * asset workspace still sat below the 11px floor, and all ten were drawn by
+ * this file. Taking the caption role from `LABEL` rather than restating it
+ * is what stops that happening again.
+ */
 
 /* ------------------------------------------------------ framework scale */
 
@@ -45,15 +61,17 @@ export function FrameworkScale({ ladder, spot }: { ladder: CurrentLadder; spot: 
   return (
     <div data-testid="framework-scale">
       <div className="mb-2 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
+        <span className={LABEL}>
           Spot against the framework
         </span>
-        <span className="ml-auto font-mono text-[10px] text-gray-500">
+        <span className="ml-auto font-mono text-[11px] text-gray-500">
           {rungs.length} case{rungs.length === 1 ? '' : 's'} · {new Date(ladder.updatedAt).toLocaleDateString()}
         </span>
       </div>
 
-      <div className="relative h-[46px]">
+      {/* 46px before the labels grew: name + tick + price is now about 42px
+          of stacked content and had no room under it. */}
+      <div className="relative h-[52px]">
         {/* the range the framework actually spans */}
         {bear != null && bull != null && (
           <div
@@ -78,9 +96,9 @@ export function FrameworkScale({ ladder, spot }: { ladder: CurrentLadder; spot: 
 
         {rungs.map(r => (
           <div key={r.id} className="absolute top-0 -translate-x-1/2 text-center" style={{ left: `${at(r.price)}%` }}>
-            <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-500">{r.name}</div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{r.name}</div>
             <div className="mx-auto mt-[2px] h-[12px] w-px bg-gray-400 dark:bg-gray-600" />
-            <div className="mt-[2px] font-mono text-[10px] text-gray-500">{money(r.price)}</div>
+            <div className="mt-[2px] font-mono text-[11px] text-gray-500">{money(r.price)}</div>
           </div>
         ))}
 
@@ -90,7 +108,7 @@ export function FrameworkScale({ ladder, spot }: { ladder: CurrentLadder; spot: 
             outside ? 'bg-rose-600' : 'bg-blue-600',
           )} />
           <div className={clsx(
-            'mt-[1px] -translate-x-1/2 whitespace-nowrap font-mono text-[10px] font-bold',
+            'mt-[1px] -translate-x-1/2 whitespace-nowrap font-mono text-[11px] font-bold',
             outside ? 'text-rose-600 dark:text-rose-400' : 'text-blue-700 dark:text-blue-400',
           )} style={{ marginLeft: '50%' }}>
             {money(spot)}
@@ -112,7 +130,7 @@ export function WeightBar({
   return (
     <div data-testid="weight-bar">
       <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</span>
+        <span className={LABEL}>{label}</span>
         <span className="ml-auto font-mono text-[13px] font-semibold tabular-nums">
           {weightPct.toFixed(1)}%
         </span>

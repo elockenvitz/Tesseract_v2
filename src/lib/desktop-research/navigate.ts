@@ -26,19 +26,34 @@ export interface OpenResearchRequest {
 
 export const OPEN_RESEARCH_EVENT = 'tesseract:open-research' as const
 
+/**
+ * The acknowledgement a mounted surface writes back. See `openIdea` for the
+ * whole reasoning: the same seam, the same defect, the same fix.
+ */
+type Claimable<T> = T & { claimed?: boolean }
+
+/**
+ * Ask whatever is mounted to open one asset's case, and say whether anything
+ * did.
+ *
+ * Returns false when nothing was listening, so a caller can fall back to
+ * opening a tab rather than assuming the reader arrived.
+ */
 export function openResearch(request: OpenResearchRequest): boolean {
   if (typeof window === 'undefined') return false
   if (!request?.assetId) return false
-  window.dispatchEvent(new CustomEvent<OpenResearchRequest>(OPEN_RESEARCH_EVENT, { detail: request }))
-  return true
+  const detail: Claimable<OpenResearchRequest> = { ...request }
+  window.dispatchEvent(new CustomEvent<Claimable<OpenResearchRequest>>(OPEN_RESEARCH_EVENT, { detail }))
+  return detail.claimed === true
 }
 
 export function subscribeToOpenResearch(handler: (r: OpenResearchRequest) => void): () => void {
   if (typeof window === 'undefined') return () => {}
   const listener = (e: Event) => {
-    const detail = (e as CustomEvent<OpenResearchRequest>).detail
+    const detail = (e as CustomEvent<Claimable<OpenResearchRequest>>).detail
     if (!detail?.assetId) return
     handler(detail)
+    detail.claimed = true
   }
   window.addEventListener(OPEN_RESEARCH_EVENT, listener)
   return () => window.removeEventListener(OPEN_RESEARCH_EVENT, listener)

@@ -1,0 +1,241 @@
+import { describe, it, expect, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { StartHereBand } from '../StartHereBand'
+import { buildActiveRiskCard } from '../../../lib/signals/builders/activeRisk'
+import type { CardResult, SignalCard } from '../../../lib/signals/contract'
+import type { AttentionEntry } from '../../../hooks/useDesktopAttentionFeed'
+
+/**
+ * The Dashboard rebuilt as the feed, in its own tab.
+ *
+ * Two things are worth guarding and they are different in kind.
+ *
+ * The BAND is behavioural: it is the only genuinely new surface, and the thing
+ * that could go wrong in a reader's hands is it stating an instruction that
+ * the card below it does not support, or capping wrong and burying the second
+ * and third. Rendered against cards from the real builder, so a change to the
+ * card contract reaches these cases.
+ *
+ * The ISOLATION is source-pinned, because it is a claim about what imports
+ * what. The whole justification for a second shell is that the Dashboard and
+ * Ideas tabs cannot be affected by it; no render can observe that, and a
+ * rendering test that passed would prove nothing about the file that does not
+ * import this directory.
+ */
+
+const src = (rel: string) => readFileSync(join(process.cwd(), 'src', rel), 'utf8')
+
+const unwrap = (r: CardResult): SignalCard => {
+  if (!r.ok) throw new Error(`suppressed: ${r.reason}`)
+  return r.card
+}
+
+/** Four, so the cap at three is observable rather than incidental. */
+const SYMBOLS = ['MSFT', 'AMZN', 'JNJ', 'NVDA']
+
+const ENTRIES: AttentionEntry[] = SYMBOLS.map((symbol, i) => ({
+  key: `k${i}`,
+  card: unwrap(buildActiveRiskCard({
+    assetId: `a${i}`, symbol, companyName: `${symbol} Inc.`,
+    weightPct: 6.2 + i, benchmarkWeightPct: 3.1,
+    portfolioId: 'p1', portfolioName: 'Core Equity',
+    /* Relative, for the reason the SignalCardView suite records: a pinned
+       date crosses a formatter band and fails on a day nobody chose. */
+    asOf: new Date(Date.now() - 16 * 86_400_000).toISOString(),
+  })),
+  item: null,
+  input: null,
+  family: 'conviction',
+  source: null,
+}))
+
+describe('Start here', () => {
+  it('states the card\'s own action and the card\'s own reason', () => {
+    render(<StartHereBand entries={ENTRIES} onOpen={() => {}} />)
+
+    const card = ENTRIES[0].card
+    /*
+     * Scoped to the ROW, not the band. Several cards of one family share a
+     * primary label, so a document-wide text query either matches three
+     * elements or, worse, matches a different row's and still passes.
+     *
+     * Both expected strings are read off the card rather than written out:
+     * hard-coding the verb would let the band invent one of its own and go
+     * on passing.
+     */
+    const row = screen.getAllByRole('listitem')[0]
+    expect(row.textContent).toContain(card.actions.primary.label)
+    expect(row.textContent).toContain(`Because ${card.headline}.`)
+    expect(row.textContent).toContain('MSFT')
+  })
+
+  it('shows three instructions, not the whole feed', () => {
+    render(<StartHereBand entries={ENTRIES} onOpen={() => {}} />)
+    expect(screen.getAllByRole('button', { name: 'Open' })).toHaveLength(3)
+    /* The fourth entry is in the list and must not be in the band. */
+    expect(screen.queryByText(new RegExp(`Because ${ENTRIES[3].card.headline}`))).toBeNull()
+  })
+
+  it('opens the entry the row was derived from', () => {
+    const onOpen = vi.fn()
+    render(<StartHereBand entries={ENTRIES} onOpen={onOpen} />)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open' })[1])
+    /*
+     * The ENTRY, not an id or a symbol. The shell routes on `entry.family`
+     * and `entry.card.actions`, so a band that handed back only a key would
+     * force a second lookup and a second chance to route differently than
+     * the card click does.
+     */
+    expect(onOpen).toHaveBeenCalledWith(ENTRIES[1])
+  })
+
+  it('renders nothing when the feed is empty', () => {
+    const { container } = render(<StartHereBand entries={[]} onOpen={() => {}} />)
+    /* An empty band with a heading would be a surface telling the reader to
+       start with nothing. */
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('reads the feed it is given and queries nothing', () => {
+    /*
+     * The band is a PROJECTION. The defect it exists to avoid is a second
+     * producer of "what to do next" that can disagree with the cards under
+     * it, and the shape that defect takes is a hook of its own.
+     */
+    const band = src('components/dashboard-next/StartHereBand.tsx')
+    /*
+     * The band's own `useState` for the collapse is fine and the first
+     * version of this case banned it by accident, with a `use[A-Z]` regex
+     * that could not tell a disclosure toggle from a query. What must not
+     * appear is a DATA source: a hook out of `hooks/`, React Query, or the
+     * client itself.
+     */
+    /* A `import type` from `hooks/` is the entry SHAPE and carries no
+       runtime; a value import from there is a producer. */
+    expect(band).not.toMatch(/import\s+(?!type\b)[^;\n]*from '[^']*\/hooks\//)
+    expect(band).not.toContain('useQuery')
+    expect(band).not.toContain('supabase')
+  })
+})
+
+/**
+ * ── This block was `the trial tab is isolated` ───────────────────────────
+ *
+ * The isolation was the promise that trying this could not damage the two
+ * surfaces the reader relied on, and the trial is over: it won, so `today`
+ * renders `DashboardNext`, the launcher's "Dashboard (new)" door is gone, and
+ * `dashboard-next` is a compatibility type for saved sessions.
+ *
+ * Most of these cases outlive that. `DashboardShell` and `IdeasApp` still
+ * must not reach into this directory -- the page does the mounting, and an
+ * import the other way would make the retired shell depend on its
+ * replacement. The door case is the one whose subject inverted, and it is
+ * rewritten below rather than dropped.
+ */
+describe('the home it became has one door and no back-references', () => {
+  it('is not imported by the Dashboard or the Ideas application', () => {
+    /*
+     * The two shells the other tab types mount. Neither may reach into this
+     * directory: `research-v2` and `decisions-v2` still mount `DashboardShell`
+     * and must keep working without the surface that replaced it.
+     */
+    for (const f of ['components/ideas-app/IdeasApp.tsx', 'components/dashboard/DashboardShell.tsx']) {
+      expect(src(f)).not.toContain('dashboard-next')
+    }
+  })
+
+  it('leaves the Ideas feed exactly as it was', () => {
+    /*
+     * `lead` is the one shared component this change touched. It is optional
+     * and `IdeasApp` must pass nothing, or the Ideas application has grown a
+     * band it never asked for.
+     */
+    expect(src('components/ideas-app/IdeasApp.tsx')).not.toContain('lead=')
+    expect(src('components/ideas-app/IdeasApp.tsx')).not.toContain('StartHereBand')
+  })
+
+  it('has exactly one door, and it is the Dashboard', () => {
+    const header = src('components/layout/Header.tsx')
+    const group = header.slice(header.indexOf('>Decision OS<'))
+    const launcher = group.slice(0, group.indexOf(']'))
+    /*
+     * This case used to require exactly ONE `dashboard-next` entry here,
+     * because the trial needed its own door beside the Dashboard. Now that
+     * "Dashboard" opens the same surface, that entry IS the duplicate door
+     * the note at the top of this menu removed three others for -- so the
+     * assertion inverts and the subject does not.
+     */
+    expect(launcher).not.toContain("type: 'dashboard-next'")
+    expect(launcher.match(/type: 'today'/g)).toHaveLength(1)
+
+    const page = src('pages/DashboardPage.tsx')
+    /* The compatibility type still resolves from one place, so a saved trial
+       tab lands on the surface it named and not on the blank default. */
+    expect(page.match(/case 'dashboard-next':/g)).toHaveLength(1)
+    /* Three mounts: the `today` arm, the compatibility arm, and the fallback
+       `renderDashboardContent` serves a bad deep link. Counted, because the
+       fallback was the one that silently kept the retired shell alive. */
+    expect(page.match(/<DashboardNext \/>/g)).toHaveLength(3)
+    /*
+     * Comments stripped first. The arms that moved explain what they moved
+     * FROM, by name, so the page's own commentary contains this string and
+     * matching the raw file fails on the note rather than on the code -- the
+     * same guard-breaks-on-its-own-comment shape `AnchoredPriceChart`'s type
+     * case already paid for once.
+     */
+    const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    expect(code).toMatch(/<DashboardNext \/>/)
+    expect(code).not.toMatch(/<DashboardShell initialLens="today" \/>/)
+  })
+
+  /*
+   * ── And then Ideas left too, which this case had to say instead ─────────
+   *
+   * It was "keeps the Dashboard and Ideas entries it was added beside", there
+   * to prove that removing "Dashboard (new)" did not take its neighbours with
+   * it. Ideas has since gone on its own merits: `DashboardNext` holds Ideas
+   * and Explore as its two lenses and "Dashboard" opens it, so the entry was a
+   * door onto a lens of the surface beside it.
+   *
+   * What the case is FOR survives: a removal from this menu must take exactly
+   * the entry it meant to. So it now pins the count, which is the assertion
+   * that catches a third entry vanishing by accident as well as a fourth
+   * appearing. The duplicate-door rule itself is guarded in
+   * `convergence.test.ts`.
+   */
+  it('leaves exactly one door in the group, and it is the Dashboard', () => {
+    const header = src('components/layout/Header.tsx')
+    const group = header.slice(header.indexOf('>Decision OS<'))
+    const launcher = group.slice(0, group.indexOf(']'))
+    expect(launcher).toContain("type: 'today'")
+    expect(launcher.match(/\{ id: '/g)).toHaveLength(1)
+  })
+
+  /**
+   * The tab gets the window, not a window inside the window.
+   *
+   * `Layout` wraps a non-full-width tab in `px-3 py-4 sm:px-6 sm:py-6
+   * lg:px-8`, which is for a page that is CONTENT inside a chrome. This
+   * surface IS a chrome: its own header starts at `px-6` and it owns its own
+   * scrollport. Measured at 1920 before the fix: 32px of white on each side
+   * and 24px top and bottom, drawing a second frame inside the first.
+   */
+  it('renders full-width, like the lenses it replaces', () => {
+    const layout = src('components/layout/Layout.tsx')
+    const list = layout.slice(
+      layout.indexOf('const FULL_WIDTH_TAB_TYPES'),
+      layout.indexOf(']', layout.indexOf('const FULL_WIDTH_TAB_TYPES')),
+    )
+    expect(list).toContain("'dashboard-next'")
+    /*
+     * Non-vacuity: the surfaces this one is a replacement for are in the same
+     * list, so a check that passed on an empty or renamed constant would fail
+     * here too.
+     */
+    expect(list).toContain("'dashboard'")
+    expect(list).toContain("'ideas'")
+    expect(list).toContain("'today'")
+  })
+})

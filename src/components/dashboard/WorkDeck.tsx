@@ -23,15 +23,21 @@
  * acceptance test is whether looking at the rail makes you want to open
  * something -- a bordered list row does not.
  *
- * ── One scroll ───────────────────────────────────────────────────────────
+ * ── One scroll per pane, and the exit in neither ─────────────────────────
  *
- * The page scrolls; the rail is sticky and rides along. No nested scroller,
- * because a reader should never have to work out which pane their wheel is
- * over. If the rail is taller than the viewport it scrolls with the page.
+ * This was written as "no nested scroller -- the rail is sticky and rides
+ * along with the page". The deck has not worked that way for some time: the
+ * surface and the rail each own their own scroller, because the deck fills
+ * the viewport and neither pane may push the other's content off it.
+ *
+ * What does NOT scroll is the way out. The back control is a property of the
+ * surface, not an entry in the list, so it sits above the rail's scroller
+ * rather than at the top of it -- see the note at the rail itself.
  */
 
 import { clsx } from 'clsx'
 import { ArrowLeft } from 'lucide-react'
+import { useWidth } from '../../lib/charts/use-width'
 import { railAround, type FocusIntent, type RailCard } from '../../lib/dashboard/focus'
 
 /** What each sub-object is called where a reader can see it. */
@@ -44,7 +50,7 @@ const INTENT_LABEL: Record<FocusIntent, string> = {
 }
 
 export function WorkDeck({
-  backLabel, onBack, rail, activeId, onRotate, intent, children,
+  backLabel, onBack, rail, activeId, onRotate, intent, ownHeader, children,
 }: {
   backLabel: string
   onBack: () => void
@@ -53,6 +59,23 @@ export function WorkDeck({
   onRotate: (card: RailCard) => void
   /** Which part of the object the reader reached for, when they named one. */
   intent?: FocusIntent
+  /**
+   * The surface below draws its own identity header, so this one must not.
+   *
+   * `FocusHeader` was written as "not a second tile" -- one line of identity
+   * and one of substance, deliberately without a card or actions. That holds
+   * against a surface with no header of its own. Research has one: opening
+   * AMZN from Today produced "AMZN / THESIS MAY BE STALE / <claim>" and then,
+   * 75px below, "AMZN / Amazon.com, Inc." with its own figures and its own
+   * sentence saying the same thing in different words. Two tickers, and the
+   * smaller one first.
+   *
+   * Which header survives is settled by which one can do the whole job: the
+   * lens's, because it holds the company name, the actions and the figures.
+   * So the lens takes the identity and this yields it, rather than the two
+   * negotiating at runtime.
+   */
+  ownHeader?: boolean
   children: React.ReactNode
 }) {
   /**
@@ -87,19 +110,32 @@ export function WorkDeck({
       <aside
         data-testid="work-rail"
         aria-label={`Other work in ${backLabel}`}
-        className="hidden w-[248px] shrink-0 overflow-y-auto border-r border-gray-200 bg-white/60 lg:block xl:w-[268px] 2xl:w-[300px] dark:border-white/10 dark:bg-white/[0.02]"
+        className="hidden w-[248px] shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white/60 lg:flex xl:w-[268px] 2xl:w-[300px] dark:border-white/10 dark:bg-white/[0.02]"
       >
-        <div className="px-3 pb-6 pt-3">
+        {/*
+          The way out does not travel with the work.
+
+          The button used to be the first thing inside the rail's scroller, so
+          the further the reader got through the other work the further the
+          exit receded -- measured on a thirteen-finding Today, 1076px of
+          scroll put it 1034px above the rail's own top edge, i.e. gone. It is
+          a property of the surface, not an item in the list, so it sits
+          outside the scroller entirely rather than being stuck to the top of
+          one, where it would have to paint over the tiles sliding under it.
+        */}
+        <div className="shrink-0 border-b border-gray-200 px-3 py-3 dark:border-white/10">
           <button
             type="button"
             onClick={onBack}
             data-testid="workspace-back"
-            className="mb-3 inline-flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:text-blue-400 dark:hover:bg-blue-950/30"
+            className="inline-flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:text-blue-400 dark:hover:bg-blue-950/30"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             {backLabel}
           </button>
+        </div>
 
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-6 pt-3" data-testid="work-rail-list">
           {peers.length > 0 && (
             <div className="flex flex-col gap-2">
               {peers.map(c => <RailTile key={c.id} card={c} onOpen={() => onRotate(c)} />)}
@@ -121,7 +157,7 @@ export function WorkDeck({
             {backLabel}
           </button>
         </div>
-        {active && <FocusHeader card={active} intent={intent} />}
+        {active && !ownHeader && <FocusHeader card={active} intent={intent} />}
         {children}
       </div>
     </div>
@@ -340,8 +376,23 @@ function RailSpark({ spark }: { spark: NonNullable<RailCard['spark']> }) {
   const pts = closes.filter((_, i) => i % step === 0 || i === closes.length - 1)
   const lo = Math.min(...pts), hi = Math.max(...pts)
   const span = hi - lo || 1
+
+  /*
+   * Real pixels here too.
+   *
+   * This drew into a 100x20 box with `preserveAspectRatio="none"` and
+   * rendered ~186px wide -- a 1.86x horizontal stretch, which is why its
+   * round caps came out as ovals and its slope read steeper than the same
+   * move does on the chart it previews. A rail is where a reader compares
+   * neighbours; a spark whose steepness is a function of the column width
+   * is the one thing it must not be.
+   */
+  const [box, W] = useWidth<HTMLDivElement>(120)
+  const H = 22
+  const PAD = 3
   const d = pts
-    .map((v, i) => `${i ? 'L' : 'M'}${((i / (pts.length - 1)) * 100).toFixed(2)},${(20 - ((v - lo) / span) * 20).toFixed(2)}`)
+    .map((v, i) => `${i ? 'L' : 'M'}${((i / (pts.length - 1)) * (W - 1)).toFixed(2)},`
+      + `${(PAD + (H - PAD * 2) * (1 - (v - lo) / span)).toFixed(2)}`)
     .join(' ')
 
   return (
@@ -349,15 +400,14 @@ function RailSpark({ spark }: { spark: NonNullable<RailCard['spark']> }) {
       'flex items-center gap-2',
       up ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-500',
     )}>
-      <svg
-        viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden
-        className="h-[22px] flex-1"
-      >
-        <path
-          d={d} fill="none" stroke="currentColor" strokeWidth="1.75"
-          vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round"
-        />
-      </svg>
+      <div ref={box} className="min-w-0 flex-1">
+        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden className="block w-full">
+          <path
+            d={d} fill="none" stroke="currentColor" strokeWidth="1.75"
+            strokeLinejoin="round" strokeLinecap="round"
+          />
+        </svg>
+      </div>
       <span className="shrink-0 font-mono text-[11px] font-semibold tabular-nums">
         {up ? '+' : ''}{changePct.toFixed(1)}%
       </span>

@@ -3,6 +3,7 @@ import { CoverageSummaryBanner } from '../coverage/CoverageSummaryBanner'
 import { PilotMissionStrip } from './PilotMissionStrip'
 import { usePilotEntry } from '../../hooks/usePilotEntry'
 import { PilotHomeSkeleton } from '../pilot/PilotHomeSkeletons'
+import { PilotSkipOnboarding } from '../pilot/PilotSkipOnboarding'
 
 /**
  * The phone's home while a pilot is still working through the mission.
@@ -65,6 +66,10 @@ export function MobilePilotHome({ onNavigate }: { onNavigate: (result: any) => v
             />
           </>
         )}
+        {/* The same way out the desktop home offers, at both stages. A phone
+            is where the coverage card is most of the screen, so a reader who
+            does not need the guide has the least to press. */}
+        {stage !== 'loading' && <PilotSkipOnboarding variant="sheet" />}
       </div>
     </div>
   )

@@ -13,7 +13,11 @@ export type ThemeActivityType =
   | 'theme.asset_added'
   | 'theme.asset_removed'
   | 'theme.contribution_added'
-  | 'theme.discussion_posted'
+  // 'theme.discussion_posted' was here. The Discussion feature is gone, the
+  // trigger that wrote it is dropped, and theme_activity held zero rows of it
+  // (verified live). The DB column still accepts the string, so a row from
+  // some other environment falls through to the default arm rather than
+  // crashing; the union is narrowed so nothing new can claim to write one.
 
 export interface ThemeActivityEvent {
   id: string

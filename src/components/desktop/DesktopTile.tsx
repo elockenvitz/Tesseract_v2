@@ -37,9 +37,13 @@
  * verbs are real, accessible buttons when the reader reaches for them.
  */
 
-import { useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import type { SemanticTone } from '../../lib/semantic-tone'
+import {
+  CARD_SURFACE, CARD_EDGE, CARD_EDGE_CRITICAL, CARD_EDGE_SELECTED,
+  CARD_HOVER, CARD_HOVER_CRITICAL, GALLERY_GROUND,
+} from '../../lib/ui/surface'
 /* One definition of "which rows am I drawing", shared with the lens charts:
    every bug this window has had was two pieces of code disagreeing about
    where it starts. */
@@ -174,10 +178,89 @@ const SPAN: Record<TileFlow, Record<TileSize, string>> = {
   },
 }
 
+/**
+ * Columns from the REGION rather than the window.
+ *
+ * The four workspace lenses each own a whole tab, so the window's width IS
+ * their width and `md:`/`xl:`/`2xl:` are right for them. Explore is not: the
+ * same 1920px window shows it at full width and at ~40rem beside an open
+ * asset workspace, and a media query cannot tell those apart -- it would go on
+ * packing twelve tracks into a pane where a tile is 3rem wide.
+ *
+ * So a caller inside a resizable region asks for this instead, and the track
+ * count comes from a container query. The spans are selected on `data-size`,
+ * which `DesktopTile` has always emitted, rather than mirroring the Tailwind
+ * span table in CSS -- a copy of that table is a thing to keep in step, and
+ * the attribute is already the contract. See `.gallery-region` in index.css.
+ *
+ * The caller supplies the container: `container-type: inline-size` on the
+ * scroll host, which is also the one element that is never remounted, so the
+ * grid re-flows in place and the reader's scroll does not move.
+ */
+/**
+ * The width at which the region stops being one column.
+ *
+ * The same 34rem the container query in `.gallery-region` uses, stated once
+ * here and read by both -- a second number would drift from it and the tiles
+ * would change scale at a width where the track count did not.
+ */
+export const GALLERY_TWO_TRACK_PX = 34 * 16
+
+/**
+ * ── One column means one scale ───────────────────────────────────────────
+ *
+ * `sizeByRank` grades the field: hero, large, medium, compact. That grading
+ * is about EMPHASIS in a wide mosaic, where a hero is half a row and a
+ * compact is a quarter of one, and it is how a reader sees which few findings
+ * lead.
+ *
+ * Below 34rem the region is a single track, so every tile is the same width
+ * whatever its rank -- and the grading stops meaning emphasis and starts
+ * meaning nothing but extra height. MEASURED in the Dashboard's browse column
+ * at 1920, 114 tiles at 376px wide: the tallest was a 356px hero, nearly
+ * square, with a 30px ticker and a 112px plot that were both chosen for a
+ * 915px card. The reader's words for it were that the cards are still too
+ * large.
+ *
+ * So a tile asks whether it is in a one-column region and draws at the
+ * compact scale if it is. The RANK is untouched -- order still carries the
+ * emphasis, which is the half of the grading that still works in a list.
+ */
+const GalleryNarrowContext = createContext(false)
+
+/** True inside a region currently resolving to one column. */
+export function useGalleryNarrow(): boolean {
+  return useContext(GalleryNarrowContext)
+}
+
+/**
+ * True inside a gallery whose tracks come from a container query.
+ *
+ * ── Why a tile needs to know ─────────────────────────────────────────────
+ *
+ * The `SPAN` table below is viewport breakpoints -- `md:`/`xl:`/`2xl:` -- and
+ * in region mode the span is set instead by `.gallery-region > [data-size]`,
+ * which is a class plus an attribute and therefore outspecifies every one of
+ * them. VERIFIED in the running app: a medium tile carrying `xl:col-span-4`
+ * at a 1841px viewport computes `span 3 / span 3`, which is the container
+ * query's answer. The Tailwind classes are dead there.
+ *
+ * Dead and not free. `narrow` flips when a workspace opens, every tile
+ * re-renders, and each one rewrites a span class that cannot take effect:
+ * MEASURED at 51 of the 540 mutations in a single open, on a field of 145
+ * tiles of which about six are on screen.
+ *
+ * So in region mode the tile emits no span at all and the attribute it has
+ * always carried does the whole job.
+ */
+const GalleryRegionContext = createContext(false)
+
 export function DesktopGallery({
-  title, action, note, flow = 'ranked', children,
+  title, action, note, flow = 'ranked', region = false, children,
 }: {
   title: React.ReactNode
+  /** Size the grid off the containing region instead of the window. */
+  region?: boolean
   /**
    * Accepted and not drawn.
    *
@@ -194,8 +277,208 @@ export function DesktopGallery({
   flow?: TileFlow
   children: React.ReactNode
 }) {
+  /*
+   * Measured on the grid itself, and only in region mode.
+   *
+   * A window media query cannot answer this -- the same 1920px window shows
+   * this field at full width and at ~26rem beside an open workspace, which is
+   * the reason the track count is a container query in the first place. CSS
+   * answers it for the tracks; the tiles' own scale is a JavaScript number
+   * (`chartHeight`), so it needs the measurement too, taken ONCE for the field
+   * rather than per tile.
+   *
+   * Outside region mode the grid is sized off the window by Tailwind and is
+   * never one narrow column, so there is nothing to ask and no observer.
+   */
+  const gridRef = useRef<HTMLDivElement | null>(null)
+  const [narrow, setNarrow] = useState(false)
+
+  /*
+   * ── Keeping the reader's place when the track count changes ──────────────
+   *
+   * The scroll host is never unmounted, so `scrollTop` survives a workspace
+   * opening -- and `scrollTop` is the wrong thing to preserve. MEASURED on
+   * Explore at 1920 with 145 tiles, opening a tile from a position 30% down
+   * the field:
+   *
+   *     12 tracks -> 1 track   scroll height 12,326 -> 35,380
+   *     1 track -> 12 tracks   scroll height 37,095 -> 11,856,
+   *                            scrollTop 11,246 -> 11,032
+   *
+   * The number barely moved and the reader was thrown about eighty-five
+   * tiles: 30% down a 37,000px field is the bottom of a 11,856px one. That
+   * is the "hitching" -- not a dropped frame, the field arriving somewhere
+   * else -- and it came with a layout shift of 0.826, where anything over
+   * 0.25 is poor.
+   *
+   * A track-count change rewrites the mapping from offset to content, so the
+   * only thing that can survive it is a TILE. The gallery keeps the first
+   * tile crossing the top of the viewport, with its offset inside it, and
+   * puts that same tile back in that same place once the new layout exists.
+   *
+   * This lives here rather than in a lens because the gallery is what owns
+   * the grid and already measures its width; both region lenses (Explore and
+   * the book) get it without either knowing about it.
+   */
+  const hostRef = useRef<HTMLElement | null>(null)
+  const anchorRef = useRef<{ el: Element; offset: number } | null>(null)
+  /*
+   * Shut while a width change is in flight, and load-bearing.
+   *
+   * Narrowing the column moves `scrollTop` by itself -- the browser clamps
+   * and re-anchors against the new content height -- and that fires a
+   * `scroll` event. Without this latch the listener below reads it as the
+   * reader scrolling and re-captures the anchor from the layout we are in
+   * the middle of leaving.
+   *
+   * MEASURED with it removed, closing from three different places in a
+   * 145-tile field: the anchor landed 1,884, 4,082 and 5,966 pixels from
+   * where it left. One earlier trial had come back clean, which is the
+   * whole lesson -- a single pass through a transition this timing-dependent
+   * is not evidence, and every check of it here runs from three positions.
+   */
+  const settlingRef = useRef(false)
+
+  const capture = useCallback(() => {
+    const grid = gridRef.current
+    const host = hostRef.current
+    if (!grid || !host) return
+    const top = host.getBoundingClientRect().top
+    for (const child of grid.children) {
+      const r = child.getBoundingClientRect()
+      /* The first tile not yet fully scrolled past. A tile skipped by
+         `content-visibility` reports height 0 and a bottom at its own top,
+         so it fails this and the search moves on -- which is correct: a tile
+         the browser is not drawing is not the one the reader is looking at. */
+      if (r.height > 0 && r.bottom > top + 1) {
+        anchorRef.current = { el: child, offset: r.top - top }
+        return
+      }
+    }
+    anchorRef.current = null
+  }, [])
+
+  const restore = useCallback(() => {
+    const a = anchorRef.current
+    const host = hostRef.current
+    if (!a || !host || !host.contains(a.el)) return
+    /*
+     * A chosen tile outranks the reader's place, and already owns the scroll.
+     *
+     * Opening a tile is the one width change where the reader has named
+     * something, and `IdeasExploreBrowse` scrolls that tile into the rail for
+     * exactly the reason this anchor exists -- the tile pressed at full width
+     * is otherwise far outside a single-column scrollport. Restoring the
+     * anchor there would drag them back off the thing they just opened.
+     *
+     * Closing has no such tile, which is where the field was being thrown:
+     * MEASURED at 145 tiles, scrollTop 11,246 of 37,095 becoming 11,032 of
+     * 11,856 -- 30% down the field becoming the bottom of it.
+     */
+    if (host.querySelector('[data-selected="true"]')) return
+    const delta = (a.el.getBoundingClientRect().top - host.getBoundingClientRect().top) - a.offset
+    /* Sub-pixel noise is not a jump, and writing scrollTop for it would
+       fight the reader's own scrolling. */
+    if (Math.abs(delta) > 1) host.scrollTop += delta
+  }, [])
+
+  /**
+   * Restore until the field stops moving under it, then unlatch.
+   *
+   * One restore is not enough, and the reason is the same mechanism that
+   * makes this field affordable: the tiles ABOVE the anchor are skipped by
+   * `content-visibility: auto` and claim `contain-intrinsic-size` rather
+   * than a real height, so the anchor's position keeps being corrected as
+   * they render. MEASURED with a single restore, closing from three places
+   * in a 145-tile field: 119, 255 and 515 pixels out, and a different set of
+   * numbers on the next run -- which is what an estimate settling looks like.
+   *
+   * Bounded, and stops as soon as two frames agree, so a field that settles
+   * at once costs two frames and nothing converges forever. The latch is
+   * held across the whole window: every one of these frames writes
+   * `scrollTop`, and each write fires the scroll event the capture must not
+   * read.
+   *
+   * ── What this does NOT fix, measured ─────────────────────────────────────
+   *
+   * Two frames of quiet inside ten is a floor, not a convergence proof. Over
+   * four closes from different places: 0, 0, 0 and 234px out. Widening the
+   * window to three quiet frames inside twenty made it WORSE -- 461, 383,
+   * 282, 0 -- because the restore then chases a field that is still
+   * rendering rather than letting it land.
+   *
+   * The residual is not this loop's to solve. It is the estimate above the
+   * anchor: every skipped tile claims `contain-intrinsic-size: auto 300px`,
+   * whose remembered height was measured at the OTHER track count, so the
+   * content above the anchor is the wrong length until those tiles render.
+   * The fix for that is an honest per-size intrinsic height in each
+   * container-query block, and it is its own change.
+   */
+  const settle = useCallback(() => {
+    let frames = 0
+    let quiet = 0
+    const step = () => {
+      const before = hostRef.current?.scrollTop ?? 0
+      restore()
+      quiet = (hostRef.current?.scrollTop ?? 0) === before ? quiet + 1 : 0
+      if (quiet < 2 && ++frames < 10) requestAnimationFrame(step)
+      else requestAnimationFrame(() => { settlingRef.current = false })
+    }
+    requestAnimationFrame(step)
+  }, [restore])
+
+  useEffect(() => {
+    const el = gridRef.current
+    if (!region || !el || typeof ResizeObserver === 'undefined') return
+    hostRef.current = el.closest('.gallery-host') as HTMLElement | null
+    const read = (w: number) => setNarrow(w > 0 && w < GALLERY_TWO_TRACK_PX)
+    let width = el.getBoundingClientRect().width
+    read(width)
+    capture()
+
+    const host = hostRef.current
+    let queued = false
+    const onScroll = () => {
+      if (settlingRef.current || queued) return
+      queued = true
+      requestAnimationFrame(() => { queued = false; capture() })
+    }
+    host?.addEventListener('scroll', onScroll, { passive: true })
+
+    const ro = new ResizeObserver(entries => {
+      for (const e of entries) {
+        const w = e.contentRect.width
+        const moved = Math.abs(w - width) > 1
+        width = w
+        read(w)
+        if (!moved) continue
+        /*
+         * Resize steps run before scroll steps in the same frame, so setting
+         * the latch here is what keeps the reflow's own scroll event from
+         * being read as the reader's.
+         *
+         * Out of the observer callback before touching scrollTop: writing it
+         * from inside one is how a resize loop starts. The rAF also lands
+         * after the layout this resize produced, which is the layout the
+         * anchor has to be measured against. The nested rAF covers the
+         * scroll event our own write fires, one frame later again.
+         */
+        settlingRef.current = true
+        settle()
+      }
+    })
+    ro.observe(el)
+    return () => { ro.disconnect(); host?.removeEventListener('scroll', onScroll) }
+  }, [region, capture, settle])
+
+  /* The width change and the scale change are two layouts, not one: the
+     resize reflows the grid, and `narrow` then redraws every tile at a
+     different scale, which moves the anchor again. This catches the second,
+     synchronously, before the reader sees the frame. */
+  useLayoutEffect(() => { if (region) restore() }, [narrow, region, restore])
+
   return (
-    <div data-testid="desktop-gallery" data-flow={flow} className="px-6 pb-10 pt-5">
+    <div data-testid="desktop-gallery" data-flow={flow} data-narrow={narrow ? 'true' : undefined} className="px-6 pb-10 pt-5">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>
         {/*
@@ -225,8 +508,48 @@ export function DesktopGallery({
         than a sliver, and `row-span-2` still works: a hero taller than two
         content rows grows them, which is what grid does.
       */}
+      {/*
+        ── And tiles size to their content too ──────────────────────────────
+
+        The note above cut the row FLOOR from 168px to 88px, which was half the
+        problem. The other half is that a grid item defaults to
+        `align-self: stretch`, so a row is as tall as its tallest member and
+        every other tile in it is inflated to match — the floor was never what
+        was making those cards tall, a rich neighbour was.
+
+        Measured on Ideas at 1920x889, the first row: AMZN carries a price
+        chart and is 524px. Beside it, AAPL held 342px of void (65% of the
+        tile) and LLY 338px (64%), because three lines of text were stretched
+        to a neighbour's height. CEG ran 228px empty, 50%.
+
+        ── Why the stretch is back ───────────────────────────────────────────
+
+        `items-start` was the fix for a while: each tile as tall as what it
+        has to say, row bottoms ragged. It traded void INSIDE the card for
+        void BETWEEN the cards, and measured at 1920x889 the second was no
+        smaller -- the first Ideas row ran AMZN 418px beside LLY 303px and
+        AAPL 303px, so 115px of page ground sat under each short tile and the
+        row read as a broken shelf.
+
+        Neither was ever the real problem. The problem was that nothing in the
+        card wanted the extra height, so wherever it went it was dead. Now the
+        picture takes it: the visual box is `flex-1` over a floor rather than
+        a fixed height (`OpportunityGrid`), the range axis grows its band and
+        marker into whatever it is given, and clamped prose shows the lines
+        that fit instead of a fixed count.
+
+        So rows are flush again and the slack is spent, not moved. Nothing
+        here demands a height: the shell is `flex flex-col` with no `h-full`,
+        which ADAPTS to the row.
+      */}
       <div
-        className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        ref={gridRef}
+        className={clsx(
+          'mt-4 grid items-stretch gap-3',
+          region
+            ? 'gallery-region'
+            : 'grid-cols-1 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12',
+        )}
         style={{
           gridAutoRows: 'minmax(88px, auto)',
           /*
@@ -248,7 +571,11 @@ export function DesktopGallery({
           gridAutoFlow: flow === 'packed' ? 'row dense' : 'row',
         }}
       >
-        {children}
+        <GalleryRegionContext.Provider value={region}>
+          <GalleryNarrowContext.Provider value={narrow}>
+            {children}
+          </GalleryNarrowContext.Provider>
+        </GalleryRegionContext.Provider>
       </div>
     </div>
   )
@@ -285,25 +612,85 @@ const SKELETON_HEIGHT: Record<TileSize, string> = {
 }
 
 export function GallerySkeleton({
-  title, count = 6, flow = 'ranked', sizeAt,
+  title, count = 6, flow = 'ranked', sizeAt, heights, region = false,
 }: {
   title: React.ReactNode
+  /** As `DesktopGallery`'s: the placeholders must lay out on the same tracks
+   *  the real grid will use, or the field re-flows the moment it loads. */
+  region?: boolean
   /** How many placeholders. Default six: two rows of the usual mosaic. */
   count?: number
   flow?: TileFlow
   /** Which size each index takes. Defaults to the ranked rule, so a lens that
    *  ranks gets its real shape without having to say so. */
   sizeAt?: (index: number, total: number) => TileSize
+  /**
+   * Per-size heights for THIS lens, over the shared defaults.
+   *
+   * The shared map cannot be right for every lens, because the lenses' tiles
+   * are genuinely different heights — measured at 1920x889, the widest tile
+   * renders 461px on Ideas, 452px on Research and 233px on Decisions. One
+   * number for all three is wrong twice, and `SKELETON_HEIGHT` was calibrated
+   * near the shortest of them, so it under-reserved room almost everywhere.
+   *
+   * That only becomes visible as layout shift where there are enough tiles to
+   * fill the viewport: Decisions has 26 and the mismatch sits below the fold,
+   * Ideas has 90 and it does not. So this is an override a lens opts into with
+   * measurements, not a new default anybody inherits.
+   */
+  heights?: Partial<Record<TileSize, string>>
 }) {
   const size = sizeAt ?? sizeByRank
+  const heightOf = (s: TileSize) => heights?.[s] ?? SKELETON_HEIGHT[s]
+  /*
+    The header below is the real gallery's, to the pixel.
+
+    It was not: `pt-6` against the gallery's `pt-5`, a 21px heading against
+    its 19px, and no note at all where the gallery always renders one. So the
+    skeleton's grid began at y=72 and the real grid at y=101, and all ninety
+    tiles dropped 29px the moment the data landed -- residual shift left over
+    after the tile HEIGHTS were matched, from the one band above them that
+    was never measured.
+  */
   return (
-    <div className="h-full overflow-y-auto bg-gray-50/60 px-6 pt-6 dark:bg-[#0b0f16]">
-      <div className="flex items-baseline gap-2.5">
-        <h1 className="text-[21px] font-semibold tracking-tight">{title}</h1>
+    /* The same ground the loaded gallery stands on, from `lib/ui/surface`.
+       Stated rather than inherited: a field that declares no background takes
+       whatever shell it is mounted in, which is how three lenses ended up on
+       a ground nobody chose. */
+    <div className={clsx(
+      'h-full overflow-y-auto px-6 pb-10 pt-5',
+      GALLERY_GROUND,
+      /* The scroll host is the container, here as in the loaded gallery. */
+      region && 'gallery-host',
+    )}>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <h1 className="min-w-0 truncate text-[19px] font-semibold tracking-tight">{title}</h1>
         <span className="h-4 w-8 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
       </div>
+      {/*
+        The note's room, two lines of it.
+
+        Every lens writes a sentence here and the sentence wraps to two lines
+        at the `74ch` measure each of them uses, so two is the case to reserve.
+        A lens whose note runs to one line costs the reader 18px of lift,
+        which is the better way to be wrong than 36px of drop -- and far
+        better than the 36 this was short by when it reserved nothing.
+      */}
+      <div className="mt-1 max-w-[74ch] space-y-1 py-[2px]" aria-hidden>
+        <span className="block h-3 w-full animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+        <span className="block h-3 w-2/5 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+      </div>
       <div
-        className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12"
+        /* `items-stretch` to match the real gallery below. It changes nothing
+           on its own -- every placeholder carries an explicit `h-[Npx]`, which
+           overrides stretch already -- but the two grids are meant to be the
+           same geometry, and a difference here is how they drift. */
+        className={clsx(
+          'mt-4 grid items-stretch gap-3',
+          region
+            ? 'gallery-region'
+            : 'grid-cols-1 md:grid-cols-6 xl:grid-cols-9 2xl:grid-cols-12',
+        )}
         style={{ gridAutoRows: 'minmax(88px, auto)', gridAutoFlow: 'row' }}
       >
         {Array.from({ length: count }, (_, i) => {
@@ -311,9 +698,13 @@ export function GallerySkeleton({
           return (
             <div
               key={i}
+              /* The span rule in region mode selects on this, exactly as it
+                 does on a real tile -- and the breakpoint classes are left
+                 off there for the same reason they are on a real tile. */
+              data-size={s}
               className={clsx(
-                SPAN[flow][s],
-                SKELETON_HEIGHT[s],
+                !region && SPAN[flow][s],
+                heightOf(s),
                 'animate-pulse rounded-xl border border-gray-200 bg-white dark:border-white/[0.08] dark:bg-[#141a25]',
               )}
             />
@@ -408,9 +799,37 @@ export function sizeByRecency(index: number): TileSize {
  */
 export function DesktopTile({
   onOpen, eyebrow, tone = 'neutral', size = 'compact', flow = 'ranked',
-  testId, dataAttrs, context, actions, children,
+  testId, dataAttrs, context, actions, inert = false, selected = false, children,
 }: {
   onOpen: () => void
+  /**
+   * This tile has nothing to open, and must not look as though it does.
+   *
+   * Four lenses rank objects that always resolve somewhere, so none of them
+   * passes this. Explore does: `ExploreOpen` carries a `none` case whose own
+   * doctrine is that a preview with nothing behind it is still worth READING
+   * and must not offer a press -- a surface that takes a click and does
+   * nothing is worse than one that never invited it.
+   *
+   * So the affordances go and the content stays: no pointer, no tab stop, no
+   * Enter, no hover. Not `aria-disabled`, which would announce a control that
+   * has been turned off; this was never a control.
+   */
+  inert?: boolean
+  /**
+   * This tile's object is the one in the workspace beside the field.
+   *
+   * The header above records that the persistent ring was REMOVED, and the
+   * reason it gives is precise: nothing sits beneath these galleries any more,
+   * and opening a tile replaces the field. That holds for the four workspace
+   * lenses and it does not hold on the Dashboard, where Explore keeps its
+   * field in the left column with the asset workspace open beside it -- so
+   * which tile the pane belongs to is a real question a reader asks, and the
+   * tile is the only place that can answer it.
+   *
+   * Opt-in, so no lens acquires a ring it has no use for.
+   */
+  selected?: boolean
   eyebrow: React.ReactNode
   /**
    * The object's standing context, shown at rest on the shelf. Omit to get no
@@ -455,6 +874,7 @@ export function DesktopTile({
    * and openable from the keyboard, which is what the button gave us free.
    */
   const portalClick = (e: React.MouseEvent<HTMLElement>) => {
+    if (inert) return
     const t = e.target as HTMLElement
     if (t.closest('button,a,input,select,textarea,[role="button"],[data-no-portal]')) return
     // A drag that selected text is a read, not a decision to leave.
@@ -462,44 +882,89 @@ export function DesktopTile({
     onOpen()
   }
 
+  /* See `GalleryRegionContext`: in region mode `data-size` already carries
+     the span, and the breakpoint classes below it cannot win. */
+  const inRegion = useContext(GalleryRegionContext)
+
   return (
     <div
       role="group"
-      tabIndex={0}
+      tabIndex={inert ? undefined : 0}
       data-testid={testId ?? 'desktop-tile'}
       data-tone={tone}
       data-size={size}
+      data-inert={inert ? 'true' : undefined}
+      data-selected={selected ? 'true' : undefined}
       onClick={portalClick}
       onKeyDown={(e) => {
+        if (inert) return
         if (e.target !== e.currentTarget) return
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
       }}
       {...Object.fromEntries(Object.entries(dataAttrs ?? {}).filter(([, v]) => v != null))}
       /*
-        The Ideas card, everywhere.
+        One card, everywhere, and now it is the FEED's card.
 
         ── What changed and why ─────────────────────────────────────────────
-        *
-        A drop shadow under every tile is what makes a field read as a stack
-        of floating panels rather than as one instrument, and a large radius
-        reads friendly where this surface is meant to read precise. Ideas took
-        both out and the difference was the single most-noticed thing about
-        it; the other four lenses kept `rounded-xl` and `shadow-sm`, so they
-        went on looking like a different product one tab away.
 
-        A hairline and the page's own ground do the work. Hover moves the
-        border colour rather than lifting the card off the page.
+        This used to read: a drop shadow under every tile makes a field read
+        as a stack of floating panels rather than one instrument, and a large
+        radius reads friendly where this surface is meant to read precise, so
+        Ideas dropped both and the other four lenses followed. A hairline and
+        the page's own grey ground did the work.
+
+        The grey ground is gone -- removed on request, because the Dashboard's
+        three sections disagreed about it: the feed was white and Explore and
+        Portfolio were not. With the mat gone the card's own edge has to carry
+        the separation, which is what the border weight and the one step of
+        elevation below are doing. Not ornament; the page's job, moved onto
+        the card.
+
+        The values are `lib/ui/surface`'s, which are the feed card's, so the
+        convergence now includes the one surface that was outside it.
       */
       className={clsx(
-        SPAN[flow][size],
-        // `group` is what the shelf's cross-fade hangs off.
-        'group flex h-full min-w-0 cursor-pointer flex-col overflow-hidden rounded-[3px] border bg-white text-left',
-        'transition-colors duration-100',
+        !inRegion && SPAN[flow][size],
+        /*
+          `group` is what the shelf's cross-fade hangs off.
+
+          No `h-full`. It was `height: 100%`, and an explicit height overrides
+          alignment — so it silently defeated the `items-start` on the grid: a
+          tile still resolved to the full height of a row whose tallest member
+          was somebody else. On Ideas that made AAPL 524px to hold three lines
+          of text, 342px of it void, because AMZN beside it had a price chart.
+
+          Without it the tile is as tall as its own contents, which is what
+          `items-start` was asking for. Nothing needed the fill: this element
+          is `flex flex-col`, so it ADAPTS to a height rather than requiring
+          one, and its single `flex-1` child is the body, which then takes its
+          content height instead of a neighbour's.
+        */
+        /* `relative`: the action overlay is positioned against the CARD, not
+           against the shelf it used to live in. See `TileActions`. */
+        /*
+         * `desktop-tile` carries no styling of its own. It is the handle the
+         * ONE-COLUMN RUNG in `index.css` hangs off, and it is a class rather
+         * than the `data-size` attribute because that attribute says which
+         * rung the tile is on and the rung is exactly what gets overridden.
+         */
+        'desktop-tile group relative flex min-w-0 flex-col overflow-hidden text-left',
+        CARD_SURFACE,
+        !inert && 'cursor-pointer',
         'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600',
-        'dark:bg-[#141a25]',
-        tone === 'critical'
-          ? 'border-rose-300 hover:border-rose-400 dark:border-rose-900/60'
-          : 'border-gray-200 hover:border-gray-400 dark:border-white/[0.08] dark:hover:border-white/25',
+        /*
+          The card's edge is a real line, and now it is the only separation
+          there is: the page is white, so a weak border leaves the field
+          reading as one undivided sheet -- which is the "white-washed"
+          report the grey mat was introduced to answer.
+
+          An inert tile takes the edge without the hover, because a card that
+          lights up under the cursor is claiming a press it cannot take.
+        */
+        tone === 'critical' ? CARD_EDGE_CRITICAL : CARD_EDGE,
+        !inert && (tone === 'critical' ? CARD_HOVER_CRITICAL : CARD_HOVER),
+        /* Last, so it beats the tone border above rather than racing it. */
+        selected && CARD_EDGE_SELECTED,
       )}
     >
       {/*
@@ -517,17 +982,54 @@ export function DesktopTile({
       <div className={clsx(
         'flex min-w-0 flex-1 flex-col',
         tone === 'critical' && 'bg-rose-50/60 dark:bg-rose-950/20',
-        size === 'hero' ? 'gap-4 p-5' : size === 'large' ? 'gap-3 p-4'
+        /*
+         * The hero's own padding and row gap, trimmed with the picture.
+         *
+         * `p-5` and `gap-4` put 40px of padding and up to 48px of gaps into a
+         * card measured at 915x418 -- the one reported as "way too big". The
+         * height is coming out of the picture (see `chartHeight` in
+         * `OpportunityGrid`); leaving the frame at its old size would spend
+         * what the picture gave back on white space instead.
+         *
+         * Only the hero moves. `large`, `medium` and `compact` were already
+         * at `p-4`/`p-3` and are not what the reader was looking at.
+         */
+        /*
+         * ── The rank draws the frame; WIDTH used to redraw it in React ─────
+         *
+         * In a one-column region every cell is the same width whatever its
+         * rank, so a hero's frame there is a hero's frame around a compact
+         * card. That was right, and it was done by handing every tile a
+         * second size through context and re-rendering the field whenever the
+         * column changed shape.
+         *
+         * MEASURED on Explore at 1920 with 145 tiles, opening and closing the
+         * workspace: 289 of the ~543 DOM mutations per transition were tiles
+         * rewriting their own type and padding -- `text-[30px]` to
+         * `text-[17px]`, `line-clamp-3 text-[17px]` to `line-clamp-2
+         * text-[15px]` -- on a field where about six are on screen. Long
+         * tasks of 68, 73, 68 and 98ms came with them, against a 16ms frame.
+         *
+         * Pinning that signal off, with the re-render left in place, took
+         * every long task to ZERO. So the cost was never React's reconcile;
+         * it was the writes and the style invalidation they cause. The rung
+         * therefore moves to `index.css`, where the browser restyles the few
+         * tiles it has actually rendered and skips the rest.
+         *
+         * `tile-frame` is that rung's handle. The classes here are the WIDE
+         * values and stay the single source for them.
+         */
+        'tile-frame',
+        size === 'hero' ? 'gap-3 p-4' : size === 'large' ? 'gap-3 p-4'
           : size === 'medium' ? 'gap-2 p-4' : 'gap-1.5 p-3',
       )}>
         <div className="flex flex-wrap items-center gap-1.5">
           {eyebrow}
         </div>
         {children}
-        {(context || actions) && (
-          <TileShelf size={size} context={context} actions={actions} />
-        )}
+        {context && <TileShelf size={size} context={context} />}
       </div>
+      {actions && <TileActions size={size}>{actions}</TileActions>}
     </div>
   )
 }
@@ -590,8 +1092,11 @@ const SHELF_H: Record<TileSize, string> = {
  * works where the older `group-hover:opacity` reveals on the legacy dashboard
  * widgets pushed their cards around.
  *
- * `group-focus-within` is not a nicety: without it the actions are reachable
- * by Tab but invisible while focused.
+ * A focus reveal is not a nicety: without it the actions are reachable by
+ * Tab but invisible while focused. It keys on `:focus-visible`, never
+ * `:focus-within` -- the latter also matches a button focused by a mouse
+ * click, and a clicked button holds focus, so it left the shelf open on
+ * every tile whose controls had been used.
  */
 /**
  * Exported for Ideas, which is not built on `DesktopTile` and had its own.
@@ -608,42 +1113,70 @@ const SHELF_H: Record<TileSize, string> = {
  * the resting one.
  */
 export function TileShelf({
-  size, context, actions,
-}: { size: TileSize; context?: React.ReactNode; actions?: React.ReactNode }) {
+  size, context,
+}: { size: TileSize; context?: React.ReactNode }) {
+  if (!context) return null
   return (
     <div
       data-testid="tile-shelf"
       className={clsx(
-        'relative mt-auto shrink-0 border-t border-gray-200 pt-1.5 dark:border-white/10',
+        'tile-shelf relative mt-auto shrink-0 border-t border-gray-200 pt-1.5 dark:border-white/10',
         SHELF_H[size],
       )}
     >
-      {context && (
-        <div
-          data-testid="tile-shelf-context"
-          className={clsx(
-            'pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 truncate',
-            'text-[10px] text-gray-500 dark:text-gray-400',
-            'opacity-100 transition-opacity duration-150',
-            actions && 'group-hover:opacity-0 group-focus-within:opacity-0',
-          )}
-        >
-          {context}
-        </div>
+      {/* No longer cross-fades. The verbs moved to the top-right corner (see
+          `TileActions`), so the two layers no longer occupy the same strip
+          and there is nothing to swap: the standing context stays readable
+          while the reader reaches for an action, which is strictly more
+          information than trading one for the other. */}
+      <div
+        data-testid="tile-shelf-context"
+        className={clsx(
+          'pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 truncate',
+          'text-[10px] text-gray-500 dark:text-gray-400',
+        )}
+      >
+        {context}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The verbs, in the corner Today puts them in.
+ *
+ * ── Why they moved ───────────────────────────────────────────────────────
+ *
+ * They were the second layer of the shelf: bottom of the card, left-aligned,
+ * cross-fading with the standing context. Today's have always been top-RIGHT,
+ * right-aligned, over a scrim. Measured on the same screen -- Today's at
+ * (top 1, right 1), Ideas' at (top 375, left 21) on a 418px card -- so the
+ * same gesture on two lenses put the buttons at opposite corners, and the
+ * reader has to look for them twice.
+ *
+ * Today is the reference because it is the lens people land on.
+ *
+ * The scrim is what makes this legal over content: a short white-to-nothing
+ * gradient, so a verb never sits on top of a ticker it cannot be read
+ * against. And the reveal is opacity ONLY, keyed on hover and
+ * `:focus-visible` -- never `:focus-within`, which also matches a button
+ * focused by a mouse click and pinned the row open on every tile whose
+ * controls had been used.
+ */
+export function TileActions({ size, children }: { size: TileSize; children: React.ReactNode }) {
+  return (
+    <div
+      data-testid="tile-shelf-actions"
+      className={clsx(
+        'tile-actions pointer-events-none absolute right-0 top-0 z-10 flex flex-wrap items-center justify-end gap-1.5',
+        size === 'hero' ? 'px-4 pb-5 pt-3' : size === 'compact' ? 'px-2 pb-4 pt-2' : 'px-3 pb-5 pt-2.5',
+        'bg-gradient-to-b from-white via-white via-70% to-transparent dark:from-[#161d2a] dark:via-[#161d2a]',
+        'opacity-0 transition-opacity duration-150',
+        'group-hover:pointer-events-auto group-hover:opacity-100',
+        'group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100',
       )}
-      {actions && (
-        <div
-          data-testid="tile-shelf-actions"
-          className={clsx(
-            'pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center gap-1.5',
-            'opacity-0 transition-opacity duration-150',
-            'group-hover:pointer-events-auto group-hover:opacity-100',
-            'group-focus-within:pointer-events-auto group-focus-within:opacity-100',
-          )}
-        >
-          {actions}
-        </div>
-      )}
+    >
+      {children}
     </div>
   )
 }
@@ -708,22 +1241,108 @@ const STATE_INK: Record<SemanticTone, string> = {
 /* ------------------------------------------------------------ tile pieces */
 
 /** Object identity: the symbol, and the name where it fits. */
+/**
+ * One display ladder for the tile, and one scale for what sits beside it.
+ *
+ * There were two. `TileIdentity` stepped its ticker 30/24/20/17 and
+ * `TileHeroNumber` stepped its figure 30/25/19/15 -- the same role, "the thing
+ * this tile is about", disagreeing by a pixel or two at every step below hero.
+ * A reader never sees them side by side as a comparison, which is exactly why
+ * it survived: it reads as a gallery that is slightly out of tune rather than
+ * as a bug anybody can point at. The field carried eleven distinct type sizes.
+ *
+ * The identity ladder won because ninety tiles wear it and five wear the
+ * other. `beside` is a company name or a unit -- the small thing on the
+ * baseline of the big thing -- and both now set it the same way.
+ */
+const TILE_DISPLAY: Record<TileSize, string> = {
+  hero: 'text-[30px]',
+  large: 'text-[24px]',
+  medium: 'text-[20px]',
+  compact: 'text-[17px]',
+}
+
+const TILE_BESIDE: Record<TileSize, string> = {
+  hero: 'text-[13px]',
+  large: 'text-[13px]',
+  medium: 'text-[11px]',
+  compact: 'text-[11px]',
+}
+
 export function TileIdentity({
-  symbol, name, size = 'compact',
-}: { symbol: string | null; name?: string | null; size?: TileSize }) {
+  symbol, name, size = 'compact', subject = null,
+}: {
+  symbol: string | null
+  name?: string | null
+  size?: TileSize
+  /**
+   * What the card is about when it is about no ticker.
+   *
+   * ── The dash ────────────────────────────────────────────────────────────
+   *
+   * This slot used to render `symbol ?? '—'`, so a card with no ticker drew a
+   * bare em dash at the tile's largest type, in black, where a name goes.
+   * Measured live: every one of the six Ideas prompts on the field led with it
+   * -- a 20px dash above "What are the biggest risks to your portfolio right
+   * now?" -- and it was reported as the cards "showing as dashed".
+   *
+   * A placeholder in the most prominent position on a card is worse than an
+   * empty position: it occupies the line a reader scans first and says
+   * nothing. It is also an em dash in a user-visible string, which this
+   * product does not use anywhere.
+   *
+   * ── What goes there instead ─────────────────────────────────────────────
+   *
+   * Whatever the card IS about, supplied by the caller because only the
+   * caller knows -- a book's name for a portfolio card, the kind of post for a
+   * prompt or a thought. Nothing is invented here: with no symbol and no
+   * subject the row does not render at all, and the card's own headline
+   * becomes its lead, which is what it should have been all along.
+   */
+  subject?: string | null
+}) {
+  const lead = symbol ?? subject
+  // No lead, no row. See `subject`: an empty position beats a placeholder.
+  if (!lead && !name) return null
   return (
     <div className="flex min-w-0 items-baseline gap-2">
-      <span className={clsx(
-        'font-black leading-none tracking-[-0.03em]',
-        size === 'hero' ? 'text-[30px]'
-          : size === 'large' ? 'text-[24px]'
-          : size === 'medium' ? 'text-[20px]'
-          : 'text-[17px]',
-      )}>{symbol ?? '—'}</span>
+      {lead && (
+        <span className={clsx(
+          /*
+           * ── The ticker had no ink of its own ──────────────────────────────
+           *
+           * This set weight, leading and tracking and no colour, so the
+           * largest word on every tile INHERITED whatever the card passed
+           * down. Measured on the live field: `rgb(0, 0, 0)`, pure black,
+           * while every other ink on the same card is `gray-900` (#111827)
+           * for the claim, `gray-700` for the body and `gray-500` for the
+           * name beside it. So the one element a reader fixes on first was
+           * the only one outside the palette, and 14 points darker than the
+           * text under it.
+           *
+           * Nobody chose that; it is what no declaration resolves to. Stating
+           * it puts the ticker on the same ramp as the sentence beneath it,
+           * which is the whole of the difference between a card that reads as
+           * typeset and one that reads as default.
+           *
+           * ── And 900 was a weight above the one that was wanted ───────────
+           *
+           * `font-black` at 30px in pure black is heavier than anything else
+           * in the product. 800 keeps the ticker unmistakably the lead
+           * without it being the loudest ink on a page of twelve cards.
+           */
+          /* `tile-display`: the one-column rung in `index.css`. */
+          'tile-display font-extrabold leading-none tracking-[-0.035em] text-gray-900 dark:text-gray-50',
+          // A subject is words, not a ticker: it wraps and it is not shouted
+          // at a ticker's weight. `truncate` keeps a long book name on a line.
+          symbol ? null : 'min-w-0 truncate font-semibold',
+          TILE_DISPLAY[size],
+        )}>{lead}</span>
+      )}
       {name && (
         <span className={clsx(
-          'min-w-0 truncate font-medium text-gray-500',
-          size === 'hero' ? 'text-[13px]' : 'text-[11px]',
+          'tile-beside min-w-0 truncate font-medium text-gray-500',
+          TILE_BESIDE[size],
         )}>{name}</span>
       )}
     </div>
@@ -760,11 +1379,12 @@ export function TileHeroNumber({
   scale?: TileSize
 }) {
   const stacked = scale === 'hero' || scale === 'large'
-  const figureSize = scale === 'hero' ? 'text-[30px]'
-    : scale === 'large' ? 'text-[25px]'
-    : scale === 'medium' ? 'text-[19px]'
-    : 'text-[15px]'
-  const unitSize = stacked ? 'text-[15px]' : 'text-[11px]'
+  /* The tile's one display ladder -- see `TILE_DISPLAY`. This used to run its
+     own, a pixel or two off at every step below hero. */
+  /* The tile's one display ladder -- see `TILE_DISPLAY`. This used to run its
+     own, a pixel or two off at every step below hero. */
+  const figureSize = TILE_DISPLAY[scale]
+  const unitSize = TILE_BESIDE[scale]
   const labelSize = stacked ? 'text-[12px]' : 'text-[10px]'
 
   return (
@@ -828,14 +1448,149 @@ export function TileClaim({
 }: { children: React.ReactNode; size?: TileSize }) {
   return (
     <p className={clsx(
-      'text-gray-900 dark:text-gray-100',
-      size === 'hero' ? 'line-clamp-5 text-[17px] leading-[1.5]'
-        : size === 'large' ? 'line-clamp-4 text-[15px] leading-[1.5]'
-        : size === 'medium' ? 'line-clamp-3 text-[13px] leading-[1.5]'
-        : 'line-clamp-2 text-[12px] leading-[1.45]',
+      /* `tile-claim`: the one-column rung in `index.css` takes both the size
+         and the line budget down a step. */
+      'tile-claim text-gray-900 dark:text-gray-100',
+      /*
+       * ── The clamp was written for a thesis and is used by a finding ──────
+       *
+       * This ladder allowed 5 lines at hero and 4 at large. At 17px/1.5 that
+       * is 127px of a single sentence, and the primitive had no callers when
+       * it was written, so nothing had ever tested it.
+       *
+       * Its first real caller is Explore's finding sentence, which is one
+       * clause -- "Not held, and trading below every case the desk wrote" --
+       * except where the adapter hands over a news headline, and those run
+       * long: "Stock Market Today, Nov. 2: CoreWeave Slides on Debt Concerns
+       * After CrowdStrike Partnership" is four lines at 15px in a span-4
+       * cell.
+       *
+       * Measured on the live field when this replaced the 11px caption: large
+       * tiles went p50 291 -> 346 and the field's tallest tile 356 -> 392.
+       * 356 is not an arbitrary number -- it is where the heights landed
+       * after the "way too big/tall" report, and the note above `.gallery-
+       * region` records what buying it back cost. Giving a headline a fifth
+       * line is not worth 36px on every card in its row, because the row
+       * stretches to its tallest member.
+       *
+       * So the SIZE stays -- that was the whole point, the sentence was
+       * whispered at 11px -- and the line budget comes down one step at each
+       * rank. A sentence longer than that is the workspace's to show, one
+       * press away, which is what every other clamp on this tile assumes.
+       *
+       * Leading drops to 1.45 with it: 1.5 is a reading measure for a
+       * paragraph and this is three lines in a card.
+       */
+      /*
+       * ── And the ladder's BOTTOM rung is the one that matters ────────────
+       *
+       * The step above raised the claim off an 11px caption. Measured on the
+       * live field straight after, it had barely moved: 90 of 145 tiles are
+       * `compact` and compact's rung is 12px, so 62% of the field changed by
+       * ONE PIXEL. 40 more went to 13. Only the 18 large-and-up tiles got a
+       * size a reader would notice, and the reader's words for the result
+       * were that nothing looked different. They were right.
+       *
+       * The ladder was wrong for this because of what it was drawn for: a
+       * long written thesis inside a small card, where 12px buys lines. A
+       * finding is one clause and there is no trade to make -- at the width
+       * these cells actually are, 15px fits it.
+       *
+       * The widths, measured in the 12-track field at 1920: a compact cell is
+       * ~430px and a medium ~430px, which is wider than the phone this type
+       * scale is cautious for. In the narrow rail every cell is 376px, and
+       * 15px is what the prototype sets its own full-width tiles at. Neither
+       * is tight.
+       *
+       * So the rungs compress: 17 for the one featured tile and 15 for
+       * everything else, which is the prototype's own ladder rather than a
+       * four-step descent to a caption. `compact` keeps the two-line clamp,
+       * so it buys the size with ~6px of height and not with a third line.
+       */
+      size === 'hero' ? 'line-clamp-3 text-[17px] leading-[1.4]'
+        : size === 'large' ? 'line-clamp-3 text-[16px] leading-[1.4]'
+        : size === 'medium' ? 'line-clamp-3 text-[15px] leading-[1.4]'
+        : 'line-clamp-2 text-[15px] leading-[1.4]',
     )}>
       {children}
     </p>
+  )
+}
+
+/**
+ * The figures that frame the finding, on one row, each under its own key.
+ *
+ * ── Why a row and not a pill ──────────────────────────────────────────────
+ *
+ * A finding is rarely one number. "Trading below every case" is three facts
+ * standing together -- where it is, where the floor was, and the distance
+ * between them -- and a reader checks the third against the first two. Put
+ * one of them in the eyebrow as a pill and the other two nowhere, and the
+ * tile states a conclusion the reader cannot audit.
+ *
+ * So: the figures sit together, below the claim they support, large enough to
+ * read across a field, each with the small uppercase key that says what it
+ * counts.
+ *
+ * ── The key was already there and already discarded ───────────────────────
+ *
+ * `ExploreItem.metric` has been `{ value, label, direction }` for as long as
+ * it has existed. The tile rendered `metric.value` in a `TileFigure` on the
+ * eyebrow and dropped `metric.label` on the floor, so a field of figures
+ * carried no units: "14.2", "288", "+34%" with nothing saying of what, since
+ * the eyebrow beside them was spent on the lens that raised the card. This
+ * renders the pair.
+ *
+ * ── Takes a list, fed one ─────────────────────────────────────────────────
+ *
+ * The shape is plural because the finding is, and because the adapters are
+ * where the other figures have to come from -- a bear case, a book weight, a
+ * horizon. Today every caller has exactly one to give and passes one. Nothing
+ * here invents a second: an absent figure is absent, and a tile with one fact
+ * draws one fact rather than padding the row out to look fuller than the
+ * record is.
+ */
+export function TileStats({
+  stats, size = 'compact',
+}: {
+  stats: readonly { value: React.ReactNode; key: React.ReactNode; tone?: SemanticTone }[]
+  size?: TileSize
+}) {
+  if (stats.length === 0) return null
+  const big = size === 'hero' || size === 'large'
+  return (
+    <div
+      data-testid="tile-stats"
+      /* `gap-x-5` at the top of the ladder and `gap-x-4` below: the figures
+         have to read as separate facts rather than one long number, and
+         tabular digits sit tighter than the eye expects. Wraps, because three
+         figures and a long key do not fit a compact cell on one line and the
+         alternative is a horizontal scrollbar inside a card. */
+      className={clsx('tile-stats flex min-w-0 flex-wrap', big ? 'gap-x-5 gap-y-2' : 'gap-x-4 gap-y-1.5')}
+    >
+      {stats.map((s, i) => (
+        <div key={i} className="min-w-0">
+          <div className={clsx(
+            /* Mono and tabular, which is the one place this product's figures
+               have always been set -- the horizon chips and the axis labels
+               already are. A proportional digit in a column of digits is what
+               made "14.2 %" read with a space in it. */
+            'tile-figure font-mono font-bold leading-[1.15] tabular-nums tracking-[-0.02em]',
+            big ? 'text-[19px]' : size === 'medium' ? 'text-[17px]' : 'text-[15px]',
+            s.tone === 'critical'
+              ? 'text-rose-700 dark:text-rose-400'
+              : s.tone === 'info'
+                ? 'text-emerald-700 dark:text-emerald-400'
+                : 'text-gray-900 dark:text-gray-50',
+          )}>
+            {s.value}
+          </div>
+          <div className="mt-0.5 text-[9.5px] font-bold uppercase leading-tight tracking-[0.09em] text-gray-400 dark:text-gray-500">
+            {s.key}
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -936,10 +1691,17 @@ export function TileMeta({ children }: { children: React.ReactNode }) {
 /** Right-aligned figure in the eyebrow: a weight, an age, a value. */
 export function TileFigure({ children, strong }: { children: React.ReactNode; strong?: boolean }) {
   return (
-    <span className={clsx(
-      'ml-auto shrink-0 font-mono text-[10px] tabular-nums',
-      strong ? 'font-semibold text-gray-800 dark:text-gray-200' : 'text-gray-500',
-    )}>
+    <span
+      /* Addressable because a lens may suppress it when the picture below
+         already states the number, and "is the figure on the eyebrow" is
+         otherwise indistinguishable from "is that string anywhere on the
+         tile" -- which it is, on the picture, which is the whole point. */
+      data-testid="tile-figure"
+      className={clsx(
+        'ml-auto shrink-0 font-mono text-[10px] tabular-nums',
+        strong ? 'font-semibold text-gray-800 dark:text-gray-200' : 'text-gray-500',
+      )}
+    >
       {children}
     </span>
   )

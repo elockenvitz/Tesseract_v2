@@ -35,6 +35,8 @@ function captureEvents(names: string[]) {
 
 const SEAM_EVENTS = [
   'decision-engine-action',
+  'openTradeQueue',
+  'openTradeIdeaModal',
   'tesseract:open-asset',
   'tesseract:open-research',
   'tesseract:open-idea',
@@ -222,6 +224,29 @@ describe('executeAiAction — a valid action reaches the existing platform seam'
     // And the shell channel gets a tab descriptor whose type is our literal.
     const tab = capture.seen.find(e => e.name === 'decision-engine-action')
     expect(tab?.detail.type).toBe('asset')
+  })
+
+  /*
+   * `open_idea` reported failure and did nothing, from everywhere except a
+   * mounted Ideas lens.
+   *
+   * The seam it used, `openIdea`, returns whether a mounted surface took the
+   * request. That is the right answer for a button inside the Dashboard and
+   * the wrong one for the AI pane, which runs over every surface in the app.
+   * The sibling case "every action id is reachable and dispatches" caught the
+   * false return; this one pins the destination, so routing it back at the
+   * Ideas gallery breaks here rather than in someone's hands.
+   */
+  it('open_idea opens the Pipeline, then that idea', async () => {
+    expect(run({ action: 'open_idea', target: { type: 'idea', id: 'tq-4', label: 'Trim' }, label: 'Open' })).toBe(true)
+    const tab = capture.seen.find(e => e.name === 'openTradeQueue')
+    expect(tab?.detail).toMatchObject({ selectedTradeId: 'tq-4', openIdeaDetail: true })
+
+    // Deliberately a frame late, so the Pipeline has mounted its listener.
+    await vi.waitFor(() => expect(capture.seen.some(e => e.name === 'openTradeIdeaModal')).toBe(true))
+    expect(capture.seen.find(e => e.name === 'openTradeIdeaModal')?.detail).toMatchObject({ tradeId: 'tq-4' })
+    // And never the Ideas lens, which is a gallery for finding work.
+    expect(capture.seen.some(e => e.name === 'tesseract:open-idea')).toBe(false)
   })
 
   it('update_thesis lands on the research workspace focused on the thesis', () => {

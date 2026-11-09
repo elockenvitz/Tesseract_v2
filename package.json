@@ -34,6 +34,7 @@
     "guard:ci": "node scripts/ci-integrity.mjs",
     "sec:edge-authz": "node scripts/edge-authz-guard.mjs",
     "guard:gallery": "node scripts/gallery-purity.mjs",
+    "guard:copy": "node scripts/no-em-dash.mjs",
     "guard:holdings": "node scripts/holdings-collapse-audit.mjs",
     "audit:trade-prices": "node scripts/audit-trade-price-contamination.mjs",
     "guard:tdz": "node scripts/lint-mobile-ratchet.mjs",

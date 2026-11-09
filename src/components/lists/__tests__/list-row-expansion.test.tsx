@@ -45,7 +45,15 @@ const hooks = vi.hoisted(() => ({
   ratingWrites: [] as any[],
   /** Every `thesis.reviewed` outcome recorded, in order. */
   reviews: [] as any[],
+  /** How many times the answer was taken back. Separate from `reviews`
+   *  because a clear and a verdict are different writes, and a row that
+   *  routed a clear through `record` would look identical in one list. */
+  clears: 0,
   reviewDone: false,
+  /** The standing conclusion, as `useCurrentThesisConclusion` hands it over. */
+  reviewStanding: null as null | { outcome: string; occurredAt: string; byMe: boolean },
+  /** The outcome currently being written, as the recorder reports it. */
+  reviewPendingOutcome: null as null | string,
   /** Everything `saveContribution` was called with, in order. */
   caseWrites: [] as any[],
   workspaceLoading: false,
@@ -78,10 +86,21 @@ vi.mock('../../../hooks/useContributions', () => ({
 vi.mock('../../../hooks/useThesisReview', () => ({
   useRecordThesisReview: () => ({
     record: (outcome: string) => hooks.reviews.push(outcome),
+    /* Taking the answer back. Its own seam in the hook, so a row that reached
+       the clear by passing a verdict-shaped string would not satisfy this. */
+    clear: () => { hooks.clears += 1 },
     isPending: false,
     isDone: hooks.reviewDone,
     error: null,
+    /* The answer in flight. Driven by a fixture because the gap between the
+       press and the refetch is exactly where the bar used to show nothing
+       selected. */
+    pendingOutcome: hooks.reviewPendingOutcome,
   }),
+  /* The conclusion already on the record, which the row reads back so it can
+     offer to change it. Driven by a fixture because "nobody has answered" and
+     "somebody answered, possibly by mistake" are different rows. */
+  useCurrentThesisConclusion: () => ({ current: hooks.reviewStanding, isLoading: false }),
 }))
 vi.mock('../../../hooks/lists/useUpdateListItem', () => ({
   useUpdateListItem: () => ({ mutate: (v: any) => hooks.updates.push(v) }),
@@ -219,7 +238,10 @@ beforeEach(() => {
   hooks.updates = []
   hooks.ratingWrites = []
   hooks.reviews = []
+  hooks.clears = 0
   hooks.reviewDone = false
+  hooks.reviewStanding = null
+  hooks.reviewPendingOutcome = null
   hooks.caseWrites = []
   hooks.workspaceLoading = false
 })
@@ -855,12 +877,109 @@ describe('reviewing evidence is recorded, not just linked', () => {
     expect(hooks.reviews).toEqual(['holds'])
   })
 
-  it('collapses to a confirmation once recorded, so a second verdict is not invited', () => {
+  /*
+   * ── Rewritten, and why ──────────────────────────────────────────────────
+   *
+   * This case was "collapses to a confirmation once recorded, so a second
+   * verdict is not invited", and asserted that the three buttons DISAPPEARED
+   * in favour of a green "Review recorded".
+   *
+   * Two things were wrong with the behaviour it pinned. The confirmation came
+   * from the mutation's `isDone`, so it died with the component -- reopen the
+   * row and it read as though nobody had ever answered. And a reader who
+   * pressed the wrong verdict had no way back at the one moment they were
+   * certain to notice, because the control that took the answer had removed
+   * itself. "A second verdict" is not a thing to discourage; on this surface
+   * it is the only way to correct the first.
+   *
+   * The standing conclusion is read from the event log now, so it survives
+   * the remount, and every answer stays pressable.
+   *
+   * ── Re-pointed once more: the standing one is live too ──────────────────
+   *
+   * It asserted `toBeDisabled()` on the filled button, which was the rule for
+   * one commit: pressing it would have written a duplicate event. That left
+   * the reader able to swap their answer but never able to return to not
+   * having one, and that is what was reported. Pressing it now CLEARS it, so
+   * the button is enabled and carries a title saying what it does.
+   *
+   * The subject never changed -- no button on this row is dead -- so the case
+   * is still that, stated for three live buttons rather than two.
+   */
+  it('shows the standing verdict and leaves all three pressable', () => {
     unread()
-    hooks.reviewDone = true
+    hooks.reviewStanding = { outcome: 'holds', occurredAt: new Date().toISOString(), byMe: true }
     renderRow({ onOpenAsset: () => {} })
-    expect(screen.getByText('Review recorded')).toBeInTheDocument()
-    expect(screen.queryByText('Still holds')).not.toBeInTheDocument()
+
+    // All three still on screen. The record is shown, not swapped in.
+    for (const label of ['Still holds', 'Changed', 'Needs work']) {
+      expect(screen.getByText(label)).toBeInTheDocument()
+    }
+    expect(screen.getByText(/You marked this Still holds/)).toBeInTheDocument()
+
+    const standing = screen.getByText('Still holds')
+    expect(standing).toHaveAttribute('aria-pressed', 'true')
+    expect(standing).toBeEnabled()
+    expect(standing).toHaveAttribute('title', 'Press again to clear this answer')
+    // The correction path: the other two are live, and say nothing about
+    // clearing, because pressing either of them records a verdict.
+    for (const label of ['Changed', 'Needs work']) {
+      expect(screen.getByText(label)).toBeEnabled()
+      expect(screen.getByText(label)).not.toHaveAttribute('title')
+    }
+  })
+
+  /*
+   * And pressing it takes the answer off the record rather than re-writing it.
+   *
+   * The pair for the case above: a row that merely un-disabled the filled
+   * button would send a duplicate event, which is the exact no-op the lock
+   * existed to prevent. So the handler that runs is asserted, not just the
+   * button's state.
+   */
+  it('clears the standing verdict when the reader presses it again', async () => {
+    unread()
+    hooks.reviewStanding = { outcome: 'holds', occurredAt: new Date().toISOString(), byMe: true }
+    renderRow({ onOpenAsset: () => {} })
+
+    await userEvent.click(screen.getByText('Still holds'))
+    expect(hooks.clears).toBe(1)
+    // Nothing was recorded: a clear that went through `record` would be the
+    // duplicate event the lock existed to prevent.
+    expect(hooks.reviews).toEqual([])
+
+    // A different answer is still a verdict, not a clear.
+    await userEvent.click(screen.getByText('Changed'))
+    expect(hooks.reviews).toEqual(['changed'])
+    expect(hooks.clears).toBe(1)
+  })
+
+  /*
+   * The press is acknowledged on the press, not on the round trip.
+   *
+   * The bar used to read its selection only from the refetched record, so
+   * between the click and the server's answer it showed the PREVIOUS verdict
+   * as the selected one -- the click appeared to have done nothing, or to
+   * have chosen the thing the reader was trying to replace, and then it
+   * snapped. The in-flight answer wins while it is in flight.
+   */
+  it('lights up the answer being written, not the one it replaces', () => {
+    unread()
+    hooks.reviewStanding = { outcome: 'holds', occurredAt: new Date().toISOString(), byMe: true }
+    hooks.reviewPendingOutcome = 'changed'
+    renderRow({ onOpenAsset: () => {} })
+    expect(screen.getByText('Changed')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Still holds')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('records a correction when a different verdict is pressed', async () => {
+    unread()
+    hooks.reviewStanding = { outcome: 'holds', occurredAt: new Date().toISOString(), byMe: true }
+    renderRow({ onOpenAsset: () => {} })
+    await userEvent.click(screen.getByText('Changed'))
+    // The correction goes through the same canonical writer. Nothing deletes
+    // the hold -- the newest conclusion is the one every consumer reads.
+    expect(hooks.reviews).toEqual(['changed'])
   })
 })
 
@@ -978,7 +1097,14 @@ describe('Overview is the written case, not a second dashboard', () => {
       const btn = screen.getByRole('button', { name: /Decide in Pipeline/ })
       await userEvent.click(btn)
       expect(events).toHaveLength(1)
-      expect(events[0]).toMatchObject({ type: 'trade-queue' })
+      // Strengthened, not rewritten: `{ type: 'trade-queue' }` alone passed
+      // while the button dispatched `data: null`, which opened the bare
+      // Pipeline workspace with nothing selected. The destination was never
+      // the bug; carrying the record is the whole point of the handoff.
+      expect(events[0]).toMatchObject({
+        type: 'trade-queue',
+        data: { focusIdeaId: 'i1' },
+      })
     } finally {
       window.removeEventListener('decision-engine-action', onAction)
     }

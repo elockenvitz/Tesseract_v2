@@ -1,3 +1,4 @@
+import { useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
@@ -11,61 +12,6 @@ import {
 } from '../lib/revision-service'
 
 export type ContributionVisibility = 'portfolio' | 'team' | 'department' | 'division' | 'firm'
-
-/**
- * The ONLY path that may change a contribution's audience.
- *
- * Security Release C made the direct writes this replaces impossible rather
- * than merely discouraged:
- *   - a BEFORE UPDATE trigger on asset_contributions silently preserves
- *     `visibility` and `team_id` for every caller except the function's owning
- *     role, so a content save still succeeds but cannot widen an audience;
- *   - `authenticated` no longer holds INSERT/UPDATE/DELETE on
- *     contribution_visibility_targets, so a direct target write is refused.
- *
- * set_contribution_audience() re-checks authorship, tenancy, the
- * scope/target-type match and the "a restricted audience must name at least
- * one group" rule server-side, and replaces the target rows in ONE transaction
- * instead of the delete-then-insert pair the client used to issue as two
- * separate requests — where a dropped connection in between destroyed the
- * audience entirely.
- *
- * Errors are thrown, not logged. The old code logged them, so the picker
- * reported success while changing nothing.
- */
-async function setContributionAudience(
-  contributionId: string,
-  visibility: ContributionVisibility,
-  targetIds: string[]
-) {
-  const { data, error } = await supabase.rpc('set_contribution_audience', {
-    p_contribution_id: contributionId,
-    p_visibility: visibility,
-    p_node_ids: targetIds
-  })
-
-  if (error) throw error
-  return data
-}
-
-/**
- * Did the caller actually ask for a different audience?
- *
- * Content saves pass the picker's current values, which normally equal what is
- * stored. Comparing first keeps an ordinary prose save from issuing an audience
- * write at all, while still letting a deliberate change made in the same
- * interaction through.
- */
-function audienceDiffers(
-  stored: { visibility: string | null; targetIds: string[] },
-  requested: { visibility: ContributionVisibility; targetIds: string[] }
-): boolean {
-  if ((stored.visibility ?? 'firm') !== requested.visibility) return true
-
-  const before = [...stored.targetIds].sort()
-  const after = [...requested.targetIds].sort()
-  return before.length !== after.length || before.some((id, i) => id !== after[i])
-}
 
 export interface VisibilityTarget {
   id: string
@@ -140,6 +86,82 @@ export interface ContributionHistory {
   }
 }
 
+/**
+ * A restricted visibility must name an audience.
+ *
+ * `contribution_visibility_targets` is the only record of who a non-firm
+ * contribution was shared with, and every write path below REPLACES that set
+ * rather than merging into it. So saving `visibility: 'team'` with no targets
+ * does not mean "keep the current team" — it deletes the audience, leaving a
+ * row that still reads as restricted, still renders a lock, and is readable by
+ * its author alone. The teams it was shared with cannot be recovered, because
+ * nothing else recorded them.
+ *
+ * Refusing here rather than in the editor is deliberate: this is the one place
+ * every save, publish and visibility change passes through, so a caller added
+ * later cannot reintroduce the defect by forgetting to pass targets.
+ */
+function assertVisibilityNamesAnAudience(
+  visibility: ContributionVisibility,
+  targetIds: string[]
+) {
+  if (visibility !== 'firm' && targetIds.length === 0) {
+    throw new Error(
+      `Cannot save "${visibility}" visibility with no targets. ` +
+      `That would delete the audience this contribution was shared with and ` +
+      `leave it visible only to you. Select at least one ${visibility}, or choose Firm.`
+    )
+  }
+}
+
+/**
+ * Change who can read a contribution.
+ *
+ * The ONLY way the client may do this. `visibility` and `team_id` are pinned
+ * against direct UPDATE by a trigger, and INSERT/UPDATE/DELETE on
+ * `contribution_visibility_targets` are revoked, so the field writes this
+ * replaces are inert — they would appear to succeed and change nothing.
+ *
+ * Three things the function does that the old three-request sequence could
+ * not:
+ *   - the replace is ONE transaction, so a dropped connection can no longer
+ *     leave a restricted contribution with no audience and no way to recover
+ *     who it was shared with;
+ *   - it authorizes the caller itself (author, organization, node ownership,
+ *     scope/target agreement) rather than trusting that the client checked;
+ *   - it returns what was actually stored, so this can confirm rather than
+ *     assume.
+ *
+ * Errors are thrown, never logged and swallowed. A refused audience change
+ * must not look like a successful one — the server's message explains WHY
+ * ("a team audience must name at least one group"), which "please try again"
+ * actively contradicts.
+ */
+async function setContributionAudience(
+  contributionId: string,
+  visibility: ContributionVisibility,
+  targetIds: string[]
+): Promise<ContributionAudience> {
+  const { data, error } = await supabase.rpc('set_contribution_audience', {
+    p_contribution_id: contributionId,
+    p_visibility: visibility,
+    p_node_ids: targetIds,
+  } as never)
+
+  if (error) {
+    throw new Error(error.message || 'Could not change who can see this section.')
+  }
+  return (data ?? null) as unknown as ContributionAudience
+}
+
+/** What `set_contribution_audience` reports it stored. */
+export interface ContributionAudience {
+  contribution_id: string
+  visibility: ContributionVisibility
+  node_ids: string[]
+  node_count: number
+}
+
 // Helper to compute full name
 const getFullName = (user: { first_name?: string | null; last_name?: string | null } | null) => {
   if (!user) return 'Unknown User'
@@ -152,22 +174,52 @@ interface UseContributionsOptions {
   section?: string
 }
 
-export function useContributions({ assetId, section }: UseContributionsOptions) {
-  const { user } = useAuth()
-  const { currentOrgId } = useOrganization()
-  const queryClient = useQueryClient()
+/**
+ * The asset's contributions. ONE query, however many sections ask for it.
+ *
+ * ── Why this is not keyed by section ─────────────────────────────────────
+ *
+ * It used to be: `['contributions', assetId, section]`, with the section
+ * pushed down into the SQL as `.eq('section', section)`. Every reader on the
+ * page therefore had its own cache entry and its own round trip, and the
+ * asset page has a lot of readers. `AssetTab` fetches the asset's rows with
+ * no section at all, `ThesisContainer` fetches three more, and every
+ * `ContributionSection` on screen fetches a fourth, fifth, sixth -- each one
+ * a strict SUBSET of the rows the page had already loaded.
+ *
+ * Measured on a cold open of the asset page at 1920: 161 Supabase requests,
+ * eleven of them this table. The ten slowest requests of the whole load all
+ * started within 40ms of each other and each took over a second, which is
+ * what a queue looks like, not a slow query.
+ *
+ * So the section moves out of the key and out of the SQL, and becomes a
+ * `select` over the one cached result. React Query gives every caller the
+ * same entry, so N readers now make one request and the filtering happens on
+ * rows already in memory. The unfiltered fetch is not extra work: `AssetTab`
+ * was already making exactly it.
+ *
+ * Invalidation is unaffected -- every mutation here already invalidates the
+ * two-part prefix `['contributions', assetId]`, which still matches.
+ */
+export function contributionsForSection(rows: Contribution[], section?: string): Contribution[] {
+  if (!section) return rows
+  return rows.filter(r => r.section === section)
+}
 
-  // Fetch contributions for an asset, grouped by user (one per user per section)
-  const {
-    data: contributions,
-    isLoading,
-    isFetching,
-    error,
-    refetch
-  } = useQuery({
-    queryKey: ['contributions', assetId, section],
+function useAssetContributions(assetId: string, section?: string) {
+  /*
+   * Stable identity, so React Query memoises the filter instead of re-running
+   * it on every render of every section on the page.
+   */
+  const select = useCallback(
+    (rows: Contribution[]) => contributionsForSection(rows, section),
+    [section],
+  )
+
+  return useQuery({
+    queryKey: ['contributions', assetId],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from('asset_contributions')
         .select(`
           *,
@@ -183,12 +235,6 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
         .eq('is_archived', false)
         .order('updated_at', { ascending: false })
 
-      if (section) {
-        query = query.eq('section', section)
-      }
-
-      const { data, error } = await query
-
       if (error) throw error
 
       return (data || []).map(c => ({
@@ -199,10 +245,25 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
         visibility_targets: c.visibility_targets || []
       })) as Contribution[]
     },
+    select,
     enabled: !!assetId,
     staleTime: Infinity, // Never refetch automatically
     gcTime: 30 * 60 * 1000
   })
+}
+
+export function useContributions({ assetId, section }: UseContributionsOptions) {
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+  const queryClient = useQueryClient()
+
+  const {
+    data: contributions,
+    isLoading,
+    isFetching,
+    error,
+    refetch
+  } = useAssetContributions(assetId, section)
 
   // Get the current user's contribution for this section
   const myContribution = contributions?.find(c => c.created_by === user?.id)
@@ -211,40 +272,50 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
   const otherContributions = contributions?.filter(c => c.created_by !== user?.id) || []
 
   // Save contribution (upsert - create or update)
-  //
-  // Audience handling moved to setContributionAudience() below. A content save
-  // no longer sends `visibility`, `team_id` or target rows: after Security
-  // Release C the database pins those fields for every caller except the RPC's
-  // owning role, so sending them is at best a silent no-op and at worst a
-  // refused target write whose error this code used to swallow.
   const saveContribution = useMutation({
     mutationFn: async ({
       content,
       supportingDetail,
       attachments,
       sectionKey,
-      visibility = 'firm' as ContributionVisibility,
-      targetIds = []
+      visibility,
+      targetIds
     }: {
       content: string
       supportingDetail?: string
       attachments?: ContributionAttachment[]
       sectionKey: string
+      /**
+       * Omit to PRESERVE the contribution's current visibility and audience.
+       *
+       * Editing prose is not a visibility decision. This used to default to
+       * `'firm'` with `targetIds = []`, so any caller that saved content
+       * without restating the visibility silently published restricted
+       * research to the whole organization and deleted its audience. Absence
+       * now means "leave it alone"; only an explicit value changes it.
+       */
       visibility?: ContributionVisibility
+      /** Required when `visibility` is given and not `'firm'`. Ignored otherwise. */
       targetIds?: string[]
     }) => {
+      // An explicit visibility change is the only thing that may touch the
+      // audience. `undefined` is preservation, and `[]` is not a substitute
+      // for it — see assertVisibilityNamesAnAudience.
+      const isVisibilityChange = visibility !== undefined
+      if (isVisibilityChange) assertVisibilityNamesAnAudience(visibility, targetIds ?? [])
       // Check if user already has a contribution for this section
       const { data: existing } = await supabase
         .from('asset_contributions')
-        .select('id, visibility')
+        .select('id')
         .eq('asset_id', assetId)
         .eq('section', sectionKey)
         .eq('created_by', user?.id)
         .maybeSingle()
 
       if (existing) {
-        // Content only. The audience is deliberately NOT in this payload --
-        // see the note on the mutation.
+        // Update existing contribution. `visibility` and `team_id` are written
+        // ONLY on an explicit visibility change, so a prose edit cannot move
+        // either one.
         const { data, error } = await supabase
           .from('asset_contributions')
           .update({
@@ -263,22 +334,19 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
         if (error) throw error
 
-        // Only when the caller actually asked for a DIFFERENT audience. An
-        // ordinary save passes the picker's current values, which match what is
-        // stored, so this does nothing -- the audience is never rewritten as a
-        // side effect of saving prose.
-        const { data: storedTargets } = await supabase
-          .from('contribution_visibility_targets')
-          .select('node_id')
-          .eq('contribution_id', existing.id)
-
-        const stored = {
-          visibility: existing.visibility,
-          targetIds: (storedTargets || []).map(t => t.node_id as string)
-        }
-
-        if (audienceDiffers(stored, { visibility, targetIds })) {
-          await setContributionAudience(existing.id, visibility, targetIds)
+        /*
+         * Replace the audience ONLY when the visibility was explicitly
+         * changed, and only through the RPC. On a prose edit the existing
+         * target rows are left exactly as they are — the delete/insert pair
+         * that used to live here is what destroyed them.
+         *
+         * This runs AFTER the content write so a refused audience change
+         * cannot discard the prose the analyst just typed. The two are not
+         * atomic with each other, and deliberately so: losing an edit to a
+         * rejected visibility choice would be the worse failure.
+         */
+        if (isVisibilityChange) {
+          await setContributionAudience(existing.id, visibility, targetIds ?? [])
         }
 
         return {
@@ -296,8 +364,18 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
             supporting_detail: supportingDetail || null,
             attachments: attachments || [],
             created_by: user?.id,
-            team_id: targetIds.length === 1 ? targetIds[0] : null,
-            visibility,
+            /*
+             * A new row has no prior visibility to preserve, so the historical
+             * default stands — stated here rather than hidden in a parameter
+             * default that also applied to updates.
+             *
+             * These two are written directly, and only here: the pin trigger
+             * is BEFORE UPDATE, so an INSERT may still set them. The audience
+             * ROWS still go through the RPC below, because INSERT on the
+             * target table is revoked.
+             */
+            team_id: (targetIds ?? []).length === 1 ? (targetIds ?? [])[0] : null,
+            visibility: visibility ?? 'firm',
             organization_id: currentOrgId
           })
           .select(`
@@ -309,14 +387,13 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
         if (error) throw error
 
-        // visibility and team_id above are honoured: the pin trigger is BEFORE
-        // UPDATE only, so a new row keeps the audience it is created with and
-        // is never wider than the author asked for. The TARGET rows still need
-        // the RPC, because `authenticated` no longer holds INSERT on them.
-        // If this call fails the contribution exists as restricted with no
-        // targets, which is author-only -- it fails closed, not open.
-        if (visibility !== 'firm' && targetIds.length > 0) {
-          await setContributionAudience(data.id, visibility, targetIds)
+        /*
+         * Install the audience through the RPC. If it fails, the row exists
+         * as restricted with no targets — readable by its author alone. Fail
+         * closed, and the thrown error says why.
+         */
+        if (visibility && visibility !== 'firm') {
+          await setContributionAudience(data.id, visibility, targetIds ?? [])
         }
 
         return {
@@ -420,17 +497,25 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
   const publishDraft = useMutation({
     mutationFn: async ({
       sectionKey,
-      visibility = 'firm' as ContributionVisibility,
-      targetIds = []
+      visibility,
+      targetIds
     }: {
       sectionKey: string
+      /**
+       * Omit to PRESERVE the contribution's current visibility and audience.
+       * Publishing a draft is a content action; it carried the same `'firm'`
+       * default as saveContribution and declassified restricted sections the
+       * same way.
+       */
       visibility?: ContributionVisibility
       targetIds?: string[]
     }) => {
+      const isVisibilityChange = visibility !== undefined
+      if (isVisibilityChange) assertVisibilityNamesAnAudience(visibility, targetIds ?? [])
       // Get the contribution with draft AND current published content (for revision diff)
       const { data: existing } = await supabase
         .from('asset_contributions')
-        .select('id, content, draft_content, visibility')
+        .select('id, content, draft_content')
         .eq('asset_id', assetId)
         .eq('section', sectionKey)
         .eq('created_by', user?.id)
@@ -443,8 +528,7 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       const oldContent = existing.content
       const newContent = existing.draft_content
 
-      // Move draft to published content. Audience excluded, as in
-      // saveContribution -- publishing prose is a content write.
+      // Move draft to published content
       const { data, error } = await supabase
         .from('asset_contributions')
         .update({
@@ -463,20 +547,10 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
 
       if (error) throw error
 
-      // Publishing may also carry a deliberate audience change from the
-      // picker; apply it only when it differs from what is stored.
-      const { data: storedTargets } = await supabase
-        .from('contribution_visibility_targets')
-        .select('node_id')
-        .eq('contribution_id', existing.id)
-
-      const stored = {
-        visibility: existing.visibility,
-        targetIds: (storedTargets || []).map(t => t.node_id as string)
-      }
-
-      if (audienceDiffers(stored, { visibility, targetIds })) {
-        await setContributionAudience(existing.id, visibility, targetIds)
+      // Replace the audience only on an explicit visibility change, and only
+      // through the RPC — see the same branch in saveContribution.
+      if (isVisibilityChange) {
+        await setContributionAudience(existing.id, visibility, targetIds ?? [])
       }
 
       // Create revision event (fire-and-forget, don't block publish)
@@ -581,24 +655,24 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       const contribId = contributionId || myContribution?.id
       if (!contribId) throw new Error('No contribution to update')
 
-      // One call, one transaction, errors RAISED rather than logged.
-      //
-      // This replaced a field write plus a delete-then-insert pair over three
-      // HTTP requests. Each failure was only console.error'd, so the picker
-      // reported success either way: a dropped connection between the delete
-      // and the insert destroyed the audience, and after Security Release C the
-      // field write is pinned and the target writes are revoked, so all three
-      // would silently do nothing. The RPC re-checks authorship, tenancy, the
-      // scope/target-type match and the "a restricted audience must name at
-      // least one group" rule server-side.
-      return await setContributionAudience(contribId, visibility, targetIds)
+      /*
+       * This path IS the explicit visibility change, so it always replaces the
+       * audience — and therefore always has to name one. Checked here for a
+       * message without a round trip; the server enforces it too, because an
+       * older bundle does not have this check.
+       */
+      assertVisibilityNamesAnAudience(visibility, targetIds)
+
+      return setContributionAudience(contribId, visibility, targetIds)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
-    },
-    onError: (error) => {
-      console.error('updateVisibility mutation failed:', error)
     }
+    /*
+     * No onError handler. It previously logged and swallowed, which is how a
+     * refused audience change could look like a successful one. The error now
+     * propagates to the caller, which is responsible for showing it.
+     */
   })
 
   return {
@@ -651,21 +725,35 @@ export function useContributionHistory(contributionId: string | undefined) {
   }
 }
 
-// Hook for fetching aggregate history across all contributions for a section
+/**
+ * Every edit made to any contribution in one section.
+ *
+ * ── Why the ids come from the cache ──────────────────────────────────────
+ *
+ * This opened with its own `asset_contributions` round trip just to learn
+ * which ids belong to the section, and only then fetched the history. Two
+ * costs, both avoidable: it was a FIFTH copy of rows the page already holds
+ * (see `useAssetContributions`), and the two calls were strictly serial, so
+ * every section on screen spent a full round trip waiting before its real
+ * query could even start.
+ *
+ * The ids now come from the shared query. No request, and the history call
+ * goes out immediately.
+ *
+ * The cache key deliberately does NOT include the ids. Keying on them would
+ * mint a fresh entry the moment the shared query resolves, throwing away the
+ * in-flight request and asking again. `enabled` holds the query until the ids
+ * exist instead, and the mutations' `['aggregate-history', assetId]` prefix
+ * invalidation re-runs this with whatever ids are current at that point.
+ */
 export function useAggregateHistory({ assetId, section }: { assetId: string; section: string }) {
+  const { data: sectionRows } = useAssetContributions(assetId, section)
+  const contributionIds = useMemo(() => (sectionRows ?? []).map(c => c.id), [sectionRows])
+
   const { data: history, isLoading, error } = useQuery({
     queryKey: ['aggregate-history', assetId, section],
     queryFn: async () => {
-      // First get all contribution IDs for this section
-      const { data: contributions } = await supabase
-        .from('asset_contributions')
-        .select('id')
-        .eq('asset_id', assetId)
-        .eq('section', section)
-
-      if (!contributions || contributions.length === 0) return []
-
-      const contributionIds = contributions.map(c => c.id)
+      if (contributionIds.length === 0) return []
 
       // Fetch all history for these contributions
       const { data, error } = await supabase
@@ -692,7 +780,7 @@ export function useAggregateHistory({ assetId, section }: { assetId: string; sec
         } : undefined
       }))
     },
-    enabled: !!assetId && !!section
+    enabled: !!assetId && !!section && contributionIds.length > 0
   })
 
   return {
@@ -723,9 +811,25 @@ export function useContributionSummary({
       const { data, error } = await supabase
         .from('contribution_summaries')
         .select('*')
+        /*
+         * `.maybeSingle()`, not `.single()`. "No cached summary yet" is the
+         * normal state of this table, not a failure — it currently holds zero
+         * rows — and `.single()` turned every such read into an HTTP 406 that
+         * the guard below then swallowed. A page whose network log is full of
+         * red is a page where a real failure is invisible.
+         *
+         * Safe because the filter is exactly the unique key,
+         * UNIQUE (asset_id, section), so at most one row can match.
+         *
+         * The PGRST116 guard stays. For a GET, maybeSingle asks for
+         * `application/json` and resolves zero rows to null with no error, but
+         * it still raises PGRST116 CLIENT-SIDE if more than one row comes
+         * back. Keeping the guard means that case behaves exactly as it does
+         * today rather than becoming a new throw.
+         */
         .eq('asset_id', assetId)
         .eq('section', section)
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
       return data
@@ -887,9 +991,11 @@ export function useThesisAnalysis({
       const { data, error } = await supabase
         .from('contribution_summaries')
         .select('*')
+        // maybeSingle: an absent cache entry is normal, not a 406. Filter is
+        // the unique key (asset_id, section); guard kept for the >1 case.
         .eq('asset_id', assetId)
         .eq('section', section)
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
 
@@ -1175,9 +1281,11 @@ export function useUnifiedThesisAnalysis({
       const { data, error } = await supabase
         .from('contribution_summaries')
         .select('*')
+        // maybeSingle: an absent cache entry is normal, not a 406. Filter is
+        // the unique key (asset_id, section); guard kept for the >1 case.
         .eq('asset_id', assetId)
         .eq('section', 'unified')
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
 
@@ -1487,9 +1595,11 @@ export function useHistoryEvolutionAnalysis({
       const { data, error } = await supabase
         .from('contribution_summaries')
         .select('*')
+        // maybeSingle: an absent cache entry is normal, not a 406. Filter is
+        // the unique key (asset_id, section); guard kept for the >1 case.
         .eq('asset_id', assetId)
         .eq('section', cacheSection)
-        .single()
+        .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
 

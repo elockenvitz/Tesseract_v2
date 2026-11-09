@@ -226,23 +226,55 @@ export function subscribeToDashboardFocus(
  * not. The rail shows what comes AFTER, and only backfills with what came
  * immediately before when there is not enough after -- still in order, so the
  * rail always describes a neighbourhood rather than a loop.
+ *
+ * ── Why there is no default length any more ──────────────────────────────
+ *
+ * `limit` used to default to 5, and every caller took the default. Measured
+ * with a card open on Ideas at 1920x889: five cards came to 470px inside a
+ * 733px rail that already scrolls, leaving 209px of empty column -- while 50
+ * of the field's 55 peers sat in `cards` unused. The cap was not protecting
+ * anything; it was chosen once and never revisited.
+ *
+ * Unbounded now, so the column fills and the remainder is one scroll away.
+ *
+ * What that changes for a reader, stated plainly because it is not nothing:
+ * a bounded rail spent its few rows on what comes AFTER the active card, so
+ * it opened on the followers. Unbounded, the window is the whole deck minus
+ * the active card, which means the head of the field is above it and the
+ * followers sit further down the column.
+ *
+ * That is the faithful extension of the rule rather than a new one -- the
+ * window is a contiguous slice read in rank order, at every length. The
+ * alternative, followers first with the head underneath, is precisely the
+ * wrap described above: it would put rank #1 directly below rank #15.
+ *
+ * If the rail should OPEN scrolled to the active card's position, that is a
+ * scroll concern in the deck and not a different window.
+ *
+ * `limit` survives for a caller that genuinely has a reason to bound its
+ * rail, but it has no default -- a number this one needs is a number it
+ * should have to state.
  */
 export function railAround(
   cards: readonly RailCard[],
   activeId: string | null,
-  limit = 5,
+  limit?: number,
 ): RailCard[] {
+  // `Infinity` rather than `cards.length`: it reads as "no bound" at every
+  // use below, including the two slices, without arithmetic on a length.
+  const cap = limit ?? Infinity
   const at = cards.findIndex(c => c.id === activeId)
-  if (at < 0) return cards.filter(c => c.id !== activeId).slice(0, limit)
-
+  if (at < 0) return cards.filter(c => c.id !== activeId).slice(0, cap)
 
   const after = cards.slice(at + 1)
-  if (after.length >= limit) return after.slice(0, limit)
+  if (after.length >= cap) return after.slice(0, cap)
 
   // Preceding work, kept in its own order and placed before what follows, so
-  // the column still reads top-to-bottom the way the deck does.
-  const before = cards.slice(Math.max(0, at - (limit - after.length)), at)
-  return [...before, ...after].slice(0, limit)
+  // the column still reads top-to-bottom the way the deck does. Unbounded,
+  // `cap - after.length` is Infinity and `Math.max(0, -Infinity)` is 0 --
+  // which is the whole head of the list, exactly as intended.
+  const before = cards.slice(Math.max(0, at - (cap - after.length)), at)
+  return [...before, ...after].slice(0, cap)
 }
 
 /**

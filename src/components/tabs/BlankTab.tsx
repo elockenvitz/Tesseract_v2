@@ -34,10 +34,22 @@ interface BlankTabProps {
 // Section configuration. Order here drives the order shown in the
 // "Go to" grid on every new tab — keep it intentional.
 const PRIMARY_SURFACES = [
+  /*
+   * This was `type: 'ideas'`, and it is RE-POINTED rather than removed.
+   *
+   * `DashboardNext` holds Ideas and Explore as its two lenses now, so the
+   * standalone Ideas door duplicated a lens of the Dashboard. But this grid
+   * has no Dashboard entry of its own, so deleting the row would have left a
+   * new tab with no route to the attention feed at all -- removing a surface
+   * instead of a door, which is the opposite of the intent.
+   *
+   * Same description, because it is still what the reader gets. The `ideas`
+   * tab type still renders for a saved session or a deep link.
+   */
   {
-    id: 'ideas',
-    title: 'Ideas',
-    type: 'ideas',
+    id: 'today',
+    title: 'Dashboard',
+    type: 'today',
     description: 'What deserves attention, and what to explore',
     icon: Lightbulb,
     gradient: 'from-purple-100 to-pink-100',

@@ -150,18 +150,27 @@ export function applyEnrichment(item: TodayItem, e: TodayEnrichment | undefined)
    * finding on a card whose complaint is that nobody has looked.
    */
   const aged = ageVisual(item, ageDays)
-  if (!e) return aged ? { ...item, visual: aged } : item
+  if (!e) return aged ? { ...item, visual: aged, visuals: [aged] } : item
   const window = priceWindowSince(e.history, item.source.createdAt)
 
   const metrics = enrichMetrics(item, e, window, eventOf(item).anchor)
-  const enriched = enrichVisual(item, e, window, ageDays)
+  const panels = enrichVisuals(item, e, window, ageDays)
+  const enriched = panels[0]
   const visual = enriched.archetype === 'metrics' ? (aged ?? enriched) : enriched
+  /*
+   * `visual` stays the one the finding calls for, so every existing reader of
+   * it is unchanged. `visuals` is that one followed by the alternatives, with
+   * the metrics fall-through resolved the same way it is above -- a panel list
+   * must never lead with the archetype that draws nothing.
+   */
+  const visuals = [visual, ...panels.slice(1).filter(v => v.archetype !== visual.archetype)]
   const claim = enrichClaim(item, e, window, ageDays)
 
   return {
     ...item,
     metrics,
     visual,
+    visuals,
     claim,
     target: item.target
       ? { ...item.target, contextChips: enrichChips(item, e, window, ageDays) }
@@ -252,63 +261,171 @@ function enrichMetrics(
  * price to the desk's own framework. A real price window beats the staleness
  * bars, which were only ever a shape. Otherwise the original stands.
  */
+/**
+ * EVERY picture this finding can draw, best first.
+ *
+ * It used to return one and throw the rest away, which made the choice final:
+ * a tile about an idea nobody has sized drew its open-for bar and offered no
+ * way to see what the price had done, even though the history was already in
+ * hand. The reader could not ask a second question of the card.
+ *
+ * So the chooser stays exactly as it was -- the first element is the picture
+ * the finding calls for, by the same rule -- and the alternatives follow it
+ * instead of being discarded. The tile pages between them.
+ *
+ * Nothing is fabricated to fill a slot: a panel exists only where its data
+ * does, so a name with no ladder has no framework panel and a name with no
+ * history has no price panel.
+ */
+function enrichVisuals(
+  item: TodayItem, e: TodayEnrichment, w: PriceWindow | null, ageDays: number | null,
+): TodayVisual[] {
+  const chosen = enrichVisual(item, e, w, ageDays)
+  const rest: TodayVisual[] = []
+
+  const add = (v: TodayVisual | null) => {
+    if (!v || v.archetype === 'metrics') return
+    if (v.archetype === chosen.archetype) return
+    if (rest.some(r => r.archetype === v.archetype)) return
+    rest.push(v)
+  }
+
+  add(scenarioVisual(e))
+  add(windowVisual(item, w, ageDays))
+  add(ageVisual(item, ageDays))
+  add(item.visual)
+
+  return [chosen, ...rest]
+}
+
 function enrichVisual(
   item: TodayItem, e: TodayEnrichment, w: PriceWindow | null, ageDays: number | null,
 ): TodayVisual {
   const spot = e.spot
-  if (e.ladder?.valid && spot != null) {
+
+  /*
+   * WHICH PICTURE, and why it is not always the same one.
+   *
+   * The ladder branch used to win outright: any name with a valid price
+   * ladder drew the framework band, whatever had actually happened to it.
+   * Measured on the live desk at 1920x889, three of Today's four tiles were
+   * "THESIS MAY BE STALE" over three identical "PRICE AGAINST THE FRAMEWORK"
+   * bands, two of them captioned "The price sits inside the framework" -- a
+   * chart drawn to report that nothing had broken.
+   *
+   * The band earns the tile when the price has LEFT the range the desk
+   * underwrote: that is a fact about the desk's own thinking being overtaken,
+   * and it is the whole reason the finding matters. When the price is still
+   * inside the framework, the band has nothing to say, and the question a
+   * stale thesis actually raises -- what has the price done since you last
+   * wrote? -- is the price path from the anchor.
+   *
+   * So the picture follows the finding, and the field varies because the
+   * desk's situations vary, not because anything was shuffled to look varied.
+   */
+  const breached = (() => {
+    if (!e.ladder?.valid || spot == null) return false
     const prices = e.ladder.cases.map(c => c.price).filter(p => Number.isFinite(p))
-    if (prices.length >= 2) {
-      const bull = Math.max(...prices)
-      const bear = Math.min(...prices)
-      const beyond = spot > bull
-      /*
-       * "Spot" is desk shorthand for the current price, and it was the
-       * loudest word on the card -- as a caption, three times in the note,
-       * and as a bold tick label over the mark itself. It says nothing a
-       * reader does not already get from "price now", and the one thing it
-       * adds is the impression that you need the vocabulary to belong here.
-       *
-       * The framework's own words -- bear, base, bull -- stay, because those
-       * are the desk's names for its own cases and a reader who wrote them
-       * needs them back unchanged.
-       */
-      return {
-        archetype: 'scenario',
-        caption: 'Price against the framework',
-        window: `${e.ladder.cases.length} cases · ${e.ladder.updatedAt.slice(0, 10)}`,
-        note: beyond
-          ? `The price is ${pct(((spot - bull) / bull) * 100)} above the bull case. No case we wrote produces it.`
-          : spot < bear
-            ? 'The price is below the bear case. No case we wrote produces it.'
-            : 'The price sits inside the framework.',
-        scenario: {
-          cases: e.ladder.cases.map(c => ({ name: c.name, price: c.price })),
-          spot,
-        },
-      }
-    }
+    if (prices.length < 2) return false
+    return spot > Math.max(...prices) || spot < Math.min(...prices)
+  })()
+
+  const drawsWindow = !!w && DRAWS_WINDOW.has(item.source.titleKey ?? '')
+
+  if (e.ladder?.valid && spot != null && (breached || !drawsWindow)) {
+    const sc = scenarioVisual(e)
+    if (sc) return sc
   }
 
-  const anchor = eventOf(item).anchor
-  if (w && DRAWS_WINDOW.has(item.source.titleKey ?? '')) {
-    return {
-      archetype: 'review-window',
-      caption: w.reachesAnchor ? `Price since ${anchor.since}` : 'Price over available history',
-      window: windowLabel(w, ageDays, anchor.shortSince),
-      note: w.reachesAnchor
-        ? undefined
-        : `History does not reach ${anchor.the}, so this is not a since-${anchor.shortSince} move.`,
-      reviewWindow: {
-        series: w.series,
-        changePct: w.changePct,
-        reachesAnchor: w.reachesAnchor,
-        anchorLabel: anchor.tick,
-      },
-    }
+  const wv = drawsWindow ? windowVisual(item, w, ageDays) : null
+  if (wv) return wv
+
+  /*
+   * A bar of elapsed time never beats a price path.
+   *
+   * `DRAWS_WINDOW` gates which findings draw the price path BY DEFAULT, and
+   * that gate is about meaning, not availability. But when a finding is not
+   * on the list, the alternative is not "something else good" -- it is the
+   * age bar, a track with a dot on it whose entire content is a number the
+   * metric strip has already printed.
+   *
+   * Measured on the live desk: the two "idea being worked on" tiles drew
+   * "OPEN FOR / 228 days" over a bar, directly beneath a metric reading
+   * "228d OPEN". The picture restated the figure. Meanwhile NKE's own price
+   * had moved -19% since the idea was opened -- the strip said so -- and the
+   * history to draw it was already in hand.
+   *
+   * So where a window exists and the only other answer is the age bar, the
+   * window wins. The anchor is the same `createdAt` `enrichMetrics` already
+   * measures "price since idea" from, and `windowVisual` names it honestly
+   * (and says so when the history does not reach back far enough), so this
+   * promotes nothing the card cannot stand behind.
+   */
+  if (item.visual.archetype === 'metrics') {
+    const fallback = windowVisual(item, w, ageDays)
+    if (fallback) return fallback
   }
 
   return item.visual
+}
+
+/** The desk's own price cases, with the mark on them. Null without a ladder. */
+function scenarioVisual(e: TodayEnrichment): TodayVisual | null {
+  const spot = e.spot
+  if (!e.ladder?.valid || spot == null) return null
+  const prices = e.ladder.cases.map(c => c.price).filter(p => Number.isFinite(p))
+  if (prices.length < 2) return null
+
+  const bull = Math.max(...prices)
+  const bear = Math.min(...prices)
+  const beyond = spot > bull
+  /*
+   * "Spot" is desk shorthand for the current price, and it was the loudest
+   * word on the card -- as a caption, three times in the note, and as a bold
+   * tick label over the mark itself. It says nothing a reader does not
+   * already get from "price now", and the one thing it adds is the impression
+   * that you need the vocabulary to belong here.
+   *
+   * The framework's own words -- bear, base, bull -- stay, because those are
+   * the desk's names for its own cases and a reader who wrote them needs them
+   * back unchanged.
+   */
+  return {
+    archetype: 'scenario',
+    caption: 'Price against the framework',
+    window: `${e.ladder.cases.length} cases · ${e.ladder.updatedAt.slice(0, 10)}`,
+    note: beyond
+      ? `The price is ${pct(((spot - bull) / bull) * 100)} above the bull case. No case we wrote produces it.`
+      : spot < bear
+        ? 'The price is below the bear case. No case we wrote produces it.'
+        : 'The price sits inside the framework.',
+    scenario: {
+      cases: e.ladder.cases.map(c => ({ name: c.name, price: c.price })),
+      spot,
+    },
+  }
+}
+
+/** The price path from this finding's own anchor. Null without history. */
+function windowVisual(
+  item: TodayItem, w: PriceWindow | null, ageDays: number | null,
+): TodayVisual | null {
+  if (!w) return null
+  const anchor = eventOf(item).anchor
+  return {
+    archetype: 'review-window',
+    caption: w.reachesAnchor ? `Price since ${anchor.since}` : 'Price over available history',
+    window: windowLabel(w, ageDays, anchor.shortSince),
+    note: w.reachesAnchor
+      ? undefined
+      : `History does not reach ${anchor.the}, so this is not a since-${anchor.shortSince} move.`,
+    reviewWindow: {
+      series: w.series,
+      changePct: w.changePct,
+      reachesAnchor: w.reachesAnchor,
+      anchorLabel: anchor.tick,
+    },
+  }
 }
 
 /**
@@ -336,7 +453,7 @@ function enrichVisual(
  * `createdAt`, so there is no price and no anchor. It draws nothing, which is
  * the honest outcome rather than a fabricated one.
  */
-const DRAWS_WINDOW = new Set<string>([
+export const DRAWS_WINDOW = new Set<string>([
   'THESIS_STALE',
   'RATING_NO_FOLLOWUP',
   'EXECUTION_NOT_CONFIRMED',

@@ -15,20 +15,16 @@ import {
   ChevronUp,
   Trash2,
   Save,
-  X,
   Check,
   Bold,
   Italic,
   ListOrdered,
   Link,
-  Link2,
   Heading2,
   Undo2,
   Redo2,
   Star,
-  FileText,
   Plus,
-  File,
   FileEdit,
   Upload,
   RotateCcw
@@ -41,11 +37,11 @@ import {
   useContributionHistory,
   useAggregateHistory,
   useThesisAnalysis,
-  type ContributionVisibility,
-  type ContributionAttachment
+  type ContributionVisibility
 } from '../../hooks/useContributions'
 import { ThesisSummaryView } from './ThesisSummaryView'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { registerUnsavedEditor } from '../../lib/contributions/unsaved-edits-guard'
 import { InfoTooltip } from '../ui/Tooltip'
 import { supabase } from '../../lib/supabase'
 import { useQuery } from '@tanstack/react-query'
@@ -53,6 +49,7 @@ import { DiffView } from './DiffView'
 import { UniversalSmartInput, SmartInputRenderer, type SmartInputMetadata } from '../smart-input'
 import type { UniversalSmartInputRef } from '../smart-input'
 import { RichTextEditor, type RichTextEditorRef } from '../rich-text-editor/RichTextEditor'
+import { SectionEvidenceStrip } from './SectionEvidenceStrip'
 
 // ---------------------------------------------------------------------------
 // Markdown ↔ HTML conversion for rich editor
@@ -163,33 +160,85 @@ interface ContributionSectionProps {
   flatMode?: boolean
   /** Hide this section entirely when there are no contributions */
   hideWhenEmpty?: boolean
+  /*
+   * `plainChrome` lived here: a quieter reading variant that dropped the
+   * coloured left accent, the amber hover and the shadow.
+   *
+   * Removed because it had no caller. It existed for UX1c-1, which read
+   * the Investment Case as one quiet document; UX2 Phase 2 reversed that
+   * and gave each section its own <Card> with alternating shade, and
+   * `ux2-phase2.test.ts` pins AssetTab against ever passing it again. A
+   * presentational branch nobody takes is a third rendering path to keep
+   * correct through every later change, for no screen.
+   *
+   * In git history at 612056a3 if a quiet variant is ever wanted back.
+   */
+  /**
+   * Edit a section IN PLACE within its card (bounded height, no viewport
+   * takeover, no scroll-lock), keeping the surrounding case visible. Also turns
+   * on the unsaved-change safeguards (confirm on Cancel-while-dirty, beforeunload
+   * warning). Default OFF keeps the existing full-screen editor for other callers.
+   */
+  inlineEditor?: boolean
+  /**
+   * UX2 Phase 2 — flat "document" chrome: no per-section card border / fill /
+   * radius, just a hairline top separator, so a stack of sections reads as ONE
+   * continuous Investment Case document inside a single outer container. Even
+   * flatter than an ordinary card, which keeps its border. Presentation
+   * only; editing/drafts/history unaffected. Default OFF.
+   */
+  documentChrome?: boolean
+  /**
+   * UX2 Phase 2 — keep Edit / Add-your-view visible without hovering (the blue
+   * Edit control in the section header). Discoverability requirement; does not
+   * change what the control does. Default OFF keeps the hover-reveal for other
+   * callers.
+   */
+  alwaysShowToolbar?: boolean
+  /**
+   * UX2 P1/P2 refinement — open the editor with the proven full-width in-page
+   * expand-takeover: the section grows to fill the content viewport beneath the
+   * header, the surrounding sections scroll out, and exiting restores the prior
+   * scroll position. Same RichTextEditor and handlers; turns ON the unsaved-work
+   * safeguards (Cancel-confirm / beforeunload / unsaved-nav guard). Default OFF
+   * keeps the bare full-screen editor for callers that manage their own guard.
+   */
+  fullPageEditor?: boolean
+  /**
+   * Open a research note, through the caller's existing note navigation.
+   *
+   * Phase 4: lets the section's evidence strip return the reader to the
+   * original research. Without it the chips still render, they just do not
+   * navigate — no new route is invented here.
+   */
+  onOpenNote?: (noteId: string) => void
 }
 
 // Section color themes - unified blue accent with amber hover
 const SECTION_THEMES = {
   thesis: {
-    accent: 'border-l-blue-400',
+    accent: 'border-l-blue-500',
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     hoverBorder: 'hover:border-amber-200',
     hoverBg: 'hover:bg-amber-50/30',
   },
   forecasts: {
-    accent: 'border-l-blue-400',
+    accent: 'border-l-blue-500',
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     hoverBorder: 'hover:border-amber-200',
     hoverBg: 'hover:bg-amber-50/30',
   },
   supporting: {
-    accent: 'border-l-blue-400',
+    accent: 'border-l-blue-500',
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     hoverBorder: 'hover:border-amber-200',
     hoverBg: 'hover:bg-amber-50/30',
   },
   custom: {
-    accent: 'border-l-blue-400',
+    accent: 'border-l-blue-500',
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
     hoverBorder: 'hover:border-amber-200',
@@ -213,75 +262,98 @@ const VISIBILITY_CONFIG: Record<ContributionVisibility, { icon: React.ElementTyp
   firm: { icon: Globe, label: 'Firm', color: 'text-green-600', bgColor: 'bg-green-50' }
 }
 
-// Component to view references in read mode
-function ViewReferences({
-  attachments
-}: {
-  attachments: ContributionAttachment[]
-}) {
-  if (attachments.length === 0) return null
-
-  return (
-    <div className="pt-3 border-t border-gray-100 dark:border-gray-800">
-      <div className="text-xs font-medium text-gray-500 mb-2 dark:text-gray-400">References</div>
-      <div className="flex flex-wrap gap-2">
-        {attachments.map((attachment, index) => (
-          <div
-            key={index}
-            className={clsx(
-              'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs',
-              attachment.type === 'link' && 'bg-blue-50 text-blue-700',
-              attachment.type === 'note' && 'bg-amber-50 text-amber-700',
-              attachment.type === 'file' && 'bg-purple-50 text-purple-700'
-            )}
-          >
-            {attachment.type === 'link' && <Link2 className="w-3 h-3 shrink-0" />}
-            {attachment.type === 'note' && <FileText className="w-3 h-3 shrink-0" />}
-            {attachment.type === 'file' && <File className="w-3 h-3 shrink-0" />}
-            {attachment.type === 'link' && attachment.url ? (
-              <a
-                href={attachment.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:underline truncate max-w-[150px]"
-              >
-                {attachment.title}
-              </a>
-            ) : (
-              <span className="truncate max-w-[150px]">{attachment.title}</span>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
+/*
+ * `ViewReferences` lived here and rendered `selectedContribution.attachments`
+ * as static chips. `SectionEvidenceStrip` now renders that same array — with a
+ * way back to the original note, and with add/remove when the section is the
+ * reader's own — so keeping both printed one list twice.
+ */
 
 // ---------------------------------------------------------------------------
 // CollapsibleContent — show/hide long content with fade
 // ---------------------------------------------------------------------------
 
-const COLLAPSED_MAX_HEIGHT = 240 // ~10 lines
+/**
+ * How much of a long section is shown before "Show more".
+ *
+ * ── Why lines and not pixels ───────────────────────────────────────────
+ *
+ * This was a flat 240px with the comment "~10 lines", and 240px is ten
+ * lines only at the font size and leading it happened to be written
+ * against. Ten lines is the intent, so ten lines is what it now measures
+ * — read off the element's own computed `line-height`, which follows the
+ * prose styles, the dark/light theme and the reader's browser font size.
+ *
+ * The pixel value survives only as the fallback for an environment that
+ * reports no usable line-height (jsdom, and a first paint before fonts
+ * resolve), and for the editor's fold-line marker, which is drawn in a
+ * fixed-size full-screen editor.
+ */
+const COLLAPSED_LINES = 10
+const COLLAPSED_MAX_HEIGHT = 240
+
+/** Slack before clamping, so content a line or two over is left alone. */
+const COLLAPSE_BUFFER = 30
 
 function CollapsibleContent({ content }: { content: string }) {
   const [expanded, setExpanded] = useState(false)
   const contentRef = useRef<HTMLDivElement>(null)
   const [needsCollapse, setNeedsCollapse] = useState(false)
+  const [maxHeight, setMaxHeight] = useState(COLLAPSED_MAX_HEIGHT)
 
+  /*
+   * Re-measured whenever the element's size changes, not only when the
+   * text does.
+   *
+   * The old effect ran on `[content]` alone, so the answer was decided
+   * once at mount and then kept. Prose gets TALLER as its column gets
+   * narrower — Investment Thesis measured 309px at a quarter width
+   * against 176px at a half — so the moment the Research page let a
+   * reader change a field's width, every "Show more" on the page was
+   * answering a question about a width that no longer existed. A field
+   * widened from a third to full kept a fold it no longer needed; one
+   * narrowed the other way lost the fold it had just earned.
+   *
+   * `scrollHeight` reports the content's full height regardless of the
+   * max-height clamp, so measuring while collapsed is safe, and React
+   * bails out on identical state, so the observer settles rather than
+   * looping when the clamp changes the element's own height.
+   */
   useEffect(() => {
-    if (contentRef.current) {
-      // Only collapse if content meaningfully exceeds the limit (30px buffer to avoid false triggers)
-      setNeedsCollapse(contentRef.current.scrollHeight > COLLAPSED_MAX_HEIGHT + 30)
+    const el = contentRef.current
+    if (!el) return
+
+    const measure = () => {
+      const lineHeight = parseFloat(window.getComputedStyle(el).lineHeight)
+      const limit = Number.isFinite(lineHeight) && lineHeight > 0
+        ? Math.round(lineHeight * COLLAPSED_LINES)
+        : COLLAPSED_MAX_HEIGHT
+      setMaxHeight(limit)
+      setNeedsCollapse(el.scrollHeight > limit + COLLAPSE_BUFFER)
     }
+
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
   }, [content])
 
   return (
     <div className="relative">
       <div
         ref={contentRef}
+        /* The clamp is the measured value, not a second literal. It used
+           to be a hardcoded `max-h-[240px]` beside a `COLLAPSED_MAX_HEIGHT
+           = 240`: two sources of truth for one number, where changing
+           either alone makes the page clamp at a height it never decided
+           to clamp at, and the fade and the button appear over content
+           that was not actually cut. */
+        style={!expanded && needsCollapse ? { maxHeight } : undefined}
         className={clsx(
+          // Fills the card, which now carries the measure itself. Capping
+          // both left the text at 621px inside a 1,763px bordered box.
           'prose prose-sm max-w-none text-gray-700 leading-relaxed overflow-hidden transition-all duration-200 dark:text-gray-300',
-          !expanded && needsCollapse && 'max-h-[240px]',
         )}
       >
         <SmartInputRenderer content={content} />
@@ -306,10 +378,13 @@ function CollapsibleContent({ content }: { content: string }) {
 // ---------------------------------------------------------------------------
 
 function EditingPane({
-  title, smartInputRef, editContent, onContentChange, onKeyDown, placeholder, assetContext,
+  smartInputRef, editContent, onContentChange, onKeyDown, placeholder, assetContext,
   onCancel, onSaveDraft, onPublish, onDiscardDraft, isSaving, isDraftSaving, isDiscarding, canSave,
+  inline = false, evidenceSlot,
 }: {
-  title: string
+  /** Rendered between the editor and the action bar. A node, so the pane does
+   *  not need to know what evidence is. */
+  evidenceSlot?: React.ReactNode
   smartInputRef: React.RefObject<UniversalSmartInputRef>
   editContent: string
   onContentChange: (value: string, metadata: SmartInputMetadata) => void
@@ -319,6 +394,15 @@ function EditingPane({
   onCancel: () => void; onSaveDraft: () => void; onPublish: () => void
   onDiscardDraft?: () => void
   isSaving: boolean; isDraftSaving: boolean; isDiscarding: boolean; canSave: boolean
+  /**
+   * Inline mode: the editor expands WITHIN its section card at a natural bounded
+   * height, so the surrounding case stays visible and the page scrolls normally.
+   * Default (false) keeps the full-width in-page expand-takeover editor — the
+   * proven interaction the Investment Case uses: the section grows to fill the
+   * content viewport beneath the header, the surrounding sections scroll out,
+   * and exiting restores the prior scroll position.
+   */
+  inline?: boolean
 }) {
   const paneRef = useRef<HTMLDivElement>(null)
   const sectionCardRef = useRef<HTMLElement | null>(null)
@@ -413,10 +497,19 @@ function EditingPane({
   }, [isCollapsing, animate])
 
   useEffect(() => {
+    // Inline mode does NOT run the in-card viewport takeover: it leaves the card
+    // at its natural bounded height so the surrounding case stays visible.
+    if (inline) return
+
     const el = paneRef.current
     if (!el) return
 
-    const sectionCard = el.closest('.rounded-lg') as HTMLElement | null
+    // The section "card" is the ContributionSection root. Under documentChrome
+    // (the Investment Case) that root is a flat `rounded-none` block, so the old
+    // `.rounded-lg` lookup found nothing and the takeover silently bailed. Target
+    // the stable `.contribution-pane` marker the root always carries; fall back
+    // to `.rounded-lg` for any caller that predates the marker.
+    const sectionCard = (el.closest('.contribution-pane') ?? el.closest('.rounded-lg')) as HTMLElement | null
     const scrollContainer = el.closest('.overflow-auto') as HTMLElement | null
     if (!sectionCard || !scrollContainer) return
 
@@ -499,13 +592,26 @@ function EditingPane({
     onContentChange(md, { mentions: [], references: [], dataSnapshots: [], aiGeneratedRanges: [] })
   }, [onContentChange])
 
+  // Inline buttons act immediately; the full-width expand editor plays its
+  // collapse animation first. Either way the SAME handler runs — persistence
+  // is unchanged.
+  const run = (action: () => void) => (inline ? action() : collapseAndRun(action))
+
   return (
-    <div ref={paneRef} className={clsx('flex flex-col flex-1 min-h-0 transition-opacity duration-300', isCollapsing && 'opacity-50')}>
+    <div
+      ref={paneRef}
+      className={clsx('flex flex-col transition-opacity duration-300', !inline && 'flex-1 min-h-0', isCollapsing && 'opacity-50')}
+    >
 
       {/* Editor — toolbar fixed below header, content scrolls */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden [&_.rich-text-editor]:flex [&_.rich-text-editor]:flex-col [&_.rich-text-editor]:flex-1 [&_.rich-text-editor]:min-h-0 [&_.rich-text-editor]:overflow-hidden [&_.editor-container]:flex-1 [&_.editor-container]:min-h-0 [&_.editor-container]:overflow-y-auto [&_.editor-container]:border-0 [&_.editor-container]:rounded-none [&_.editor-container]:relative [&_.sticky]:static">
-        {/* Fold line injected into editor-container via CSS selector */}
-        <style>{`
+      <div
+        className={inline
+          ? 'flex flex-col [&_.rich-text-editor]:flex [&_.rich-text-editor]:flex-col [&_.editor-container]:max-h-viewport-55 [&_.editor-container]:overflow-y-auto [&_.editor-container]:border-0 [&_.editor-container]:rounded-none [&_.sticky]:static'
+          : 'flex-1 min-h-0 flex flex-col overflow-hidden [&_.rich-text-editor]:flex [&_.rich-text-editor]:flex-col [&_.rich-text-editor]:flex-1 [&_.rich-text-editor]:min-h-0 [&_.rich-text-editor]:overflow-hidden [&_.editor-container]:flex-1 [&_.editor-container]:min-h-0 [&_.editor-container]:overflow-y-auto [&_.editor-container]:border-0 [&_.editor-container]:rounded-none [&_.editor-container]:relative [&_.sticky]:static'}
+      >
+        {/* Fold line (full-screen editor only — inline grows with its content). */}
+        {!inline && (
+          <style>{`
           .editor-container::after {
             content: '— show more fold —';
             position: absolute;
@@ -522,33 +628,49 @@ function EditingPane({
             letter-spacing: 0.5px;
           }
         `}</style>
+        )}
         <RichTextEditor
           ref={richEditorRef}
           value={htmlContent}
           onChange={handleRichChange}
           placeholder={placeholder}
-          minHeight="100px"
+          minHeight={inline ? '140px' : '100px'}
           editorClassName="px-4 py-1 text-sm"
           assetContext={assetContext}
         />
       </div>
 
+      {/*
+        Evidence, between the writing and the actions.
+
+        `shrink-0`, exactly like the action bar: the takeover animates this
+        pane to the scroll container's height and forces `flex:1` on every
+        element between the editor and the section root, so anything here that
+        could grow would fight the editor for height. It costs the writing
+        surface only its own line.
+      */}
+      {evidenceSlot && (
+        <div className="shrink-0 border-t border-gray-200 px-4 py-2 dark:border-gray-700">
+          {evidenceSlot}
+        </div>
+      )}
+
       {/* Action bar */}
       <div className="shrink-0 flex items-center justify-end gap-2 px-4 py-2.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/20">
         {onDiscardDraft && (
-          <button onClick={() => collapseAndRun(onDiscardDraft)} disabled={isDiscarding} className="flex items-center px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg mr-auto">
+          <button onClick={() => run(onDiscardDraft)} disabled={isDiscarding} className="flex items-center px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg mr-auto">
             {isDiscarding ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-1.5" />}
             Discard Draft
           </button>
         )}
-        <button onClick={() => collapseAndRun(onCancel)} className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-400">
+        <button onClick={() => run(onCancel)} className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg dark:hover:bg-gray-700 dark:text-gray-400">
           Cancel
         </button>
-        <button onClick={() => collapseAndRun(onSaveDraft)} disabled={!canSave || isDraftSaving} className="flex items-center px-3 py-1.5 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-50">
+        <button onClick={() => run(onSaveDraft)} disabled={!canSave || isDraftSaving} className="flex items-center px-3 py-1.5 text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg disabled:opacity-50">
           {isDraftSaving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FileEdit className="w-4 h-4 mr-1.5" />}
           Save Draft
         </button>
-        <button onClick={() => collapseAndRun(onPublish)} disabled={!canSave || isSaving} className="flex items-center px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50">
+        <button onClick={() => run(onPublish)} disabled={!canSave || isSaving} className="flex items-center px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50">
           {isSaving ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Upload className="w-4 h-4 mr-1.5" />}
           Publish
         </button>
@@ -574,7 +696,12 @@ export function ContributionSection({
   sharedTargetIds = [],
   sectionType = 'thesis',
   flatMode = false,
-  hideWhenEmpty = false
+  hideWhenEmpty = false,
+  inlineEditor = false,
+  documentChrome = false,
+  alwaysShowToolbar = false,
+  fullPageEditor = false,
+  onOpenNote,
 }: ContributionSectionProps) {
   // Get theme based on section type
   const theme = SECTION_THEMES[sectionType]
@@ -588,10 +715,26 @@ export function ContributionSection({
   const isUndoRedoRef = useRef(false)
   const [selectedVisibility, setSelectedVisibility] = useState<ContributionVisibility>(defaultVisibility)
   const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false)
-  const [selectedTargetIds, setSelectedTargetIds] = useState<string[]>([])
+  /*
+   * There is deliberately NO local target-id state here.
+   *
+   * This component has no control that selects visibility targets — the level
+   * list it renders was never wired to one, and visibility is changed through
+   * `handleVisibilityChangeSave` → `updateVisibility`. The state that used to
+   * live here was initialised to `[]`, never loaded from the saved row, and
+   * submitted on every content save, which deleted the audience the section
+   * had been shared with. Content saves now send no visibility at all (see
+   * `visibilityArgs`), so there is nothing for this state to hold, and keeping
+   * an empty array next to a save path is how the defect would come back.
+   *
+   * In the AssetTab host the parent owns both values and passes them in as
+   * `sharedVisibility` / `sharedTargetIds`.
+   */
   const [showTeamDropdown, setShowTeamDropdown] = useState(false)
   const [showVisibilityChange, setShowVisibilityChange] = useState(false)
   const [visibilityChangeStep, setVisibilityChangeStep] = useState<'level' | 'targets'>('level')
+  /** The server's reason an audience change was refused, shown in the menu. */
+  const [visibilityError, setVisibilityError] = useState<string | null>(null)
   const [pendingVisibility, setPendingVisibility] = useState<ContributionVisibility | null>(null)
   const [isHovered, setIsHovered] = useState(false)
   const [pendingTargetIds, setPendingTargetIds] = useState<string[]>([])
@@ -602,6 +745,14 @@ export function ContributionSection({
   const [isDraftMode, setIsDraftMode] = useState(false) // When true, save goes to draft instead of publish
   const [viewingDraft, setViewingDraft] = useState(false) // When true, show draft content instead of published
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false) // Show discard draft confirmation dialog
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false) // Confirm before discarding unsaved inline edits
+  // The content the editor opened with, so Cancel/unload can tell dirty from clean.
+  const editBaselineRef = useRef<string>('')
+  // Live mirrors of the editor's dirty state and draft-save handler, read by the
+  // in-app unsaved-research guard (UX1c-2b). Refs avoid stale closures: the
+  // register effect runs once but always sees the latest values here.
+  const dirtyRef = useRef(false)
+  const saveDraftRef = useRef<() => Promise<void>>(async () => {})
   const smartInputRef = useRef<UniversalSmartInputRef>(null)
   const visibilityRef = useRef<HTMLDivElement>(null)
   const teamRef = useRef<HTMLDivElement>(null)
@@ -747,10 +898,6 @@ export function ContributionSection({
   const pendingTargetOptions = getTargetOptions(pendingVisibility || 'firm')
 
   useEffect(() => {
-    setSelectedTargetIds([])
-  }, [selectedVisibility])
-
-  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (visibilityRef.current && !visibilityRef.current.contains(event.target as Node)) {
         setShowVisibilityDropdown(false)
@@ -780,6 +927,37 @@ export function ContributionSection({
     }
   }, [isFetching, isLoading, myContribution])
 
+  // UX2 refinement — the unsaved-work safeguards apply to BOTH the inline editor
+  // and the full-width in-page expand editor (same in-place editing session,
+  // different presentation). The bare full-screen callers (neither flag) keep
+  // their prior behaviour.
+  const guardedEditor = inlineEditor || fullPageEditor
+
+  // Unsaved-work safeguard: warn before the browser unloads the page while there
+  // are unsaved edits. Computed here (not from `isDirty`, which is declared after
+  // the early return) so the hook stays before it.
+  useEffect(() => {
+    if (!guardedEditor) return
+    const dirty = isEditing && editContent.trim() !== (editBaselineRef.current ?? '').trim()
+    if (!dirty) return
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [guardedEditor, isEditing, editContent])
+
+  // In-app unsaved-research guard (UX1c-2b): while this inline editor is mounted,
+  // register it so any in-app navigation that would unmount it (Research mode /
+  // perspective / sub-tab switch, or the main tab switch/close) can pause and ask
+  // first. Registered once per mount; the guard reads live state through the refs
+  // above, so dirty content is never silently discarded by SPA navigation.
+  useEffect(() => {
+    if (!guardedEditor) return
+    return registerUnsavedEditor({
+      isDirty: () => dirtyRef.current,
+      saveDraft: () => saveDraftRef.current(),
+    })
+  }, [guardedEditor])
+
   // Hide section if no contributions and hideWhenEmpty is true
   // NOTE: This early return must come AFTER all hooks are called to follow React rules
   if (hideWhenEmpty && !isLoading && contributions.length === 0) {
@@ -793,12 +971,16 @@ export function ContributionSection({
     // If there's a draft, load the draft content and enable draft mode
     if (hasDraft) {
       setEditContent(myContribution?.draft_content || '')
+      editBaselineRef.current = myContribution?.draft_content || ''
       setIsDraftMode(true)
     } else {
       setEditContent(myContribution?.content || '')
+      editBaselineRef.current = myContribution?.content || ''
       setIsDraftMode(false)
     }
-    setSelectedVisibility(myContribution?.visibility || defaultVisibility)
+    // The level only — the audience is not held here. See the note at the
+    // target-state declaration above, and `visibilityArgs`.
+    setSelectedVisibility((myContribution?.visibility || defaultVisibility) as ContributionVisibility)
     setUndoStack([])
     setRedoStack([])
     setIsEditing(true)
@@ -807,28 +989,57 @@ export function ContributionSection({
     }
   }
 
+  /**
+   * The visibility fields to send with a CONTENT save, if any.
+   *
+   * Sent only when the parent owns visibility: in the AssetTab host
+   * (`hideVisibility`) the toolbar picker is the explicit visibility control
+   * and is persisted by the next content save, so the parent's value is a
+   * deliberate choice and has to be forwarded.
+   *
+   * Standalone, nothing in this editor can change the level — visibility is
+   * changed through `handleVisibilityChangeSave` / `updateVisibility` — so
+   * sending it from here could only restate what is already stored, or, as it
+   * did, destroy it. Returning nothing tells the mutation to preserve the
+   * row's visibility and its audience.
+   */
+  const visibilityArgs = (): { visibility?: ContributionVisibility; targetIds?: string[] } =>
+    hideVisibility && sharedVisibility
+      ? { visibility: sharedVisibility, targetIds: sharedTargetIds ?? [] }
+      : {}
+
   const handleSave = async () => {
     if (!editContent.trim()) return
-
-    // Use shared visibility if controlled from parent, otherwise use local state
-    const visibilityToUse = hideVisibility && sharedVisibility ? sharedVisibility : selectedVisibility
-    const targetIdsToUse = hideVisibility && sharedTargetIds ? sharedTargetIds : selectedTargetIds
 
     await saveContribution.mutateAsync({
       content: editContent.trim(),
       sectionKey: section,
-      visibility: visibilityToUse,
-      targetIds: targetIdsToUse
+      ...visibilityArgs(),
     })
 
     setIsEditing(false)
     setEditContent('')
   }
 
-  const handleCancel = () => {
+  // Unsaved edits are dirty when the editor content differs from what it opened
+  // with. Used to guard Cancel and page unload (inline editor only).
+  const isDirty = isEditing && editContent.trim() !== (editBaselineRef.current ?? '').trim()
+
+  const doCancel = () => {
     setIsEditing(false)
     setEditContent('')
     setViewingDraft(false) // Go back to published view
+    setShowCancelConfirm(false)
+  }
+
+  const handleCancel = () => {
+    // Don't silently discard unsaved work: when inline and dirty, confirm first.
+    // (Non-inline callers keep the exact previous behaviour.)
+    if (guardedEditor && isDirty) {
+      setShowCancelConfirm(true)
+      return
+    }
+    doCancel()
   }
 
   const handleDelete = async () => {
@@ -855,16 +1066,18 @@ export function ContributionSection({
     setViewingDraft(false) // Go back to published view
   }
 
+  // Keep the guard's live mirrors current (UX1c-2b). Assignments, not hooks, so
+  // they are safe after the early return; when the section is hidden there is no
+  // editor and `isDirty` is false anyway.
+  dirtyRef.current = guardedEditor && isDirty
+  saveDraftRef.current = handleSaveDraft
+
   // Publish draft content
   const handlePublishDraft = async () => {
-    // Use shared visibility if controlled from parent, otherwise use local state
-    const visibilityToUse = hideVisibility && sharedVisibility ? sharedVisibility : selectedVisibility
-    const targetIdsToUse = hideVisibility && sharedTargetIds ? sharedTargetIds : selectedTargetIds
-
+    // Publishing is a content action — same rule as handleSave.
     await publishDraft.mutateAsync({
       sectionKey: section,
-      visibility: visibilityToUse,
-      targetIds: targetIdsToUse
+      ...visibilityArgs(),
     })
 
     setIsEditing(false)
@@ -912,9 +1125,25 @@ export function ContributionSection({
         targetIds
       })
       resetVisibilityChangeState()
+      setVisibilityError(null)
     } catch (error) {
-      console.error('Failed to save visibility change:', error)
-      alert('Failed to save visibility change. Please try again.')
+      /*
+       * Show what the server said, not a generic retry prompt.
+       *
+       * `set_contribution_audience` refuses for reasons the analyst can act
+       * on — "a team audience must name at least one group", "2 target(s) are
+       * not department groups in your organization" — and "please try again"
+       * contradicts every one of them: retrying an identical, deliberate
+       * refusal cannot succeed.
+       *
+       * The menu is deliberately left OPEN so the selection survives and can
+       * be corrected, rather than closing and discarding it.
+       */
+      setVisibilityError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Could not change who can see this section.'
+      )
     }
   }
 
@@ -924,6 +1153,7 @@ export function ContributionSection({
     setPendingVisibility(null)
     setPendingTargetIds([])
     setEditingContributionId(null)
+    setVisibilityError(null)
   }
 
   // Text formatting helpers
@@ -1171,6 +1401,15 @@ export function ContributionSection({
 
           {showVisibilityChange && (
             <div className="absolute left-0 top-7 z-20 w-64 bg-white border rounded-lg shadow-lg py-1 dark:bg-gray-800">
+              {/* The server's reason, where the choice was made. */}
+              {visibilityError && (
+                <p
+                  role="alert"
+                  className="mx-1 mb-1 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs leading-snug text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300"
+                >
+                  {visibilityError}
+                </p>
+              )}
               {visibilityChangeStep === 'level' ? (
                 <>
                   <div className="px-3 py-1.5 text-xs font-medium text-gray-500 border-b dark:text-gray-400">
@@ -1295,7 +1534,7 @@ export function ContributionSection({
     : null
 
   // Show toolbar when hovering, editing, or history is open
-  const showToolbar = isHovered || isEditing || showHistory
+  const showToolbar = isHovered || isEditing || showHistory || alwaysShowToolbar
 
   // Flat mode: render just the contributions without wrapper/header (for aggregated view)
   if (flatMode && activeTab === 'aggregated') {
@@ -1379,18 +1618,43 @@ export function ContributionSection({
   return (
     <div
       className={clsx(
-        'bg-white border border-gray-200 rounded-lg border-l-4 transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
-        theme.accent,
-        theme.hoverBorder,
-        theme.hoverBg,
-        'hover:shadow-sm',
+        // Stable marker: the full-width expand-takeover walks up from the editor
+        // to THIS root to grow the section to viewport height. Present in every
+        // chrome mode so the lookup never depends on a card's `.rounded-lg`.
+        'contribution-pane',
+        /*
+          ── No cap here; the document column carries it ───────────────
+
+          The prose was capped at `max-w-[72ch]` — 621px at this font
+          size — while the card stretched to the full width of the page,
+          so a written thesis sat in a third of a bordered box with the
+          rest blank inside the border. That reads as text cut off, not
+          as a reading measure.
+
+          The measure belongs to the column the sections sit in (see the
+          research container in `AssetTab`). The card fills that column
+          and the prose fills the card, so there is no empty space inside
+          any border.
+        */
+        documentChrome
+          // UX2 P2 — flat document section: no card border/fill/radius. A top
+          // hairline + a lightly tinted header band give each editable field a
+          // clear, consistent boundary within the single Investment Case
+          // container — distinct fields, not a stack of heavy cards.
+          ? 'bg-transparent rounded-none border-t border-gray-100 transition-colors dark:border-gray-800'
+          : [
+              // Elevated card: softer radius, a thin refined accent rail (not a
+              // heavy 4px bar), flat at rest with a quiet lift on hover.
+              'bg-white border border-gray-200/80 rounded-xl transition-all duration-200 dark:border-gray-700 dark:bg-gray-800',
+              'border-l-[3px]', theme.accent, theme.hoverBorder, theme.hoverBg, 'hover:shadow-sm',
+            ],
         className
       )}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-1.5 border-b border-gray-100 dark:border-gray-800">
+      <div className={clsx('flex items-center justify-between border-b border-gray-100 dark:border-gray-800', documentChrome ? 'px-5 pt-3 pb-2.5 bg-gray-50/70 dark:bg-gray-800/30' : 'px-4 py-1.5')}>
         <div className="flex items-center space-x-3">
           {Icon && (
             <div className={clsx('p-1.5 rounded-lg', theme.iconBg)}>
@@ -1414,13 +1678,13 @@ export function ContributionSection({
               <InfoTooltip content={description} position="right" />
             )}
             {activeTab === 'aggregated' && lastUpdated && !showHistory && (
-              <span className="text-xs text-gray-400">
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                 Updated {formatDistanceToNow(new Date(lastUpdated), { addSuffix: true })}
               </span>
             )}
             {activeTab !== 'aggregated' && selectedContribution && !showHistory && (
               <>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                   Updated {formatDistanceToNow(new Date(selectedContribution.updated_at), { addSuffix: true })}
                 </span>
                 {/* Draft toggle button - clickable icon to view/hide draft */}
@@ -1625,7 +1889,6 @@ export function ContributionSection({
               <>
                 {isEditing && activeTab === user?.id ? (
                   <EditingPane
-                    title={title}
                     smartInputRef={smartInputRef}
                     editContent={editContent}
                     onContentChange={(value, metadata) => {
@@ -1643,6 +1906,17 @@ export function ContributionSection({
                     isDraftSaving={saveDraft.isPending}
                     isDiscarding={discardDraft.isPending}
                     canSave={!!editContent.trim()}
+                    inline={inlineEditor && !fullPageEditor}
+                    evidenceSlot={(
+                      <SectionEvidenceStrip
+                        assetId={assetId}
+                        section={section}
+                        isOwn
+                        editing
+                        onOpenNote={onOpenNote}
+                        sectionUpdatedAt={myContribution?.updated_at ?? null}
+                      />
+                    )}
                   />
                 ) : showHistory ? (
                   <div className="space-y-2">
@@ -1706,19 +1980,32 @@ export function ContributionSection({
                       <div className="space-y-3">
                         <CollapsibleContent content={selectedContribution.content} />
 
-                        {/* References (only shown if exists) */}
-                        {selectedContribution.attachments && selectedContribution.attachments.length > 0 && (
-                          <ViewReferences
-                            attachments={selectedContribution.attachments}
-                          />
-                        )}
+                        {/*
+                          The research behind THIS author's section — quiet,
+                          and only when there is some. Their prose above is the
+                          conclusion; this is what they read to reach it.
+
+                          Fed from the displayed contribution's own
+                          `attachments`, which is the same list the strip edits
+                          when the section is the reader's. It replaces
+                          `ViewReferences`, which rendered that identical array
+                          as static chips with no way back to the note.
+                        */}
+                        <SectionEvidenceStrip
+                          assetId={assetId}
+                          section={section}
+                          isOwn={selectedContribution.created_by === user?.id}
+                          items={(selectedContribution.attachments ?? []) as never}
+                          onOpenNote={onOpenNote}
+                          sectionUpdatedAt={selectedContribution.updated_at ?? null}
+                        />
                       </div>
                     ) : (
-                      <div className="text-center py-1">
+                      <div className="py-0.5">
                         {activeTab === user?.id ? (
                           <button
                             onClick={handleStartEdit}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors"
+                            className="inline-flex items-center gap-1.5 -ml-2 px-2 py-1 text-sm font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors dark:hover:bg-primary-900/20"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
                             Add your view
@@ -1747,6 +2034,18 @@ export function ContributionSection({
         cancelText="Keep Editing"
         variant="warning"
         isLoading={discardDraft.isPending}
+      />
+
+      {/* Unsaved inline-edit confirmation: don't silently discard on Cancel. */}
+      <ConfirmDialog
+        isOpen={showCancelConfirm}
+        onClose={() => setShowCancelConfirm(false)}
+        onConfirm={doCancel}
+        title="Discard unsaved changes?"
+        message="You have unsaved edits in this section. Discard them? Your published version and any saved draft are unchanged."
+        confirmText="Discard changes"
+        cancelText="Keep editing"
+        variant="warning"
       />
     </div>
   )

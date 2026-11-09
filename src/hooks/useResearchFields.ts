@@ -1,6 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { researchLayoutKeyPrefixes } from './useUserAssetPagePreferences'
+import { assetSubject, type ResearchSubject } from '../lib/research/subject'
+
+/*
+ * This hook is the ASSET field library: `research_fields`,
+ * `team_research_fields`, `research_field_access_requests`,
+ * `research_field_viewers`. None of those has a theme twin yet, so it is
+ * asset-only and the subject is fixed. See
+ * `project-theme-research-subject-layer`.
+ */
+const ASSET_LAYOUT_KEYS = researchLayoutKeyPrefixes(assetSubject(undefined))
 
 // ============================================================================
 // TYPES
@@ -30,6 +41,11 @@ export interface ResearchField {
   is_universal: boolean
   is_system: boolean
   is_archived: boolean
+  /* A real column (nullable, defaults to 0) that this type never declared, so
+     every reader of it was casting or going without. It is the field's order
+     WITHIN its section — see the note on the asset-page catalogue query about
+     what it does not mean. */
+  display_order: number | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -106,7 +122,10 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   estimates: 'Estimates',
   timeline: 'Timeline',
   metric: 'Metric',
-  key_references: 'Key References',
+  /* The field TYPE behind the Artifacts surface. The `key_references` key
+     is the database's own enum value and is not renamed; only the label
+     the reader sees is. */
+  key_references: 'Artifacts',
   scorecard: 'Scorecard',
   slider: 'Slider / Gauge',
   spreadsheet: 'Spreadsheet',
@@ -157,7 +176,11 @@ export function useResearchSections() {
       const { data, error } = await supabase
         .from('research_sections')
         .select('*')
+        /* Same tie as the asset-page catalogue: `display_order` is not unique
+           in this data, so creation order decides rather than Postgres. See
+           the note on the all-sections query in useUserAssetPagePreferences. */
         .order('display_order', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (error) throw error
       return data as ResearchSection[]
@@ -171,7 +194,35 @@ export function useResearchSections() {
 // HOOK: useResearchFields
 // ============================================================================
 
-export function useResearchFields() {
+/**
+ * The org field library.
+ *
+ * ── Only partly subject-aware, and deliberately so ────────────────────────
+ *
+ * `subject` changes which tables `createField` and `deleteField` write, and
+ * NOTHING ELSE. That is not an oversight, it is the shape of the database:
+ *
+ *   parameterized    `research_sections`  / `theme_research_sections`
+ *                    `research_fields`    / `theme_research_fields`
+ *
+ *   asset-only       `team_research_fields`
+ *                    `research_field_access_requests`
+ *                    `research_field_viewers`
+ *                    `add_field_from_preset()`
+ *
+ * The four asset-only ones have no theme twin in production, so field
+ * sharing, access requests, per-field viewers and add-from-preset are asset
+ * features today. A theme caller must not be offered them; the Theme page
+ * hides those affordances rather than calling them and failing.
+ *
+ * The read query (`fields`) is also asset-only and is NOT used by the Theme
+ * page: the theme field catalogue comes through
+ * `useResearchPagePreferences`, which is fully parameterized.
+ */
+export function useResearchFields(
+  subject: ResearchSubject = assetSubject(undefined),
+) {
+  const S = subject.descriptor
   const queryClient = useQueryClient()
   const { user } = useAuth()
 
@@ -219,7 +270,7 @@ export function useResearchFields() {
     }) => {
       // Get organization_id from section
       const { data: section } = await supabase
-        .from('research_sections')
+        .from(S.tables.sections)
         .select('organization_id')
         .eq('id', input.section_id)
         .single()
@@ -227,7 +278,7 @@ export function useResearchFields() {
       if (!section) throw new Error('Section not found')
 
       const { data, error } = await supabase
-        .from('research_fields')
+        .from(S.tables.fields)
         .insert({
           ...input,
           organization_id: section.organization_id,
@@ -236,7 +287,11 @@ export function useResearchFields() {
           is_system: false,
           created_by: user?.id
         })
-        .select(`*, section:research_sections(*)`)
+        /* The embed names the section table, so it has to follow the
+           subject too; naming `research_sections` from a theme field is an
+           unknown relation, which PostgREST answers with 400 on the WHOLE
+           request rather than an empty embed. */
+        .select(`*, section:${S.tables.sections}(*)`)
         .single()
 
       if (error) throw error
@@ -288,7 +343,7 @@ export function useResearchFields() {
 
       // First verify the user is the creator
       const { data: field, error: fetchError } = await supabase
-        .from('research_fields')
+        .from(S.tables.fields)
         .select('created_by, is_system')
         .eq('id', id)
         .single()
@@ -300,7 +355,7 @@ export function useResearchFields() {
 
       // Delete the field
       const { error } = await supabase
-        .from('research_fields')
+        .from(S.tables.fields)
         .delete()
         .eq('id', id)
         .eq('created_by', user.id) // Extra safety check
@@ -309,7 +364,12 @@ export function useResearchFields() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['research-fields'] })
-      queryClient.invalidateQueries({ queryKey: ['available-research-fields'] })
+      /*
+       * The field catalogue read by the layout stack now carries a subject
+       * prefix, so the old literal `['available-research-fields']` matches
+       * nothing. Deleting a field would leave it on screen until a reload.
+       */
+      queryClient.invalidateQueries({ queryKey: ASSET_LAYOUT_KEYS.fields })
     }
   })
 
@@ -649,7 +709,10 @@ export function useUserResearchLayout() {
       const { data: sections, error: sectionsError } = await supabase
         .from('research_sections')
         .select('*')
+        /* `display_order` ties here, so creation order breaks it. Same
+           reasoning as useResearchSections above. */
         .order('display_order', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (sectionsError) throw sectionsError
 

@@ -1,0 +1,115 @@
+-- Rollback for 20261104120000_drop_theme_discussions.sql
+--
+-- Recreates theme_discussions exactly as production had it: the columns from
+-- information_schema, the three indexes from pg_indexes, the four policies
+-- from pg_policies, and both trigger functions from pg_get_functiondef. It is
+-- transcribed from the LIVE database rather than from the migration that
+-- originally created it, because migrations in this repo do not describe
+-- production.
+--
+-- It cannot restore rows. There were none: the table held 0 rows and
+-- theme_activity held 0 'theme.discussion_posted' events.
+--
+-- Note the policies are `TO public`, which is how production had them, not
+-- how a new table in this codebase would be written today (Standing Rule 5
+-- wants `TO authenticated`). They are restored as they were so that this file
+-- is an honest undo; if the feature ever comes back, it comes back with
+-- authenticated-only policies and a cross-org isolation test.
+
+begin;
+
+create table public.theme_discussions (
+  id              uuid        not null default gen_random_uuid(),
+  theme_id        uuid        not null,
+  author_id       uuid        not null,
+  organization_id uuid        not null,
+  visibility      text        not null default 'org'::text,
+  content         text        not null,
+  is_edited       boolean     not null default false,
+  is_deleted      boolean     not null default false,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  constraint theme_discussions_pkey primary key (id),
+  constraint theme_discussions_theme_id_fkey
+    foreign key (theme_id) references public.themes (id),
+  constraint theme_discussions_author_id_fkey
+    foreign key (author_id) references auth.users (id)
+);
+
+create index idx_theme_discussions_theme_id_created_at
+  on public.theme_discussions using btree (theme_id, created_at desc);
+create index idx_theme_discussions_author_id
+  on public.theme_discussions using btree (author_id);
+
+alter table public.theme_discussions enable row level security;
+
+create policy "Theme discussion visibility"
+  on public.theme_discussions for select
+  using (
+    (exists (
+      select 1 from public.themes t
+      where t.id = theme_discussions.theme_id
+        and t.organization_id = current_org_id()
+    ))
+    and (visibility = 'shared'::text or organization_id = current_org_id())
+  );
+
+create policy "Users can post to theme discussions"
+  on public.theme_discussions for insert
+  with check (
+    author_id = auth.uid()
+    and organization_id = current_org_id()
+    and exists (
+      select 1 from public.themes t
+      where t.id = theme_discussions.theme_id
+        and t.organization_id = current_org_id()
+    )
+  );
+
+create policy "Users can edit own theme discussion posts"
+  on public.theme_discussions for update
+  using (author_id = auth.uid())
+  with check (author_id = auth.uid());
+
+create policy "Users can delete own theme discussion posts"
+  on public.theme_discussions for delete
+  using (author_id = auth.uid());
+
+create or replace function public.theme_discussions_touch()
+returns trigger
+language plpgsql
+as $function$
+BEGIN
+  NEW.updated_at := now();
+  IF (TG_OP = 'UPDATE') AND (NEW.content IS DISTINCT FROM OLD.content) THEN
+    NEW.is_edited := true;
+  END IF;
+  RETURN NEW;
+END;
+$function$;
+
+create or replace function public.theme_activity_log_discussion_post()
+returns trigger
+language plpgsql
+security definer
+set search_path to 'public'
+as $function$
+BEGIN
+  INSERT INTO public.theme_activity (theme_id, actor_id, activity_type, metadata)
+  VALUES (NEW.theme_id, NEW.author_id, 'theme.discussion_posted',
+          jsonb_build_object('visibility', NEW.visibility));
+  RETURN NEW;
+END;
+$function$;
+
+-- BEFORE UPDATE only, as production had it (pg_get_triggerdef). Not INSERT:
+-- `updated_at` already defaults to now() on insert.
+create trigger trg_theme_discussions_touch
+  before update on public.theme_discussions
+  for each row execute function public.theme_discussions_touch();
+
+create trigger trg_theme_activity_discussion_post
+  after insert on public.theme_discussions
+  for each row execute function public.theme_activity_log_discussion_post();
+
+commit;

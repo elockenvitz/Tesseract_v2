@@ -497,7 +497,13 @@ export interface Database {
           id: string
           list_id: string
           user_id: string
-          permission: 'read' | 'write' | 'admin'
+          // read | write only. An 'admin' tier was in one CHECK constraint and
+          // excluded by a second, so it was never storable; migration
+          // 20261027013936 removed it from the vocabulary. Re-adding it is a
+          // product decision that must also say what admin may do that write
+          // may not. `note_collaborations` below is a different table — its
+          // 'admin' is not governed by this.
+          permission: 'read' | 'write'
           invited_by: string | null
           created_at: string | null
           updated_at: string | null
@@ -506,7 +512,7 @@ export interface Database {
           id?: string
           list_id: string
           user_id: string
-          permission?: 'read' | 'write' | 'admin'
+          permission?: 'read' | 'write'
           invited_by?: string | null
           created_at?: string | null
           updated_at?: string | null
@@ -515,7 +521,7 @@ export interface Database {
           id?: string
           list_id?: string
           user_id?: string
-          permission?: 'read' | 'write' | 'admin'
+          permission?: 'read' | 'write'
           invited_by?: string | null
           created_at?: string | null
           updated_at?: string | null

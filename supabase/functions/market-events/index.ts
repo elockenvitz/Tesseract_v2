@@ -24,7 +24,16 @@
  * "nothing happened this week".
  */
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.0'
+/*
+ * `@2`, not `@2.39.0`. This function and `market-news` were the only two in
+ * this project carrying that pin, and they were the only two whose
+ * authorization gate rejected every signed-in reader: 2.39.0's bundled auth
+ * client resolves a no-argument `getUser()` through its own empty session
+ * store instead of the forwarded Authorization header. The gate no longer
+ * depends on that behaviour -- `_shared/verified-user.ts` passes the token
+ * explicitly -- but the pin bought nothing, so it goes.
+ */
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { requirePublishableKey } from '../_shared/publishable-key.ts'
 import { authorizeVerifiedUser } from '../_shared/verified-user.ts'
 
@@ -114,8 +123,13 @@ serve(async (req) => {
     })
   }
 
-  // Verify a real signed-in user before any external API call or cache write.
-  // The bare anon key resolves to no user and is rejected (see verified-user.ts).
+  /*
+   * A real signed-in user, before any external API call or cache write. The
+   * gateway admits the publishable key that ships in the browser bundle, so
+   * without this an anonymous caller runs up a paid provider bill and writes
+   * the shared cache. See `_shared/verified-user.ts` for why the token is
+   * passed explicitly and why a key-configuration failure is a 503.
+   */
   const authHeader = req.headers.get('Authorization')
   const userClient = createClient(
     Deno.env.get('SUPABASE_URL') ?? '',
@@ -124,9 +138,10 @@ serve(async (req) => {
   )
   const authz = await authorizeVerifiedUser(authHeader, userClient)
   if (!authz.ok) {
-    return new Response(JSON.stringify({ error: authz.error }), {
-      status: authz.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return new Response(
+      JSON.stringify(authz.status === 503 ? { error: authz.error, reason: authz.reason } : { error: authz.error }),
+      { status: authz.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    )
   }
 
   let body: { symbols?: unknown; lookaheadDays?: unknown; lookbackDays?: unknown }

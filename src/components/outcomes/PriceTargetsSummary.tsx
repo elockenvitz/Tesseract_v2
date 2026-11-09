@@ -4,6 +4,61 @@ import { TrendingUp, TrendingDown, Minus, Users, Loader2 } from 'lucide-react'
 import { useScenarios } from '../../hooks/useScenarios'
 import { useAnalystPriceTargets } from '../../hooks/useAnalystPriceTargets'
 import { useOutcomeAggregation } from '../../hooks/useOutcomeAggregation'
+import { useTargetOutcomes } from '../../hooks/useTargetOutcomes'
+import {
+  scenarioFreshness, isStale, FRESHNESS_LABEL, type TargetFreshness,
+} from '../../lib/outcomes/target-freshness'
+
+/**
+ * `target_date` is a DATE, so '2026-08-30' parses as UTC midnight. Rendering
+ * that straight through `toLocaleDateString` shows the 29th to anyone west of
+ * Greenwich — an off-by-one on the very field this panel exists to be honest
+ * about. Pinning it to local midnight keeps the stored day the displayed day.
+ */
+function formatTargetDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/**
+ * One line under each scenario, saying whether the number still stands.
+ *
+ * It is a line of text rather than a badge on purpose: a target card already
+ * carries a scenario chip, a price, an upside figure and an analyst count, and
+ * the fix for "this looks current when it is not" is not a fifth ornament. The
+ * stale states are the only ones that take colour.
+ */
+function FreshnessLine({ freshness }: { freshness: TargetFreshness }) {
+  const stale = isStale(freshness.state)
+  const label = FRESHNESS_LABEL[freshness.state]
+
+  /* A current target says when it runs out; a lapsed one says when it did. */
+  const date = freshness.asOf ? formatTargetDate(freshness.asOf) : null
+  const text = freshness.state === 'current' && date ? `Current · to ${date}`
+    : date ? `${label} · ${date}`
+    : label
+
+  return (
+    <div
+      className={clsx(
+        'mt-1.5 text-[11px] leading-tight',
+        stale
+          ? 'font-medium text-amber-700 dark:text-amber-500'
+          : 'text-gray-500 dark:text-gray-400',
+      )}
+      title={freshness.basis === 'outcome'
+        ? 'From the evaluated target outcome'
+        : freshness.basis === 'target-date'
+          ? "From the target's own date; not yet evaluated"
+          : freshness.basis === 'rolling'
+            ? 'Rolling target — no fixed horizon'
+            : 'No horizon recorded for this target'}
+    >
+      {text}
+    </div>
+  )
+}
 
 interface PriceTargetsSummaryProps {
   assetId: string
@@ -33,7 +88,16 @@ export function PriceTargetsSummary({ assetId, currentPrice, className, hideHead
     scenarios
   })
 
-  const isLoading = scenariosLoading || targetsLoading
+  /*
+   * The evaluated outcomes for this asset, joined per scenario below on
+   * `price_target_id`. Reusing the existing hook rather than adding a query:
+   * the Asset Page already fetches this table for History and Overview, which
+   * is how those two surfaces knew these targets had expired while this one
+   * did not.
+   */
+  const { outcomes, isLoading: outcomesLoading } = useTargetOutcomes({ assetId })
+
+  const isLoading = scenariosLoading || targetsLoading || outcomesLoading
 
   // Filter to only default scenarios (Bull, Base, Bear) with data
   const defaultResults = useMemo(() => {
@@ -78,11 +142,21 @@ export function PriceTargetsSummary({ assetId, currentPrice, className, hideHead
               ? ((result.aggregatedPrice - currentPrice) / currentPrice) * 100
               : null
 
+            /* Joined on price_target_id — see `target-freshness` for why not
+               on price or scenario. */
+            const freshness = scenarioFreshness(result.targets, outcomes)
+            const stale = isStale(freshness.state)
+
             return (
               <div
                 key={result.scenarioId}
                 className="text-center p-3 bg-gray-50 rounded-lg dark:bg-gray-900"
-                style={{ borderTop: `3px solid ${result.scenarioColor || '#6b7280'}` }}
+                style={{
+                  /* The scenario colour is a live signal. A lapsed target keeps
+                     its identity but stops advertising it. */
+                  borderTop: `3px solid ${result.scenarioColor || '#6b7280'}`,
+                  opacity: stale ? 0.72 : undefined,
+                }}
               >
                 <div className="text-xs text-gray-500 uppercase tracking-wide mb-2 flex items-center justify-center gap-1.5 dark:text-gray-400">
                   <div
@@ -92,13 +166,21 @@ export function PriceTargetsSummary({ assetId, currentPrice, className, hideHead
                   {result.scenarioName}
                 </div>
 
-                <div className="text-xl font-bold text-gray-900 mb-1 dark:text-white">
+                <div className={clsx(
+                  'text-xl font-bold mb-1',
+                  stale
+                    ? 'text-gray-500 dark:text-gray-400'
+                    : 'text-gray-900 dark:text-white',
+                )}>
                   ${result.aggregatedPrice!.toFixed(2)}
                 </div>
 
                 {upside !== null && (
                   <div className={clsx(
                     'text-xs font-medium flex items-center justify-center gap-0.5 mb-2',
+                    /* Upside to a target that no longer stands is not a live
+                       signal, so it does not get the live colours. */
+                    stale ? 'text-gray-500 dark:text-gray-400' :
                     upside > 0 ? 'text-green-600' :
                     upside < 0 ? 'text-red-600' :
                     'text-gray-500 dark:text-gray-400'
@@ -114,6 +196,8 @@ export function PriceTargetsSummary({ assetId, currentPrice, className, hideHead
                   <Users className="w-3 h-3" />
                   <span>{result.analystCount} analyst{result.analystCount !== 1 ? 's' : ''}</span>
                 </div>
+
+                <FreshnessLine freshness={freshness} />
               </div>
             )
           })}

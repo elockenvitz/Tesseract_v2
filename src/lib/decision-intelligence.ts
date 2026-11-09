@@ -59,7 +59,7 @@ export interface DecisionIntelligence {
  */
 export const VERDICT_EXPLANATIONS: Record<DecisionVerdict, string> = {
   working:
-    'Executed and moving with the thesis. Tesseract is monitoring the outcome — capture a quick reflection if you want this on the record.',
+    'Executed and moving with the thesis. Tesseract is monitoring the outcome, so capture a quick reflection if you want this on the record.',
   resolved:
     'Reflection captured. Tesseract has the context it needs to feed this decision back into your scorecards.',
   hurting:
@@ -67,7 +67,7 @@ export const VERDICT_EXPLANATIONS: Record<DecisionVerdict, string> = {
   stalled:
     'Approved but not yet executed and the clock is running. Either execute it or withdraw the decision so it stops sitting in limbo.',
   awaiting:
-    'Approved recently and pending execution. Normal state — no action needed yet.',
+    'Approved recently and pending execution. A normal state, with no action needed yet.',
   unmatched:
     'Approved 30+ days ago with no matching trade on the book. Either execute it or mark it withdrawn so Outcomes stops flagging it.',
   needs_review:
@@ -75,7 +75,7 @@ export const VERDICT_EXPLANATIONS: Record<DecisionVerdict, string> = {
   evaluate:
     'Tesseract is monitoring this decision. Add a short reflection when you have a view on whether the thesis played out.',
   rejected:
-    'The decision was rejected at approval. No trade was made — kept on the log for accountability.',
+    'The decision was rejected at approval. No trade was made, but it is kept on the log for accountability.',
   withdrawn:
     'The decision was cancelled before execution. No trade was made.',
   discretionary:
@@ -190,8 +190,8 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
   if (row.stage === 'rejected') {
     const sym = row.asset_symbol || 'Stock'
     let issue: string
-    if (directionalMove != null && directionalMove > 2) issue = `${sym} moved ${bestMove != null && bestMove >= 0 ? '+' : ''}${bestMove?.toFixed(1)}% — would have been right`
-    else if (directionalMove != null && directionalMove < -2) issue = `Rejection avoided a loss — ${sym} down since`
+    if (directionalMove != null && directionalMove > 2) issue = `${sym} moved ${bestMove != null && bestMove >= 0 ? '+' : ''}${bestMove?.toFixed(1)}%, so it would have been right`
+    else if (directionalMove != null && directionalMove < -2) issue = `Rejection avoided a loss: ${sym} down since`
     else issue = `${sym} flat since rejection`
     return {
       verdict: 'rejected',
@@ -229,7 +229,7 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
     if (isStalled && bestMove != null && Math.abs(bestMove) > 1) {
       issue = `${sym} moved ${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}% while stalled`
     } else if (isStalled) {
-      issue = `Not executed — capital not deployed`
+      issue = `Not executed, capital not deployed`
     } else {
       issue = `Awaiting trade execution`
     }
@@ -256,7 +256,7 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
     return {
       verdict: 'unmatched',
       verdictLabel: 'Unmatched',
-      primaryIssue: bestMove != null ? `${row.asset_symbol || 'Stock'} moved ${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}% — no matched trade` : 'No matching trade found',
+      primaryIssue: bestMove != null ? `${row.asset_symbol || 'Stock'} moved ${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}%, no matched trade` : 'No matching trade found',
       actionNeeded: 'Match trade or mark skipped',
       urgency: 'high',
       resultLabel: bestMove != null ? `${bestMove >= 0 ? '+' : ''}${bestMove.toFixed(1)}% missed` : null,
@@ -314,15 +314,15 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
     if (move != null && move <= -5) {
       subtag = isReduce ? 'risk reduced before weakness' : 'outcome diverging materially'
     } else if (move != null && move >= 5) {
-      subtag = isReduce ? 'upside left on the table' : 'strong outcome — skill or timing?'
+      subtag = isReduce ? 'upside left on the table' : 'strong outcome: skill or timing?'
     } else if (move != null && move <= -1.5) {
       subtag = isReduce ? 'early move favours the trim' : 'early move against the call'
     } else if (move != null && move >= 1.5) {
-      subtag = isReduce ? 'upside continuing — re-entry?' : 'early signal favours the call'
+      subtag = isReduce ? 'upside continuing: re-entry?' : 'early signal favours the call'
     } else if (decisionAge < 7) {
       subtag = 'capture reasoning while it\'s fresh'
     } else if (resultDirection === 'positive' || resultDirection === 'negative') {
-      subtag = 'outcome forming — capture rationale'
+      subtag = 'outcome forming, capture rationale'
     } else {
       subtag = 'no reasoning recorded'
     }
@@ -556,18 +556,18 @@ export function buildProcessHealth(rows: AccountabilityRow[]): ProcessHealth {
     headline = 'Decision process is operating normally.'
     narrative = `${counts.working} decision${counts.working !== 1 ? 's' : ''} working as intended.`
   } else if (primaryBreakdown === 'Execution') {
-    headline = 'Execution breakdown — approvals are not converting into portfolio action.'
+    headline = 'Execution breakdown: approvals are not converting into portfolio action.'
     narrative = `${counts.stalled + counts.awaiting} decision${counts.stalled + counts.awaiting !== 1 ? 's are' : ' is'} pending execution.${counts.stalled > 0 ? ` ${counts.stalled} stalled beyond 14 days.` : ''}`
   } else if (primaryBreakdown === 'Outcome quality') {
-    headline = 'Outcome quality problem — executed decisions are underperforming.'
+    headline = 'Outcome quality problem: executed decisions are underperforming.'
     narrative = `${counts.hurting} decision${counts.hurting !== 1 ? 's are' : ' is'} hurting the portfolio.${counts.needsReview > 0 ? ` ${counts.needsReview} need review.` : ''}`
   } else if (primaryBreakdown === 'Review discipline') {
     headline = 'Your decisions aren\'t being fully reviewed.'
     narrative = counts.needsEvaluation > 0
-      ? `Tesseract can track what happened and surface what to consider, but ${counts.needsReview} decision${counts.needsReview !== 1 ? 's are' : ' is'} missing context and ${counts.needsEvaluation} ${counts.needsEvaluation !== 1 ? 'are' : 'is'} still being monitored — missing reflection makes the feedback loop weaker.`
-      : `Tesseract can track what happened and surface what to consider, but ${counts.needsReview} decision${counts.needsReview !== 1 ? 's are' : ' is'} missing context — missing reflection makes the feedback loop weaker.`
+      ? `Tesseract can track what happened and surface what to consider, but ${counts.needsReview} decision${counts.needsReview !== 1 ? 's are' : ' is'} missing context and ${counts.needsEvaluation} ${counts.needsEvaluation !== 1 ? 'are' : 'is'} still being monitored. Missing reflection makes the feedback loop weaker.`
+      : `Tesseract can track what happened and surface what to consider, but ${counts.needsReview} decision${counts.needsReview !== 1 ? 's are' : ' is'} missing context. Missing reflection makes the feedback loop weaker.`
   } else if (primaryBreakdown === 'Trade matching') {
-    headline = 'Trade matching problem — approved decisions have no matched trades.'
+    headline = 'Trade matching problem: approved decisions have no matched trades.'
     narrative = `${counts.unmatched} decision${counts.unmatched !== 1 ? 's' : ''} unmatched after 30+ days.`
   } else {
     headline = `${problemCount} decision${problemCount !== 1 ? 's' : ''} need attention.`

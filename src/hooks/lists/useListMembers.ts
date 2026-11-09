@@ -6,7 +6,10 @@ export interface ListMember {
   email: string | null
   first_name: string | null
   last_name: string | null
-  role: 'owner' | 'admin' | 'write' | 'read'
+  // 'owner' is this hook's own label for the list's creator; 'write' and
+  // 'read' are the stored collaboration permissions. There is no 'admin' —
+  // see the note on CollaboratorLike in lib/lists/list-permissions.ts.
+  role: 'owner' | 'write' | 'read'
 }
 
 /**
@@ -60,7 +63,7 @@ export function useListMembers(listId: string | null | undefined) {
           email: u.email ?? null,
           first_name: u.first_name ?? null,
           last_name: u.last_name ?? null,
-          role: (c.permission ?? 'read') as 'admin' | 'write' | 'read'
+          role: (c.permission ?? 'read') as 'write' | 'read'
         })
         seen.add(u.id)
       }

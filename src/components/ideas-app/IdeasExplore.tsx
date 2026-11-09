@@ -1,19 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { clsx } from 'clsx'
+import {
+  CARD_SURFACE, CARD_EDGE, CARD_EDGE_SELECTED, CARD_HOVER, GALLERY_GROUND,
+} from '../../lib/ui/surface'
 import { Loader2, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import { CuratePanel } from './CuratePanel'
 import { EMPTY_FILTER, filterCount, type FeedFilter } from '../../hooks/mobile/useFeedFacets'
 import { SignalCardView } from '../signals/SignalCardView'
 import { ideaPanes } from '../signals/ideaPanes'
-import { FeedPreview } from '../signals/FeedPreview'
-import { previewFor, previewSymbol } from '../../lib/signals/feed-preview'
+import { FeedPreviewCarousel } from '../signals/FeedPreview'
+import { previewsFor, previewSymbol } from '../../lib/signals/feed-preview'
+import { primaryForFeed } from '../../lib/signals/feed-primary'
 import { progressionFor } from '../../lib/desktop-ideas/progression'
 import { selectionFor } from '../../lib/desktop-ideas/selection'
 import { ideaRowFromFeedItem } from '../../lib/desktop-ideas/from-feed'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import { usePriceHistory } from '../../hooks/mobile/usePriceHistory'
 import type { SignalCard } from '../../lib/signals/contract'
-import { useDesktopAttentionFeed, type AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
+import { useDesktopAttentionFeed, type AttentionEntry, type AttentionInclude } from '../../hooks/useDesktopAttentionFeed'
 import { IDEA_LENSES, lensSpec, lensShowsInvestmentFilters, type IdeaLens } from '../../lib/desktop-ideas/lens'
 import { MATURITY_LABEL, maturityOf, type IdeaDirection, type IdeaMaturity } from '../../lib/desktop-ideas'
 import { usePilotOnboarding } from '../../hooks/usePilotOnboarding'
@@ -82,9 +87,72 @@ const DIRECTIONS: IdeaDirection[] = ['buy', 'sell', 'add', 'trim']
  */
 const MATURITIES: IdeaMaturity[] = ['researching', 'thesis_forming', 'decision_ready']
 
+/**
+ * Draw these controls here, or in a bar the host already has.
+ *
+ * Module level and not an inline ternary at the call site, so the toolbar
+ * below is written ONCE. A second copy behind a condition is how two chip
+ * rows start differing by a divider while both read the same state.
+ *
+ * A portal is the right tool because nothing about ownership changes: the
+ * rail's lens, its applied facets and its popover all live in `IdeasExplore`,
+ * and lifting three pieces of state into a host so it could draw the rail
+ * would give the Ideas tab -- which has no such bar -- a second answer to
+ * "which lens am I in".
+ */
+function RailSlot({ host, children }: { host: HTMLElement | null; children: ReactNode }) {
+  return host ? createPortal(children, host) : <>{children}</>
+}
+
 export function IdeasExplore({
-  onSelect, selectedKey = null, onSelectionInvalid, onProgress,
+  onSelect, selectedKey = null, onSelectionInvalid, onProgress, lead, include, railHost = null,
 }: {
+  /**
+   * Where to draw the lens rail, when the host already has a bar for it.
+   *
+   * ── Why a portal and not a lifted prop ────────────────────────────────────
+   *
+   * The Dashboard draws a mode bar -- Dashboard, Ideas, Explore, Portfolio --
+   * and this component drew its own bar of chips directly beneath it. Two
+   * full-width control bands, stacked, for one surface. The chips belong on
+   * the mode bar, right-justified, which is what was asked for.
+   *
+   * The rail is driven entirely by state that lives HERE: the lens, the
+   * applied Curate facets, and the popover's own open flag. Lifting three
+   * pieces of state into the host so it can draw the rail would give the
+   * Ideas tab, which has no such bar, a second copy of all of it and two
+   * places where "which lens am I in" is answered.
+   *
+   * A portal moves the DOM and leaves the ownership alone. The rail is a
+   * child of this component in every way that matters -- state, handlers,
+   * re-render -- and simply paints somewhere else.
+   *
+   * Null by default, and `IdeasApp` passes nothing, so the Ideas tab keeps
+   * the bar it has.
+   */
+  railHost?: HTMLElement | null
+  /**
+   * Candidate families beyond the ones the Ideas tab asks for.
+   *
+   * Forwarded to the feed and nothing else: this component does not decide
+   * what a family is, when it fires or what its card says. Absent by default
+   * and `IdeasApp` passes nothing, so the Ideas application's candidate pool
+   * and ranking are exactly what they were. See `AttentionInclude`.
+   */
+  include?: AttentionInclude
+  /**
+   * Anything the host wants ABOVE the cards and inside the scroll area.
+   *
+   * A render prop rather than a node, because the only thing worth putting
+   * there is derived from the ranked entries, which live here. The host gets
+   * the list this feed is actually drawing, in the order it is drawing it, so
+   * a band above the cards cannot state a different order than the cards
+   * below it.
+   *
+   * Absent by default, and `IdeasApp` passes nothing: the Ideas application
+   * renders exactly what it rendered before this prop existed.
+   */
+  lead?: (entries: AttentionEntry[]) => ReactNode
   /** The one next step this candidate can take. See `progressionFor`. */
   onProgress?: (entry: AttentionEntry, progression: Progression) => void
   /** The tile the reader picked. The app owns what happens next. */
@@ -113,9 +181,11 @@ export function IdeasExplore({
   const [curateOpen, setCurateOpen] = useState(false)
   const facetCount = filterCount(facets)
 
-  const feed = useDesktopAttentionFeed(lens, { facets })
+  const feed = useDesktopAttentionFeed(lens, { facets, include })
   const { markIdeasViewed } = usePilotOnboarding()
   const listRef = useRef<HTMLDivElement | null>(null)
+  /** The chosen card's own node, for the scroll effect below. */
+  const chosenTile = useRef<HTMLDivElement | null>(null)
 
   /**
    * What the reader has asked the feed to show.
@@ -233,6 +303,27 @@ export function IdeasExplore({
     if (selectedKey && !entries.some(e => e.key === selectedKey)) onSelectionInvalid?.()
   }, [contextKey, feed.isLoading, entries, selectedKey, onSelectionInvalid])
 
+  /**
+   * Bring the chosen card into view.
+   *
+   * Reported: opening a card left the left-hand pane sitting at the top of the
+   * list, showing a card the reader had not picked. The press happens at full
+   * width, where the card may be the fortieth row; the column then narrows to
+   * a rail and every row above it gets taller, so the one that was under the
+   * cursor is nowhere near the scrollport any more.
+   *
+   * `block: 'nearest'` scrolls the minimum distance, so a card already on
+   * screen does not move at all. Keyed on the KEY rather than the node, so
+   * re-ranking the same selection does not re-scroll the reader.
+   *
+   * `scrollIntoView?.()` because jsdom does not implement it, and a suite
+   * that mounts this feed must not take an error boundary over a scroll.
+   */
+  useEffect(() => {
+    if (!selectedKey) return
+    chosenTile.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [selectedKey])
+
   return (
     /*
      * Toolbar OUTSIDE the scroller, list inside it.
@@ -247,15 +338,59 @@ export function IdeasExplore({
      * The measure is applied to both halves so the toolbar stays aligned with
      * the cards under it.
      */
-    <div className="flex h-full flex-col">
-      {/* `relative z-20` only so the Curate popover paints above the list; the
-          app header is z-30 and above, so nothing is covered that matters. */}
-      <div className={clsx(FEED_MEASURE, 'relative z-20 shrink-0 border-b border-gray-200 bg-white px-6 pt-5 dark:border-gray-700 dark:bg-gray-900')}>
-        {/* Lens rail. Persistent, because it is the primary control. */}
-        <div className="flex items-center gap-1.5 pb-3">
-          {IDEA_LENSES.map(l => (
+    <div
+      /* `gallery-host`: the feed is drawn at full width and in a ~26rem rail
+         beside an open workspace, and only its own width can say which. The
+         container is here rather than on the scroller because the filter bar
+         above the scroller takes the same gutter. */
+      className="gallery-host flex h-full flex-col"
+    >
+      {/*
+        The controls, drawn here or in the host's own bar -- see `railHost`.
+
+        ONE toolbar either way. The alternative was a second copy of this
+        block behind a condition, and two copies is how the chip row and the
+        host's chip row start differing by a divider while both read the same
+        state. `RailSlot` moves the DOM and leaves everything else alone.
+
+        `relative z-20` only so the Curate popover paints above the list; the
+        app header is z-30 and above, so nothing is covered that matters.
+      */}
+      <RailSlot host={railHost}>
+      <div className={clsx(
+        'relative z-20 shrink-0',
+        railHost
+          /* In the host's bar: no measure, no gutter, no rule of its own --
+             the bar already draws all three -- and pushed to the right end of
+             it, which is where a filter belongs beside a mode switch. */
+          ? 'ml-auto flex items-center justify-end'
+          : clsx(FEED_MEASURE, 'rail-pad border-b border-gray-200 bg-white px-6 pt-5 dark:border-gray-700 dark:bg-gray-900'),
+      )}>
+        <div className={clsx(
+          'flex flex-wrap items-center gap-1.5',
+          /* The chips carry the band's bottom padding only when the band is
+             this component's own. In the host's bar the bar sets it. */
+          railHost ? 'justify-end' : 'pb-3',
+        )}>
+          {IDEA_LENSES.map((l, i) => (
+            <Fragment key={l.key}>
+            {/*
+              A hairline where the question changes.
+
+              The rail asks two things and used to ask only the first. The
+              chips before the rule are POST KINDS -- what somebody wrote.
+              The chips after it are FINDINGS -- what the system noticed, and
+              what the desk put up. One flat row gave a reader no way to tell
+              that "Thoughts" and "Case vs price" come from different places.
+
+              Driven off the spec's own `group`, not off an index: a divider
+              hard-coded at position four silently lands on the wrong side of
+              itself the first time a lens is added.
+            */}
+            {i > 0 && IDEA_LENSES[i - 1].group !== l.group && (
+              <span className="mx-1 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden />
+            )}
             <button
-              key={l.key}
               onClick={() => {
                 setLens(l.key)
                 // Leaving Trade Ideas drops its filters with it. They are not
@@ -271,6 +406,7 @@ export function IdeasExplore({
             >
               {l.label}
             </button>
+            </Fragment>
           ))}
 
           {/*
@@ -351,9 +487,13 @@ export function IdeasExplore({
           </div>
         )}
       </div>
+      </RailSlot>
 
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto">
-      <div className={clsx(FEED_MEASURE, 'px-6 pb-5')}>
+      {/* The ground, stated. This scroller declared none and took whichever
+          shell it was mounted in -- the same omission the convergence suite
+          found on three lens roots, on the one surface that was not a lens. */}
+      <div ref={listRef} className={clsx('min-h-0 flex-1 overflow-y-auto', GALLERY_GROUND)}>
+      <div className={clsx(FEED_MEASURE, 'rail-pad px-6 pb-5')}>
         {/* While booting the list is hidden, so the spinner must not depend on
             entries being empty — the pool can be settled while history is not,
             and that window would otherwise show a blank column. */}
@@ -398,18 +538,55 @@ export function IdeasExplore({
           </div>
         )}
 
+        {/* Inside the scroll area and above the cards, so it scrolls away
+            rather than holding permanent height over a feed the reader is
+            working down. Hidden while booting for the same reason the list
+            is: it is drawn from the same entries. */}
+        {!booting && lead?.(entries)}
+
         <div className={clsx('space-y-4 pt-4', booting && 'hidden')}>
           {entries.map(entry => {
             const sym = previewSymbol(entry.card)
             /* Dated closes: the desktop chart reads out the date under the
                cursor, which bare numbers cannot answer. */
-            const preview = previewFor(
+            /* Every object this card supports, finding first. It was
+               `previewFor`, which returns at most one and threw the price
+               series away unread on any card whose finding was a ladder or a
+               set of bars. See `previewsFor`. */
+            const panes = previewsFor(
               entry.family, entry.card, entry.source,
               sym ? history?.get(sym) : undefined,
             )
+            /* The two places below ask only WHETHER there is a right column:
+               the prose layout switches on it and the aside renders on it.
+               Neither needs the descriptor, so neither gets one. */
+            const preview = panes.length > 0
+            /*
+             * ── Which card is drawn in full, and which as a line ──────────
+             *
+             * This list is drawn at two widths: the whole surface, and a
+             * ~26rem rail beside an open workspace. A selection is what opens
+             * that workspace, so `selectedKey` IS the signal that the list is
+             * now a rail.
+             *
+             * It used to collapse the SELECTED card and leave the other forty
+             * in full, which is the wrong way round: the reader is working one
+             * name, and the forty they are not working were pushing it off the
+             * screen. Reported as wanting the selected card expanded and the
+             * rest left as a truncated summary.
+             *
+             * With nothing selected the list is the whole surface and every
+             * card is full, exactly as the Ideas tab has always drawn it.
+             */
+            const chosen = selectedKey === entry.key
+            const summarised = selectedKey != null && !chosen
             return (
             <div
               key={entry.key}
+              /* The one card to bring into view. See the effect that reads it:
+                 opening a name from the fortieth row left the rail sitting at
+                 the top, showing the reader a card they had not picked. */
+              ref={chosen ? chosenTile : undefined}
               // The card contract owns its own internal height on a phone. Here
               // it sits in normal flow at a readable measure, so the feed
               // scrolls as one column rather than as a stack of viewports.
@@ -458,17 +635,28 @@ export function IdeasExplore({
               className={clsx(
                 /* With no Open button, hover and focus are what say the tile is
                    clickable at all. */
-                'feed-tile cursor-pointer overflow-hidden rounded-xl border bg-white shadow-sm transition-all hover:shadow-md hover:border-gray-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:bg-gray-800 dark:hover:border-gray-600',
+                'feed-tile cursor-pointer overflow-hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+                /*
+                 * The shared card, from `lib/ui/surface`.
+                 *
+                 * These values started here and the rest of the product has
+                 * now adopted them, which is the point: the Dashboard draws
+                 * this card beside Explore's and Portfolio's, and the three
+                 * disagreeing about their border and their page is exactly
+                 * what was reported. The edge is a step stronger than the
+                 * `border-gray-200` this card used to carry, because the
+                 * lighter one was reported as too little contrast.
+                 */
+                CARD_SURFACE,
+                CARD_HOVER,
                 // Restrained: a ring, not a fill. The card's own severity rail
                 // already uses colour, and a selected state that competes with
                 // it would make every list look alarming.
-                selectedKey === entry.key
-                  ? 'border-primary-400 ring-1 ring-primary-400 dark:border-primary-500 dark:ring-primary-500'
-                  : 'border-gray-200 dark:border-gray-700',
+                chosen ? CARD_EDGE_SELECTED : CARD_EDGE,
               )}
             >
-              {selectedKey === entry.key ? (
-                <SelectedSummary card={entry.card} />
+              {summarised ? (
+                <CardSummary card={entry.card} />
               ) : (
               <div
                 /* `feed-tile-prose` caps the READING measure when there is no
@@ -516,24 +704,45 @@ export function IdeasExplore({
                  * its actions silently inert.
                  */
                 onAction={() => onSelect?.(entry)}
+                /*
+                 * A commitment verb must not name a navigation. See
+                 * `primaryForFeed`, which is SHARED with the Start here band
+                 * so the footer and the band cannot name one finding two
+                 * different ways. Passing `null` where nothing is substituted
+                 * leaves every other card's footer exactly as it was.
+                 */
+                primaryOverride={primaryForFeed(entry).label === entry.card.actions.primary.label
+                  ? null
+                  : primaryForFeed(entry)}
               />
               {/*
                 The analytical object. Beside the narrative once the TILE is
-                wide enough — see `.feed-tile-cols` — and stacked beneath it
-                otherwise, which is what keeps a 30rem pane from squeezing a
-                chart next to a claim.
+                wide enough — see `.feed-tile-cols` — and NOT DRAWN AT ALL
+                below that, which is a reversal: it used to stack underneath,
+                and in the 640px rail beside an open workspace the stack cost
+                between 117px and 281px a tile. A reader picking their next
+                name needs the claim and the metric; the chart is study
+                material and the tile at full width is where it is studied.
+
+                The rule is a container query rather than a prop, because the
+                tile's own width is the only thing that can answer it and the
+                same tile is drawn at both widths. It stays mounted and
+                hidden, so nothing here changes per width.
 
                 Text-led candidates produce no preview and render nothing here,
                 so they get no empty right column.
               */}
               {preview && (
                 <div className="feed-tile-aside border-t border-gray-100 px-4 py-3 dark:border-gray-800">
-                  <FeedPreview preview={preview} />
+                  <FeedPreviewCarousel panes={panes} />
                 </div>
               )}
               </div>
               )}
-              {selectedKey !== entry.key && (() => {
+              {/* Not under a one-line summary: the progression button is the
+                  card's next step, and a rail of forty rows each carrying one
+                  is a column of buttons rather than a list of findings. */}
+              {!summarised && (() => {
                 /*
                  * One compact progression control, and only where the
                  * destination differs from what the tile already does.
@@ -592,40 +801,43 @@ export function IdeasExplore({
 }
 
 /**
- * The selected tile, collapsed.
+ * A tile the reader has not opened, as one row.
  *
- * ── Why it collapses at all ───────────────────────────────────────────────
+ * ── What this used to be, and why it was turned around ───────────────────
  *
- * Its full workspace is open two inches to the right. Leaving the carousel,
- * the ladder and the action row on the tile would put two independently
- * interactive copies of the same object on screen, which is the thing the
- * tile/workspace division exists to prevent — and the second copy is the one
- * with less room.
+ * It was `SelectedSummary`: the SELECTED tile collapsed to a line while every
+ * other tile kept its full preview. The reasoning recorded here was that the
+ * open item's workspace is two inches to the right, so a second interactive
+ * copy of it on the tile is the duplication the tile/workspace division
+ * exists to prevent, and that a reader must still be able to scan past the
+ * open item to something more interesting.
  *
- * ── What survives ─────────────────────────────────────────────────────────
+ * The first half is still true -- which is why the chosen tile does not draw
+ * its carousel beside its own workspace -- but the second half was answered
+ * at the wrong width. Selecting opens the workspace, which takes this list
+ * down to a ~26rem rail, and in that rail forty full cards pushed the ONE the
+ * reader had chosen off the screen entirely. Reported as: the left pane was
+ * not focused on the tile I opened, and it would be cleaner if the selected
+ * card were expanded and the rest were truncated summaries.
  *
- * Everything needed to remember WHY this row is the one open: the family, the
- * headline, the number the claim turns on, and the provenance line. Nothing
- * that would duplicate the workspace.
+ * So the collapse moved to the tiles the reader is not working, and the
+ * chosen one keeps its full card.
  *
- * ── Only this tile ────────────────────────────────────────────────────────
+ * ── What survives the collapse ───────────────────────────────────────────
  *
- * Every other tile keeps its full preview. A reader must still be able to scan
- * past the open item to something more interesting and switch to it, which is
- * the whole point of a persistent feed; reducing the list to text rows because
- * a workspace happens to be open would defeat it.
+ * Everything needed to decide whether to switch to this row instead: the
+ * family, the headline at two lines, the number the claim turns on, and the
+ * provenance line. Nothing that would need a second click to be read.
  *
- * ── Height ────────────────────────────────────────────────────────────────
+ * ── And with nothing selected ────────────────────────────────────────────
  *
- * `min-h` matches the collapsed card's natural height rather than the full
- * one, and the transition is a swap rather than an animated collapse. A tile
- * shrinking under the cursor is what moves everything below it; a swap changes
- * one row's height once, at the moment of a deliberate click, which is when a
- * reader expects the layout to respond.
+ * Nothing collapses. The list is the whole surface and every card is drawn in
+ * full, which is how the Ideas tab -- no workspace, no rail -- draws it
+ * always.
  */
-function SelectedSummary({ card }: { card: SignalCard }) {
+function CardSummary({ card }: { card: SignalCard }) {
   return (
-    <div className="flex min-h-[5.5rem] items-start gap-3 px-4 py-3">
+    <div className="flex items-start gap-3 px-4 py-2.5">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
           <span>{card.surface}</span>
@@ -636,18 +848,21 @@ function SelectedSummary({ card }: { card: SignalCard }) {
             </>
           )}
         </div>
-        <p className="mt-1 text-sm font-semibold leading-snug text-gray-900 dark:text-white">
+        {/* Two lines at most. A rail of forty rows is a list the reader is
+            scanning for one name, and a four-line headline in it is a card
+            pretending it was not collapsed. */}
+        <p className="mt-1 line-clamp-2 text-[13px] font-semibold leading-snug text-gray-900 dark:text-white">
           {card.headline}
         </p>
         {card.provenance?.reason && (
-          <p className="mt-1 truncate text-[11px] text-gray-500 dark:text-gray-400">
+          <p className="mt-0.5 truncate text-[11px] text-gray-500 dark:text-gray-400">
             {card.provenance.reason}
           </p>
         )}
       </div>
       {card.metric && (
         <div className="shrink-0 text-right">
-          <p className="text-sm font-bold tabular-nums text-gray-900 dark:text-white">
+          <p className="text-[13px] font-bold tabular-nums text-gray-900 dark:text-white">
             {card.metric.value}
           </p>
           {card.metric.label && (
@@ -655,9 +870,6 @@ function SelectedSummary({ card }: { card: SignalCard }) {
           )}
         </div>
       )}
-      <span className="mt-0.5 shrink-0 rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
-        Open
-      </span>
     </div>
   )
 }

@@ -104,6 +104,17 @@ export interface WindowReturn {
   refused: ReturnRefusal | null
   /** Closes actually used, so a caller can draw exactly what it quoted. */
   slice: PricePoint[]
+  /**
+   * The two observations the percentage is measured between.
+   *
+   * The slice already carries them at its ends, but a caller that wants to
+   * STAMP the figure — "measured from the close of 3 Jul to the close of 1
+   * Oct" — should not have to know that, and a caller reading `slice[0]`
+   * when the return was refused would stamp a number that was never
+   * quoted. Null whenever `pct` is null.
+   */
+  from: PricePoint | null
+  to: PricePoint | null
 }
 
 /**
@@ -119,23 +130,94 @@ export function windowReturn(
 ): WindowReturn {
   const days = WINDOW_DAYS[window]
   const s = clean(points)
-  if (s.length < 2) return { pct: null, refused: 'no-series', slice: [] }
+  if (s.length < 2) return { pct: null, refused: 'no-series', slice: [], from: null, to: null }
 
   const lastT = dayOf(s[s.length - 1].date)
   const firstT = dayOf(s[0].date)
   const SLACK = 7 * 86_400_000
   if (lastT - firstT + SLACK < days * 86_400_000) {
-    return { pct: null, refused: 'short-lookback', slice: [] }
+    return { pct: null, refused: 'short-lookback', slice: [], from: null, to: null }
   }
 
   const slice = windowSlice(s, days)
-  if (slice.length < 2) return { pct: null, refused: 'short-lookback', slice: [] }
-  if (hasDiscontinuity(slice)) return { pct: null, refused: 'not-comparable', slice }
+  if (slice.length < 2) return { pct: null, refused: 'short-lookback', slice: [], from: null, to: null }
+  if (hasDiscontinuity(slice)) return { pct: null, refused: 'not-comparable', slice, from: null, to: null }
 
-  const a = slice[0].close
-  const b = slice[slice.length - 1].close
-  if (!a) return { pct: null, refused: 'no-series', slice }
-  return { pct: ((b - a) / a) * 100, refused: null, slice }
+  const a = slice[0]
+  const b = slice[slice.length - 1]
+  if (!a.close) return { pct: null, refused: 'no-series', slice, from: null, to: null }
+  return { pct: ((b.close - a.close) / a.close) * 100, refused: null, slice, from: a, to: b }
+}
+
+export type YtdRefusal = 'no-series' | 'no-baseline' | 'stale-series' | 'not-comparable'
+
+export interface YtdReturn {
+  pct: number | null
+  refused: YtdRefusal | null
+  /** The close measured FROM: the last one before January 1. */
+  baseline: PricePoint | null
+  /** The close measured TO: the newest one held. */
+  latest: PricePoint | null
+  /** The calendar year the figure describes, whether or not there is one. */
+  year: number
+}
+
+/**
+ * Year-to-date price return, or the reason there is none.
+ *
+ * ── Why this cannot reuse `windowReturn` ────────────────────────────────
+ *
+ * Every other window on this module is "N days back from the last close",
+ * and its base is the first observation INSIDE that window. Year-to-date is
+ * a different question with a different base: the move since the market
+ * last closed in the previous year. Those two differ by a whole session,
+ * and in a year that opened with a gap they differ by the entire gap.
+ *
+ * Taking the first close OF the year instead — which is what a naive
+ * `windowSlice(points, daysSinceJan1)` produces — silently answers "the
+ * move since the first session of the year", which is not the number
+ * anybody means by YTD and is not labelled as such either.
+ *
+ * So the baseline is selected explicitly, and when the series does not
+ * reach back across the boundary the answer is a refusal rather than the
+ * closest available number. A YTD computed from a March baseline is not a
+ * worse YTD; it is a different statistic wearing its name.
+ *
+ * The year comes from `now`, never from the data: a cache whose newest
+ * close is from last December must say so rather than report that
+ * December's move as this year's.
+ */
+export function ytdReturn(points: PricePoint[] | null | undefined, now = Date.now()): YtdReturn {
+  const year = new Date(now).getUTCFullYear()
+  const jan1 = Date.UTC(year, 0, 1)
+  const s = clean(points)
+  if (s.length < 2) return { pct: null, refused: 'no-series', baseline: null, latest: null, year }
+
+  const latest = s[s.length - 1]
+  if (dayOf(latest.date) < jan1) {
+    return { pct: null, refused: 'stale-series', baseline: null, latest, year }
+  }
+
+  /* The LAST close before the boundary, which is the one the market set. */
+  let baseline: PricePoint | null = null
+  for (const p of s) {
+    if (dayOf(p.date) < jan1) baseline = p
+    else break
+  }
+  if (!baseline) return { pct: null, refused: 'no-baseline', baseline: null, latest, year }
+
+  const span = s.filter(p => dayOf(p.date) >= dayOf(baseline!.date))
+  if (hasDiscontinuity(span)) {
+    return { pct: null, refused: 'not-comparable', baseline, latest, year }
+  }
+
+  return {
+    pct: ((latest.close - baseline.close) / baseline.close) * 100,
+    refused: null,
+    baseline,
+    latest,
+    year,
+  }
 }
 
 /**

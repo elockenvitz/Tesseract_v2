@@ -8,6 +8,9 @@
       "Bash(npx vite build)"
     ]
   },
+  "env": {
+    "MCP_TIMEOUT": "90000"
+  },
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "supabase"

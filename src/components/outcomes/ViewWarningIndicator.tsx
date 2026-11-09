@@ -8,8 +8,8 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertTriangle, X, ChevronRight, Info, Zap } from 'lucide-react'
-import type { ViewWarningsResult, WarningItem, WarningTile } from '../../hooks/useViewWarnings'
+import { AlertTriangle, X, ChevronRight, Info } from 'lucide-react'
+import type { ViewWarningsResult, WarningTile } from '../../hooks/useViewWarnings'
 
 interface ViewWarningIndicatorProps {
   warnings: ViewWarningsResult
@@ -108,9 +108,12 @@ export function ViewWarningIndicator({ warnings }: ViewWarningIndicatorProps) {
             ? 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200/60'
             : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200/60'
         }`}
-        title={`${warnings.count} item${warnings.count !== 1 ? 's' : ''} need attention`}
+        title={`${warnings.count} view check${warnings.count !== 1 ? 's' : ''} on the research you're viewing`}
       >
-        {hasActions ? <Zap className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+        {/* UX2 P1 closure — NOT the ⚡ attention affordance (that lives once, in
+            the header). This badge flags integrity/consistency of the research
+            figures on screen, so it uses a warning triangle, never the bolt. */}
+        <AlertTriangle className="w-3.5 h-3.5" />
         <span>{warnings.count}</span>
       </button>
 
@@ -124,9 +127,9 @@ export function ViewWarningIndicator({ warnings }: ViewWarningIndicatorProps) {
             {/* Header */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50 dark:border-gray-800 dark:bg-gray-900">
               <div className="flex items-center gap-2">
-                {hasActions ? <Zap className="w-3.5 h-3.5 text-red-600" /> : <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
+                <AlertTriangle className={`w-3.5 h-3.5 ${hasActions ? 'text-red-600' : 'text-amber-600'}`} />
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  Attention
+                  View checks
                 </span>
                 <span className="text-xs text-gray-500 dark:text-gray-400">
                   {actionCount > 0 && `${actionCount} action${actionCount !== 1 ? 's' : ''}`}
@@ -161,7 +164,7 @@ export function ViewWarningIndicator({ warnings }: ViewWarningIndicatorProps) {
                         onClick={() => item.anchorId ? handleNavigate(item.anchorId) : undefined}
                       >
                         {item.severity === 'action' ? (
-                          <Zap className="w-3.5 h-3.5 mt-0.5 text-red-500 shrink-0" />
+                          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-red-500 shrink-0" />
                         ) : item.severity === 'warning' ? (
                           <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-amber-500 shrink-0" />
                         ) : (

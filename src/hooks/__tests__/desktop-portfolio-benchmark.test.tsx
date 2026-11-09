@@ -137,13 +137,16 @@ describe('the strip', () => {
   it('says there is no benchmark, and prints no active share or counts', () => {
     render(<ActiveWeights comparison={{ state: 'none', rows: [] }} onOpen={() => {}} />)
     expect(screen.getByTestId('benchmark-absent')).toHaveTextContent('No benchmark on file')
-    expect(document.body.textContent).not.toMatch(/active share|overweight|underweight|%/)
+    /* Case-insensitive since these became figure keys ("Active share",
+       "Overweight") rather than words inside a caption. The claim is
+       unchanged: a book with no benchmark file computes none of them. */
+    expect(document.body.textContent).not.toMatch(/active share|overweight|underweight|%/i)
   })
 
   it('says the benchmark is unavailable when the read failed', () => {
     render(<ActiveWeights comparison={{ state: 'unavailable', rows: [] }} onOpen={() => {}} />)
     expect(screen.getByTestId('benchmark-absent')).toHaveTextContent('Benchmark unavailable')
-    expect(document.body.textContent).not.toMatch(/active share|%/)
+    expect(document.body.textContent).not.toMatch(/active share|%/i)
   })
 
   it('draws nothing while loading', () => {
@@ -153,7 +156,7 @@ describe('the strip', () => {
 
   it('draws the comparison against a real file', () => {
     render(<ActiveWeights comparison={{ state: 'ready', rows: rows(6) }} onOpen={() => {}} />)
-    expect(screen.getByText(/active share/)).toBeTruthy()
+    expect(screen.getByText(/active share/i)).toBeTruthy()
     expect(screen.queryByTestId('benchmark-absent')).toBeNull()
   })
 })

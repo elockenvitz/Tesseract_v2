@@ -8,7 +8,20 @@
 import { describe, it, expect } from 'vitest'
 import type { DecisionItem, DecisionSeverity } from '../../engine/decisionEngine/types'
 import { adaptDecisionItem } from './adapt'
-import { compareTodayItems, TODAY_LIMIT } from './tiers'
+import { compareTodayItems } from './tiers'
+
+/*
+ * These cases pin their own cut rather than reading `LIMIT`.
+ *
+ * They are about the ALGORITHM -- what diversify does with a five-item pool
+ * and four slots -- and every expectation is sized to its fixture. Reading
+ * the live constant made them silently stop testing anything the moment the
+ * product's count changed: at a limit of eight, `slice(0, 8)` of five items
+ * is just the five items, and "exactly three stale theses" became "all four
+ * of them" with nothing to swap. The product's own count is covered where it
+ * belongs, in the selection tests.
+ */
+const LIMIT = 4
 import { diversify } from './diversity'
 import { applyEnrichment, priceWindowSince, windowLabel, type TodayEnrichment } from './enrich'
 import type { TodayItem } from './types'
@@ -36,7 +49,7 @@ describe('diversity', () => {
         chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
       }),
     ])
-    const out = diversify(items, TODAY_LIMIT)
+    const out = diversify(items, LIMIT)
     expect(out[0].id).toBe(items[0].id)
   })
 
@@ -51,7 +64,7 @@ describe('diversity', () => {
         chips: [{ label: 'Ticker', value: 'CLOV' }, { label: 'Open', value: '62d' }],
       }),
     ])
-    const keys = diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT)
+    const keys = diversify(items, LIMIT).slice(0, LIMIT)
       .map(i => i.source.titleKey)
     // One alternative exists, so one slot changes hands. The cap cannot force
     // a second swap out of a pool that has nothing else to swap in -- 3 + 1 is
@@ -73,7 +86,7 @@ describe('diversity', () => {
         chips: [{ label: 'Ticker', value: 'NVDA' }, { label: 'From', value: 'B' }, { label: 'To', value: 'D' }],
       }),
     ])
-    const keys = diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT).map(i => i.source.titleKey)
+    const keys = diversify(items, LIMIT).slice(0, LIMIT).map(i => i.source.titleKey)
     expect(keys.filter(k => k === 'THESIS_STALE')).toHaveLength(2)
     expect(new Set(keys).size).toBe(3)
   })
@@ -93,9 +106,45 @@ describe('diversity', () => {
         chips: [{ label: 'Ticker', value: 'NVDA' }, { label: 'From', value: 'B' }, { label: 'To', value: 'D' }],
       }),
     ])
-    const surfaced = diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT)
+    const surfaced = diversify(items, LIMIT).slice(0, LIMIT)
     const objects = surfaced.map(i => i.source.context.assetId)
     expect(new Set(objects).size).toBe(objects.length)
+  })
+
+  it('puts an unheld name ahead of a repeat even when nothing comparable qualifies', () => {
+    /*
+     * The failure raising the surface to eight tiles exposed: NKE took #5 and
+     * #6 -- same ticker, same fund, same sentence -- because the desk has two
+     * open ideas on it and the only other candidates were a tier below.
+     *
+     * Tier and score decide which of several NAMES leads. They have no
+     * business deciding whether one name appears twice, so the alternative
+     * here is deliberately far below the repeat on both and must still win.
+     */
+    const nke = (n: string) => make(n, 'EXECUTION_NOT_CONFIRMED', {
+      severity: 'red',
+      context: { assetId: 'a-nke', assetTicker: 'NKE', tradeIdeaId: `t${n}` },
+      chips: [{ label: 'Ticker', value: 'NKE' }, { label: 'Open', value: '228d' }],
+    })
+    // Tier 0 against tier 4, four tiers apart: rule 2 cannot reach it, so the
+    // only thing that can put WMT ahead of the second NKE is the object cap.
+    const items = [
+      nke('n1'), nke('n2'),
+      make('wmt', 'HIGH_EV_NO_IDEA', { severity: 'yellow' }),
+    ]
+    const surfaced = diversify(items, LIMIT).slice(0, LIMIT)
+    expect(surfaced.map(i => i.source.context.assetId)).toEqual(['a-nke', 'a-wmt', 'a-nke'])
+  })
+
+  it('shows the repeat when every remaining candidate is a name already shown', () => {
+    // Saturation is the honest answer when that is all there is. The second
+    // NKE still reaches the surface -- it is simply last.
+    const nke = (n: string) => make(n, 'IDEA_NOT_SIMULATED', {
+      context: { assetId: 'a-nke', assetTicker: 'NKE', tradeIdeaId: `t${n}` },
+      chips: [{ label: 'Ticker', value: 'NKE' }, { label: 'Open', value: '228d' }],
+    })
+    const items = [nke('n1'), nke('n2'), nke('n3')]
+    expect(diversify(items, LIMIT)).toHaveLength(3)
   })
 
   it('still surfaces a repeated object when nothing else qualifies', () => {
@@ -106,7 +155,7 @@ describe('diversity', () => {
     })
     const items = ranked([coin('c1'), coin('c2'), coin('c3')])
     // Nothing else exists, so the honest answer is to show them.
-    expect(diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT)).toHaveLength(3)
+    expect(diversify(items, LIMIT).slice(0, LIMIT)).toHaveLength(3)
   })
 
   it('does NOT promote a trivial workflow item over material findings', () => {
@@ -118,7 +167,7 @@ describe('diversity', () => {
       make('c', 'THESIS_STALE'), make('d', 'THESIS_STALE'),
       make('chore', 'OVERDUE_DELIVERABLE'),
     ])
-    const keys = diversify(items, TODAY_LIMIT).slice(0, TODAY_LIMIT).map(i => i.source.titleKey)
+    const keys = diversify(items, LIMIT).slice(0, LIMIT).map(i => i.source.titleKey)
     expect(keys.every(k => k === 'THESIS_STALE')).toBe(true)
   })
 
@@ -128,25 +177,25 @@ describe('diversity', () => {
       make('c', 'PROPOSAL_AWAITING_DECISION', { context: { assetId: 'c', tradeIdeaId: 't' } }),
       make('d', 'RATING_NO_FOLLOWUP'),
     ])
-    expect(diversify(items, TODAY_LIMIT).map(i => i.id)).toEqual(items.map(i => i.id))
+    expect(diversify(items, LIMIT).map(i => i.id)).toEqual(items.map(i => i.id))
   })
 
   it('is a permutation — nothing is added or lost', () => {
     const items = ranked(['a', 'b', 'c', 'd', 'e', 'f'].map(i => make(i, 'THESIS_STALE')))
-    const out = diversify(items, TODAY_LIMIT)
+    const out = diversify(items, LIMIT)
     expect(out).toHaveLength(items.length)
     expect(out.map(i => i.id).sort()).toEqual(items.map(i => i.id).sort())
   })
 
   it('keeps the unsurfaced tail in ranked order for Also watching', () => {
     const items = ranked(['a', 'b', 'c', 'd', 'e', 'f'].map(i => make(i, 'THESIS_STALE')))
-    const out = diversify(items, TODAY_LIMIT)
-    expect(out.slice(TODAY_LIMIT)).toEqual(items.slice(TODAY_LIMIT))
+    const out = diversify(items, LIMIT)
+    expect(out.slice(LIMIT)).toEqual(items.slice(LIMIT))
   })
 
   it('does nothing to a set too small to saturate', () => {
     const items = ranked([make('a', 'THESIS_STALE'), make('b', 'THESIS_STALE')])
-    expect(diversify(items, TODAY_LIMIT)).toEqual(items)
+    expect(diversify(items, LIMIT)).toEqual(items)
   })
 })
 

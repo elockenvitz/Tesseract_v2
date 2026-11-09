@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import {
   attentionToExplore, ideasToExplore, lensesToExplore, postTitle, shortNextAction,
@@ -143,6 +145,79 @@ describe('workflow tiles', () => {
     expect(item.metric).toEqual({ value: '3d', label: 'until due', direction: 'neutral' })
   })
 
+  /**
+   * ── The ticker, which was read and never written ────────────────────────
+   *
+   * This adapter has always done `a.context?.symbol`. `AttentionItem['context']`
+   * did not declare a `symbol`, and none of the collectors in `useAttention`
+   * wrote one -- so the read resolved to `undefined` on every row and every
+   * Workflow tile in Explore carried no ticker, on desktop and on the phone
+   * alike. A tile about a name that does not say which name, and nothing
+   * anywhere threw.
+   *
+   * The collectors that joined `assets` now write the symbol they had already
+   * read for their own title. These two cases are the pair: the ticker travels
+   * when the row has one, and nothing is invented when it does not.
+   */
+  it('carries the ticker the row was raised about', () => {
+    const [item] = attentionToExplore(
+      [{ ...overdue, context: { asset_id: 'a-1', symbol: 'AMZN' } }],
+      NOW,
+    )
+    expect(item.symbol).toBe('AMZN')
+    expect(item.assetId).toBe('a-1')
+    // And it reaches the destination too, which is what opens the right name.
+    expect(item.destination).toMatchObject({ action: 'open_asset', symbol: 'AMZN' })
+  })
+
+  /**
+   * The other half, and the half that was actually broken.
+   *
+   * The adapter was already correct: it read `context.symbol` and passed it
+   * through. The failure was upstream, in a producer that never wrote one, and
+   * no adapter test could see that -- which is exactly how a field stays
+   * `undefined` in production while its unit tests pass.
+   *
+   * Source-pinned because the collectors are async Supabase reads; what is
+   * asserted is that every collector writing an `asset_id` into the context
+   * also writes a symbol beside it.
+   */
+  it('is written by every collector that raises a row about a name', () => {
+    const file = readFileSync(
+      join(process.cwd(), 'src/hooks/useAttention.ts'), 'utf8',
+    )
+    const withAsset = file.match(/context: \{[^}]*asset_id:[^}]*\}/g) ?? []
+    expect(withAsset.length).toBeGreaterThan(4)
+    for (const site of withAsset) {
+      // `asset_id: null` is a row that is deliberately not about a name.
+      if (/asset_id: null/.test(site)) continue
+      expect(site, site).toMatch(/symbol:/)
+    }
+  })
+
+  it('invents no ticker for a row that is not about a name', () => {
+    const [item] = attentionToExplore(
+      [{ ...overdue, context: { project_id: 'p-1' } }],
+      NOW,
+    )
+    expect(item.symbol).toBeNull()
+    expect(item.assetId).toBeNull()
+    /*
+     * This asserted `{ kind: 'filter' }`, which was the adapter's answer for
+     * EVERY row with no asset id, and the superseding reason is that the
+     * answer was wrong: a non-aggregate filter resolves to `focus`, focus
+     * finds no card, and the tile went inert -- 10 of the 13 dead tiles
+     * measured on the live field. A row carrying `project_id` names a surface,
+     * so it now opens the project.
+     *
+     * The rule this case is actually here for is above and unchanged: no
+     * ticker and no asset id are invented for a row that is not about a name.
+     * See `attention-destination.test.ts` for the full ladder, including the
+     * rows that still and deliberately open nothing.
+     */
+    expect(item.destination).toMatchObject({ kind: 'tab', target: { type: 'project' } })
+  })
+
   it('says nothing about a deadline the row does not have', () => {
     const [item] = attentionToExplore([{ ...overdue, due_at: null }], NOW)
     expect(item.metric).toBeUndefined()
@@ -199,6 +274,65 @@ describe('crowding tiles', () => {
   it('keeps the count as the metric, because that is the finding', () => {
     const [item] = lensesToExplore({ crowded: [crowded] })
     expect(item.metric).toEqual({ value: '4', label: 'portfolios', direction: 'neutral' })
+  })
+
+  /**
+   * THE case for the spread: the adapter is the only place the producer rows
+   * can be lost, and losing them is what made a card about four books draw
+   * one. Asserted against `weightsByPortfolio` itself rather than a literal,
+   * so a row the adapter invented would not satisfy it either.
+   */
+  it('hands the per-book spread to the picture, not just the largest', () => {
+    const [item] = lensesToExplore({ crowded: [crowded] })
+    expect(item.visual?.books).toEqual(
+      crowded.weightsByPortfolio.map(w => ({ name: w.name, weightPct: w.weightPct })),
+    )
+
+    const visual = exploreVisualFor(item)
+    expect(visual.kind === 'exposure' && visual.books?.map(b => b.name))
+      .toEqual(['Vision Fund', 'Core Equity'])
+  })
+
+  /** A book row with no usable weight is dropped at the source, not drawn. */
+  it('drops a book whose weight is not a number', () => {
+    const [item] = lensesToExplore({
+      crowded: [{
+        ...crowded,
+        weightsByPortfolio: [
+          ...crowded.weightsByPortfolio,
+          { name: 'Broken', weightPct: null as unknown as number, valueUsd: 1 },
+        ],
+      }],
+    })
+    expect(item.visual?.books?.map(b => b.name)).toEqual(['Vision Fund', 'Core Equity'])
+  })
+})
+
+describe('a post says which surface its id would open', () => {
+  /**
+   * THE case for `postKind`, and the one the adapter can silently break.
+   *
+   * `exploreOpen` decides from this field alone whether a preview outside the
+   * attention pool is openable. An adapter that stopped stamping it would send
+   * every such preview back to opening nothing, with no test failing anywhere
+   * near `exploreOpen` -- so the assertion lives here, at the source.
+   */
+  it.each([
+    [{ type: 'trade_idea' }, 'trade_idea'],
+    [{ type: 'trade' }, 'trade_idea'],
+    [{ type: 'quick_thought' }, 'thought'],
+    [{ type: 'quick_thought', idea_type: 'prompt' }, 'prompt'],
+    [{ type: 'quick_thought', tags: ['assignee:u1'] }, 'prompt'],
+    [{ type: 'note' }, 'thought'],
+  ] as const)('stamps %o as %s', (row, kind) => {
+    const [item] = ideasToExplore([{ id: 'p1', asset: { id: 'a1', symbol: 'NVDA' }, ...row }])
+    expect(item.postKind).toBe(kind)
+  })
+
+  /** A row of no known post type claims nothing rather than guessing. */
+  it('leaves the kind null for a row it does not recognise', () => {
+    const [item] = ideasToExplore([{ id: 'p1', type: 'something_else', asset: { id: 'a1' } }])
+    expect(item.postKind).toBeNull()
   })
 })
 

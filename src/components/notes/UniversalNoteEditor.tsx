@@ -49,6 +49,12 @@ export interface UniversalNoteEditorProps {
   // Optional callbacks
   onClose?: () => void
 
+  // Single-artifact mode: render exactly one note (driven by selectedNoteId)
+  // with no list sidebar, no note navigation, and no create-on-mount. Used to
+  // host one research artifact inside a contextual drawer. Default false keeps
+  // every existing consumer (the full Notes application) unchanged.
+  singleArtifact?: boolean
+
   // Feature flags
   features?: {
     advancedAI?: boolean
@@ -118,6 +124,7 @@ export function UniversalNoteEditor({
   selectedNoteId,
   onNoteSelect,
   onClose,
+  singleArtifact = false,
   features: customFeatures
 }: UniversalNoteEditorProps) {
 
@@ -732,13 +739,15 @@ export function UniversalNoteEditor({
     }
   }, [selectedNoteId, isLoading, notes])
 
-  // Auto-create a note when editor is opened without a selected note AND no notes exist
+  // Auto-create a note when editor is opened without a selected note AND no notes exist.
+  // Suppressed in single-artifact mode: the drawer always opens on an explicit
+  // note id, so this surface must never create a note just by being mounted.
   useEffect(() => {
-    if (!selectedNoteId && notes?.length === 0 && !createPendingRef.current && !isLoading && !hasAutoCreatedRef.current && user) {
+    if (!singleArtifact && !selectedNoteId && notes?.length === 0 && !createPendingRef.current && !isLoading && !hasAutoCreatedRef.current && user) {
       hasAutoCreatedRef.current = true
       createNoteMutateRef.current()
     }
-  }, [selectedNoteId, notes?.length, isLoading, user])
+  }, [singleArtifact, selectedNoteId, notes?.length, isLoading, user])
 
   // Reset auto-created flag when a note is selected
   useEffect(() => {
@@ -1740,7 +1749,7 @@ export function UniversalNoteEditor({
           not a narrow editor, it is no editor. On a phone it becomes a
           full-screen overlay that is absent from the layout when closed, and
           the header carries the way back in. */}
-      {(!isMobileViewport || mobileListOpen) && <div className={clsx(
+      {!singleArtifact && (!isMobileViewport || mobileListOpen) && <div className={clsx(
         'bg-gray-50/50 border-r border-gray-200 flex flex-col transition-all duration-300 ease-in-out dark:border-gray-700',
         isMobileViewport
           ? 'fixed inset-0 z-[80] w-full border-r-0 bg-white dark:bg-gray-800 pt-safe pb-safe'
@@ -2089,14 +2098,15 @@ export function UniversalNoteEditor({
               {isMobileViewport ? (
                 <div className="flex items-center gap-1">
                   {/* The list is an overlay on a phone, so this is the only
-                      route back to it. */}
-                  <button
+                      route back to it. Hidden in single-artifact mode, which
+                      has no list to return to. */}
+                  {!singleArtifact && <button
                     onClick={() => setMobileListOpen(true)}
                     aria-label="All notes"
                     className="shrink-0 h-9 w-9 -ml-1 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-400 active:bg-gray-100 dark:active:bg-gray-700"
                   >
                     <Menu className="h-5 w-5" />
-                  </button>
+                  </button>}
 
                   <div className="flex-1 min-w-0">
                     {isTitleEditing ? (

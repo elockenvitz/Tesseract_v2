@@ -13,11 +13,18 @@
 
 import { useState } from 'react'
 import { clsx } from 'clsx'
+import {
+  CARD_SURFACE, CARD_EDGE, CARD_EDGE_CRITICAL, CARD_HOVER, CARD_HOVER_CRITICAL,
+} from '../../lib/ui/surface'
 import { ArrowRight, MoreHorizontal } from 'lucide-react'
+import { VisualPager } from '../desktop/VisualPager'
 import { askAI, canDiscuss, discuss } from '../../lib/engagement'
-import { supportsSharedDefer, SNOOZE_PRESETS } from '../../lib/attention-state'
+import { SNOOZE_PRESETS } from '../../lib/attention-state'
 import { TodayVisual } from './TodayVisual'
 
+/* The keys enrichment actually draws a window for. Imported rather than
+   restated so the room a tile reserves and the picture it later gets cannot
+   disagree about which findings have one. */
 import type { TodayItem } from '../../lib/today'
 import { withIntent } from '../../lib/today/engagement-intent'
 import { CreateMenu } from '../dashboard/CreateMenu'
@@ -49,6 +56,62 @@ const TONE_BY_KEY: Record<string, SemanticTone> = {
   IDEA_NOT_SIMULATED: 'info',
   OVERDUE_DELIVERABLE: 'review',
   HIGH_EV_NO_IDEA: 'info',
+}
+
+/**
+ * A secondary affordance: present, and quiet until the reader approaches.
+ *
+ * Opacity rather than `display`, and inside the primary's row rather than a
+ * row of its own, so revealing it changes NO geometry -- a field of four
+ * tiles must not shuffle as the pointer crosses it.
+ *
+ * `:focus-visible`, not `:focus-within`, is the keyboard path.
+ *
+ * ── The bug this fixes ───────────────────────────────────────────────────
+ *
+ * `:focus-within` matches a button focused by a MOUSE CLICK, and a clicked
+ * button keeps focus until something else takes it. So clicking anything
+ * inside a tile -- a pager tab, Ask AI, the overflow trigger -- pinned that
+ * tile's action row open, and it stayed open with the pointer on the far
+ * side of the page. Reported as "the buttons on hover are staying showing",
+ * and the "sometimes" was exactly this: only after a click.
+ *
+ * `group-has-[:focus-visible]` reveals the row for a reader who TABBED in,
+ * which is who the keyboard path is for, and ignores click focus. The one
+ * case that still needs the row up without hover or keyboard focus is an
+ * open overflow menu, and the tile already has state for that, so it is
+ * stated explicitly rather than inferred from where focus happens to be.
+ *
+ * Never `pointer-events-none`, so a reader who knows where a control lives
+ * can still hit it blind.
+ */
+const QUIET_REVEAL =
+  'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100'
+
+/**
+ * The quiet affordances' own shape, so the three of them cannot drift.
+ *
+ * No reveal classes here: the whole row fades as one overlay, and fading each
+ * control inside a fading parent multiplies two opacities for no gain.
+ */
+const QUIET = 'rounded-md px-2.5 py-2 text-[12px]'
+
+/**
+ * What each panel is called on the pager.
+ *
+ * One word, and the reader's word rather than the engine's: the archetype
+ * names are internal ("review-window", "expected-return") and the captions
+ * are whole sentences. The tab only has to say which question the next panel
+ * answers, because the caption inside the panel then says it in full.
+ */
+const PANEL_LABEL: Record<string, string> = {
+  'review-window': 'Price',
+  scenario: 'Cases',
+  aging: 'Age',
+  transition: 'Change',
+  'expected-return': 'Upside',
+  exposure: 'Weight',
+  metrics: '—',
 }
 
 export function toneFor(item: TodayItem): SemanticTone {
@@ -107,7 +170,6 @@ export function TodayTile({
   item, rank, featured, wide, onPrimary, onDismiss, onSnooze,
 }: TodayTileProps) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const sharedDefer = item.target ? supportsSharedDefer(item.target) : false
 
   /**
    * How this tile is being presented — not what it is about.
@@ -127,15 +189,37 @@ export function TodayTile({
    * composed, so a featured item with nothing to draw does not reserve half
    * its width for an empty column.
    */
-  const hasVisual = item.visual.archetype !== 'metrics'
+  /*
+   * EVERY picture this finding can draw, and which one is showing.
+   *
+   * `item.visual` is still the finding's own choice and still leads, so the
+   * default card is byte-for-byte what it was. What changes is that the
+   * alternatives enrichment built are now reachable: a tile about an idea
+   * nobody has sized led with its open-for bar and offered no way to ask what
+   * the price had done, even though the history was already in hand.
+   *
+   * The strip is only drawn when there is more than one panel -- it is never a
+   * single dead tab -- and the index is clamped rather than reset, so a panel
+   * list that shortens between renders cannot blank the slot.
+   */
+  const panels = (item.visuals?.length ? item.visuals : [item.visual])
+    .filter(v => v.archetype !== 'metrics')
+  const [panelIndex, setPanelIndex] = useState(0)
+  const active = Math.min(panelIndex, Math.max(0, panels.length - 1))
+  const panel = panels[active] ?? item.visual
+  /* Wrapping arrows moved into `VisualPager` with the rest of the control, so
+     Today and the Ideas field cannot disagree about what paging does. */
+
+  const hasVisual = panels.length > 0
+
   /**
    * Where this card's visual leads.
    *
-   * Derived from what it actually draws. A scenario band is the desk's own
-   * framework; everything else the Today visuals draw is a price path or a
-   * quantity measured against one, so it leads to price work.
+   * Derived from what it actually draws — the panel ON SCREEN, not the
+   * finding's default, so paging to the price path makes the portal open the
+   * chart rather than the cases.
    */
-  const visualIntent: FocusIntent = item.visual.archetype === 'scenario' ? 'framework' : 'price'
+  const visualIntent: FocusIntent = panel.archetype === 'scenario' ? 'framework' : 'price'
 
   /*
    * What Ask AI and Discuss are about, from what the reader last reached for.
@@ -159,6 +243,9 @@ export function TodayTile({
    * the measure it is drawn into, which is the rule the Ideas field already
    * uses for the same reason.
    */
+  /* The reserved room takes the same column the picture will, or the tile
+     re-flows from one column to two when it arrives -- which is the larger
+     half of the shift this reservation exists to stop. */
   const split = !!(featured || wide) && hasVisual
 
   /*
@@ -213,15 +300,26 @@ export function TodayTile({
        */
       tabIndex={-1}
       className={clsx(
-        // The Ideas card: hairline, small radius, no shadow. A drop shadow
-        // under every tile makes a feed read as a stack of floating panels
-        // rather than one instrument, and a large radius reads friendly where
-        // this is meant to read precise.
-        'relative flex h-full min-w-0 flex-col overflow-hidden rounded-[3px] border bg-white',
-        'transition-colors duration-100 dark:bg-[#141a25]',
-        toneFor(item) === 'critical'
-          ? 'border-rose-200/80 dark:border-rose-900/40'
-          : 'border-gray-200 dark:border-white/[0.08]',
+        // The one card, from `lib/ui/surface`. It used to be a hairline with
+        // a small radius and no shadow, on a grey page that supplied the
+        // separation; the page is white now, so the card's own edge carries
+        // it. The reversal and its reasoning are recorded in that file.
+        /* `group`, so the quiet affordances below can wait for the pointer.
+           They are addressed as `group-hover`/`group-has-[:focus-visible]` rather
+           than with state, which keeps them out of the render path -- four
+           tiles re-rendering on mouseover is a worse surface than a static
+           one. */
+        /* NOT `overflow-hidden`. The overflow menu is a 288px panel opened
+           from inside this box, and clipping it to the card cut the dropdown
+           off -- the snooze presets were unreachable on every tile. The
+           analysis slot does its own clipping, so nothing else needed it. */
+        /* The edge is a real line, not a suggestion of one: on a white page
+           it is the only separation there is. Critical keeps its rose edge
+           and the same weight. */
+        'group relative flex h-full min-w-0 flex-col',
+        CARD_SURFACE,
+        toneFor(item) === 'critical' ? CARD_EDGE_CRITICAL : CARD_EDGE,
+        toneFor(item) === 'critical' ? CARD_HOVER_CRITICAL : CARD_HOVER,
       )}
     >
       {/*
@@ -325,16 +423,53 @@ export function TodayTile({
       <div
         data-body={split ? 'split' : wide || featured ? 'capped' : 'single'}
         className={clsx(
-          'flex-1 px-3.5 pt-1.5',
-          split
-            ? 'grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]'
-            : 'flex flex-col gap-2',
+          // `pb-3`: the action overlay is out of flow, so this is the only
+          // thing keeping it off the last line of content on a tile with no
+          // slack. It is margin, not a reserved row -- a tile with room to
+          // spare spends it on the content, not on a band of empty chrome.
+          'flex-1 px-3.5 pb-3 pt-1.5',
+          split && 'grid grid-cols-1 gap-4',
+          !split && 'flex flex-col gap-2',
+          /*
+            The lead gives the chart the wider half, the rest keep the text
+            wider. On a 1233px lead, 1fr/0.9fr put ~650px under a 115-character
+            claim -- one short line across a very long measure, which is both
+            a bad line length and the reason the text column could not fill
+            its own height. Flipping the ratio sets the claim at a readable
+            measure (it wraps, and the column grows into the slack) and hands
+            the ~70px saved to the chart, which is where it does the most good.
+          */
+          split && (featured
+            ? 'lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)]'
+            : 'lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]'),
           // No visual, but a wide column: stop at a readable measure instead of
           // setting a claim 150 characters to the line.
           !split && (wide || featured) && 'lg:max-w-[86ch]',
         )}
       >
-        <div className={clsx('flex min-w-0 flex-col', split ? 'gap-2.5' : 'gap-2')}>
+        {/*
+          The prose column fills its box instead of ending halfway up it.
+
+          Measured at 1920x889: the lead tile is 326px, its chart column runs
+          to 288px and its claim-and-figures column stopped at 175px -- 151px
+          of nothing under the most important finding on the page. The column
+          is stretched to the row either way; the only question is whether the
+          slack sits in one hole at the bottom or as air between two things
+          that belong apart.
+
+          So the claim holds the top and the figures drop to the foot of the
+          column, landing near the chart's own baseline. `pb-11` is the band
+          the action row fades into, kept clear so approaching the tile never
+          covers the figures -- the same reason the row stops short of the
+          chart column.
+        */}
+        <div className={clsx(
+          'flex min-w-0 flex-col',
+          split ? 'gap-2.5' : 'gap-2',
+          // No bottom reservation any more: the action row moved to the
+          // eyebrow, so the foot of this column is the column's own again.
+          split && 'justify-between',
+        )}>
           {/*
             The claim is a portal to the claim, not to the object generally.
 
@@ -353,7 +488,12 @@ export function TodayTile({
               'rounded-sm text-left leading-snug text-gray-600 decoration-gray-400 underline-offset-2',
               'hover:text-gray-900 hover:underline focus-visible:outline focus-visible:outline-2',
               'focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:text-gray-400 dark:hover:text-gray-100',
-              featured ? 'text-[13px]' : 'text-[12px]',
+              // The lead is set at the lead's weight. It had the same 13px
+              // sentence as a quarter-width tile and 140px of white under it:
+              // the most important finding on the page, typeset as the least.
+              // 17px over a ~460px measure sets it at three lines, which is
+              // both the right line length and ~40px of the hole it sat in.
+              featured ? 'text-[17px] leading-relaxed' : 'text-[12px]',
             )}
           >
             {item.claim}
@@ -376,14 +516,33 @@ export function TodayTile({
               floating in a wide box.
             */
             <div className={clsx(
-              'flex flex-wrap items-baseline gap-x-8 gap-y-3',
               !split && item.metrics.length <= 2 && 'lg:max-w-[520px]',
+              /*
+                On the lead, the figures are a BLOCK, not a strip.
+
+                Measured at 1920x889: the lead's text column ran 85px to 363px
+                and held 81px of content -- a 41px claim at the top, a 40px
+                row of figures at the foot, and 197px of nothing between them.
+                `justify-between` was dividing emptiness, not laying anything
+                out, because the tile's height is set by the chart beside it
+                and the text had no way to reach it.
+
+                Four figures in two rows at the lead's own weight close most
+                of that with the item's real content. Nothing is invented: it
+                is the same four numbers, set the way the lead's claim is
+                already set -- the biggest tile on the page should not typeset
+                its evidence at the size a quarter-width tile uses.
+              */
+              featured
+                ? 'grid grid-cols-2 gap-x-8 gap-y-7'
+                : 'flex flex-wrap items-baseline gap-x-8 gap-y-3',
             )}>
               {item.metrics.map(m => (
                 <div key={m.label} className="min-w-0">
                   <span
                     className={clsx(
-                      'block truncate font-mono text-[17px] font-semibold leading-none tabular-nums tracking-[-0.01em]',
+                      'block truncate font-mono font-semibold leading-none tabular-nums tracking-[-0.01em]',
+                      featured ? 'text-[26px]' : 'text-[17px]',
                       m.tone === 'down' && 'text-rose-600 dark:text-rose-400',
                       m.tone === 'up' && 'text-emerald-600 dark:text-emerald-400',
                       m.tone === 'warn' && 'text-amber-700 dark:text-amber-400',
@@ -413,30 +572,161 @@ export function TodayTile({
             asks to go there.
           */
           <div
-            className="min-w-0"
+            /*
+              Anchored to the foot of the tile, not floated in the middle.
+
+              `justify-center` centred the chart and its portal row inside
+              whatever height the tile happened to take, which is set by the
+              taller column, not by this one. Measured at 1920: 85-160px of
+              dead space above the chart and 13-41px below it, with "SEE THE
+              FULL CHART" stranded short of the edge on every tile and at a
+              different distance on each.
+
+              `justify-end` puts the portal on the bottom edge and collects
+              the slack in one place, above the chart, where the claim and the
+              figures can use it — instead of splitting it into two gaps that
+              serve nothing.
+            */
+            className="mt-auto flex min-w-0 flex-col justify-end"
             data-no-portal
             onPointerEnter={() => setEngageIntent(visualIntent)}
           >
-            <TodayVisual visual={item.visual} compact={!featured} />
-            <button
-              type="button"
-              data-testid="visual-portal"
-              onClick={e => { e.stopPropagation(); openObject(e.currentTarget, visualIntent) }}
-              className="mt-1 rounded-sm text-[10px] font-semibold uppercase tracking-widest text-gray-400 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:hover:text-blue-400"
-            >
-              {visualIntent === 'framework' ? 'Open framework' : 'Open price history'}
-            </button>
+            <TodayVisual visual={panel} compact={!featured} />
+            {/*
+              The pager and the portal share one row, so paging costs no
+              height inside the fixed visual slot -- the slot is what holds
+              Today at zero layout shift, and a strip above the chart would
+              have eaten into the plot on every tile to serve the tiles that
+              have a second panel.
+            */}
+            <div className="mt-1 flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="visual-portal"
+                onClick={e => { e.stopPropagation(); openObject(e.currentTarget, visualIntent) }}
+                className="rounded-sm text-[10px] font-semibold uppercase tracking-widest text-gray-400 hover:text-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 dark:hover:text-blue-400"
+              >
+                {/*
+                  It names the OBJECT, not the archive.
+
+                  "Open price history" sounded like a log of past prices -- a
+                  record you look things up in -- when what it opens is this
+                  name's research page with the full chart on it. The framework
+                  half had the same fault at a lower volume: "framework" is the
+                  engine's word for the desk's own bear/base/bull cases.
+                */}
+                {visualIntent === 'framework' ? 'See the price cases' : 'See the full chart'}
+              </button>
+              {panels.length > 1 && (
+                /*
+                  A CONTROL, not a caption.
+
+                  The first version of this was three words in 10px letter-
+                  spaced uppercase, the same type the captions and axis
+                  labels use. It worked, and it was reported as "no carousels
+                  still" -- because on a surface where every small uppercase
+                  string is a label, one more small uppercase string is a
+                  label. Nothing about it said "press me".
+
+                  A segmented control says it: a filled track, a raised white
+                  thumb on the selection, sentence case at a readable size,
+                  and arrows either side so the gesture is obvious even if the
+                  segments are not. It still costs no height, because it still
+                  shares the portal's row.
+                */
+                /* The control itself is shared with the Ideas gallery -- see
+                   desktop/VisualPager. Two surfaces, one gesture. */
+                <VisualPager
+                  className="ml-auto"
+                  labels={panels.map(v => PANEL_LABEL[v.archetype])}
+                  keys={panels.map(v => v.archetype)}
+                  index={active}
+                  onChange={setPanelIndex}
+                />
+              )}
+            </div>
           </div>
         )}
+
+        {/*
+          No "room held for a loading chart" block.
+
+          There was one, briefly. It is gone because TodayPage no longer
+          renders a tile until the engine, the coverage scan AND enrichment
+          have all settled, so a tile is never built from half its data. A
+          placeholder for a state that cannot occur is dead weight, and it
+          only ever addressed one of the three phases anyway.
+        */}
       </div>
 
-      {/* action row — one dominant verb, two quiet affordances */}
-      <div className="mt-2 px-3.5">
-        <div className="text-[9px] font-bold uppercase tracking-widest text-gray-500 dark:text-gray-500">
-          Next
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-1 px-3.5 pb-2.5 pt-1">
+      {/*
+        Action row — nothing at rest, everything on approach.
+
+        ── What was here ──────────────────────────────────────────────────
+        A "NEXT" eyebrow on its own line, then Review thesis, Ask AI,
+        Discuss, Create and an overflow button, all drawn at full strength on
+        every tile. Measured at 1920x889 on the lead: 62px of a 386px tile,
+        16% of it -- and four tiles of it meant twenty controls competing
+        with the four findings they belong to.
+
+        Fading the three secondary verbs was not enough: "Review thesis" and
+        "Simulate idea" are the loudest things on the surface, and the row
+        went on reserving 60px whether or not anything in it was visible, so
+        the space was spent either way.
+
+        So the row LEAVES THE LAYOUT. It is an overlay pinned to the tile's
+        bottom edge, out of flow: at rest the tile's own content runs to the
+        bottom of the card, and the actions cost nothing. On approach the row
+        fades up over that edge behind a scrim that is opaque where the
+        controls sit and clear above them, so whatever it covers fades out
+        rather than being chopped.
+
+        It is hidden by OPACITY, not `display`, and it is out of flow, so the
+        tile's height is identical hovered and not -- which is what stops a
+        field of four from shuffling as the pointer crosses it. The body
+        carries bottom padding equal to the row, so on a tile with no slack
+        the overlay lands on margin rather than on a sentence.
+
+        `group-has-[:focus-visible]` keeps the whole row reachable without a
+        pointer: tabbing into the tile reveals it, so the keyboard path is
+        the hover path. It is deliberately NOT `:focus-within`, which also
+        matches a button focused by a mouse click and therefore pinned the
+        row open on any tile whose controls had been clicked. Nothing here is
+        `pointer-events-none`, so a reader who clicks where they know a
+        control lives still hits it. An open overflow menu keeps the row up
+        through `menuOpen`, stated rather than inferred from focus.
+      */}
+      <div
+        data-testid="today-actions"
+        className={clsx(
+          /*
+            TOP RIGHT, not the bottom edge.
+
+            It sat at the bottom and kept landing on the one control it shared
+            the card with. Full width it covered the chart; stopped at 48% it
+            still covered "See the full chart" on every tile whose body stacks
+            instead of splitting -- the link was under the scrim and could not
+            be clicked at all. ANY band pinned to the bottom of a card whose
+            content also ends at the bottom will do this; the position was the
+            defect, not its width.
+
+            The eyebrow row is the one strip of a tile that is reliably empty:
+            a rank, a state, and on most tiles nothing else across the rest of
+            the width. The row lives there now, right-aligned, fading down
+            over its own seam. Nothing a reader goes to a tile FOR is up
+            there, and the chart, its read-out and its portal are untouched.
+          */
+          'absolute right-0 top-0 z-10 flex flex-wrap items-center justify-end gap-1 px-3 pb-5 pt-2',
+          'bg-gradient-to-b from-white via-white via-70% to-transparent',
+          /* Must track the card fill exactly, or the scrim shows as a band. */
+          'dark:from-[#161d2a] dark:via-[#161d2a]',
+          QUIET_REVEAL,
+          /* The menu is opened from inside this row and extends below it.
+             Letting the row fade while its own menu is on screen would strand
+             the panel over the tile with nothing holding it. */
+          menuOpen && 'opacity-100',
+        )}
+      >
         {item.primary ? (
           <button
             type="button"
@@ -460,7 +750,7 @@ export function TodayTile({
           <button
             type="button"
             onClick={() => askAI(withIntent(item.target!, engageIntent))}
-            className="rounded-md px-2.5 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+            className={clsx(QUIET, 'text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30')}
           >
             Ask AI
           </button>
@@ -489,21 +779,23 @@ export function TodayTile({
             type="button"
             data-testid="today-discuss"
             onClick={() => discuss(withIntent(item.target!, engageIntent))}
-            className="rounded-md px-2.5 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/[0.06]"
+            className={clsx(QUIET, 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/[0.06]')}
           >
             Discuss
           </button>
         )}
 
         {/* Create sits with the other engagements, before the overflow. */}
-        <CreateMenu
-          compact
-          intent={engageIntent}
-          context={{
-            assetId: item.source.context.assetId ?? null,
-            symbol: item.ticker,
-          }}
-        />
+        <span>
+          <CreateMenu
+            compact
+            intent={engageIntent}
+            context={{
+              assetId: item.source.context.assetId ?? null,
+              symbol: item.ticker,
+            }}
+          />
+        </span>
 
         <div className="relative ml-auto">
           <button
@@ -517,47 +809,38 @@ export function TodayTile({
 
           {menuOpen && (
             <div
-              className="absolute right-0 z-40 mt-1 w-72 overflow-hidden rounded-lg border border-gray-300 bg-white shadow-lg dark:border-white/15 dark:bg-[#171e2b]"
+              /* Downward again: the trigger moved to the tile's top edge, so
+                 a menu opening upward would hang above the card. */
+              className="absolute right-0 top-full z-40 mt-1 w-56 overflow-hidden rounded-lg border border-gray-300 bg-white shadow-lg dark:border-white/15 dark:bg-[#171e2b]"
               onMouseLeave={() => setMenuOpen(false)}
             >
-              <MenuGroup label="Personal — only affects your view" />
-              <MenuItem
-                label="Dismiss for me"
-                hint="Hidden for you on every device. Changes no shared state."
-                onClick={() => { onDismiss(item); setMenuOpen(false) }}
-              />
-              {SNOOZE_PRESETS.map(p => (
+              {/*
+                THREE CHOICES, NO BRIEFING.
+
+                It was a two-section menu: a "Personal — only affects your
+                view" header, four items each carrying its own explanatory
+                hint, a "Shared — changes the workflow for everyone" header,
+                and then a forty-word paragraph explaining why there are no
+                shared actions. Six lines of prose to put something off until
+                next week.
+
+                Every one of those sentences was TRUE, which is how it got
+                there. None of it is a decision the reader is making: they
+                want this off the page, now or for a while. The distinction
+                the headers drew is real and is carried by the words instead
+                -- "Hide this for me" says whose view it leaves.
+
+                Three snooze presets became two. "3 days" sat between a day
+                and a week answering no question either of them did not.
+              */}
+              <MenuItem label="Hide this for me" onClick={() => { onDismiss(item); setMenuOpen(false) }} />
+              {SNOOZE_PRESETS.filter(p => p.hours !== 72).map(p => (
                 <MenuItem
                   key={p.hours}
-                  label={`Snooze ${p.label}`}
-                  hint="Comes back on its own when the snooze expires."
+                  label={`Remind me in ${p.label}`}
                   onClick={() => { onSnooze(item, p.hours); setMenuOpen(false) }}
                 />
               ))}
-
-              <MenuGroup label="Shared — changes the workflow for everyone" />
-              {/*
-                No shared action is offered from Today yet, and none is rendered.
-
-                A control that looks like a shared mutation and performs none is
-                worse than no control: the user believes their team's revisit
-                date moved. So the two cases are stated rather than drawn.
-
-                The object-type case is permanent-ish: an asset simply has no
-                revisit date. The trade-queue case is Today's own gap — the
-                mutation exists (`deferTradeIdeaMutation`), but the id Today
-                carries is not unambiguously a `trade_queue_items.id`: pair
-                trades surface under a synthetic `pair-<id>`, and a proposal
-                expanded across portfolios surfaces once per portfolio while
-                sharing one underlying row. Deferring from either would either
-                miss, or move the date for every portfolio's copy. Resolving
-                that is a workflow question, not a UI one.
-              */}
-              <div className="px-3 pb-2.5 pt-1 text-[10px] leading-snug text-gray-500 dark:text-gray-500">
-                {sharedDefer
-                  ? 'This item has a shared revisit date, but Today cannot move it yet — defer it from the trade queue, where the row it belongs to is unambiguous.'
-                  : 'This object has no shared revisit date to move, so there is no shared Defer for it. Snooze is the personal equivalent.'}
-              </div>
             </div>
           )}
         </div>
@@ -566,27 +849,22 @@ export function TodayTile({
   )
 }
 
-function MenuGroup({ label }: { label: string }) {
-  return (
-    <div className="border-t border-gray-200 px-3 pb-1 pt-2.5 text-[9px] font-bold uppercase tracking-widest text-gray-500 first:border-t-0 dark:border-white/10 dark:text-gray-500">
-      {label}
-    </div>
-  )
-}
+/*
+ * `MenuGroup` is gone with the headers it drew, and `supportsSharedDefer`
+ * with the paragraph that branched on it. Today still offers no shared
+ * action -- the reason is recorded in the menu's own comment -- it simply no
+ * longer writes an essay about the absence above a three-item list.
+ */
 
-function MenuItem({
-  label, hint, onClick, shared,
-}: { label: string; hint: string; onClick: () => void; shared?: boolean }) {
+/** One line, one verb. The explanatory second line is gone with the briefing. */
+function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="block w-full px-3 py-1.5 text-left hover:bg-blue-50 dark:hover:bg-blue-950/30"
+      className="block w-full px-3 py-2 text-left text-[13px] text-gray-900 hover:bg-blue-50 dark:text-gray-100 dark:hover:bg-blue-950/30"
     >
-      <span className="block text-[12px] text-gray-900 dark:text-gray-100">{label}</span>
-      <span className={clsx('mt-0.5 block text-[10px]', shared ? 'text-amber-700 dark:text-amber-400' : 'text-gray-500 dark:text-gray-500')}>
-        {hint}
-      </span>
+      {label}
     </button>
   )
 }

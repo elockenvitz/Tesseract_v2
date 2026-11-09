@@ -154,6 +154,11 @@
     max-height: 30dvh;
   }
 
+  .min-h-viewport-30 {
+    min-height: 30vh;
+    min-height: 30dvh;
+  }
+
   .h-viewport-50 {
     height: 50vh;
     height: 50dvh;
@@ -167,6 +172,11 @@
   .min-h-viewport-50 {
     min-height: 50vh;
     min-height: 50dvh;
+  }
+
+  .max-h-viewport-55 {
+    max-height: 55vh;
+    max-height: 55dvh;
   }
 
   .h-viewport-60 {
@@ -310,38 +320,288 @@
   .pl-safe { padding-left: env(safe-area-inset-left, 0px); }
   .pr-safe { padding-right: env(safe-area-inset-right, 0px); }
 
-  /* ── Desktop Explore grid: columns from the REGION, not the window ──────
-     Explore keeps its broad arrangement at full width and has to survive the
-     workspace opening beside it, which leaves it ~40rem. A media query cannot
-     tell those apart — the window is 1920px in both — so it would go on
-     packing three columns into a pane where a tile would be 12rem wide. The
+  /* ── A resizable surface: columns and gutters from the REGION ───────────
+     A lens keeps its broad arrangement at full width and has to survive the
+     workspace opening beside it, which leaves it a narrow rail. A media query
+     cannot tell those apart — the window is 1920px in both — so it would go
+     on packing twelve tracks into a pane where a tile would be 3rem wide. The
      region is the container and the region's own width decides.
 
+     Named `gallery-host` rather than `explore-host`: Explore was the first
+     surface to need it and is no longer the only one. The book is in the same
+     rail now, and a Portfolio scroller carrying a class called "explore" is
+     the kind of name that teaches the next reader something false.
+
      Only the class changes when the pane narrows, so the grid re-flows in
-     place: Explore is not remounted, and its scroll does not move. */
-  .explore-host {
+     place: the surface is not remounted, and its scroll does not move. */
+  .gallery-host {
     container-type: inline-size;
   }
-  .explore-grid {
-    display: grid;
+
+  /* ── The rail gutter ────────────────────────────────────────────────────
+     24px is right against a window edge and wrong in a 26rem rail, where it
+     is 11% of the width spent on nothing twice over. Two classes deep on
+     purpose: Tailwind's utilities layer is emitted after this one, so a
+     single-class rule would lose to the `px-6` it is correcting.
+
+     Keyed on the same 34rem the gallery's track count is, because they are
+     one question — is this surface a page or a rail — and two thresholds
+     would put a 24px gutter on a one-column list. */
+  @container (max-width: 34rem) {
+    .gallery-host [data-testid='desktop-gallery'],
+    .gallery-host .rail-pad {
+      padding-left: 0.75rem;
+      padding-right: 0.75rem;
+    }
+  }
+
+  /* ── The shared gallery, sized by its region ─────────────────────────────
+     `DesktopGallery region` renders this in place of the window breakpoints.
+     The track counts match the shared span table at each step -- 6 then 12 --
+     so a hero is half a row in both modes and the arrangement a reader learns
+     on one lens holds on this one.
+
+     Spans are selected on `data-size`, which `DesktopTile` has always
+     emitted, rather than restating `md:col-span-6` and friends here: a copy of
+     that table would be a second thing to keep in step. Class + attribute
+     outranks Tailwind's single-class span, so these win wherever they apply.
+
+     The one-track base is not decoration either -- without it the tile's own
+     `md:col-span-6` still fires at any window wider than 768px, which is every
+     desktop, and a 6-wide tile in a 1-track grid overflows the pane. */
+  /* ── A lens the reader is not standing in ──────────────────────────────
+
+     The Dashboard keeps all three browse surfaces mounted and shows one, so
+     that each keeps its scroll, its filters and its loaded pages. It did
+     that with Tailwind's `hidden`, which is `display: none`, and that is the
+     one way of hiding something that throws the work away: the browser
+     destroys every layout object in the subtree and rebuilds the lot on the
+     way back.
+
+     MEASURED on the live Dashboard, every surface already warm, nothing
+     fetching and React doing almost nothing -- 7 to 9 DOM mutations per
+     press, which is one class and two `aria-pressed`:
+
+         to Ideas     a 74-81ms task, frames 66-117ms apart
+         to Explore   no script at all, and still 50-67ms between frames
+
+     Explore's is the clearer half: no JavaScript runs and the frame is still
+     late, because 145 tiles are having their boxes built from nothing.
+
+     `content-visibility: hidden` skips the contents exactly as `display:
+     none` does, and PRESERVES their rendering state, which is the whole
+     difference. The box is taken out of flow so the showing lens still gets
+     the full column, and it paints nothing and takes no pointer, so being
+     last in the stacking order costs nothing.
+
+     Not `visibility: hidden`: that keeps the subtree in layout, so all three
+     lenses would be laid out on every frame and the off-screen tiles' own
+     `content-visibility: auto` would stop saving anything -- they would be
+     inside the viewport, which is the test it applies. */
+  .lens-stowed {
+    position: absolute;
+    inset: 0;
+    content-visibility: hidden;
+    pointer-events: none;
+  }
+
+  .gallery-region {
     grid-template-columns: minmax(0, 1fr);
   }
+  .gallery-region > [data-size] {
+    grid-column: span 1 / span 1;
+
+    /* ── Why the off-screen tiles do not get laid out ────────────────────
+       Opening a tile takes this region from `w-full` to `max-w-[26rem]`
+       and from 12 tracks to 1 (see the note at `.gallery-host`). Pressing
+       "Back to ..." takes it the other way. Either way EVERY tile is a new
+       width, so the browser re-runs each one's internal flex, text
+       measurement and chart sizing -- 151 of them on this book -- in one
+       task the main thread cannot interrupt.
+
+       Measured before: 62ms, twice, on each direction. A frame is 16ms, so
+       that is the hitch that was reported as "a little hitchy". The React
+       half was already fixed (the gallery memo); what remains is browser
+       layout, and the only way to make layout cheaper is to give it less
+       to do.
+
+       `content-visibility: auto` does that: a tile outside the scrollport
+       skips its subtree entirely and contributes only the size below. Ten
+       or so tiles are on screen, so about 93% of the work goes away.
+
+       It is cheap here specifically because every tile is ALREADY
+       `position: relative` + `overflow: hidden` (see `DesktopTile`). The
+       `contain: layout style paint` this implies therefore grants the
+       browser nothing a tile had not already promised, so nothing that
+       used to paint outside a tile can start being clipped. Do not copy
+       this onto a surface whose children escape their box.
+
+       `auto 300px`: the `auto` keyword is the load-bearing half -- the
+       browser stores each tile's real height after it has been on screen
+       once and uses that from then on, so the scrollbar settles instead of
+       drifting. 300px is only the first guess for a tile never yet seen,
+       measured over this book at 12 tracks: compact p50 248, large 291,
+       medium 303, hero 356, the whole range 245 to 356. A guess inside a
+       111px band cannot move the scroll height far.
+
+       NOT a height and not a cap: an on-screen tile renders at its natural
+       height exactly as before. A `max-height` was tried on these tiles and
+       clipped real captions; that note is above, and this is not a second
+       attempt at it. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 300px;
+  }
+  /* ── The one-column rung ─────────────────────────────────────────────────
+
+     In a one-column region every cell is the same width whatever its rank, so
+     a hero's display type, claim, figures, frame and shelf are all sized for
+     a card twice as wide as the one they are in. The tile has to draw itself
+     smaller there, and the WIDE values are the ones in `DesktopTile.tsx` --
+     this block only states the step down.
+
+     It used to be a second `TileSize` handed to every tile through React
+     context. MEASURED on Explore at 1920 with 145 tiles, opening and closing
+     the asset workspace: 289 of ~543 DOM mutations per transition were tiles
+     rewriting these exact classes, with long tasks of 68, 73, 68 and 98ms
+     against a 16ms frame. Pinning the signal off -- leaving the re-render in
+     place -- took every long task to ZERO, so the cost was the writes and the
+     style invalidation they cause, not React.
+
+     As CSS the browser does this work for the tiles it has actually rendered.
+     The rest are `content-visibility: auto` (see above) and are skipped, so
+     the ~6 tiles on screen restyle instead of 145.
+
+     `not (min-width: 34rem)` rather than `max-width`, so this is the exact
+     complement of the two-track query below and no width can match both or
+     neither. The query subject is `.gallery-host`, the same container those
+     use.
+
+     ── Except the one tile the reader chose ──────────────────────────────
+
+     `:not([data-selected])`. The rail EXISTS because a selection opened the
+     workspace, and `IdeasExploreBrowse` drops every unchosen tile to
+     `compact` for exactly that reason, saying in its own note that "the
+     chosen tile keeps the size its own content earned". It did not. This
+     block reached every tile in the region including that one, so the
+     chosen card was restyled to the compact rung's 17px display, 15px
+     two-line claim, 26px shelf and `p-3` frame -- the same values the 144
+     tiles around it were given. A hero and a compact drew identically, and
+     the feature that was asked for could not be seen on the surface it was
+     asked for.
+
+     Width is not what "expanded" can mean here: one column means one width.
+     What it means is the chosen tile's own rank -- its display type, its
+     third claim line, its taller shelf -- which is what this exemption
+     returns. Nothing about the tile's SPAN changes; `.gallery-region >
+     [data-size]` still gives every cell one track.
+
+     Safe at this width by the rung's own measurements, recorded above: a
+     rail cell is 376px, the widest value any rank sets here is a 30px
+     display figure and a 17px claim, and the note on `.tile-claim` in
+     `DesktopTile.tsx` states that 15px is what the prototype uses for its
+     full-width tiles and that neither width is tight. One tile is exempt,
+     so the height argument the rung was written for -- a row stretching to
+     its tallest member -- does not apply: in one column there is no row.
+
+     Specificity: four compound selectors (0,4,0) beats any Tailwind utility
+     (0,1,0), so the step down still wins without `!important`. Values are the
+     `compact` rung of the tables in `DesktopTile.tsx`; `convergence.test.ts`
+     pins them to it. */
+  @container not (min-width: 34rem) {
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-frame {
+      gap: 0.375rem;
+      padding: 0.75rem;
+    }
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-display {
+      font-size: 17px;
+    }
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-beside {
+      font-size: 11px;
+    }
+    /* Two lines, not three: `compact` buys the size with ~6px of height
+       rather than with a third line. */
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-claim {
+      font-size: 15px;
+      -webkit-line-clamp: 2;
+    }
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-figure {
+      font-size: 15px;
+    }
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-stats {
+      column-gap: 1rem;
+      row-gap: 0.375rem;
+    }
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-shelf {
+      height: 26px;
+    }
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-actions {
+      padding: 0.5rem 0.5rem 1rem;
+    }
+    .gallery-region > .desktop-tile:not([data-selected]) .tile-body {
+      margin-top: 0.5rem;
+    }
+  }
+
   /* 34rem is two tiles at the ~16rem a preview needs to stay a preview. */
   @container (min-width: 34rem) {
-    .explore-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+    .gallery-region {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+    .gallery-region > [data-size='hero'],
+    .gallery-region > [data-size='large'] {
+      grid-column: span 6 / span 6;
+    }
+    .gallery-region > [data-size='medium'],
+    .gallery-region > [data-size='compact'] {
+      grid-column: span 3 / span 3;
     }
   }
   @container (min-width: 62rem) {
-    .explore-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+    .gallery-region {
+      grid-template-columns: repeat(12, minmax(0, 1fr));
     }
-    /* A feature tile earns two columns only where there are three to spend.
-       At two columns it would be the whole row, which is not emphasis. */
-    .explore-feature {
-      grid-column: span 2 / span 2;
+    .gallery-region > [data-size='hero'],
+    .gallery-region > [data-size='large'] {
+      grid-column: span 6 / span 6;
+    }
+    .gallery-region > [data-size='medium'],
+    .gallery-region > [data-size='compact'] {
+      grid-column: span 3 / span 3;
     }
   }
+
+  /* ── A ceiling, so one tall card cannot inflate a whole row ──────────────
+
+     Measured at 1920 over 108 tiles: heights ran 134 to 418 with a median of
+     265, and the top of that range was reported as cards that are "way too
+     big/tall". The named example was a 915x418 hero -- 2.2:1, taller than
+     two of the rows beneath it put together.
+
+     The multiplier is `items-stretch`. The row sizes to its tallest member,
+     so ONE 418px card made the two 451px-wide cards beside it 418px as well:
+     three oversized tiles for one oversized card.
+
+     A ceiling and not a height. The picture inside every tile is a `flex-1`
+     box with an absolutely-positioned panel (see `OpportunityGrid`'s note on
+     why it is out of flow), so the room taken away comes out of the PICTURE
+     and not out of the words: the headline, the context line and the metric
+     are all intrinsically sized and sit above it. A tile whose text alone
+     exceeded the cap would clip, which is why the numbers are set above the
+     measured text block (~171px on the tallest hero) with room to spare.
+
+     ── A CEILING WAS TRIED HERE AND CUT THE WORDS ─────────────────────────
+
+     `max-height: 332px` on a hero and 268px on a medium did bring the range
+     down -- 418 to 332 -- and clipped real text on 39 of the 108 tiles:
+     "14.2% in Large Cap Growth" lost 65px, and a dozen caption lines lost 10
+     to 18px each. The picture does NOT absorb the reduction, because it is
+     already at its `minHeight` floor by then and the caption sits below it.
+
+     A card that hides its own caption is worse than a tall card, so the
+     ceiling is gone and the height is taken out of the picture instead, at
+     `chartHeight` in `OpportunityGrid`, where shrinking is something the
+     chart is built to do. Recorded rather than deleted so the next person
+     reaching for `max-height` here knows what it costs. */
 
   /* ── Desktop feed tile: side-by-side when the TILE is wide enough ────────
      A container query, not a media query, because the same viewport shows the
@@ -355,6 +615,26 @@
   .feed-tile-cols {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* ── The analytical object does not stack ────────────────────────────────
+     A reversal, and a deliberate one. The original fallback below 46rem was
+     to put the chart UNDERNEATH the claim, on the reasoning that a stacked
+     object is better than a squeezed one. Measured in the rail beside an open
+     workspace, that fallback costs between 117px and 281px per tile -- about
+     half the height of every tile that has one -- and the whole 613px rail
+     then holds a little over one card.
+
+     What the rail is for decides this. With a workspace open the reader has
+     already chosen a name; the column beside it is a QUEUE they scan to pick
+     the next one, and a claim plus a metric is what makes a finding
+     triageable. A 280px chart is study material, and the place to study it is
+     the tile at full width, which is one press of "Back to ..." away.
+
+     So the object renders only where it can sit BESIDE the narrative. Stated
+     as one threshold, in one place: hidden by default, shown by the same
+     container query that puts it in its own column. */
+  .feed-tile-aside {
+    display: none;
   }
   /* 46rem is the measured floor: below it the narrative column drops under
      ~26rem and the claim starts wrapping every two or three words. */
@@ -384,8 +664,10 @@
     .feed-tile-prose {
       grid-template-columns: minmax(0, 50rem);
     }
-    /* The preview becomes a neighbour rather than a band underneath. */
+    /* The preview becomes a neighbour rather than a band underneath -- and
+       this is the only width at which it renders at all. */
     .feed-tile-aside {
+      display: block;
       border-top: 0;
       /* The divider runs the height of the preview, not of the card, because
          the preview no longer stretches. A rule that ends where its content
@@ -403,6 +685,98 @@
        single-class rule here would be a coin toss on emission order. */
     .feed-tile-aside .feed-chart-plot {
       height: 11rem;
+    }
+  }
+
+  /* ── The book summary, sized by its own column ──────────────────────────
+     The Portfolio lens is drawn at full width AND in the ~20-26rem rail
+     beside an open workspace, and the header was laid out entirely on
+     VIEWPORT breakpoints. The viewport is the same 1920 either way, so in
+     the rail `xl:grid-cols-2` put two panels side by side in 296px: the two
+     mover columns collided with their own figures, the ten benchmark bars
+     became a 26px-wide smear with its labels overlapping, and the band ran
+     past 460px tall so the Positions list it introduces was below the fold.
+     Reported as "all messed up ... needs to be simplified and smaller".
+
+     Only the container's width can answer this, which is the same reason
+     `.feed-tile` and `.gallery-host` above are containers. Same 34rem
+     threshold as both, because it is the same question -- is this surface a
+     page or a rail -- and a second number would put the book's answer out of
+     step with the feed's.
+
+     ── What goes, and why it is these ──────────────────────────────────────
+     In the rail the reader has already chosen a name; this column is a QUEUE
+     they scan to pick the next one. The figures and the two sentences about
+     the framework are what make a book triageable; the mover lists and the
+     active-weight strip are study material, and the place to study them is
+     the lens at full width, one press of "Back to Portfolio" away. That is
+     the same decision `.feed-tile-aside` records, for the same reason.
+
+     Hidden rather than reflowed: a ten-bar distribution and a two-column
+     ranked list have a width below which they stop being readable at all,
+     and drawing them anyway is what was reported. */
+  .book-header {
+    container-type: inline-size;
+  }
+  .book-header-panels {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+  /* ── The reservation, which must follow the tracks ──────────────────────
+     Both panels resolve on their own queries after the book beneath them has
+     painted, so without a reservation each arrival lands as new height under
+     a reader who has started reading. The number differs by layout, and in
+     the rail the panels carry no movers and no strip -- there is far less to
+     wait for, and the full-width figure would reserve space for content that
+     is not coming.
+
+     Here and not in Tailwind: 3.4 ships no container-query variants and this
+     project adds no plugin, so `@[34rem]:min-h-[400px]` would emit nothing
+     and the reservation would silently not exist. The component sets
+     `data-waiting` and says nothing about height. */
+  .book-header-panels[data-waiting] {
+    min-height: 180px;
+  }
+  /* The placeholder's two panels, sized like the panels they stand in for --
+     measured on the loaded page at both widths. Here rather than in Tailwind
+     for the same reason the reservation is: 3.4 ships no container-query
+     variants, so `@[34rem]:h-[186px]` would emit nothing and the placeholder
+     would promise the rail a 186px panel the page never draws. */
+  .book-header-panels .book-panel-ghost {
+    height: 72px;
+  }
+  @container (max-width: 34rem) {
+    .book-header-detail {
+      display: none;
+    }
+  }
+  @container (min-width: 34rem) {
+    .book-header-panels {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    /* ── Each panel owns its column, present or not ──────────────────────
+       Both render null until their own query lands, and a null child takes
+       no grid cell -- so the benchmark strip, which resolves first, was
+       placed in column ONE and then slid across to column two the moment the
+       day panel appeared beside it. Measured: x=24, then x=980.
+
+       Pinned HERE rather than as `xl:col-start-*` on the children, because
+       the viewport is 1920 whether this lens is a page or a ~20rem rail: a
+       child claiming column two in a one-track grid makes CSS create an
+       implicit second track for it, and the two panels then overlap in
+       352px. Pinned only where there are two tracks to pin to. */
+    .book-header-panels > :nth-child(1) {
+      grid-column-start: 1;
+    }
+    .book-header-panels > :nth-child(2) {
+      grid-column-start: 2;
+    }
+    .book-header-panels[data-waiting] {
+      min-height: 200px;
+    }
+    .book-header-panels .book-panel-ghost {
+      height: 186px;
     }
   }
 

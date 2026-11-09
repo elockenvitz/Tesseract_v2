@@ -11,12 +11,14 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 import type { DecisionRecord } from '../../lib/desktop-decisions'
 import { NO_OUTCOME_FACTS, type OutcomeFacts } from '../../lib/desktop-decisions/classes'
 import type { BatchPnl } from '../../lib/outcomes/batch-groups'
+import { subscribeToOpenIdea } from '../../lib/desktop-ideas/navigate'
+import { OPEN_IDEA_EVENTS } from '../../lib/navigation/open-idea'
 
 const DAY = 86_400_000
 const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
@@ -131,6 +133,22 @@ vi.mock('../../lib/dashboard/focus', async importOriginal => {
 })
 
 import { DecisionsWorkspace } from './DecisionsWorkspace'
+
+/**
+ * Every explicit type size set inside a rendered region, root included.
+ *
+ * Walks `*` and reads `class` off each node rather than asking the selector
+ * engine for `[class*="text-["]`, which matched nothing under jsdom and made
+ * the two rank assertions below pass while the defect they describe was
+ * sitting in the tree. The pattern takes a fractional size too, so a 10.5px
+ * caption cannot slip under a floor written as 11.
+ */
+function sizesWithin(root: Element): number[] {
+  return [root, ...root.querySelectorAll('*')].flatMap(el =>
+    [...String(el.getAttribute('class') ?? '').matchAll(/text-\[([\d.]+)px\]/g)]
+      .map(m => Number(m[1])),
+  )
+}
 
 const tabEvents: CustomEvent[] = []
 const typedEvents: CustomEvent[] = []
@@ -302,7 +320,26 @@ describe('the smaller tiles draw a price, not another paragraph', () => {
     })
     expect(smallOnes.length).toBeGreaterThan(0)
     for (const t of smallOnes) {
-      expect(within(t).getByTestId('tile-sparkline')).toBeInTheDocument()
+      /*
+        ── `tile-sparkline` -> `price-since-fill`, and that IS the subject ──
+
+        This asserted the small cards drew a sparkline, which was the right
+        assertion when the alternative was drawing nothing at all. It became
+        the wrong one once the sparkline was recognised as a second, lesser
+        price chart: no price axis, no horizon chips, no anchor marker, the
+        caption above the line rather than beside the percentage, an 11px
+        readout instead of 18px, and a stroke that scaled with the SVG so the
+        line changed weight along its own path. Four lenses drew
+        `TilePriceChart` and this one drew that, one tab away.
+
+        So the test keeps its name -- every tile below the lead has a visual
+        -- and now names the visual the rest of the product uses. The
+        carousel wraps it, hence the panel assertion beside it.
+      */
+      expect(within(t).getByTestId('price-since-fill')).toBeInTheDocument()
+      expect(within(t).getByTestId('decision-visuals')).toHaveAttribute('data-panel', 'price')
+      /* And it is no longer the sparkline anywhere in this lens. */
+      expect(within(t).queryByTestId('tile-sparkline')).not.toBeInTheDocument()
     }
   })
 
@@ -333,11 +370,81 @@ describe('the smaller tiles draw a price, not another paragraph', () => {
     ]
     gallery()
     render(<DecisionsWorkspace />)
-    for (const s of screen.getAllByTestId('tile-sparkline')) {
+    /* Same rewrite as the sibling test above: the subject is the refused
+       since-claim, not which of two charts refuses it. `TilePriceChart`
+       carries the same `data-reaches` contract and says "Price chart"
+       instead of naming a window it does not have. */
+    for (const s of screen.getAllByTestId('price-since-fill')) {
       expect(s).toHaveAttribute('data-reaches', 'false')
-      expect(s).toHaveTextContent(/price history/i)
+      expect(s).toHaveTextContent(/price chart/i)
       expect(s.textContent).not.toMatch(/since the fill/i)
     }
+  })
+
+  it('offers the record’s own object as a page rather than instead of the price', () => {
+    /*
+     * The defect this carousel exists for. Every visual on a decision card
+     * was a rung of one `?:` chain, so a record that owed a reason AND had a
+     * drawable series showed the gaps and the price was unreachable without
+     * opening the record -- and which one you got was invisible from the
+     * outside, so it read as charts coming and going by name.
+     *
+     * Measured on the live field of 26 cards before this: 11 drew record
+     * gaps, 8 drew a sparkline, 7 drew nothing, 0 drew the shared chart and
+     * 0 offered a second visual.
+     */
+    gallery()
+    // A record with no written reason owes one, which is what puts the gaps
+    // drawing on the card; the closes are still there to be paged to.
+    decisions = decisions.map(d => ({ ...d, decisionNote: null, contextNote: null }))
+    render(<DecisionsWorkspace />)
+    const small = screen.getAllByTestId('decision-tile')
+      .filter(t => ['medium', 'compact'].includes(t.getAttribute('data-size') ?? ''))
+    expect(small.length).toBeGreaterThan(0)
+    for (const t of small) {
+      const car = within(t).getByTestId('decision-visuals')
+      // Both pages exist, and the record's obligation still leads.
+      expect(Number(car.getAttribute('data-panels'))).toBeGreaterThanOrEqual(2)
+      expect(car).toHaveAttribute('data-panel', 'gaps')
+      // And the gesture is the shared one, named per page.
+      const tabs = within(t).getAllByTestId('visual-pager-tab')
+        .map(b => b.getAttribute('data-archetype'))
+      expect(tabs).toContain('price')
+    }
+  })
+
+  it('does not relayout the card when a page is turned', async () => {
+    /*
+     * A read must not move the field under the reader's cursor. The Ideas
+     * grid measured the cost of getting this wrong -- paging grew the card
+     * by 39px on four of its carousels -- so the box is floored to the
+     * tallest page and the page itself is taken out of flow.
+     *
+     * jsdom reports no geometry, so this asserts the MECHANISM: the floor is
+     * on the box and the page is absolutely positioned inside it. A height
+     * assertion here would pass on a 0x0 element and observe nothing.
+     */
+    gallery()
+    decisions = decisions.map(d => ({ ...d, decisionNote: null, contextNote: null }))
+    render(<DecisionsWorkspace />)
+    /* A small tile, because the hero's right column already leads with the
+       price and there would be no page change to observe. */
+    const tile = screen.getAllByTestId('decision-tile')
+      .filter(t => ['medium', 'compact'].includes(t.getAttribute('data-size') ?? ''))[0]
+    const car = within(tile).getByTestId('decision-visuals')
+    expect(car.style.minHeight).toMatch(/^\d+px$/)
+    expect(Number.parseInt(car.style.minHeight, 10)).toBeGreaterThan(60)
+    expect(car.firstElementChild).toHaveClass('absolute', 'inset-0')
+
+    // Turning the page swaps which object is mounted, and nothing else.
+    const before = car.getAttribute('data-panel')
+    expect(before).toBe('gaps')
+    const priceTab = within(tile).getAllByTestId('visual-pager-tab')
+      .find(b => b.getAttribute('data-archetype') === 'price')!
+    await userEvent.setup().click(priceTab)
+    const after = within(tile).getByTestId('decision-visuals')
+    expect(after.getAttribute('data-panel')).toBe('price')
+    expect(after.style.minHeight).toBe(car.style.minHeight)
   })
 })
 
@@ -785,16 +892,20 @@ describe('the index is a queue of what still wants something', () => {
     expect(screen.getAllByTestId('decision-tile')).toHaveLength(1)
   })
 
-  it('shows the ask on a tile, and keeps the rationale for the record', () => {
+  it('keeps BOTH rationales for the record, and neither on the tile', () => {
     /*
-     * ── Reframed, because the old subject cannot occur ────────────────────
+     * ── Rewritten, not deleted: the tile no longer carries prose ──────────
      *
-     * This asserted that a tile quotes a real written rationale. Under the
-     * queue it cannot: a decision with a human reason is explained, and an
-     * explained decision is not work, so it never tiles. The words are still
-     * shown -- in the detail pane, which its own tests cover -- and the tile
-     * carries what the queued record actually has, which is why it was asked
-     * for in the first place.
+     * It asserted the opposite — that a tile renders the generated
+     * `contextNote` under a "Why it was proposed" eyebrow. That block is
+     * gone. The generated sentence has the same shape on every record, so a
+     * run of tiles all said the same thing in three rows each; it belongs in
+     * the workspace, where there is room to read it.
+     *
+     * The human `decisionNote` was already unreachable here and still is: an
+     * explained decision is not work, so it never tiles. Both halves of the
+     * old assertion therefore now point the same way, and the tile is left
+     * identifying the record rather than narrating it.
      */
     decisions = [
       decision({ id: 'owed', decisionNote: null, contextNote: 'we need 2%' }),
@@ -803,8 +914,11 @@ describe('the index is a queue of what still wants something', () => {
     render(<DecisionsWorkspace />)
     const tiles = screen.getAllByTestId('decision-tile')
     expect(tiles).toHaveLength(1)
-    expect(within(tiles[0]).getByText(/we need 2%/)).toBeInTheDocument()
+    expect(within(tiles[0]).queryByText(/we need 2%/)).not.toBeInTheDocument()
+    expect(within(tiles[0]).queryByText(/Why it was proposed/)).not.toBeInTheDocument()
     expect(screen.queryByText(/i like this idea, makes sense/)).not.toBeInTheDocument()
+    // Still a usable tile: it names the decision it stands for.
+    expect(within(tiles[0]).getByTestId('decision-stance')).toBeInTheDocument()
   })
 })
 
@@ -961,6 +1075,132 @@ describe('what happened, in Outcomes’ own numbers', () => {
     // The reasoning itself, not a note that some exists.
     expect(tile).toHaveTextContent('Added on the cloud reacceleration.')
     expect(tile.textContent).not.toContain('No decision reason')
+  })
+
+  it('never says a reason is missing, on any card', () => {
+    /*
+     * The case above asserted it for a card that HAS a reason, which is the
+     * easy half. Live, 23 of the 26 cards had none, so the amber line drew on
+     * nearly all of them: 20px of vertical, on every card, for a fact about
+     * the corpus rather than about any decision. A reader cannot write the
+     * missing reason from a card, and the detail pane states the absence
+     * properly, alongside what WAS recorded.
+     */
+    /*
+     * Six, so the field renders BOTH tile branches. The first version of this
+     * case rendered one record, which is a hero -- and the hero branch and
+     * the stacked branch each had their own copy of the line, so it passed
+     * with the stacked copy reinstated. It is asserted across every tile now.
+     */
+    decisions = Array.from({ length: 6 }, (_, i) => decision({
+      id: `x${i}`, status: 'accepted', decidedAt: daysAgo(10 + i),
+      decisionNote: null, contextNote: null,
+    }))
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles.length).toBeGreaterThan(3)
+    for (const t of tiles) expect(t.textContent).not.toContain('No decision reason')
+    const tile = tiles[0]
+    /*
+     * The queue's own reason for listing the card survives, and is not the
+     * same thing: "No reason recorded" is why this record is in front of the
+     * reader, it rides in the eyebrow row where it costs no vertical, and it
+     * is the one phrasing of the absence that is doing work.
+     */
+    expect(within(tile).getByTestId('decision-reason')).toHaveTextContent('No reason recorded')
+  })
+
+  it('puts the book on the name row, not on a row of its own', () => {
+    /*
+     * Measured on a 455x344 tile: the name row, the book row and the figures
+     * row used 139px of 421px across and 99px down, and the chart under them
+     * got 141. The book is three words; its own row spent 25px to place them
+     * at x=0 with nothing to their right. 344 -> 299px after, with the text
+     * above the chart down to 57px.
+     */
+    /*
+     * Six, so the field renders BOTH tile branches -- the same blindness that
+     * let the sibling case above pass with its defect reinstated. The first
+     * version of THIS case rendered one record, which is a hero, and asked
+     * `parentElement.querySelector(...)`: that search is recursive, so on a
+     * hero it found the stance nested two levels down and passed whatever the
+     * stacked branch did. Each branch is now asserted in its own shape.
+     */
+    decisions = Array.from({ length: 6 }, (_, i) => decision({
+      id: `x${i}`, decidedAt: daysAgo(10 + i), portfolioName: 'Large Cap Core',
+    }))
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles.length).toBeGreaterThan(3)
+    let heroes = 0
+    let stacked = 0
+    for (const t of tiles) {
+      const book = within(t).getByTestId('decision-context')
+      expect(book).toHaveTextContent('Large Cap Core')
+      if (book.textContent!.includes('Oracle')) {
+        // The hero puts company and book in one element, on one row.
+        heroes += 1
+      } else {
+        /*
+         * The stacked tile rides its book in the identity row, as a DIRECT
+         * sibling of the stance chip. `:scope >` matters: an unscoped
+         * querySelector walks the whole subtree and so is satisfied by a
+         * book on a row of its own, which is the defect.
+         */
+        expect(book.parentElement!.querySelector(':scope > [data-testid="decision-stance"]'))
+          .toBeInTheDocument()
+        stacked += 1
+      }
+    }
+    expect(heroes).toBeGreaterThan(0)
+    expect(stacked).toBeGreaterThan(0)
+  })
+
+  /*
+   * ── The card stopped narrating itself ────────────────────────────────────
+   *
+   * Two blocks came off every decision tile, each of which had its own copy
+   * in BOTH branches — so six records are rendered here for the same reason
+   * the case above renders six: a one-record fixture only ever exercises the
+   * hero, and the branch that was not looked at is where the defect lives.
+   *
+   *  - "Why it was proposed" plus the generated sentence under it. The
+   *    sentence has the same shape on every record, so a run of tiles spent
+   *    three rows each saying the same thing. It is still in the detail pane,
+   *    which has room to read it and its own cases below.
+   *  - The standing context rail: "Review in Outcomes" / "Review outcome →" /
+   *    "Committed in a batch" / "Open the record" — a caption naming the
+   *    destination of the button already in the card's top-right corner. One
+   *    variant literally said "Review outcome →" beneath a shelf action
+   *    labelled "Review outcome".
+   *
+   * `TileShelf` renders nothing without `context`, so the rail's whole
+   * reserved height comes back to the card: 34px hero and large, 30 medium,
+   * 26 compact.
+   */
+  it('draws no proposal rationale and no context rail, in EITHER branch', () => {
+    decisions = Array.from({ length: 6 }, (_, i) => decision({
+      id: `n${i}`, decidedAt: daysAgo(10 + i),
+      decisionNote: null, contextNote: 'rebalancing toward quality',
+    }))
+    render(<DecisionsWorkspace />)
+    const tiles = screen.getAllByTestId('decision-tile')
+    expect(tiles.length).toBeGreaterThan(3)
+
+    // Both branches are actually present, or this asserts about one shape.
+    const composed = tiles.filter(t => t.getAttribute('data-composed') === 'two-column')
+    expect(composed.length).toBeGreaterThan(0)
+    expect(composed.length).toBeLessThan(tiles.length)
+
+    for (const t of tiles) {
+      expect(within(t).queryByText('Why it was proposed')).not.toBeInTheDocument()
+      expect(within(t).queryByText(/rebalancing toward quality/)).not.toBeInTheDocument()
+      expect(within(t).queryByTestId('decision-next')).not.toBeInTheDocument()
+      expect(within(t).queryByTestId('tile-shelf')).not.toBeInTheDocument()
+    }
+
+    // The verbs are untouched — they live in the corner, not the rail.
+    expect(screen.getAllByTestId('decision-review-outcome').length).toBeGreaterThan(0)
   })
 
   /*
@@ -1622,9 +1862,25 @@ describe('a system string is never shown as reasoning', () => {
     const why = screen.getByText('Why we decided').closest('section')!
     const quote = within(why).getByText(/i like this idea, makes sense/)
     expect(quote.tagName.toLowerCase()).toBe('blockquote')
-    // Larger than anything else on the page, and unboxed: a border would make
-    // it a panel among panels rather than the reason the record exists.
-    expect(quote.className).toMatch(/text-\[21px\]/)
+    /*
+     * Larger than anything else in its section, and unboxed: a border would
+     * make it a panel among panels rather than the reason the record exists.
+     *
+     * Re-pointed from 21 to 18, which is where the agreed type scale puts
+     * "the section that IS the object". The subject did not change -- the
+     * quote still has to outrank its surroundings -- so the rank is now
+     * asserted directly rather than left implicit behind one magic number.
+     * Pinning 21 alone is why this case went green on a size that belonged
+     * to no role at all.
+     */
+    expect(quote.className).toMatch(/text-\[18px\]/)
+    const sizes = sizesWithin(why)
+    /* Non-vacuity: the first draft of this selected on `[class*="text-["]`,
+       which matched nothing in jsdom and passed happily while a sibling was
+       injected at 20px. A rank assertion with no count behind it is the
+       decoration this repo keeps paying for. */
+    expect(sizes.length).toBeGreaterThan(2)
+    expect(sizes.filter(n => n > 18)).toEqual([])
     expect(why.querySelector('[data-testid="desktop-module"]')).toBeNull()
     expect(screen.queryByText('Decision record')).not.toBeInTheDocument()
   })
@@ -1710,8 +1966,21 @@ describe('what we knew then is kept apart from what is true now', () => {
     const { then } = selected()
     const note = within(then).getByText(/Historical framework not captured/)
     expect(note).toBeInTheDocument()
-    // A footnote, not the loudest thing in the column it qualifies.
-    expect(note.className).toMatch(/text-\[10px\]/)
+    /*
+     * A footnote, not the loudest thing in the column it qualifies.
+     *
+     * Re-pointed from 10 to 11, the floor of the agreed type scale. 10 meant
+     * "smaller than the smallest role", and this case is the reason that
+     * mattered: it was pinning a size the scale had abolished, so the pass
+     * that lifted the four sibling panes off the floor left this red and the
+     * commit reported a green suite it had not re-run. The subject is
+     * quietness, so what is asserted now is that nothing in this column is
+     * smaller -- a claim 10 could never satisfy once 11 was the floor.
+     */
+    expect(note.className).toMatch(/text-\[11px\]/)
+    const sizes = sizesWithin(then)
+    expect(sizes.length).toBeGreaterThan(2)
+    expect(sizes.filter(n => n < 11)).toEqual([])
   })
 
   it('shows a decision-time weight only where the snapshot recorded one', () => {
@@ -1767,41 +2036,79 @@ describe('price after a decision carries no verdict', () => {
     return screen.getByTestId('price-since-decision')
   }
 
-  it('does not paint a fall in critical red', () => {
-    const chart = withPath(false)
-    expect(chart.querySelector('svg')!.innerHTML).not.toMatch(/rose|red-/)
-    expect(within(chart).getByText(/^-\d/)).toBeInTheDocument()
-  })
+  /*
+   * ── Three cases rewritten, with the reason, because the rule changed ────
+   *
+   * They pinned a GREY line here: "does not paint a fall in critical red",
+   * "does not paint a rise in success green", "draws the same ink either
+   * way". The argument was that a red line beside a decision's own stated
+   * reason is the picture calling it a bad call while the caption denies
+   * doing so, and it is a good argument in isolation.
+   *
+   * It did not survive the lens it was in. The TILES in this gallery draw
+   * the shared `TilePriceChart`, which is graded -- so a reader saw a red
+   * NKE line on the card, opened it, and got a grey line of the same series
+   * one click later. Reported twice as "the chart is not the same as the
+   * other lenses", and the product owner called it, exactly as they called
+   * the same question for the tile charts a pass earlier.
+   *
+   * What these cases were really protecting is that the card and the
+   * workspace cannot disagree about one series, so that is what they assert
+   * now -- in the direction the product went. The neutral mode still exists
+   * and `DecisionPath`, which draws the decision rather than the market,
+   * still uses it.
+   */
+  it('grades the line the same way the card that opened it does', () => {
+    const inkOf = (el: HTMLElement) => el.querySelector('svg')!.getAttribute('class') ?? ''
+    expect(inkOf(withPath(false))).toMatch(/text-rose-/)
 
-  it('does not paint a rise in success green', () => {
-    const chart = withPath(true)
-    expect(chart.querySelector('svg')!.innerHTML).not.toMatch(/emerald|green-/)
-    expect(within(chart).getByText(/^\+\d/)).toBeInTheDocument()
-  })
-
-  it('draws the same ink either way', () => {
-    const down = withPath(false).querySelector('path')!.getAttribute('class')
-    screen.getByTestId('decision-detail')
-    const upChart = (() => {
+    const up = (() => {
       detail = { history: priceSeries(300, true) }
       decisions = [decision({ id: 'y', decidedAt: daysAgo(160) })]
       const { container } = render(<DecisionsWorkspace selectedDecisionId="y" />)
-      return container.querySelector('[data-testid="price-since-decision"] path')!
+      return container.querySelector('[data-testid="price-since-decision"] svg')!
+        .getAttribute('class') ?? ''
     })()
-    expect(upChart.getAttribute('class')).toBe(down)
+    expect(up).toMatch(/text-emerald-/)
+  })
+
+  it('takes the hue from the same sign the figure takes', () => {
+    // The one thing that must never drift: a green line over a negative
+    // number. Both come off `w.changePct >= 0` in the shared chart.
+    const chart = withPath(false)
+    expect(within(chart).getByText(/^-\d/)).toBeInTheDocument()
+    expect(chart.querySelector('svg')!.getAttribute('class')).toMatch(/rose/)
+    expect(chart.querySelector('svg')!.getAttribute('class')).not.toMatch(/emerald/)
   })
 
   it('keeps the sign on the number, because the sign is a fact', () => {
     const chart = withPath(false)
-    const value = within(chart).getByText(/^-\d/)
-    expect(value.className).not.toMatch(/rose|emerald|red-|green-/)
+    expect(within(chart).getByText(/^-\d/)).toBeInTheDocument()
+    expect(within(chart).getByText(/^-\d/).textContent).toMatch(/^-\d+\.\d%$/)
   })
 
+  /*
+   * The anchor is named on the x-axis now, not floated on the plot.
+   *
+   * `DECIDED` was 8px of letter-spaced capitals riding on the line at x=0,
+   * the least legible thing the old chart drew. The shared plot states the
+   * anchor where a reader looks for it -- on the axis, beside the date the
+   * window actually starts at -- so the assertion follows the word rather
+   * than the typography, and gains the date it never checked.
+   */
   it('anchors at the decision only when history reaches it', () => {
-    withPath(false)
+    const chart = withPath(false)
     expect(screen.getByText('Price after decision')).toBeInTheDocument()
-    expect(screen.getByText('DECIDED')).toBeInTheDocument()
+    expect(chart.textContent).toMatch(/decided · \w+ \d+, \d{4}/)
     expect(screen.getByText(/Not a verdict on the decision/)).toBeInTheDocument()
+  })
+
+  it('says how long the window is, and from when', () => {
+    // The axis is the part of this plot the old one had nothing of: a window
+    // whose span the reader had to guess from the pixel width.
+    const chart = withPath(false)
+    expect(chart.textContent).toContain('d since decision')
+    expect(chart.querySelectorAll('[data-tick]').length).toBeGreaterThan(1)
   })
 
   it('refuses the claim when history starts after the decision', () => {
@@ -1810,6 +2117,62 @@ describe('price after a decision carries no verdict', () => {
     render(<DecisionsWorkspace selectedDecisionId="x" />)
     expect(screen.getByText('Price over available history')).toBeInTheDocument()
     expect(screen.queryByText('DECIDED')).not.toBeInTheDocument()
+  })
+
+  /*
+   * The lens's private slicer claimed a since-decision move for a decision
+   * the price cache had not reached yet, because `Math.max(0, findIndex(...))`
+   * turned "no close after the anchor" into "start at the beginning". The
+   * caption said "Price after decision", the axis said the window began at
+   * the decision, and the figure was the whole series' move. The cache trails
+   * by design, so this was every recent decision.
+   */
+  it('refuses the claim when the cache ends before the decision', () => {
+    detail = { history: priceSeries(300, false) }   // ends today-ish, starts 300d back
+    decisions = [decision({ id: 'x', decidedAt: new Date(Date.now() + 2 * 86_400_000).toISOString() })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    expect(screen.getByText('Price over available history')).toBeInTheDocument()
+    expect(screen.queryByText('Price after decision')).not.toBeInTheDocument()
+    const chart = screen.getByTestId('price-since-decision').textContent ?? ''
+    expect(chart).not.toMatch(/decided · /)
+    // Nor anywhere else on the plot. The figure beside the percentage read
+    // "from decided" while the caption two inches away refused the claim.
+    expect(chart).not.toContain('from decided')
+  })
+
+  it('draws the plot at the size it is measured, not stretched to fit', () => {
+    /*
+     * The old plot was a 340x92 viewBox with `preserveAspectRatio="none"`,
+     * rendered 636px wide on the live pane: 1.87x across against 1.0x down,
+     * so the end dot painted as an ellipse and the dashes came out 1.87x
+     * longer than every other dash on the screen. The shared plot measures
+     * its own box and draws 1:1.
+     */
+    const svg = withPath(false).querySelector('svg')!
+    expect(svg.getAttribute('preserveAspectRatio')).toBeNull()
+    // 204 is Research's height for the same slot, taken deliberately rather
+    // than a number of this lens's own.
+    expect(svg.getAttribute('viewBox')).toMatch(/^0 0 \d+ 204$/)
+  })
+
+  it('still dates the record when there is no price to draw', () => {
+    /*
+     * The chronology was a child of `{win && ...}`, so a record with no
+     * cached closes -- every decision taken since the cache last ran -- lost
+     * its dates along with its chart. When it was proposed, when it was
+     * answered and when it executed are facts about the record; they do not
+     * depend on a price series existing.
+     */
+    detail = {}
+    decisions = [decision({
+      id: 'x', status: 'accepted', requestedAt: daysAgo(12), decidedAt: daysAgo(10),
+      decidedByName: 'Eric', requestedByName: 'Seb',
+    })]
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    const chron = screen.getByTestId('decision-chronology')
+    expect(within(chron).getByText(/Proposed by Seb/)).toBeInTheDocument()
+    expect(within(chron).getByText(/Accepted by Eric/)).toBeInTheDocument()
+    expect(screen.queryByTestId('price-since-decision')).not.toBeInTheDocument()
   })
 
   it('renders no module at all when nothing followed', () => {
@@ -1886,14 +2249,64 @@ describe('navigating and routing', () => {
     expect(tab.data.origin).toBe('decisions')
   })
 
-  it('opens Ideas V2 on the exact idea, never the legacy pipeline', async () => {
+  /*
+   * "Open the idea" has had three destinations, and the first two were wrong.
+   *
+   * It first fired an `ideas-v2` tab descriptor unconditionally, which opened
+   * a SECOND Dashboard tab showing the same shell -- the reader's report, word
+   * for word: "it opens another tab that shows the same workspace screen."
+   *
+   * It then moved the Ideas LENS in place, and two cases here asserted that:
+   * "moves to the idea in place when a lens is mounted to receive it" and
+   * "falls back to a tab, on the exact idea, when nothing is mounted". They
+   * are rewritten rather than deleted because the behaviour they pinned was
+   * real and deliberate; it was simply the wrong destination. The Ideas lens
+   * is a gallery for FINDING work, and a reader pressing "Open the idea" has
+   * already found it.
+   *
+   * The destination now is the Idea Pipeline with the idea's own detail modal
+   * open, which is where an idea is actually worked. That is a top-level tab,
+   * and correctly so: the Pipeline is a different screen, not a lens of the
+   * one the reader is on.
+   */
+  it('sends the reader to the Idea Pipeline with that idea open', async () => {
     const user = userEvent.setup()
     decisions = [decision({ id: 'x', ideaId: 'tq-9' })]
+    const seen: Array<{ type: string; detail: Record<string, unknown> }> = []
+    const record = (e: Event) => seen.push({ type: e.type, detail: (e as CustomEvent).detail })
+    window.addEventListener(OPEN_IDEA_EVENTS.tab, record)
+    window.addEventListener(OPEN_IDEA_EVENTS.modal, record)
     render(<DecisionsWorkspace selectedDecisionId="x" />)
     await user.click(screen.getByRole('button', { name: 'Open the idea' }))
-    expect(tabEvents.at(-1)!.detail.id).toBe('ideas-v2')
-    expect(tabEvents.at(-1)!.detail.data.selectedIdeaId).toBe('tq-9')
-    expect(tabEvents.some(e => e.detail?.type === 'trade-queue')).toBe(false)
+
+    // The modal event is deliberately a frame late, so the Pipeline has
+    // mounted its listener before it arrives. Waiting is the point.
+    await waitFor(() => expect(seen).toHaveLength(2))
+    window.removeEventListener(OPEN_IDEA_EVENTS.tab, record)
+    window.removeEventListener(OPEN_IDEA_EVENTS.modal, record)
+
+    expect(seen.map(e => e.type)).toEqual([OPEN_IDEA_EVENTS.tab, OPEN_IDEA_EVENTS.modal])
+    expect(seen[0].detail.selectedTradeId).toBe('tq-9')
+    expect(seen[0].detail.openIdeaDetail).toBe(true)
+    expect(seen[1].detail.tradeId).toBe('tq-9')
+  })
+
+  it('asks for no Ideas lens and no second Dashboard tab', async () => {
+    const user = userEvent.setup()
+    decisions = [decision({ id: 'x', ideaId: 'tq-9' })]
+    /*
+     * Subscribed through the real seam, not a raw listener: `openIdea` only
+     * reports itself taken when a genuine subscriber claims it, so this is
+     * the probe that would catch the lens route coming back.
+     */
+    const claimed: string[] = []
+    const off = subscribeToOpenIdea(r => claimed.push(r.ideaId))
+    render(<DecisionsWorkspace selectedDecisionId="x" />)
+    await user.click(screen.getByRole('button', { name: 'Open the idea' }))
+    off()
+
+    expect(claimed).toEqual([])
+    expect(tabEvents.some(e => e.detail?.id === 'ideas-v2')).toBe(false)
   })
 
   it('binds Ask AI to the decision, its book and its outcome', async () => {

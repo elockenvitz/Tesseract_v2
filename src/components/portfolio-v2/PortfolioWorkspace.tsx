@@ -18,6 +18,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
+import { CARD_EDGE, CARD_SURFACE, GALLERY_GROUND } from '../../lib/ui/surface'
 import { Briefcase, ChevronDown } from 'lucide-react'
 import {
   usePortfolioList, useBook, useBookFrames, usePositionDetail, useActiveWeights,
@@ -28,9 +29,13 @@ import { ActiveWeights } from './ActiveWeights'
 import { DayPanel } from './DayPanel'
 import { useDayPerformance } from '../../hooks/useDayPerformance'
 import {
-  gapOf, toneForGap, whyItMatters, comparePositions,
+  gapOf, spotOf, toneForGap, whyItMatters, comparePositions, targetFor,
   GAP_LABEL, EMPTY_FRAME, type PositionFrame,
 } from '../../lib/desktop-portfolio/model'
+/* The same two engagements Today and Ideas offer on a tile, through the
+   shared dispatcher. `targetFor` is this lens's own and already exists; the
+   tile had the capability and simply never exposed it. */
+import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import type { SemanticTone } from '../../lib/semantic-tone'
 import type { Position } from '../../lib/portfolio/holdings'
 /* Book minus index, for the panel behind the weight in the tile's corner. */
@@ -45,7 +50,9 @@ import {
   /* `TileMeta` and `TileHeroNumber` are both gone from this lens. They were
      two of the four ways it used to state what a position weighs; `WeightChip`
      in the tile's corner is the one way now. */
-  TileBar, TileScale,
+  TileBar, TileScale, TileAction,
+  /* The figures row the kit has always had and this lens never called. */
+  TileStats,
   sizeByRank, type TileSize,
 } from '../desktop/DesktopTile'
 /* The shared price chart -- the same object Decisions draws, not a sparkline
@@ -54,10 +61,10 @@ import { TilePriceChart } from '../desktop/TilePriceChart'
 /* The shared dated closes, so a position with no written case still has an
    object worth looking at. Keyed by symbol with a five-minute staleTime, so a
    gallery on the same name makes one request. */
-import { useTileCloses } from '../../hooks/useTileCloses'
+import { useTileCloses, useGalleryCloses, type TileClose } from '../../hooks/useTileCloses'
 import { PositionDetailPane } from './PositionDetail'
 import {
-  openDashboardFocus, type RailCard,
+  openDashboardFocus, type RailCard, type DashboardFocusTarget,
 } from '../../lib/dashboard/focus'
 import { bigMoney } from './PortfolioVisual'
 
@@ -67,10 +74,51 @@ export interface PortfolioWorkspaceProps {
   selectedAssetId?: string | null
   /** Set by the Dashboard deck when this lens is the expanded workspace. */
   focusObjectId?: string | null
+  /**
+   * Where a holding opens, when the host has somewhere of its own to put it.
+   *
+   * ── Why a prop and not the window event ──────────────────────────────────
+   *
+   * Opening a position has always dispatched `openDashboardFocus`, and the
+   * deck that listens for it expands the card in place. That seam is global:
+   * every shell mounted at the time hears it. With two Dashboard shells in
+   * the product, a click in one would open a workspace in the other, which
+   * nobody would see and nobody could explain.
+   *
+   * So a host that wants the click says so. Given, the event is NOT
+   * dispatched at all -- two destinations for one press is the defect, not
+   * the fallback -- and the lens keeps drawing the book, because the host is
+   * putting the workspace beside it rather than over it.
+   *
+   * The payload is the descriptor the lens already built for the deck. A
+   * second shape for the same click would be a second vocabulary for one
+   * fact.
+   */
+  onOpenPosition?: (target: DashboardFocusTarget) => void
+  /**
+   * Which holding the host has open BESIDE this book.
+   *
+   * ── Not `focusObjectId`, and not `selectedAssetId` ───────────────────────
+   *
+   * Both of those mean "stop drawing the book and draw this position's detail
+   * pane instead". That is the deck's expand-in-place seam and it is right
+   * for the deck. It is wrong for a host that puts the workspace in the other
+   * half of the screen, because then this half has no book left to go back
+   * to.
+   *
+   * This prop says the opposite: keep drawing the book, and say which line is
+   * the one being worked. The lens answers in the only vocabulary a gallery
+   * has -- the tile's size and its selected ring -- and the chosen line keeps
+   * its full card while the rest drop to `compact`.
+   *
+   * Absent by default, so the deck and the Portfolio tab draw exactly what
+   * they drew before.
+   */
+  openAssetId?: string | null
 }
 
 export function PortfolioWorkspace({
-  selectedPortfolioId, selectedAssetId, focusObjectId,
+  selectedPortfolioId, selectedAssetId, focusObjectId, onOpenPosition, openAssetId = null,
 }: PortfolioWorkspaceProps = {}) {
   const { portfolios, isLoading: listLoading } = usePortfolioList()
   const [portfolioId, setPortfolioId] = useState<string | null>(selectedPortfolioId ?? null)
@@ -96,18 +144,75 @@ export function PortfolioWorkspace({
   useEffect(() => { if (selectedPortfolioId) setPortfolioId(selectedPortfolioId) }, [selectedPortfolioId])
   useEffect(() => { if (selectedAssetId) setAssetId(selectedAssetId) }, [selectedAssetId])
 
+  /**
+   * Bring the open line into view.
+   *
+   * Reported: "when I opened the card workspace, the left hand pane was not
+   * focused on that tile, it was still at the top." The press happens at full
+   * width, where the line can be twenty rows down a packed gallery; the
+   * column then narrows to a single rail and every tile above becomes its own
+   * row, so the one that was under the cursor is far outside the scrollport.
+   *
+   * Found by `data-selected`, which `DesktopTile` already sets, rather than
+   * by threading a ref through the tile. `block: 'nearest'` scrolls the least
+   * possible distance, so a line already on screen does not move.
+   *
+   * `scrollIntoView?.()` because jsdom does not implement it, and a suite
+   * that mounts this lens must not take an error boundary over a scroll.
+   */
+  const host = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!openAssetId) return
+    const chosen = host.current?.querySelector('[data-selected="true"]')
+    if (chosen instanceof HTMLElement) chosen.scrollIntoView?.({ block: 'nearest' })
+  }, [openAssetId])
+
   const portfolio = portfolios.find(p => p.id === activeBookId) ?? null
   const { book, isLoading: bookLoading } = useBook(activeBookId)
   const { frames, pending: framesPending } = useBookFrames(book)
   const benchmark = useActiveWeights(book)
   const day = useDayPerformance(book, benchmark.rows)
 
+  /* Every tile's price in ONE batched read, rather than one request per tile
+     resolving on its own schedule and reflowing its card when it lands. The
+     same hook and the same reasoning as the Ideas and Research fields.
+
+     Asked of the BOOK and not of `rows`, because the rows below are now
+     marked from this map: taking the symbols off them would make the fetch
+     depend on its own result. The book's lines are the same set either way. */
+  const { map: fieldCloses, pending: closesPending } = useGalleryCloses(useMemo(
+    () => (book?.positions ?? []).map(p => p.symbol),
+    [book],
+  ))
+
+  /*
+   * ── Marked to the stored close, not to the upload ───────────────────────
+   *
+   * `position.price` is whatever price was in the file the book was loaded
+   * from, carrying that file's own date. It is the right number for market
+   * value and it is not a current price: AAPL sits in Large Cap Core at
+   * 175.50 as of 2025-08-02, and the newest stored close is 330.32.
+   *
+   * Every framework claim on this surface was made against the first number,
+   * so a tile said AAPL was below a bear case of 205 and the workspace it
+   * opened said the same name was above a bull case of 285. Reported as
+   * exactly that: "I clicked on below bear case for AAPL and the workspace
+   * says above bull case."
+   *
+   * The mark is the LAST POINT OF THE SERIES THIS TILE ALREADY DRAWS, so the
+   * number the verdict rests on is the number the chart ends at and nothing
+   * is fetched to get it. `PositionFrame.mark` carries why the frame is where
+   * it lives, and `spotOf` is the one function that decides what spot means.
+   */
   const rows = useMemo(() => {
     if (!book) return []
     return book.positions
-      .map(position => ({ position, frame: frames[position.assetId] ?? EMPTY_FRAME }))
+      .map(position => {
+        const base = frames[position.assetId] ?? EMPTY_FRAME
+        return { position, frame: markFrame(base, fieldCloses.get(position.symbol ?? '')) }
+      })
       .sort(comparePositions)
-  }, [book, frames])
+  }, [book, frames, fieldCloses])
 
   /**
    * Selection lives in the deck. The lens draws the book and says which card
@@ -139,8 +244,8 @@ export function PortfolioWorkspace({
   // carrying the asset across would show one book's line under another's name.
   const selectBook = (id: string) => { setPortfolioId(id); setAssetId(null) }
 
-  const open = (position: Position, frame: PositionFrame) => openDashboardFocus({
-    target: {
+  const open = (position: Position, frame: PositionFrame) => {
+    const target: DashboardFocusTarget = {
       originLens: 'portfolio',
       workspaceLens: 'portfolio',
       objectType: 'position',
@@ -151,11 +256,17 @@ export function PortfolioWorkspace({
       portfolioName: portfolio?.name ?? null,
       issue: GAP_LABEL[gapOf(position, frame)],
       origin: 'portfolio',
-    },
-    // Named for the book, because that is where the reader returns.
-    backLabel: portfolio?.name ?? 'Portfolio',
-    rail: rows.map(toRailCard),
-  })
+    }
+    /* The host took it. No dispatch: see `onOpenPosition` for why one press
+       must not reach two destinations. */
+    if (onOpenPosition) { onOpenPosition(target); return }
+    openDashboardFocus({
+      target,
+      // Named for the book, because that is where the reader returns.
+      backLabel: portfolio?.name ?? 'Portfolio',
+      rail: rows.map(toRailCard),
+    })
+  }
 
   /*
    * One placeholder for the whole load, not three.
@@ -182,7 +293,17 @@ export function PortfolioWorkspace({
    * tile because the height genuinely varies per position. One skeleton and
    * one paint is both calmer and honest about what is still arriving.
    */
-  if (bookLoading || framesPending || !book) {
+  /*
+   * The closes join the same gate as the frames, for the same reason twice
+   * over. They decide the tile's verdict now, and the verdict decides the
+   * tile's RANK -- so drawing the grid before they land would order the book
+   * by one set of prices and then re-order it under the reader's cursor. It
+   * also removes the second paint the charts used to arrive in.
+   *
+   * `pending` is false the moment the query resolves OR fails, so a market
+   * data outage cannot hold this shut.
+   */
+  if (bookLoading || framesPending || closesPending || !book) {
     return <div className="h-full bg-gray-50/60 dark:bg-[#0b0f16]"><SkeletonGrid /></div>
   }
   /*
@@ -213,8 +334,24 @@ export function PortfolioWorkspace({
     )
   }
 
+  /* The ground, as on Today, Ideas and Research. See the note there: left
+     transparent, this showed through to the shell's `bg-gray-50/60` and the
+     cards lost their edge. */
   return (
-    <div className="h-full overflow-y-auto pb-10" data-testid="portfolio-lens">
+    <div
+      /*
+       * `gallery-host`: the book is drawn at full width AND in the rail
+       * beside an open workspace, and the window is 1920px in both. Without
+       * the container the gallery below fell through to `2xl:grid-cols-12`
+       * and packed twelve tracks into a 26rem pane, which is why positions
+       * read as slivers there. The container is on the scroller because that
+       * is the one element that is never remounted, so the grid re-flows in
+       * place and the reader's scroll does not move.
+       */
+      ref={host}
+      className={clsx('gallery-host h-full overflow-y-auto pb-10', GALLERY_GROUND)}
+      data-testid="portfolio-lens"
+    >
       {/* The book map and its totals describe the WHOLE book, so they belong
           to browsing it -- and they are why this lens exists: where is
           capital, and where has the framework come apart. */}
@@ -228,7 +365,8 @@ export function PortfolioWorkspace({
           if (r) open(r.position, r.frame)
         }}
       />
-      <DesktopGallery title="Positions" count={rows.length}>
+      {/* `region`: tracks from the scroller above, not from the window. */}
+      <DesktopGallery title="Positions" count={rows.length} region>
         {rows.map((r, i) => (
           <PositionTile
             key={r.position.assetId}
@@ -244,15 +382,47 @@ export function PortfolioWorkspace({
                 ? benchmark.rows.find(a => a.assetId === r.position.assetId) ?? null
                 : null
             }
-            // `comparePositions` already ranks the book by how much the
-            // framework has come apart, weighted by size. Room follows it.
-            size={sizeByRank(i, rows.length)}
+            /*
+             * `comparePositions` already ranks the book by how much the
+             * framework has come apart, weighted by size. Room follows it --
+             * EXCEPT where the host has one line open beside the book, and
+             * then the open line is the one that gets the room.
+             *
+             * `compact` is the bottom rung of the same ladder, not a new
+             * rendering mode: a label, a ticker, one line. Twenty-two of them
+             * in a 26rem rail is a list the reader can scan for the next name,
+             * which is what the rail is for; twenty-two full cards pushed the
+             * one they had just opened off the screen.
+             */
+            size={openAssetId && r.position.assetId !== openAssetId
+              ? 'compact'
+              : sizeByRank(i, rows.length)}
+            /* The ring, so the rail says which line the workspace belongs to.
+               `DesktopTile` draws it and sets `data-selected`, which is also
+               what the scroll effect above finds. */
+            selected={!!openAssetId && r.position.assetId === openAssetId}
             onOpen={() => open(r.position, r.frame)}
+            closesIn={fieldCloses.get(r.position.symbol ?? '')}
           />
         ))}
       </DesktopGallery>
     </div>
   )
+}
+
+/**
+ * The frame, carrying the market price the book's own file does not.
+ *
+ * The series is the one the tile's chart is drawn from, so the mark is its
+ * last point: the verdict and the picture end on the same number. A name with
+ * nothing stored -- cash, or a symbol with no cached history -- keeps the
+ * frame it came with, and `spotOf` then falls back to the holding's price
+ * exactly as this surface always did.
+ */
+function markFrame(frame: PositionFrame, closes: readonly TileClose[] | undefined): PositionFrame {
+  const last = closes && closes.length ? closes[closes.length - 1] : null
+  if (!last || !(last.value > 0) || Number.isNaN(last.date.getTime())) return frame
+  return { ...frame, mark: { price: last.value, asOf: last.date.toISOString().slice(0, 10) } }
 }
 
 /**
@@ -267,15 +437,97 @@ function outsideBy(
 ): { value: string; label: string } | null {
   const rung = (n: string) => frame.ladder?.cases.find(c => c.name === n)?.price ?? null
   const bear = rung('Bear'), bull = rung('Bull')
-  const spot = position.price
+  /* The marked price. Read through `spotOf` so this cannot disagree with
+     `gapOf` about the same position, which is the defect it closes: the gap
+     checked the bull rung first and this checked the bear rung first, so on
+     two different prices they named two different breaks. */
+  const spot = spotOf(position, frame)
   if (!frame.ladder?.valid || !(spot > 0)) return null
-  if (bear != null && spot < bear) {
-    return { value: `${(((bear - spot) / bear) * 100).toFixed(1)}%`, label: 'below bear' }
-  }
+  /* Bull BEFORE bear, which is the order `gapOf` resolves them in. A written
+     ladder whose rungs are crossed -- bull below bear, which the data permits
+     -- puts spot outside both at once, and the side that is named must not
+     depend on which function happens to be asking. */
   if (bull != null && spot > bull) {
     return { value: `${(((spot - bull) / bull) * 100).toFixed(1)}%`, label: 'above bull' }
   }
+  if (bear != null && spot < bear) {
+    return { value: `${(((bear - spot) / bear) * 100).toFixed(1)}%`, label: 'below bear' }
+  }
   return null
+}
+
+/**
+ * The figures that frame the tile's finding, each under its own key.
+ *
+ * ── What the tile showed instead ─────────────────────────────────────────
+ *
+ * An eyebrow, a ticker and a chart. On a name with nothing written -- which
+ * is most of this book -- the sentence is deliberately suppressed and the
+ * ladder does not exist, so the card went straight from the company name to
+ * a price line with not one number on it. The reader could see the shape of
+ * six months and could not read a single value off the card.
+ *
+ * `TileStats` has existed in the tile kit the whole time, at the exact scale
+ * this wants: a 19px mono figure over a 9.5px uppercase key. The Portfolio
+ * tile never called it.
+ *
+ * ── What goes in, and what deliberately does not ─────────────────────────
+ *
+ * Each figure is a fact already on the frame or on the series the chart is
+ * drawn from. Nothing is derived from a source the card does not show:
+ *
+ *   how far outside   `outsideBy`, the same number the rail card carries
+ *   the rung it broke the written bear or bull, so the distance can be
+ *                     checked rather than taken on trust
+ *   six months        first to last close of the SAME series `TilePriceChart`
+ *                     plots, named for the window `TILE_HISTORY_DAYS` sets
+ *   since written     `frame.daysSinceReview`, where a case exists
+ *
+ * The WEIGHT is not here, and that is the point of the corner chip: it is
+ * stated once, at every size, with the dollars and the shares one click
+ * behind it. Four ways to say what a position weighs is what the chip
+ * replaced, and a fifth would undo it.
+ *
+ * Unpriced names simply get fewer figures. A row of three is not a target.
+ */
+function tileStatsFor(
+  p: Position, f: PositionFrame, closes: readonly TileClose[] | undefined, max: number,
+): { value: string; key: string; tone?: SemanticTone }[] {
+  const out: { value: string; key: string; tone?: SemanticTone }[] = []
+
+  const outside = outsideBy(p, f)
+  if (outside) {
+    out.push({ value: outside.value, key: outside.label, tone: 'critical' })
+    /* The rung it broke, so the distance above is auditable on the card.
+       Read back off the ladder rather than recomputed, so the two figures
+       cannot disagree. */
+    const rung = f.ladder?.cases.find(
+      c => c.name === (outside.label === 'below bear' ? 'Bear' : 'Bull'),
+    )?.price
+    if (rung != null) {
+      out.push({
+        value: `$${rung.toFixed(rung < 10 ? 2 : 0)}`,
+        key: outside.label === 'below bear' ? 'your bear' : 'your bull',
+      })
+    }
+  }
+
+  /* The move the chart beside it draws, stated. Guarded on both ends being
+     real and the first being non-zero: a series that starts at zero is a bad
+     row, not a position that went up infinitely. */
+  if (closes && closes.length >= 2) {
+    const first = closes[0].value, last = closes[closes.length - 1].value
+    if (first > 0 && Number.isFinite(last)) {
+      const pct = ((last - first) / first) * 100
+      out.push({ value: `${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`, key: '6 months' })
+    }
+  }
+
+  if (f.daysSinceReview != null) {
+    out.push({ value: `${f.daysSinceReview}d`, key: 'since written' })
+  }
+
+  return out.slice(0, max)
 }
 
 /**
@@ -332,7 +584,31 @@ function BookHeader({
 
 
   return (
+    /*
+      ── The book summary is a CARD ────────────────────────────────────────
+      *
+      This was a bare `px-6 pt-6` header: a title, a sentence, a facts row,
+      two panels and two more sentences, all floating directly on the page
+      with nothing saying where the summary of the book ends and the list of
+      its positions begins. Every other object on this product's surfaces --
+      a feed card, an Explore tile, a position tile -- is inside an edge, and
+      the one thing that describes the whole book was the exception.
+      *
+      The edge is `CARD_SURFACE` and `CARD_EDGE`, the same two the feed card
+      and the gallery tile take, so this is the existing card and not a
+      seventh way of drawing a box.
+      *
+      The bands inside it are separated by hairlines rather than by margin.
+      Four unrelated facts at four sizes with only white space between them
+      read as a column of leftovers; ruled, they read as sections of one
+      instrument, which is what they are.
+    */
     <header className="px-6 pt-6">
+      {/* `book-header` makes this a container, so everything inside is laid
+          out by THIS column's width and not by the window's. See index.css --
+          the lens is drawn at full width and in a ~20rem rail, and the window
+          is 1920 either way. */}
+      <div className={clsx('book-header rounded-xl p-5', CARD_SURFACE, CARD_EDGE)}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-2">
         {/* The book selector belongs to browsing the book. In detail the
             reader has already chosen; switching books there would silently
@@ -345,7 +621,10 @@ function BookHeader({
         )}
       </div>
 
-      <p className="mt-1.5 max-w-[70ch] text-[12px] text-gray-600 dark:text-gray-400">
+      {/* The lens explaining itself. Worth two lines on a page and not worth
+          four in a rail, where the reader arrived by pressing a position and
+          already knows what they are looking at. */}
+      <p className="book-header-detail mt-1.5 max-w-[70ch] text-[12px] text-gray-600 dark:text-gray-400">
         Where this book and the written framework disagree. Ordered by whether
         the disagreement is live, then by how much capital is behind it.
       </p>
@@ -444,7 +723,63 @@ function BookHeader({
           400 stacked, 200 side by side, each a little over the tallest panel
           that layout can produce.
         */
-        className="mt-5 grid min-h-[400px] grid-cols-1 items-start gap-x-10 gap-y-4 xl:min-h-[200px] xl:grid-cols-2"
+        /*
+         * ── The reservation is for the WAIT, and it was outliving it ──────
+         *
+         * Everything above is right and stays: two panels resolve on their
+         * own queries after the book beneath them has painted, so without a
+         * reservation each arrival lands as new height under a reader who has
+         * started reading, and the sizes are per-layout because the panels
+         * stack below xl.
+         *
+         * What it did not account for is that both panels are sized by their
+         * ROW COUNT, and the count is capped at five a side but is often far
+         * fewer. 200px is a little over a five-row panel, which is correct.
+         * Measured on a five-position book, where `n = min(5, floor(5/2))` is
+         * two: the tallest panel is 149px and the row reserves 200, so 51px
+         * of the header is permanently empty -- and it is the gap directly
+         * above the two sentences that say how much of the book has no
+         * framework, which is the most important line in the header.
+         *
+         * A smaller number is not the fix; it would under-reserve the
+         * five-row book this one is sized for and bring back the jump.
+         *
+         * The reservation simply stops once there is nothing left to wait
+         * for. `BenchmarkComparison` is a state machine, so "still loading"
+         * and "this book has no benchmark file" are distinguishable -- which
+         * is the distinction the note above says a collapse must respect, and
+         * the reason it could not be written as a null check. A book with no
+         * file is settled on arrival and reserves nothing; a book that is
+         * still fetching reserves the full height until it is not.
+         */
+        className={clsx(
+          /*
+           * ── The track count moved to a CONTAINER query ──────────────────
+           *
+           * It was `xl:grid-cols-2`, a viewport breakpoint, and this lens is
+           * drawn both at full width and in a ~20rem rail beside an open
+           * workspace. The viewport is 1920 in both, so the rail got two
+           * panels side by side in 296px and the result was unreadable. The
+           * tracks are in `.book-header-panels` now, keyed on the column.
+           */
+          /* Ruled, like the band below it. See the card note at the top. */
+          'book-header-panels mt-4 gap-x-10 gap-y-4 border-t border-gray-100 pt-4 dark:border-gray-800',
+        )}
+        /*
+         * ── The reservation is an attribute, not a utility class ──────────
+         *
+         * It has to follow the same container threshold as the tracks above:
+         * in the rail the panels carry no movers and no strip, so there is
+         * far less to wait for and the full-width number would reserve space
+         * for content that is not coming.
+         *
+         * Tailwind 3.4 ships NO container-query variants and this project
+         * adds no plugin for them -- `@[34rem]:min-h-[400px]` would emit
+         * nothing at all and the reservation would silently not exist. So the
+         * two heights live beside the tracks in `index.css`, keyed off this
+         * attribute, and the component says only whether it is waiting.
+         */
+        data-waiting={benchmark.state === 'loading' ? '' : undefined}
       >
         {/*
           Each panel owns its column, present or not.
@@ -457,8 +792,21 @@ function BookHeader({
           `col-start` pins them, so an absent panel leaves its slot empty
           instead of letting the other move into it.
         */}
-        <div className="min-w-0 xl:col-start-1"><DayPanel day={day} onOpen={onOpenAsset} /></div>
-        <div className="min-w-0 xl:col-start-2"><ActiveWeights comparison={benchmark} onOpen={onOpenAsset} /></div>
+        {/*
+          The column pinning moved to CSS with the tracks, and it had to.
+          *
+          It was `xl:col-start-1` / `xl:col-start-2`, viewport breakpoints, and
+          the viewport is 1920 whether this lens is a page or a ~20rem rail. So
+          once the TRACKS became a container query the second panel still
+          claimed column two, CSS grid created an implicit second track for it,
+          and the two panels sat on top of each other in 352px -- the reported
+          "all messed up", with "-0.81%" drawn over "68.8%".
+          *
+          See `.book-header-panels` in index.css: pinned above 34rem, where
+          there are two tracks to pin to, and not below, where there is one.
+        */}
+        <div className="min-w-0"><DayPanel day={day} onOpen={onOpenAsset} /></div>
+        <div className="min-w-0"><ActiveWeights comparison={benchmark} onOpen={onOpenAsset} /></div>
       </div>
 
       {/*
@@ -480,11 +828,27 @@ function BookHeader({
         the work as. The strip goes; the sentences stay.
       */}
       {rows.length > 1 && (
-        <div className="mt-4">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-gray-500">
+        /*
+          ── This line was whispering the header's whole point ─────────────
+          *
+          "84.8% needs framework work" is the sentence this entire lens
+          exists to produce -- the subtitle three bands above says the page
+          is about where the book and the written framework disagree, and
+          this is the answer. It was set at 10px in gray-500, which is the
+          size of an axis label, below 51px of empty space, with no rule
+          above it.
+          *
+          13px on a ruled band, which is the prototype's treatment and the
+          same step the figures in it already take. The coloured numbers are
+          unchanged: amber for work outstanding, rose for a position outside
+          its own case, and those two tones already mean exactly that
+          everywhere else on this page.
+        */
+        <div className="mt-4 border-t border-gray-100 pt-3.5 dark:border-gray-800">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-gray-600 dark:text-gray-400">
             {workWeight > 0 && (
               <span>
-                <strong className="font-semibold text-amber-700 dark:text-amber-400">
+                <strong className="font-mono font-bold tabular-nums text-amber-700 dark:text-amber-400">
                   {workWeight.toFixed(1)}%
                 </strong>{' '}
                 needs framework work
@@ -492,7 +856,7 @@ function BookHeader({
             )}
             {brokenWeight > 0 && (
               <span>
-                <strong className="font-semibold text-rose-700 dark:text-rose-400">
+                <strong className="font-mono font-bold tabular-nums text-rose-700 dark:text-rose-400">
                   {brokenWeight.toFixed(1)}%
                 </strong>{' '}
                 is trading outside its own case
@@ -504,6 +868,7 @@ function BookHeader({
           </div>
         </div>
       )}
+      </div>
     </header>
   )
 }
@@ -604,27 +969,42 @@ function PortfolioSelector({
  * which is the honest answer to why the tile is there.
  */
 function PositionTile({
-  position, frame, maxWeight, weights, size, activeWeight, onOpen,
+  position, frame, maxWeight, weights, size, selected = false, activeWeight, onOpen, closesIn,
 }: {
   position: Position
   frame: PositionFrame
   maxWeight: number
   weights: number[]
   size: TileSize
+  /** True for the one line the host has open beside the book. */
+  selected?: boolean
   /** Book minus index for this name, where a benchmark file is loaded. */
   activeWeight: ActiveWeight | null
   /** The book being viewed, named beside the weight in the corner. */
   onOpen: () => void
+  /** This name's closes out of the field's one batched read. */
+  closesIn?: TileClose[]
 }) {
   const gap = gapOf(position, frame)
   const tone = toneForGap(gap)
-  /* Read for every tile, used where the card would otherwise show dashes or a
-     weight bar the reader has already seen five times. Unconditional because
-     it is a hook; cached by symbol, so the cost is one request per name. */
-  const { data: closes } = useTileCloses(position.symbol)
+  /* What the shelf's two engagements act on. Null where there is no object to
+     thread, and the actions are then not offered rather than offered inert. */
+  const engage = targetFor(position, frame)
+  const talkable = !!engage && canDiscuss(engage)
+  /* Handed down from the field in ONE batched read. This was
+     `useTileCloses(position.symbol)` -- one request per tile, each resolving
+     on its own schedule and reflowing its card as the chart appeared. The
+     solo hook survives as the fallback for a test that renders one tile
+     directly, where there is no batch to belong to. */
+  const soloCloses = useTileCloses(closesIn ? null : position.symbol)
+  const closes = closesIn ?? soloCloses.data
   const rung = (name: string) => frame.ladder?.cases.find(c => c.name === name)?.price ?? null
   const bear = rung('Bear'), bull = rung('Bull')
-  const showScale = !!frame.ladder?.valid && bear != null && bull != null && position.price > 0
+  /* The marked price, so the dot on the scale sits where the verdict says it
+     does. Drawn from the holding's upload price it could sit inside the band
+     under an eyebrow reading "Below bear case". */
+  const spot = spotOf(position, frame)
+  const showScale = !!frame.ladder?.valid && bear != null && bull != null && spot > 0
   const outside = gap === 'above-bull' || gap === 'below-bear'
 
   /*
@@ -642,6 +1022,7 @@ function PositionTile({
       // this gallery that should be visible from across the room.
       tone={tone}
       size={size}
+      selected={selected}
       onOpen={onOpen}
       /*
         The corner states the WEIGHT, not the market value.
@@ -652,6 +1033,21 @@ function PositionTile({
         are one click away, with the shares, the price and the active weight,
         which is where they belong: useful when asked for, noise when not.
       */
+      /*
+        The hover shelf, as on Today, Ideas and Research.
+        Nothing new is wired: `targetFor` is this lens's own, and `canDiscuss`
+        gates the second action so a position with no thread-able object is
+        not offered one.
+      */
+      actions={<>
+        <TileAction label="Open" onClick={onOpen} primary testId="position-open" />
+        {engage && (
+          <TileAction label="Ask AI" onClick={() => askAI(engage)} testId="position-ai" />
+        )}
+        {talkable && (
+          <TileAction label="Discuss" onClick={() => discuss(engage!)} testId="position-discuss" />
+        )}
+      </>}
       eyebrow={<>
         <TileState tone={tone}>{GAP_LABEL[gap]}</TileState>
         <WeightChip position={position} active={activeWeight} />
@@ -727,6 +1123,11 @@ function PositionTile({
             </p>
           )}
 
+          {/* The figures, under the sentence and above the objects that
+              describe the case. Three is the most a tile of this width reads
+              as separate facts rather than one long number. */}
+          <TileStats stats={tileStatsFor(position, frame, closes, 3)} size={size} />
+
           {/*
             The case's own objects, side by side on one row rather than stacked
             into a column: the standing window, and either the written ladder
@@ -737,7 +1138,11 @@ function PositionTile({
             is what the timeline draws. Both already existed in the frame and
             both went undrawn before this.
           */}
-          {(frame.thesisUpdatedAt || showScale || gap === 'no-framework') && (
+          {/* `|| gap === 'no-framework'` is gone from the gate with the
+              skeleton it was admitting: the row now has no third member, so
+              that clause would open an empty flex row and its `gap-3` on
+              exactly the cards it was meant to help. */}
+          {(frame.thesisUpdatedAt || showScale) && (
             <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2">
               {frame.thesisUpdatedAt && (
                 <div className="min-w-[180px] flex-1">
@@ -748,13 +1153,11 @@ function PositionTile({
                   />
                 </div>
               )}
-              {showScale ? (
+              {showScale && (
                 <div className="min-w-[200px] flex-1">
-                  <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
+                  <TileScale low={bear!} high={bull!} spot={spot} outside={outside} />
                 </div>
-              ) : gap === 'no-framework' ? (
-                <ThesisSkeleton />
-              ) : null}
+              )}
             </div>
           )}
 
@@ -788,6 +1191,11 @@ function PositionTile({
             <TileReason>{tileReasonFor(position, frame)}</TileReason>
           )}
 
+          {/* Two, not three: a medium cell is roughly half the width and the
+              third figure wrapped onto a line of its own, which reads as a
+              second row of content rather than as the same row continued. */}
+          <TileStats stats={tileStatsFor(position, frame, closes, 2)} size={size} />
+
           {/*
             ── The ladder AND the price, not one or the other ────────────────
 
@@ -803,7 +1211,7 @@ function PositionTile({
             prices for at all.
           */}
           {showScale && (
-            <TileScale low={bear!} high={bull!} spot={position.price} outside={outside} />
+            <TileScale low={bear!} high={bull!} spot={spot} outside={outside} />
           )}
 
           <div className="flex min-h-0 flex-1 flex-col justify-end">
@@ -912,17 +1320,31 @@ function PositionTile({
 function SkeletonGrid() {
   const box = 'animate-pulse rounded-[3px] bg-gray-200/70 dark:bg-white/[0.06]'
   return (
-    <div data-testid="portfolio-skeleton" className="px-6 pt-6">
-      {/* Title, role chip, the two-line description, the stats row. */}
+    /*
+      A container, like the header it stands in for.
+
+      The loaded header is laid out by its own column now, because this lens
+      is drawn at full width and in a ~20rem rail. A placeholder still keyed
+      on the viewport would promise the rail a two-panel row and two lines of
+      description that the page then does not draw -- which is this block's
+      one job, done backwards.
+    */
+    <div data-testid="portfolio-skeleton" className="book-header px-6 pt-6">
+      {/* Title, role chip, the two-line description, the stats row. The two
+          description lines go in the rail, exactly as the sentence does. */}
       <div className={`${box} h-[26px] w-[220px]`} />
-      <div className={`${box} mt-3 h-[13px] w-[420px]`} />
-      <div className={`${box} mt-1.5 h-[13px] w-[360px]`} />
+      <div className={`${box} book-header-detail mt-3 h-[13px] w-[420px]`} />
+      <div className={`${box} book-header-detail mt-1.5 h-[13px] w-[360px]`} />
       <div className={`${box} mt-3 h-[14px] w-[300px]`} />
 
-      {/* The two header panels, in the same reservation the loaded row uses. */}
-      <div className="mt-5 grid min-h-[400px] grid-cols-1 gap-x-10 gap-y-4 xl:min-h-[200px] xl:grid-cols-2">
-        <div className={`${box} h-[186px]`} />
-        <div className={`${box} h-[186px]`} />
+      {/* The two header panels, in the same reservation the loaded row uses
+          -- which is now `.book-header-panels` and its `data-waiting`, so the
+          tracks and the height cannot drift from the page's. The 186px box is
+          the full-width panel; in the rail the panels carry no movers and no
+          strip, so it stands down to the figures the page will draw. */}
+      <div data-waiting className="book-header-panels mt-5 gap-x-10 gap-y-4">
+        <div className={`${box} book-panel-ghost`} />
+        <div className={`${box} book-panel-ghost`} />
       </div>
 
       {/* The gallery's own heading block: title, count, and the rule of
@@ -962,8 +1384,11 @@ function Empty({ message }: { message: string }) {
  * Every row is a dash by construction: this only renders for `no-framework`,
  * which is defined as having no core section written at all. It states a fact
  * the frame already proves rather than reading a field that does not exist.
+ *
+ * `THESIS_PARTS` is gone with `ThesisSkeleton`, its only reader -- see the
+ * note where that component was. The names it held are the three the eyebrow
+ * chip summarises as "No thesis on file".
  */
-const THESIS_PARTS = ['Thesis', 'Where we differ', 'Risks'] as const
 
 /**
  * ── Three rows of dashes said it three times ─────────────────────────────
@@ -1092,7 +1517,13 @@ function WeightChip({ position, active }: {
           label: 'Shares',
           value: position.shares.toLocaleString(undefined, { maximumFractionDigits: 0 }),
         },
-        { label: 'Price', value: `$${position.price.toFixed(2)}` },
+        /* "Book price", not "Price": this is the figure the market value and
+           the shares above it multiply out from, which is the price in the
+           file the book was loaded from and not today's. The marked close is
+           what every verdict on this card is made against, and two numbers
+           both called "price" differing by 88% with nothing to tell them
+           apart is the confusion this label removes. */
+        { label: 'Book price', value: `$${position.price.toFixed(2)}` },
         active == null
           ? { label: 'Active weight', value: 'no benchmark' }
           : {
@@ -1124,13 +1555,23 @@ function WeightChip({ position, active }: {
  * where every hero and large tile gets one rather than only the ones with no
  * written case -- and where it has the width to be read.
  */
-function ThesisSkeleton() {
-  return (
-    <div className="flex items-baseline gap-2 text-[12px]">
-      <span className="font-semibold text-amber-700 dark:text-amber-500">Nothing written</span>
-      <span className="min-w-0 truncate text-gray-500">
-        no {THESIS_PARTS.map(p => p.toLowerCase()).join(', no ')}
-      </span>
-    </div>
-  )
-}
+/*
+ * ── Retired, and both halves of its history are the same lesson ───────────
+ *
+ * It drew "Nothing written" over "no thesis, no where we differ, no risks".
+ * The first line went when the eyebrow above it was found to read "No thesis
+ * on file" already; the second has now gone for the same reason, one step
+ * later than it should have. Naming the three parts read as extra
+ * information -- not "something is missing" but which three things -- and on
+ * a name with no case at all those three things ARE the thesis. "No thesis
+ * on file" and "no thesis, no where we differ, no risks" are one fact in two
+ * sets of words, on consecutive lines, and Research was printing its own
+ * version of the same sentence on its own cards.
+ *
+ * Nothing replaces it in the slot. The eyebrow carries the condition and the
+ * space goes to the price chart below, which is the element on this card
+ * that gets better with room.
+ *
+ * Restoring it means restoring `THESIS_PARTS` with it -- which went too,
+ * because this was its only reader.
+ */

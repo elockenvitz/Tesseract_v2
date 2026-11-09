@@ -63,10 +63,68 @@ interface ThesisUnifiedSummaryProps {
   contributions?: Contribution[]
   coveringAnalystIds: Set<string>
   className?: string
+  /**
+   * What to render when AI is not configured.
+   *
+   * 'inline' (default) is the standalone behaviour: a notice explaining how
+   * to turn AI on, then `SimpleSummaryView` as a plain stand-in listing, so
+   * a host that shows nothing else still shows something.
+   *
+   * 'deferred' renders NOTHING, for a host that already covers both halves
+   * itself. The Firm perspective in `AssetTab` is one: it lifts the setup
+   * notice to the top of the section, beside the read-only banner, because
+   * turning AI on is section-level state and this band sits in the middle;
+   * and it already renders the attributed record (`OurViewSummary`) below,
+   * which made the stand-in listing a second pass over the same
+   * contributions.
+   */
+  unconfigured?: 'inline' | 'deferred'
   // Legacy props - deprecated, use contributions instead
   thesisContributions?: Contribution[]
   whereDiffContributions?: Contribution[]
   risksContributions?: Contribution[]
+}
+
+/**
+ * "AI is not set up yet", in one place.
+ *
+ * Exported because it is rendered by two hosts now: this component, when it
+ * stands alone, and the Firm perspective in `AssetTab`, which hoists it to the
+ * top of the section beside the read-only banner. Two copies of this markup
+ * would drift in wording and in where the Settings click goes.
+ *
+ * ── Two fixes taken while it was being moved ───────────────────────────────
+ *
+ * It had TWO buttons, "Enable AI for richer insights" and "Settings", both
+ * dispatching the same `openSettings` event -- one sentence with two different
+ * places to click for one outcome. It is one button now.
+ *
+ * And the sentence carried an em dash in user-visible copy, which this repo
+ * forbids and `guard:copy` counts.
+ */
+export function AISetupNotice({ className }: { className?: string }) {
+  return (
+    <div
+      className={clsx(
+        'flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2.5 dark:border-purple-900 dark:bg-purple-950/40',
+        className,
+      )}
+    >
+      <Sparkles className="w-4 h-4 text-purple-600 flex-shrink-0 dark:text-purple-400" />
+      <p className="text-sm text-purple-700 dark:text-purple-300">
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('openSettings'))}
+          className="font-medium hover:underline"
+        >
+          Set up AI in Settings
+        </button>
+        <span className="text-purple-600 dark:text-purple-400">
+          {' '}to get a sentiment split, consensus points and a generated summary of what the desk wrote.
+        </span>
+      </p>
+    </div>
+  )
 }
 
 // ============================================================================
@@ -727,6 +785,7 @@ export function ThesisUnifiedSummary({
   contributions,
   coveringAnalystIds,
   className,
+  unconfigured = 'inline',
   // Legacy props - for backward compatibility
   thesisContributions = [],
   whereDiffContributions = [],
@@ -761,7 +820,21 @@ export function ThesisUnifiedSummary({
     return all
   }, [contributionsBySection])
 
-  // Use the unified analysis hook (pass empty arrays if using new approach - AI analysis needs refactoring too)
+  /*
+   * ── The hook has to be given the same contributions the view counts ──
+   *
+   * This passed `[]` for all three sections whenever the newer
+   * `contributions` prop was in use, with the note "AI analysis needs
+   * refactoring too". The consequence was not a missing refactor: the
+   * hook counts contributors from exactly these arrays, so it saw zero
+   * and threw "No contributions to analyze", while the view beside it
+   * counted the real ones and said "Synthesizing views from 1
+   * analyst...". Generation could never succeed on this path.
+   *
+   * The sections are already grouped above; this hands the same three
+   * groups over, falling back to the legacy props when the new prop is
+   * not supplied.
+   */
   const {
     analysis,
     isLoading,
@@ -772,9 +845,9 @@ export function ThesisUnifiedSummary({
     generateAnalysis
   } = useUnifiedThesisAnalysis({
     assetId,
-    thesisContributions: contributions ? [] : thesisContributions,
-    whereDiffContributions: contributions ? [] : whereDiffContributions,
-    risksContributions: contributions ? [] : risksContributions,
+    thesisContributions: contributionsBySection.get('thesis') ?? thesisContributions,
+    whereDiffContributions: contributionsBySection.get('where_different') ?? whereDiffContributions,
+    risksContributions: contributionsBySection.get('risks_to_thesis') ?? risksContributions,
     coveringAnalystIds
   })
 
@@ -820,28 +893,15 @@ export function ThesisUnifiedSummary({
 
   // If AI not configured, show simple view
   if (!isConfigured) {
+    /*
+     * A host that covers this itself gets nothing, rather than a band that
+     * repeats its notice and re-lists its contributions. See `unconfigured`
+     * on the props above for which host does that and why.
+     */
+    if (unconfigured === 'deferred') return null
     return (
       <div className={clsx('space-y-4', className)}>
-        <div className="bg-purple-50 border border-purple-200 rounded-lg px-4 py-2.5 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-purple-600 flex-shrink-0" />
-          <p className="text-sm text-purple-700">
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('openSettings'))}
-              className="font-medium hover:underline"
-            >
-              Enable AI for richer insights
-            </button>
-            <span className="text-purple-600"> — Configure AI in{' '}
-              <button
-                onClick={() => window.dispatchEvent(new CustomEvent('openSettings'))}
-                className="font-medium hover:underline"
-              >
-                Settings
-              </button>
-              {' '}for sentiment analysis, consensus points, and auto-generated summaries.
-            </span>
-          </p>
-        </div>
+        <AISetupNotice />
         <SimpleSummaryView
           contributionsBySection={contributionsBySection}
           coveringAnalystIds={coveringAnalystIds}
@@ -873,6 +933,50 @@ export function ThesisUnifiedSummary({
         <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
         <p className="text-sm text-gray-500 dark:text-gray-400">No contributions yet</p>
         <p className="text-xs text-gray-400 mt-1">Add your view to start building the analysis</p>
+      </div>
+    )
+  }
+
+  /*
+   * A failed generation says what happened.
+   *
+   * Without this the view fell through to "Generate analysis", so a
+   * reader who had just watched it spin was offered the button again
+   * with no statement that the last attempt failed or why — and pressing
+   * it produced the same spin.
+   */
+  if (!analysis && !isGenerating && error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const needsSetup = /not configured|api key|unauthor/i.test(message)
+    return (
+      <div className={clsx('bg-white border border-amber-200 rounded-lg p-6 text-center dark:border-amber-900 dark:bg-gray-800', className)}>
+        <Sparkles className="w-8 h-8 text-amber-500 mx-auto mb-2" />
+        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          The summary could not be generated.
+        </p>
+        <p className="text-xs text-gray-500 mt-1 dark:text-gray-400">{message}</p>
+        <div className="mt-3 flex items-center justify-center gap-2">
+          {needsSetup ? (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('openSettings'))}
+              className="rounded bg-primary-600 px-3 py-1 text-xs font-semibold text-white hover:bg-primary-700"
+            >
+              Set up AI in Settings
+            </button>
+          ) : (
+            <button
+              onClick={() => generateAnalysis(aggregationMethod)}
+              className="rounded bg-primary-600 px-3 py-1 text-xs font-semibold text-white hover:bg-primary-700"
+            >
+              Try again
+            </button>
+          )}
+        </div>
+        {/* The contributions themselves are not AI output and are still
+            readable in the Investment Case view. */}
+        <p className="mt-2 text-[11px] text-gray-400">
+          The analysts' own sections are unaffected — read them in Investment Case.
+        </p>
       </div>
     )
   }

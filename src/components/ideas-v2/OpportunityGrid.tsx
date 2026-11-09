@@ -30,19 +30,26 @@
  * authored idea. Both belong in the lens; only one of them is somebody's
  * stated intent.
  */
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import {
-  DesktopGallery, DesktopTile, TileState, TileIdentity, TileReason, TileFigure,
-  TileAction, GallerySkeleton, type TileSize,
+  DesktopGallery, DesktopTile, TileState, TileIdentity, TileClaim, TileStats,
+  TileAction, GallerySkeleton, useGalleryNarrow, type TileSize,
 } from '../desktop/DesktopTile'
 import { TilePriceChart } from '../desktop/TilePriceChart'
-import { useTileCloses } from '../../hooks/useTileCloses'
+import {
+  useGalleryCloses, useTileCloses, useYearRanges,
+  type TileClose, type YearRange,
+} from '../../hooks/useTileCloses'
 import { ExploreVisualBlock } from '../mobile/ExploreVisual'
-import { exploreVisualFor } from '../../lib/mobile/explore-visual'
+import { VisualPager } from '../desktop/VisualPager'
+import {
+  exploreVisualFor, visualRestatesContext, visualRestatesMetric,
+} from '../../lib/mobile/explore-visual'
 import { useDesktopExplore } from '../../hooks/useDesktopExplore'
 import type { RailCard } from '../../lib/dashboard/focus'
 import { coverageExplorePrompts } from '../../lib/desktop-ideas/coverage-prompts'
+import { tileSubject } from '../../lib/desktop-ideas/tile-subject'
 import type { CoverageResearchCandidate } from '../../lib/research/coverage-research-gaps'
 import {
   opportunitiesFrom, opportunitySize, withFeatureBudget, targetForOpportunity,
@@ -140,6 +147,26 @@ export function OpportunityGrid({
     [opportunities],
   )
 
+  /* Every tile's price in ONE batched read, rather than one request per tile
+     resolving on its own schedule and reflowing its card when it lands. */
+  const closes = useGalleryCloses(useMemo(
+    () => opportunities.map(o => o.item.symbol),
+    [opportunities],
+  ))
+
+  /* The trailing year, for the scenario cards ONLY.
+   *
+   * A year is twice the sparklines' window and the chunk size is
+   * `floor(1000 / days)` by construction, so asking the whole field for one
+   * would take it from ~12 requests to ~28. Measured on the live field, 5 of
+   * 56 tiles draw a range -- which is three requests. */
+  const yearRanges = useYearRanges(useMemo(
+    () => opportunities
+      .filter(o => exploreVisualFor(o.item)?.kind === 'scenario_range')
+      .map(o => o.item.symbol),
+    [opportunities],
+  ))
+
   /*
    * The peer population for the deck's rail, in the field's own order.
    *
@@ -162,9 +189,107 @@ export function OpportunityGrid({
       detail: o.item.title ?? null,
     })), [opportunities])
 
-  if (isLoading && opportunities.length === 0) {
-    return <GallerySkeleton title="Ideas" sizeAt={i => opportunitySize(
-      { composed: { emphasis: 'standard' } } as Opportunity, i) as TileSize} />
+  /*
+   * ── The skeleton sizes by INDEX, never by content ─────────────────────────
+   *
+   * This branch used to call `opportunitySize` with a hand-built stand-in:
+   *
+   *     opportunitySize({ composed: { emphasis: 'standard' } } as Opportunity, i)
+   *
+   * `Opportunity` requires `item`, and that literal has none. `opportunitySize`
+   * returns 'hero' for index 0 without looking, then reads `o.item` for every
+   * index after it — so the first placeholder rendered and the second threw
+   * `Cannot read properties of undefined (reading 'subtype')`, taking the whole
+   * app to its error boundary. The `as Opportunity` cast is what let it compile:
+   * it asserted a contract the literal did not meet. (Reached from the Asset
+   * Page: a History event drilling through to its idea mounts this grid cold,
+   * so the skeleton always ran.)
+   *
+   * The stand-in could never have worked, because a skeleton has no content to
+   * size by. `exploreCardSize` reads the ITEM; the one field the literal did
+   * supply, `composed.emphasis`, is never consulted by it.
+   *
+   * So size by the only thing a placeholder actually knows — its index. That is
+   * `GallerySkeleton`'s own default (`sizeByRank`), and it is what the two
+   * sibling workspaces already do: Decisions passes `sizeByRecency`, Research
+   * passes nothing at all. No stand-in object, nothing to go undefined.
+   *
+   * `flow="packed"` matches the loaded grid below, which also packs. The
+   * skeleton defaulted to 'ranked' and therefore laid its placeholders out on a
+   * different span table than the grid replacing them — a re-layout on load,
+   * which is the one thing this skeleton exists to avoid.
+   */
+  /*
+   * ── Wait for the WHOLE field, not the first producer ──────────────────────
+   *
+   * This read `isLoading && opportunities.length === 0`, and the second clause
+   * cancelled the first.
+   *
+   * `useDesktopCandidates` already latches `isLoading` true until all four
+   * producers have finished their first attempt, for exactly this reason — its
+   * own note calls a shuffling feed "the hitch". But the post half resolves
+   * first, so `opportunities.length` was 54 while `isLoading` was still true,
+   * the skeleton left early, and the partial field painted as though it were
+   * the whole field.
+   *
+   * It then reshuffled three more times — measured on a cold load at 1920x889,
+   * tile count 54 -> 64 -> 69 -> 90 over 4.9s, CLS 0.4233 (the "poor"
+   * threshold is 0.25). The worst single shift was 0.282, and its sources show
+   * why it is so violent: `opportunity-tile y772->263 h117->524`. A tile moved
+   * 509px up the page and grew from 117px to 524px, because `opportunitySize`
+   * sizes by CONTENT and `withFeatureBudget` then allocates emphasis across
+   * the whole population. Grow that population and a compact becomes a hero.
+   * Nothing loaded inside the tile; the page simply re-decided what mattered,
+   * three times, under the reader's cursor.
+   *
+   * Honouring the latch alone costs the ~1.8s the slowest producer takes, and
+   * the skeleton is already the real grid's span table, so that wait is a
+   * steady page rather than a moving one. Research and Decisions have always
+   * done it this way (`if (isLoading)`, no escape hatch) and both measure
+   * CLS <= 0.0057.
+   *
+   * Safe against a producer that never returns: `isFetched` is true after
+   * success OR error, so a failing optional producer cannot hold this shut —
+   * it reports itself through `missing` instead.
+   */
+  /*
+   * One gate over both reads, not a field that assembles in two phases.
+   *
+   * The candidates and the closes arrive on different schedules, and the
+   * closes are what turn a tile from one panel into two -- which changes its
+   * height and moves every tile below it. Painting early is only a kindness
+   * if what is painted then stays put, and it did not: measured at 1920x889
+   * over 56 tiles, the grid reflowed for seconds after it appeared.
+   *
+   * `closes.pending` is bounded: false the moment the query resolves OR
+   * fails, and false immediately when there is nothing to fetch, so a
+   * market-data outage cannot hold the field shut.
+   */
+  if (isLoading || closes.pending) {
+    return (
+      <GallerySkeleton
+        title="Ideas"
+        flow="packed"
+        /*
+         * This lens's own measured heights, at 1920x889 over 90 tiles:
+         * the wide tiles (span 6 — hero and large) ran 436-524px with a
+         * median of 461, and the narrow ones (span 3 — medium and compact)
+         * were 202px almost exactly. The shared default claims 232/232/172/132,
+         * so the first skeleton row was ~230px short and every row under it
+         * started in the wrong place.
+         *
+         * Medians, not maxima: the aim is the least total movement, and
+         * reserving 524 for every wide tile would overshoot most of them by
+         * as much as the old numbers undershot.
+         */
+        heights={{
+          hero: 'h-[460px]',
+          large: 'h-[460px]',
+          medium: 'h-[202px]',
+          compact: 'h-[202px]',
+        }}
+      />
+    )
   }
 
   /*
@@ -225,6 +350,8 @@ export function OpportunityGrid({
           key={o.item.id}
           o={o}
           size={sizes[i]}
+          closes={o.item.symbol ? closes.map.get(o.item.symbol) ?? [] : []}
+          year={o.item.symbol ? yearRanges.get(o.item.symbol) ?? null : null}
           onOpen={() => onOpen(o, rail)}
         />
       ))}
@@ -232,15 +359,96 @@ export function OpportunityGrid({
   )
 }
 
-function OpportunityTile({
-  o, size, onOpen,
+/* Exported for `tile-carousel`, which renders it directly. The grid above it
+   needs `useDesktopExplore` and the whole candidate pipeline to produce one
+   tile, and the property under test -- that only one picture is mounted at a
+   time -- is the tile's, not the field's. */
+/* Also rendered by Explore, which reads the same candidates through the same
+   adapters and had been drawing a tile of its own -- a second answer to how a
+   candidate looks. Four optional props carry the differences between the two
+   lenses; every one of them defaults to what this lens has always done, so
+   `OpportunityGrid` below passes none of them. */
+export function OpportunityTile({
+  o, size, onOpen, closes: closesIn, year = null,
+  label, primaryLabel = 'Open', inert = false, selected = false,
 }: {
   o: Opportunity
   size: TileSize
   onOpen: () => void
+  /**
+   * The eyebrow word. Defaults to this lens's own vocabulary, which names what
+   * RAISED the candidate.
+   *
+   * Explore passes its category label instead, and that is not a cosmetic
+   * preference: the category is what Explore's filter narrows on, so a chip
+   * reading anything else would name a facet the reader cannot then ask for.
+   */
+  label?: string
+  /** The primary verb. Explore's resolver names it, because the destination
+   *  differs per candidate -- a story opens a reader, not a workspace. */
+  primaryLabel?: string
+  /** Nothing to open. The tile reads and does not press; see `DesktopTile`. */
+  inert?: boolean
+  /** This tile's object is in the workspace beside the field; see `DesktopTile`.
+   *  Only a lens that KEEPS its field while a pane is open passes this. */
+  selected?: boolean
+  /** This symbol's closes from the field's one batched read. */
+  closes?: TileClose[]
+  /** Its trailing-year extremes, where the field fetched them. Scenario
+   *  cards draw them; every other archetype ignores the prop. */
+  year?: YearRange | null
 }) {
   const item = o.item
-  const big = size === 'hero' || size === 'large'
+  /*
+   * ── Rank decides the span; WIDTH decides the scale ──────────────────────
+   *
+   * `size` is the tile's rank in the field, and it governs two different
+   * things that used to be one: how many tracks the cell spans, and how
+   * large the tile draws itself inside that cell.
+   *
+   * The span is right. The scale was not, in a one-column region: every tile
+   * there is the same width whatever its rank, so a hero drew a 30px ticker
+   * and a 112px plot -- both chosen for a 915px card -- inside a 376px one.
+   * MEASURED in the Dashboard's browse column at 1920, 114 tiles: the tallest
+   * was 356px and nearly square, which is the "left hand pane cards are still
+   * too large" the reader reported with the AMZN Decisions card as the
+   * example.
+   *
+   * So the tile collapses to the compact rung when the region is one column,
+   * and `size` is still what goes out as `data-size`. Rank keeps the emphasis
+   * it can still carry in a list, which is the order.
+   *
+   * ── That collapse is CSS now, except for the chart ──────────────────────
+   *
+   * It used to be a second `TileSize` handed down through context, which
+   * re-wrote the type and padding classes of all 145 tiles whenever the
+   * column changed shape. MEASURED: 289 mutations and a 68-98ms long task per
+   * transition; pinning the signal off took every long task to zero. The
+   * rung lives in `index.css` now -- see `.tile-frame` there -- so the
+   * browser restyles the handful of tiles it has rendered and skips the rest.
+   *
+   * `narrow` survives for ONE thing: the plot's height is a number that goes
+   * into an SVG, not a class, so CSS cannot reach it. That is a single inline
+   * style per tile rather than five class rewrites, and it is the only reason
+   * this component still reads the context.
+   */
+  const narrow = useGalleryNarrow()
+  /*
+   * ── Except the tile the reader chose ──────────────────────────────────
+   *
+   * The rail only exists because a selection opened the workspace, and the
+   * field drops every OTHER tile to `compact` for exactly that reason. So
+   * the chosen tile is exempt from the collapse, here and in the CSS rung
+   * (`:not([data-selected])` in `index.css`) -- without both halves it keeps
+   * its rank's type and loses its rank's plot, or the reverse.
+   *
+   * Only ever one tile, so this does not give the width signal back its
+   * cost: the measurement that moved the rung into CSS was 289 mutations
+   * across 145 tiles, and this is one of them.
+   */
+  const railed = narrow && !selected
+  const drawsBig = size === 'hero' || size === 'large'
+  const big = !railed && drawsBig
 
   /*
    * The three verbs the authored field had, restored on the shared shelf.
@@ -271,8 +479,202 @@ function OpportunityTile({
    * settled on, and the same shared chart, so one name's price reads the same
    * everywhere on the dashboard.
    */
-  const { data: closes } = useTileCloses(item.symbol)
-  const drawsPrice = big && (closes?.length ?? 0) >= 2 && visual?.kind !== 'price_trend'
+  /*
+   * Handed down from the field, never fetched here.
+   *
+   * This called `useTileCloses(item.symbol)` -- one query PER TILE. Measured
+   * at 1920x889 with 56 tiles that is 56 round trips, each asking for a
+   * whole symbol's history, each resolving on its own schedule, and each
+   * arrival turning its tile from one panel into two and so changing its
+   * HEIGHT. The reader watched the grid reassemble under the cursor.
+   *
+   * `tile-carousel` renders this component directly, so the prop is
+   * optional and falls back to the single-symbol hook: the test exercises
+   * one tile, where there is no batch to belong to.
+   */
+  const solo = useTileCloses(closesIn ? null : item.symbol)
+  const closes = closesIn ?? solo.data
+  const hasCloses = (closes?.length ?? 0) >= 2
+
+  /*
+   * ── When the tape IS the finding, it is not ambient ──────────────────────
+   *
+   * `exploreVisualFor` returns `price_trend` only for the types whose claim
+   * is the trajectory -- a target reached, an unusual move, an earnings
+   * print. `ExploreVisualBlock` renders that kind by handing back whatever
+   * sparkline the CALLER injected, and this caller injects none: the price
+   * lives in its own panel here, drawn by the shared desktop chart.
+   *
+   * So the two rules disagreed and the tile lost both ways. The archetype
+   * panel resolved to null, and `drawsPrice` was gated on `big` AND on the
+   * kind NOT being `price_trend` -- which is exactly backwards, since
+   * `price_trend` is the one kind that has asked for a chart by name.
+   * Measured live at 1920x889: 2 of 90 tiles -- "AMZN passed its target" and
+   * "AAPL passed its target" -- rendered an empty 0px box where their only
+   * picture should have been.
+   *
+   * One rule now: the chart is drawn when the resolver asked for it, or when
+   * a wide tile has the room to carry it as context beside the finding.
+   */
+  const priceIsTheFinding = visual?.kind === 'price_trend'
+  /*
+   * Every tile with a price can show it. Measured at 1920x889 over 56 tiles:
+   * `|| big` meant FOUR of them had a second panel, so on 52 cards the
+   * carousel did not exist and the price was unreachable without opening the
+   * card. The gate was tile WIDTH, which is a layout fact, standing in for
+   * "is there anything else worth seeing", which is a data fact -- and the
+   * data was already fetched.
+   *
+   * A narrow tile gets a shorter plot (92px, below), not no plot.
+   */
+  const drawsPrice = hasCloses
+  /* A compact tile asked for the tape still gets a readable plot and not a
+     third of its own height: these were chosen for the wide tiles that carry
+     the chart as a SECOND panel.
+     ── Trimmed, because the tiles read as oversized ──────────────────────
+     Measured at 1920 over 108 tiles: heights ran 134 to 418 with a median of
+     265, and the top of that range was reported as cards that are "way too
+     big/tall" -- the named example a 915x418 hero, 2.2:1 and taller than two
+     rows beneath it together. `items-stretch` multiplies it: the row sizes to
+     its tallest member, so one 418px card made the two cards beside it 418px
+     as well.
+     The height comes out of the PICTURE and not the words. A `max-height` on
+     the grid cell was tried first and clipped real text on 39 of the 108
+     tiles -- see the note left at `.gallery-region` in index.css. The chart
+     is the one part of a tile built to be given less room: it measures its
+     own box in `fill` mode, so a shorter plot is a shorter plot and not a
+     cropped one. 150 -> 112 and 120 -> 98 keep both above the ~92px a narrow
+     tile has always drawn legibly. */
+  const chartHeight = !railed && size === 'hero' ? 112 : big ? 98 : 92
+  /* The carousel's box, sized to the taller panel. The chart is it: the
+     archetypes are a bar and two labels and none of them reaches 120px. The
+     ladder, the plot and the caption are what `height` covers, plus the
+     ~22px the horizon chips sit in above the plot. */
+  const panelBox = chartHeight + 22
+  /**
+   * The floor for a tile whose picture is an archetype and not a chart.
+   *
+   * ── What "archetypes are `fill`, so they need no floor" missed ──────────
+   *
+   * An archetype has no intrinsic height by design: it measures the box it is
+   * given. The conclusion drawn from that was that it needs no floor. But a
+   * box with no floor on a `flex-1` child is whatever the ROW leaves over, and
+   * the row's height is set by a DIFFERENT tile's content -- so an archetype's
+   * size was being decided by its neighbour.
+   *
+   * Measured live at 1920x889. The CEG decisions card, a `large` tile at
+   * 915x230 drawing `scenario_range`, got a picture box of 881x46. A ladder
+   * with three labelled cases and a marker outside it, in 46 pixels. It was
+   * reported as looking "smushed", and it was the WIDEST tile on the page with
+   * the SHORTEST picture -- 19:1 -- because `exploreCardSize` had promoted it
+   * to a full row precisely so its visual could be read.
+   *
+   * ── Why not `panelBox` ──────────────────────────────────────────────────
+   *
+   * Because that is the chart's floor, and a chart is genuinely taller: it
+   * carries a plot, a caption and the horizon chips. Giving an archetype the
+   * chart's box would add height to every card that has no chart, which is the
+   * "cards are too tall" complaint this file already answered once. 84 is
+   * below every chart floor (92 + 22), so an archetype tile can never be
+   * taller than a chart tile of the same rank, and it is enough for a bar with
+   * a row of labels beneath it.
+   */
+  const archetypeBox = 84
+
+  /*
+   * ── Not saying the same thing twice ──────────────────────────────────────
+   *
+   * Measured on this lens at 1920x889, 90 tiles: 38 of them printed some
+   * string twice. 26 were a whole sentence, 13 a figure. Three causes, and
+   * mobile had already solved two of them.
+   *
+   * `visualRestatesMetric` and `visualRestatesContext` are `explore-visual`'s
+   * own tests, used by `MobileExplore` and `ExploreDetail` since the
+   * archetypes landed. This grid was written without them, so AMZN printed
+   * "+38%" in the eyebrow over a scenario bar captioned "+38% above your
+   * range", and AAPL "+29%" over a last-look bar reading "+29% today". The
+   * picture wins, as it does on mobile: it carries the number AND the shape
+   * of it.
+   *
+   * The third was this file's own. `context` fell back to `item.title`, which
+   * is the sentence `TileReason` prints two lines above it — so every
+   * candidate whose producer supplies no separate context said its one
+   * sentence twice, which is where 26 of the 38 came from. A tile with
+   * nothing further to add now adds nothing.
+   */
+  /*
+   * ── Two pictures, one at a time ──────────────────────────────────────────
+   *
+   * A wide tile could draw its archetype AND a price chart, stacked. On
+   * AMZN that was a scenario bar, then a horizon ladder, then a 150px plot,
+   * then a caption -- 524px of tile, and the reader has to scroll a grid of
+   * ninety to get past one card. Measured: 4 of 90 tiles stacked two.
+   *
+   * Neither picture is droppable. The archetype is the finding ("the market
+   * escaped your range") and the price is the evidence under it, and the
+   * horizon ladder on the chart is the fast way to judge whether a move is
+   * news -- so the fix is to page between them rather than to pick one. Same
+   * resolution mobile reached for the pair-trade charts, and the same dots.
+   *
+   * The archetype leads because it is why the candidate was raised; the price
+   * is ambient context a reader asks for second.
+   */
+  const panels = useMemo(() => {
+    /* `label` is the spoken one ("the finding"), `tab` the word printed on
+       the segment. A segment reading "the finding" is a sentence fragment in
+       a control; "Finding" is a name. */
+    const out: { key: string; label: string; tab: string; node: React.ReactNode }[] = []
+    /* `price_trend` is excluded here, not absent: the resolver DID choose a
+       picture for those cards, and it is the chart below rather than one of
+       the bar archetypes. Pushing it here would push a null. */
+    if (visual && visual.kind !== 'none' && !priceIsTheFinding) {
+      out.push({
+        key: visual.kind,
+        label: 'the finding',
+        tab: 'Finding',
+        /* `tile`, because this is not a phone cell. The primitives were drawn
+           against 178px and the gallery renders them at 421px narrow and
+           881px wide, where a fixed-height track becomes a hairline and a
+           two-ended label row becomes two captions in opposite corners. */
+        /* `fill`: the grid stretches this tile to its row, the box above is
+           `flex-1`, and the picture is the last link in that chain. Without
+           it the archetype sits at its minimum in the middle of a box it was
+           given room to grow into. */
+        node: <ExploreVisualBlock visual={visual} now={Date.now()} density="tile" fill year={year} />,
+      })
+    }
+    if (drawsPrice) {
+      out.push({
+        key: 'price',
+        /* Named for the job it is doing on THIS card, because the dot's
+           label is read aloud: on a card about a target being passed the
+           chart is the finding, not the context beside it. */
+        label: priceIsTheFinding ? 'the finding' : 'the price',
+        tab: 'Price',
+        node: <TilePriceChart points={closes!} fill height={chartHeight} />,
+      })
+    }
+    return out
+  }, [visual, drawsPrice, priceIsTheFinding, closes, chartHeight, year])
+
+  const [panel, setPanel] = useState(0)
+  /* Clamped rather than reset: `closes` arriving or failing changes the panel
+     COUNT after the tile has painted, and an index past the end would blank
+     the picture. Derived, so there is no effect to miss. */
+  const shown = Math.min(panel, panels.length - 1)
+
+  /* Suppressed only while the panel that states it is the one on screen. The
+     carousel makes the picture conditional, and a rule written when the
+     picture was always there would take AMZN's "+38%" off the eyebrow and
+     then page away the bar that was carrying it, leaving the number nowhere. */
+  const findingShown = panels[shown]?.key !== 'price'
+  const metric = item.metric?.value
+    && !(findingShown && visualRestatesMetric(visual, item.metric.value))
+    ? item.metric
+    : null
+  const context = item.context && !visualRestatesContext(visual, item.context)
+    ? item.context
+    : null
 
   return (
     <DesktopTile
@@ -281,19 +683,34 @@ function OpportunityTile({
       tone={toneFor(o)}
       size={size}
       onOpen={onOpen}
+      inert={inert}
+      selected={selected}
       eyebrow={<>
         {/* What raised this, in the shared vocabulary. A generated opportunity
             says so here rather than dressing itself as an authored idea. */}
-        <TileState tone={toneFor(o)}>{OPPORTUNITY_LABEL[o.kind]}</TileState>
-        {item.metric?.value && (
-          <TileFigure strong={item.metric.direction === 'bad'}>
-            {item.metric.value}
-          </TileFigure>
-        )}
+        <TileState tone={toneFor(o)}>{label ?? OPPORTUNITY_LABEL[o.kind]}</TileState>
+        {/*
+          The figure LEFT the eyebrow. See `TileStats`.
+
+          It was a `TileFigure` pill here, beside the label, which put the
+          tile's one quantity at 11px on the same line as the word naming the
+          lens that raised the card -- and dropped `metric.label`, so the
+          number arrived with nothing saying what it counted. Two facts
+          competing for one 10px line, one of them silently truncated to
+          nothing.
+
+          It now sits below the claim it supports, at a size that reads across
+          the field, with its key under it. The eyebrow goes back to being one
+          word.
+        */}
       </>}
-      context={<span data-testid="opportunity-why">{item.context || item.title}</span>}
+      context={context ? <span data-testid="opportunity-why">{context}</span> : undefined}
       actions={<>
-        <TileAction label="Open" onClick={onOpen} primary testId="opportunity-open" />
+        {/* No primary where there is nothing to open. Ask AI and Discuss can
+            still stand: they are about the NAME, which exists either way. */}
+        {!inert && (
+          <TileAction label={primaryLabel} onClick={onOpen} primary testId="opportunity-open" />
+        )}
         {target && (
           <TileAction label="Ask AI" onClick={() => askAI(target)} testId="opportunity-ai" />
         )}
@@ -306,24 +723,210 @@ function OpportunityTile({
         symbol={item.symbol ?? null}
         name={item.companyName ?? null}
         size={size}
+        /* What the card is about when it is about no name. See `tileSubject`:
+           this slot used to draw a bare em dash, which is the most prominent
+           line on the tile spent saying nothing. */
+        subject={tileSubject(item)}
       />
 
-      {/* The adapter's own sentence. Never re-derived here: the producer knows
-          why it raised the candidate and this lens does not. */}
-      <TileReason>{item.title}</TileReason>
+      {/*
+        The adapter's own sentence. Never re-derived here: the producer knows
+        why it raised the candidate and this lens does not.
 
-      {visual && visual.kind !== 'none' && (
-        <div className={clsx('min-w-0', big ? 'mt-3' : 'mt-2')} data-testid="opportunity-visual">
-          <ExploreVisualBlock visual={visual} now={Date.now()} />
-        </div>
+        ── Why this is a CLAIM and not a REASON ──────────────────────────────
+
+        It was `TileReason`, which is 11px, grey-700 and clamped to two lines.
+        That primitive's own header calls itself a caption: "one
+        system-generated sentence explaining why an object surfaced". On the
+        four workspace lenses that is exactly right, because the tile's
+        content is a position or a decision and the sentence is a footnote to
+        it.
+
+        Explore is the other way round. The sentence IS the tile's content --
+        "Not held, and trading below every case the desk wrote" is the finding,
+        and the ticker above it is only who it is about. Set at 11px and
+        clamped to two lines it was the quietest thing on a card whose whole
+        purpose is to deliver it, which is what the field was reporting when
+        it read as a page of labels.
+
+        `TileClaim` is the same ladder as the identity (17/15/13/12, full ink,
+        stepped by size) and it had NO callers -- it was written for this and
+        never wired to anything. So this is not a new type scale on the field;
+        it is the one that was already there, used.
+
+        The author-versus-machine distinction the two primitives were drawn on
+        is the wrong axis for this surface. The axis that matters here is
+        whether the sentence is the content of the tile or a note beneath it.
+        `TileReason` keeps its three callers and its meaning; nothing else
+        moves.
+      */}
+      <TileClaim size={size}>{item.title}</TileClaim>
+
+      {/* The figures that frame the claim, with their keys. One today, because
+          one is what the adapters supply; the row is plural because a finding
+          is. See `TileStats`. */}
+      {metric?.value && (
+        <TileStats
+          size={size}
+          stats={[{
+            value: metric.value,
+            /* `metric.label` is what the figure counts. Where an adapter has
+               not written one, the figure says what it is and the key would
+               be a guess, so there is no key rather than an invented one. */
+            key: metric.label ?? '',
+            tone: metric.direction === 'bad' ? 'critical'
+              : metric.direction === 'good' ? 'info' : 'neutral',
+          }]}
+        />
       )}
 
-      {drawsPrice && (
-        <div className="mt-3 min-h-0 flex-1">
-          <TilePriceChart
-            points={closes!}
-            fill
-            height={size === 'hero' ? 150 : 120}
+      {panels.length > 0 && (
+        /* `flex-1` and `min-h-0`: the picture is what takes a row's spare
+           height. The grid stretches tiles to the tallest in the row again,
+           and this is the element that wants the difference -- everything
+           above it (identity, the reason sentence) is as tall as its text and
+           the pager below is fixed. Without `min-h-0` a flex child refuses to
+           shrink past its content and the tile would overflow its row.
+
+           `tile-body`: the gap above the picture is part of the one-column
+           rung in `index.css`, so it reads the RANK and not `narrow`. */
+        <div className={clsx('tile-body flex min-h-0 min-w-0 flex-1 flex-col', drawsBig ? 'mt-3' : 'mt-2')}>
+          {/*
+            One panel's worth of room, whichever panel is showing.
+
+            The box is sized to the TALLEST panel rather than the current one,
+            because a tile is as tall as its contents now -- so a panel change
+            that changed the height would move every tile below it in the
+            column. Paging a carousel is a read, and a read must not relayout
+            the page. The cost is some empty room under the shorter panel,
+            which is the right way round: the alternative is the grid jumping
+            under the reader's cursor.
+          */}
+          <div
+            /*
+             * Centred, and a flex container rather than a block.
+             *
+             * The box is sized to the TALLEST panel, and every archetype but
+             * the chart is a bar and two labels. On AMZN that was 64px of
+             * picture in a 172px box, top-aligned -- 108px of void, 63% of
+             * the box, under a hairline. Centring spends the difference
+             * evenly instead of dumping it all below.
+             *
+             * This also retires the `flow-root` that used to be here. That
+             * was containing the archetype's own `mt-2`, which collapsed
+             * through a parent with no padding and made the finding panel sit
+             * 8px lower than the price panel. At `tile` density the archetype
+             * has no root margin at all -- the container's `mt-2`/`mt-3`
+             * above is the gap -- so there is nothing left to collapse, and a
+             * flex parent would not collapse it anyway.
+             */
+            /* A FLOOR, not a height.
+             *
+             * `panelBox` still sizes the box to the tallest panel, so paging
+             * the carousel never relayouts the page -- that part was right
+             * and the reason is above. But it was an exact `height`, and an
+             * exact height cannot grow, so a tile stretched to a tall
+             * neighbour put the difference under the picture instead of in
+             * it. As `minHeight` on a `flex-1` box the floor still holds and
+             * the ceiling is gone. */
+            /* ── The panel is POSITIONED, so paging cannot resize anything ──
+             *
+             * `minHeight` floored the box but nothing capped it, and the
+             * cap is the half that matters: the chart panel's caption and
+             * horizon chips are intrinsically taller than the axis panel,
+             * and every link in the chain above is content-sized -- the box
+             * feeds the wrapper, the wrapper the column, the column the
+             * tile, and `gridAutoRows: minmax(88px, auto)` sizes the ROW to
+             * its tallest member. So paging to Price grew the card AND
+             * every card beside it.
+             *
+             * Measured by paging all 45 carousels: the card grew 39px on
+             * four, 5px on three more, and the page grew with it each time.
+             * A read must not relayout the field under the cursor.
+             *
+             * `overflow-hidden` did not fix it, and the reason is worth
+             * keeping: clipping governs painting, not intrinsic sizing. The
+             * child still contributed its height to the measurement.
+             *
+             * Taking the panel out of flow does fix it. The box's own
+             * intrinsic height is then `minHeight` and nothing else --
+             * identical for every panel -- while `flex-1` still lets the
+             * row hand it more. Both panels already fill a box they are
+             * given: the chart measures its own in `fill` mode and the axis
+             * is a flex column over a 30px floor. */
+            className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+            /*
+             * ── The floor is about the CHART, not about the panel count ───
+             *
+             * This read `panels.length > 1`, which is true only when a tile
+             * has an archetype AND a chart. A tile whose ONLY panel is the
+             * chart therefore got no floor at all -- and the chart is the one
+             * panel with a fixed intrinsic height (`height={chartHeight}`),
+             * so it rendered at its full size inside whatever `flex-1` left
+             * and was clipped by the panel's own `overflow-hidden`.
+             *
+             * Measured at 1920 over the whole field: 27 tiles drew a chart
+             * taller than the box holding it, and on the worst of them the
+             * cut was 93px out of a 93px chart -- the picture was not short,
+             * it was ENTIRELY invisible. Every one was a Research card, the
+             * category with no archetype of its own, so the chart was always
+             * its only panel. The LLY card that surfaced it was a 451x185
+             * compact whose picture box was 51px tall around a 93px chart.
+             * After: 0 tiles cut, and that box is 114px.
+             *
+             * `some(price)` is a strict superset of the old condition: the
+             * panel list is at most an archetype plus a chart, so a length
+             * above one already implies the chart is in it. The only case
+             * that changes is the chart-only tile, which is the broken one.
+             *
+             * ── And the archetype-only tile needs one too ────────────────
+             *
+             * That used to read "correctly -- archetypes are `fill` and have
+             * no fixed height". The premise is true and the conclusion was
+             * not: with no floor, a `flex-1` box is whatever the ROW leaves
+             * over, and the row is sized by a different tile's content. So an
+             * archetype's height was being set by its neighbour. Measured:
+             * the CEG `scenario_range` card, the widest tile on the field at
+             * 915px, drew its ladder in 46 pixels. See `archetypeBox`.
+             */
+            style={{
+              minHeight: panels.some(p => p.key === 'price')
+                ? panelBox
+                : panels.length > 0 ? archetypeBox : undefined,
+            }}
+            data-testid="opportunity-visual"
+            data-panel={panels[shown].key}
+          >
+            <div className="absolute inset-0 flex min-h-0 flex-col justify-center overflow-hidden">
+              {panels[shown].node}
+            </div>
+          </div>
+
+          {/*
+            Today's pager, not mobile's dots.
+
+            The dots were two 4px circles under the picture -- the same
+            component the phone's pair-trade charts page with, which is right
+            on a surface you swipe. On a desktop field of fifty-six cards a
+            reader cannot tell they are there, let alone that they are
+            pressable, and the carousel went unused. The shared control names
+            each panel and shows arrows either side.
+
+            `portalClick` already lets a <button> through without reading it
+            as "open this tile", so the segments do not open the card.
+          */}
+          {/* `ml-auto`: Today's sits at the RIGHT end of the row under its
+              picture (`ml-auto` beside the "See the full chart" portal), and
+              this one sat at the left end of its own row. Same control, same
+              gesture, two places to look for it. The column's cross axis is
+              horizontal, so an auto left margin pushes it to the end. */}
+          <VisualPager
+            className="mt-1.5 ml-auto"
+            labels={panels.map(p => p.tab)}
+            keys={panels.map(p => p.key)}
+            index={shown}
+            onChange={setPanel}
+            describe={i => `Show ${panels[i].label}`}
           />
         </div>
       )}

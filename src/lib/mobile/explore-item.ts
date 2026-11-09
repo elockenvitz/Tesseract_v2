@@ -1,5 +1,6 @@
 import type { FeedCategory } from './feed-categories'
 import type { ExploreVisualData } from './explore-visual'
+import type { PostKind } from './entry-signal-type'
 
 /**
  * A preview, not a decision card.
@@ -86,6 +87,17 @@ export interface ExploreItem {
    * name all matched equally, and the first always won.
    */
   objectId?: string | null
+  /**
+   * Which post `objectId` names, for the post families only.
+   *
+   * Carried so Explore can tell a row that a work surface FETCHES BY ID from
+   * one that needs the feed's built row. A thought and a prompt each open from
+   * their id alone; a trade idea's surface maps a `ScoredFeedItem` it is given,
+   * so a preview without that row has nothing to open and must say so.
+   *
+   * Resolved by `postKindOf`, the same rule the feed's own selection uses.
+   */
+  postKind?: PostKind | null
 
   /** The Phase 8.1 canonical category. One taxonomy, shared with Curate. */
   category: FeedCategory

@@ -46,12 +46,20 @@ const personName = (u: any): string | null =>
  * thesis, a research note or a scenario -- the scan needs who/what/where/when
  * and the two counts a card shows.
  */
-export function useDecisionScan(portfolioId: string | null) {
+export function useDecisionScan(portfolioId: string | null, options?: { enabled?: boolean }) {
   const { currentOrgId } = useOrganization()
 
-  const { data, isLoading, error } = useQuery<DecisionRecord[]>({
+  const { data, isLoading, isFetched, error } = useQuery<DecisionRecord[]>({
     queryKey: ['desktop-decisions', 'scan', currentOrgId, portfolioId ?? 'all'],
-    enabled: !!currentOrgId,
+    /*
+     * `enabled` is opt-OUT, the shape `useRecommendationCards` already uses.
+     *
+     * Added for a caller that may or may not want the scan: React forbids a
+     * conditional hook, so the hook is held unconditionally and the query is
+     * what gets switched off. Every existing caller passes nothing and keeps
+     * the organisation gate it already had, unchanged.
+     */
+    enabled: (options?.enabled ?? true) && !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {
       let q = supabase
@@ -213,7 +221,10 @@ export function useDecisionScan(portfolioId: string | null) {
     },
   })
 
-  return { decisions: data ?? [], isLoading, error: error as Error | null }
+  /* `isFetched` is true after the first success OR error and stays true, so a
+     caller can wait for the scan's first answer without a failing read holding
+     its surface shut and without a later refetch reopening the wait. */
+  return { decisions: data ?? [], isLoading, isFetched, error: error as Error | null }
 }
 
 /** The books that actually carry decisions, for the filter. */

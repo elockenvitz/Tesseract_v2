@@ -58,7 +58,23 @@ describe('the tile carries judgment; the drawer carries interpretation', () => {
      * it matters". Supporting interpretation is Depth 2 in every state; only
      * PRIMARY prose, where the words are the finding, stays on the card.
      */
-    expect(src).toContain('bodyIsPrimaryProse(card.type) && (')
+    /**
+     * ── The rule became per LAYOUT, and that is still not per family ──────
+     *
+     * It read `bodyIsPrimaryProse(card.type) && (`, which hid supporting
+     * prose on every surface. That was decided against a phone tile, where
+     * two body lines cost 44px of a 582px budget taken off the chart above
+     * them. On the desktop feed the narrative column measures 250px of
+     * content inside a 315px row, so the sentence costs two lines of a
+     * surplus instead.
+     *
+     * `layout` is the surface the card is drawn on -- `viewport` for the
+     * phone tile, `flow` for a card in a scrolling desktop column. One
+     * declaration, two surfaces, and critically still NOT a branch on
+     * `card.type`, which is the regression this case exists to catch. The
+     * loop below is unchanged and is what actually enforces that.
+     */
+    expect(src).toContain("(bodyIsPrimaryProse(card.type) || layout === 'flow') && (")
     expect(src).not.toContain('const suppressSupporting')
     for (const family of ['scenario_gap', 'target_hit', 'target_expired',
                           'no_target', 'crowding', 'conviction_oversized']) {

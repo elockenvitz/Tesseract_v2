@@ -11,6 +11,7 @@ import { rotateForRound } from '../../lib/mobile/feed-rounds'
 import { useAuth } from '../../hooks/useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import { useAttention } from '../../hooks/useAttention'
+import { attentionPool } from '../../lib/signals/attention-pool'
 import { attentionTarget } from '../../lib/mobile/attention-navigation'
 import { clearFeedSession, loadFeedSession, saveFeedSession } from '../../lib/mobile/feed-session'
 import {
@@ -159,6 +160,7 @@ import { ResearchReader } from './ResearchReader'
 import { CaseChartPane } from '../signals/CaseChartPane'
 import { buildIdeaCard, ideaCardId, ideaCardType } from '../../lib/signals/builders/ideas'
 import { ideaPromptFor } from '../../lib/signals/builders/ideas'
+import { feedPairLegs } from '../../lib/signals/feed-item-input'
 import { ideaShapeFor } from '../../lib/signals/idea-shape'
 import { NO_EVOLUTION, unchangedThesisLine } from '../../lib/signals/idea-evolution'
 import { useIdeaEvolution } from '../../hooks/ideas/useIdeaEvolution'
@@ -173,7 +175,7 @@ import { WeightBars } from '../signals/WeightBars'
 import { buildNewsCard } from '../../lib/signals/builders/news'
 import { useRecommendationCards } from '../../hooks/mobile/useRecommendationCards'
 import type { SignalCard } from '../../lib/signals/contract'
-import { useMarketNews } from '../../hooks/useMarketNews'
+import { useMarketNews, MAX_NEWS_SYMBOLS } from '../../hooks/useMarketNews'
 import { useMarketEvents } from '../../hooks/useMarketEvents'
 import { useMarketData } from '../../hooks/useMarketData'
 import {
@@ -355,19 +357,11 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
 
   const { sections, acknowledge, snoozeFor, markRead, refetch: refetchAttention, isLoading: attentionLoading } = useAttention()
 
-  const attentionItems = useMemo(() => {
-    // All four types, not just decisions and actions. The feed is meant to be
-    // endless and to keep pointing the user at something to do; restricting it
-    // to the two most urgent buckets left long stretches with nothing to act
-    // on. Priority still orders them, so decisions surface first.
-    const byPriority = [
-      ...(sections?.decision_required ?? []),
-      ...(sections?.action_required ?? []),
-      ...(sections?.alignment ?? []),
-      ...(sections?.informational ?? []),
-    ]
-    return byPriority.filter(a => a.status !== 'resolved' && a.status !== 'dismissed')
-  }, [sections])
+  /* The rule moved to `lib/signals/attention-pool` unchanged, so desktop can
+     reach it without importing this file or copying it. Both decisions it
+     carries -- all four sections, most urgent first, and resolved/dismissed
+     rows dropped -- are documented there. */
+  const attentionItems = useMemo(() => attentionPool(sections), [sections])
 
   // Genuinely derived signals — stale coverage, conflicting team sentiment,
   // catalyst proximity. These are the real "what should I be thinking about"
@@ -1414,16 +1408,26 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
       if (sym) out.push(sym)
     }
     /**
-     * Twenty-four names, not twelve.
+     * The news hook's own cap, not a number of this file's own.
      *
-     * The cap was written when each symbol was assumed to cost a provider
-     * call. It does not: `useMarketNews` posts the whole list to one edge
-     * function in a single request, so the marginal cost of a name is a longer
-     * query string. Twelve names in a feed that runs to dozens of cards meant
-     * most of what the reader scrolled past carried no story even when one
-     * existed.
+     * ── The comment that used to be here, and why it was wrong ────────────
+     *
+     * It said twenty-four, on the reasoning that "`useMarketNews` posts the
+     * whole list to one edge function in a single request, so the marginal
+     * cost of a name is a longer query string". That is true of ONE of the
+     * four sources. `market-news` loops the symbol list one name at a time in
+     * `fromFinnhub`, `fromYahoo` and `fromYahooRss` -- three upstream calls
+     * per name -- and only `fromAlphaVantage` batches.
+     *
+     * The 24 never took effect either way: `useMarketNews` slices to
+     * `MAX_NEWS_SYMBOLS` itself, so half of what this built was discarded a
+     * function call later, and the feed's budgeting was against a number that
+     * was not the one in force. It now asks about exactly what it sends.
+     *
+     * Raising the real cap is a provider-rate-limit decision, not a layout
+     * one, and is deliberately not made here.
      */
-    return Array.from(new Set(out)).slice(0, 24)
+    return Array.from(new Set(out)).slice(0, MAX_NEWS_SYMBOLS)
   }, [visibleItems, realSignals])
 
   /**
@@ -4787,13 +4791,17 @@ export function MobileDashboard({ onNavigate }: MobileDashboardProps) {
    *
    * One place, because the two shapes disagreed silently once already.
    */
-  const pairLegs = useCallback(
-    (legs: any[] | null | undefined): { symbol: string }[] =>
-      (legs ?? [])
-        .map(l => ({ symbol: String(l?.asset?.symbol ?? l?.symbol ?? '').toUpperCase() }))
-        .filter(l => !!l.symbol),
-    [],
-  )
+  /*
+   * The leg reshaper moved to `feed-item-input`, where the rest of this glue
+   * already lived, and this is now the one import rather than a second copy.
+   *
+   * It was fixed HERE, inline, and the shared mapper never learned the field
+   * -- so the desktop feed kept the defect the phone had fixed and every pair
+   * card there read "Pair trade from <name>". Two shells agreeing about the
+   * builder and drifting about what they feed it is the exact failure that
+   * module exists to prevent, and a local copy is how it happened.
+   */
+  const pairLegs = feedPairLegs
 
   /**
    * Idea-side helpers. Kept together so the idea branch reads as one thing.

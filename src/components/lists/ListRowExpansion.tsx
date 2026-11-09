@@ -41,7 +41,8 @@
  * cannot honestly collect, so those link into their own workspace.
  */
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { ExternalLink, Flag, ArrowUpRight, Plus, Pencil, Check } from 'lucide-react'
+// `Check` went with the "Review recorded" confirmation it was the tick for.
+import { ExternalLink, Flag, ArrowUpRight, Plus, Pencil } from 'lucide-react'
 import { clsx } from 'clsx'
 import { format, parseISO } from 'date-fns'
 import { ListAssigneeCell } from './ListAssigneeCell'
@@ -63,7 +64,11 @@ import {
   useAnalystRatings, useRatingScales,
   type ConvictionLevel,
 } from '../../hooks/useAnalystRatings'
-import { useRecordThesisReview, type ThesisReviewOutcome } from '../../hooks/useThesisReview'
+import {
+  useRecordThesisReview, useCurrentThesisConclusion, type ThesisReviewOutcome,
+} from '../../hooks/useThesisReview'
+import { conclusionWords } from '../../lib/memory/thesis-review'
+import { pipelineTabFor } from '../../lib/desktop-ideas'
 import { useContributions } from '../../hooks/useContributions'
 import { CORE_SECTIONS, STATE_LABEL } from '../../lib/desktop-research/model'
 import { windowReturn } from '../../lib/lists/price-metrics'
@@ -230,6 +235,13 @@ export function ListRowExpansion({
    * exactly as it does on the research surface.
    */
   const review = useRecordThesisReview(asset?.id ?? null)
+  /* What the record currently says, so the row can show it back and offer to
+     change it. Same hook, same cache entry as the research pane -- the two
+     surfaces must not disagree about the standing verdict. */
+  const { current: reviewState } = useCurrentThesisConclusion(asset?.id ?? null)
+  /* The answer in flight wins while it is in flight, so a press lights up its
+     own button immediately instead of after the insert and the refetch. */
+  const standingOutcome = review.pendingOutcome ?? reviewState?.outcome ?? null
 
   const {
     spot, target, positions, liveIdeas, decisions, sections, evidence, caseWrittenAt, ladder,
@@ -665,29 +677,69 @@ export function ListRowExpansion({
 
   // ── Footers, per mode ────────────────────────────────────────────────
 
-  const reviewGroup = review.isDone ? (
-    <span className="inline-flex items-center gap-1.5 px-2 py-1 text-[11.5px] font-semibold text-emerald-700 dark:text-emerald-300">
-      <Check className="h-3 w-3" />
-      Review recorded
-    </span>
-  ) : (
-    <div className="flex items-center gap-1.5 min-w-0">
-      {REVIEW_CHOICES.map(({ outcome, label }) => (
-        <button
-          key={outcome}
-          onClick={() => review.record(outcome)}
-          disabled={review.isPending}
-          className={clsx(
-            'px-2 py-1 text-[11.5px] font-semibold rounded-md transition-colors flex-shrink-0',
-            outcome === 'holds'
-              ? 'bg-gray-900 text-white hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900'
-              : 'text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700',
-            review.isPending && 'opacity-50 cursor-wait',
+  /*
+   * ── The choice stays open, and says what is on the record ───────────────
+   *
+   * This used to swap all three buttons for a green "Review recorded" the
+   * moment one was pressed, and `isDone` lives on the mutation -- so the
+   * confirmation vanished with the component and the row reopened as if
+   * nothing had ever been answered. Between those two states a reader could
+   * neither see their own conclusion nor take back the wrong one, which is
+   * the moment they are most likely to want to.
+   *
+   * The standing verdict is read from the event log instead. It survives the
+   * remount, it is marked on the button that holds it, and the other two stay
+   * live: pressing one records a correction, and the newest conclusion is the
+   * one every consumer reads.
+   *
+   * ── And the standing one is pressable too, which clears it ──────────────
+   *
+   * It used to be locked, on the reasoning that pressing it would write a
+   * second identical event and read as if nothing had happened. True of a
+   * repeat, and it left the reader able to swap their answer for one of the
+   * other two but never able to get back to not having one. `clear()` writes
+   * a newer `cleared` event, so pressing the filled button is neither a
+   * repeat nor a no-op. Same change as the research bar, for the same report.
+   */
+  const reviewGroup = (
+    <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+      {REVIEW_CHOICES.map(({ outcome, label }) => {
+        const standing = standingOutcome === outcome
+        return (
+          <button
+            key={outcome}
+            aria-pressed={standing}
+            data-slot={`list-review-${outcome}`}
+            // `aria-pressed` already tells a screen reader this toggles; the
+            // title is what tells everyone else, because a filled button that
+            // clears on click is not guessable from its colour.
+            title={standing ? 'Press again to clear this answer' : undefined}
+            onClick={() => (standing ? review.clear() : review.record(outcome))}
+            // Only while a write is travelling, and then for all three at
+            // once -- so the dimming says "wait" rather than "this one does
+            // not apply".
+            disabled={review.isPending}
+            className={clsx(
+              'px-2 py-1 text-[11.5px] font-semibold rounded-md transition-colors flex-shrink-0',
+              standing
+                ? 'bg-gray-900 text-white ring-2 ring-gray-900/20 hover:bg-gray-700 dark:bg-gray-100 dark:text-gray-900 dark:ring-white/25 dark:hover:bg-white'
+                : 'text-gray-600 bg-gray-100 hover:bg-gray-200 dark:text-gray-300 dark:bg-gray-800 dark:hover:bg-gray-700',
+              review.isPending && 'opacity-50 cursor-wait',
+            )}
+          >
+            {label}
+          </button>
+        )
+      })}
+      {review.isPending ? (
+        <span className="text-[11.5px] text-gray-500">Recording…</span>
+      ) : reviewState ? (
+        <span data-slot="list-review-standing" className="text-[11.5px] text-gray-500">
+          {conclusionWords(
+            reviewState.outcome, reviewState.occurredAt, reviewState.byMe, new Date(),
           )}
-        >
-          {label}
-        </button>
-      ))}
+        </span>
+      ) : null}
     </div>
   )
 
@@ -811,9 +863,21 @@ export function ListRowExpansion({
       return (
         <PrimaryButton
           icon={ArrowUpRight}
-          onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
-            detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
-          }))}
+          /* The descriptor used to be written out here with `data: null`, so a
+             button about THIS row's idea opened the bare Pipeline with nothing
+             selected and the reader had to find the name again.
+
+             The id comes from `signal.idea`, which is the idea that PRODUCED
+             this tier (`work: workStateFor(idea, …)`), so it is present
+             exactly when this branch renders. `activeIdea` — the first of the
+             workspace query's `liveIdeas` — is a different and later-arriving
+             list, and reaching for it made the button inert on a row whose
+             signal had an idea all along. */
+          onClick={() => {
+            const tab = pipelineTabFor(signal?.idea?.id ?? activeIdea?.id)
+            if (!tab) return
+            window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: tab }))
+          }}
         >
           Decide in Pipeline
         </PrimaryButton>

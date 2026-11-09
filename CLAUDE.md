@@ -35,6 +35,15 @@ own operation get denied and retried.
 
 ---
 
+## Claude for Chrome
+
+- Use `read_page` to get element refs from the accessibility tree.
+- Use `find` to locate elements by description.
+- Click and interact using `ref`, never coordinates.
+- **Never take screenshots** unless I explicitly ask for one.
+
+---
+
 ## Standing rules
 
 ### 1. Findings lead by severity

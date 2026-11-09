@@ -12,7 +12,6 @@ import {
   ArchiveRestore,
   Plus,
   Trash2,
-  MessageSquare,
   Sparkles,
   Tag,
   Pencil,
@@ -50,7 +49,6 @@ function iconFor(type: ThemeActivityType) {
     case 'theme.asset_added':          return Plus
     case 'theme.asset_removed':        return Trash2
     case 'theme.contribution_added':   return Edit3
-    case 'theme.discussion_posted':    return MessageSquare
     default:                           return Activity
   }
 }
@@ -80,8 +78,6 @@ function actionText(ev: ThemeActivityEvent): React.ReactNode {
       return <>removed <span className="font-medium text-gray-900 dark:text-white">{md.symbol || 'an asset'}</span></>
     case 'theme.contribution_added':
       return <>added a thesis contribution</>
-    case 'theme.discussion_posted':
-      return <>posted in discussion{md.visibility === 'shared' ? ' (shared)' : ''}</>
     default:
       return <>did something</>
   }

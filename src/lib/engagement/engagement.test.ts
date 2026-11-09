@@ -88,13 +88,50 @@ describe('toAITags', () => {
 
 describe('toThreadKey / canDiscuss', () => {
   it('binds a thread to the object itself', () => {
-    expect(toThreadKey(AMZN)).toEqual({ contextType: 'asset', contextId: 'asset-amzn' })
+    // A post, now that only posts carry threads. The asset case this used to
+    // assert is in the removal block below.
+    expect(toThreadKey({ objectType: 'trade_idea', objectId: 'idea-1', label: 'idea' }))
+      .toEqual({ contextType: 'trade_idea', contextId: 'idea-1' })
   })
 
-  it.each(['asset', 'portfolio', 'theme', 'note', 'trade_idea', 'quick_thought'] as const)(
-    'allows %s, which shipping code already reads or writes on messages',
+  it.each(['trade_idea', 'quick_thought'] as const)(
+    'allows %s, because a post is published to the organisation',
     type => {
       expect(canDiscuss({ objectType: type, objectId: 'x', label: 'x' })).toBe(true)
+    },
+  )
+
+  /*
+   * ── Rewritten: assets, portfolios, themes and notes moved sides ─────────
+   *
+   * They were asserted DISCUSSABLE here, under "shipping code already reads
+   * or writes them on messages" -- which was true and is still true. The
+   * database was never what stopped them.
+   *
+   * What stopped them is that `messages` SELECT is `organization_id =
+   * current_org_id()` and the table has no participant column, so every
+   * thread is readable by the whole organisation. A reader who wants to
+   * discuss a name with one team and not another has described a conversation
+   * with a membership list, and that is `conversations` +
+   * `conversation_participants` + `conversation_messages` -- which already
+   * exists, already enforces membership and already notifies. Scoping object
+   * threads meant building a second one of each.
+   *
+   * A trade idea and a quick thought survive because org-wide is the RIGHT
+   * audience for them: somebody published the post, so comments on it are
+   * public for the same reason the post is. An asset is a shared record, not
+   * a post, so a thread on it has no audience to inherit.
+   *
+   * `research_note`, `decision` and `coverage` were always refused, for the
+   * original and different reason: the CHECK constraint on
+   * `messages.context_type` cannot be read from `supabase/migrations/`, which
+   * does not define the table.
+   */
+  it.each(['asset', 'portfolio', 'theme', 'note'] as const)(
+    'refuses %s, because an org-wide thread cannot say who it is for',
+    type => {
+      expect(toThreadKey({ objectType: type, objectId: 'x', label: 'x' })).toBeNull()
+      expect(canDiscuss({ objectType: type, objectId: 'x', label: 'x' })).toBe(false)
     },
   )
 
@@ -115,7 +152,9 @@ describe('toThreadKey / canDiscuss', () => {
   })
 
   it('refuses a target with no id', () => {
-    expect(toThreadKey({ objectType: 'asset', objectId: '', label: 'x' })).toBeNull()
+    // On a type that IS discussable, so this fails for the missing id rather
+    // than for the type -- which is what it would now do with an asset.
+    expect(toThreadKey({ objectType: 'trade_idea', objectId: '', label: 'x' })).toBeNull()
   })
 })
 

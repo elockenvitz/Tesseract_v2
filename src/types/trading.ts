@@ -241,6 +241,10 @@ export type UISource =
   // the audit trail should say which screen it was.
   | 'attention_feed'
   | 'simulation_trade_list'
+  // The idea editor inside Asset Page → Work. It writes the same fields as
+  // the modal through the same mutation, so the audit trail has to be able
+  // to tell the two surfaces apart.
+  | 'asset_work'
 
 export interface ActionContext {
   actorId: string

@@ -1,6 +1,8 @@
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import type { AssetFocus } from '../desktop-asset/navigate'
+import type { DashboardFocusTarget } from '../dashboard/focus'
 import type { ScoredFeedItem } from '../../hooks/ideas/types'
+import { postKindOf } from '../mobile/entry-signal-type'
 
 /**
  * What the workspace router needs, and nothing else.
@@ -34,7 +36,21 @@ export interface IdeasSelection {
    * `assetFocusFor`. It is a family the router can route and NOT a second
    * selection type, which is the thing Explore must not grow.
    */
-  family: AttentionEntry['family'] | 'explore'
+  /**
+   * `'portfolio'` is the second value no producer emits: a holding opened
+   * from the book. It is not a finding at all -- nothing surfaced it, the
+   * reader pointed at it -- so it carries no card and no feed row, and it
+   * opens the asset at `position`, which is the part of the asset a book is
+   * about. Like `'explore'` it is a family the router can route, NOT a second
+   * selection type.
+   */
+  /**
+   * `'story'` is the third value no producer emits: a news story opened from
+   * an Explore tile. It is a thing to READ rather than a finding, so it is the
+   * one family whose surface is not the asset page alone -- the words come
+   * first and the name's workspace follows them. See `selectionForStory`.
+   */
+  family: AttentionEntry['family'] | 'explore' | 'portfolio' | 'story'
   /**
    * Which surface the reader was on when they selected this.
    *
@@ -45,7 +61,7 @@ export interface IdeasSelection {
    * never asked the Ideas feed for it, so the Ideas feed's context has no
    * standing to take it away.
    */
-  origin: 'ideas' | 'explore'
+  origin: 'ideas' | 'explore' | 'portfolio'
   /**
    * The card id. Used ONLY to mark the selected tile, so it must match
    * `AttentionEntry.key` — and must not be used to resolve data, because a
@@ -75,6 +91,31 @@ export interface IdeasSelection {
   symbol: string | null
   portfolioId: string | null
   portfolioName: string | null
+  /**
+   * Where to read the story, for `family === 'story'` only.
+   *
+   * Identity, like everything else here: the URL is what the reader is being
+   * shown and the title and source are what the tile already said about it.
+   * The words themselves are fetched by the surface, never carried.
+   */
+  story?: { url: string; title: string | null; source: string | null } | null
+  /**
+   * The names a PAIR proposes, where the candidate is one.
+   *
+   * ── Why a selection has to carry this ───────────────────────────────────
+   *
+   * A pair trade is a relationship between two names, and `assetId` holds
+   * exactly one of them -- the first long leg, because that is the asset the
+   * card's entity resolved to. Routing on `assetId` alone therefore answers
+   * "Long MCD / Short CMG" with a page about MCD and never mentions that the
+   * other half exists, which is the flattening this product's own rules
+   * forbid. The legs travel so the surface can show the whole structure and
+   * let the reader work either side of it.
+   *
+   * Identity only: which names, and which side each is on. No prices, no
+   * sizes, no words.
+   */
+  legs?: readonly { assetId: string; symbol: string | null; side: 'long' | 'short' }[] | null
   /**
    * Why this surfaced, carried so the workspace is entered FROM an attention
    * event rather than arrived at cold.
@@ -116,6 +157,36 @@ const FOCUS_FOR_FAMILY: Record<string, AssetFocus> = {
    * the idea directly is a follow-up that needs a route by idea id.
    */
   ready_to_revisit: 'research',
+  /*
+   * The written record IS research, so the finding and the surface are the
+   * same object. True of all five framings: a case nobody has written, one
+   * nobody has revisited, one the price has outrun and evidence filed after
+   * the case was written all land where the case lives. The alternative for
+   * the price-move framing would be `framework`, which is where `scenario_gap`
+   * goes -- but that finding is the price against a MODELLED CASE, and this one
+   * is the price against a written one with no model behind it.
+   */
+  research: 'research',
+  /*
+   * A holding opened from the book lands on the position, because the book is
+   * the question. "What do I own, how much, and against what index" is what
+   * the reader was reading a moment ago, and `overview` -- the fallback for a
+   * family with no mapping -- would answer a different one.
+   */
+  portfolio: 'position',
+  /*
+   * A proposed trade waiting on an answer opens at the decisions surface, not
+   * at the case. The reader is not being asked what they think of the name in
+   * general; they are being asked to answer a specific person's specific
+   * proposal, and that request lives with the decisions.
+   */
+  recommendation: 'decisions',
+  /*
+   * A holding opened from the book lands on the position, because the book is
+   * the question. "What do I own, how much, and against what index" is what
+   * the reader was reading a moment ago, and `overview` -- the fallback for a
+   * family with no mapping -- would answer a different one.
+   */
 }
 
 export function assetFocusFor(family: IdeasSelection['family']): AssetFocus {
@@ -123,17 +194,148 @@ export function assetFocusFor(family: IdeasSelection['family']): AssetFocus {
 }
 
 /** A prompt is a `quick_thought` row that says so, or carries an assignee tag. */
+/**
+ * Delegates to `postKindOf`, which is the single rule.
+ *
+ * It used to be spelled out here. Explore needs the same answer from a raw
+ * post rather than a built feed row, and the comment on `postType` above warns
+ * that working it out in two places is how the two places disagree -- so the
+ * rule moved to the module both sides already depend on and this reads it.
+ */
 function postTypeOf(item: ScoredFeedItem | null): IdeasSelection['postType'] {
-  if (!item) return null
-  if (item.type === 'trade_idea' || item.type === 'pair_trade') return 'trade_idea'
-  if (item.type === 'quick_thought') {
-    const t = item as unknown as { idea_type?: string | null; tags?: string[] | null }
-    const isPrompt = t.idea_type === 'prompt' ||
-      (Array.isArray(t.tags) && t.tags.some(tag => tag.startsWith('assignee:')))
-    return isPrompt ? 'prompt' : 'thought'
+  return postKindOf(item as Parameters<typeof postKindOf>[0]) ?? null
+}
+
+/**
+ * A holding, as a selection.
+ *
+ * ── Why it lives here and not in the Portfolio lens ───────────────────────
+ *
+ * One file builds every selection. A second builder next to the book would
+ * drift from this one the first time a field is added, and the thing that
+ * drifts is the identity the workspace is keyed on.
+ *
+ * ── Why it takes the descriptor the lens already builds ───────────────────
+ *
+ * `DashboardFocusTarget` is what the Portfolio lens has produced for its
+ * expand-in-place seam all along: asset, ticker, company, book and the gap
+ * the tile is reporting. Inventing a second descriptor for the same click
+ * would be a second vocabulary for one fact.
+ *
+ * ── What it deliberately leaves empty ─────────────────────────────────────
+ *
+ * `item`, `objectId` and `postType` are null and stay null. A holding is not
+ * a post and has no feed row behind it, and filling those with something
+ * plausible is how a router starts taking a branch meant for something else.
+ *
+ * `why.reason` is null for the same reason: NOTHING SURFACED THIS. The reader
+ * pointed at a row in their own book. The headline is the gap the tile is
+ * already showing them, or the company's name when the tile reports no gap --
+ * never a sentence composed here, which would be a second voice describing a
+ * finding that does not exist.
+ */
+export function selectionForPosition(t: DashboardFocusTarget): IdeasSelection {
+  return {
+    family: 'portfolio',
+    origin: 'portfolio',
+    /* Book AND asset. The same name in two books is two selections, because a
+       position IS (asset, portfolio) -- which is the rule the lens already
+       applies when it drops the selection on a book change. */
+    key: `portfolio:${t.portfolioId ?? 'none'}:${t.objectId}`,
+    objectId: null,
+    postType: null,
+    item: null,
+    assetId: t.objectId,
+    symbol: t.symbol ?? null,
+    portfolioId: t.portfolioId ?? null,
+    portfolioName: t.portfolioName ?? null,
+    why: {
+      headline: t.issue ?? t.label ?? t.symbol ?? 'This holding',
+      reason: null,
+      occurredAt: null,
+    },
   }
-  if (item.type === 'note') return 'thought'
-  return null
+}
+
+/**
+ * A news story, as a selection.
+ *
+ * ── Why a story is a selection now, and was not before ────────────────────
+ *
+ * It used to open `ArticleReader` as a full-screen overlay over the whole
+ * Dashboard, and the reasoning for that was written down: "a story is read,
+ * not worked on ... putting an article in the workspace for the sake of
+ * consistency would make the workspace a browser."
+ *
+ * Overridden, by the reader, with the case the original reasoning missed. A
+ * story in this product is not a story in a newspaper: it is surfaced because
+ * the desk owns the name, and the question it raises is "does this change the
+ * case". Answering that means the story and the case on screen together. The
+ * overlay guaranteed the opposite -- it covered the feed, the book and the
+ * workspace, and the only way back to any of them was to dismiss the story.
+ *
+ * And the "browser" it was guarding against does not appear: the pane holds
+ * one story at a time, with no history, no address bar and no second link.
+ *
+ * ── Which asset ──────────────────────────────────────────────────────────
+ *
+ * The desk's, where the resolver found one. That is the name the story was
+ * surfaced FOR -- the one the reader holds -- and not a name parsed out of
+ * the headline. Where there is none, the selection carries no asset and the
+ * surface is the story alone, which is the honest whole of what is known.
+ */
+export function selectionForStory(a: {
+  url: string
+  title: string | null
+  source: string | null
+  desk: { symbol: string; assetId: string | null } | null
+}): IdeasSelection {
+  return {
+    family: 'story',
+    origin: 'explore',
+    /* The URL is the story's identity. Two tiles pointing at one story are
+       one selection, which is what the reader would expect of them. */
+    key: `story:${a.url}`,
+    objectId: null,
+    postType: null,
+    item: null,
+    assetId: a.desk?.assetId ?? null,
+    symbol: a.desk?.symbol ?? null,
+    portfolioId: null,
+    portfolioName: null,
+    story: { url: a.url, title: a.title, source: a.source },
+    why: {
+      headline: a.title ?? 'This story',
+      reason: a.source,
+      occurredAt: null,
+    },
+  }
+}
+
+/** A leg as the feed carries it. Only the asset join is read. */
+type FeedLeg = { asset?: { id?: string | null; symbol?: string | null } | null }
+
+/**
+ * The legs of a pair, from the feed row that holds them.
+ *
+ * `long_legs` and `short_legs` are what `useIdeasFeed` builds a `pair_trade`
+ * item out of, and it has already dropped any leg whose asset join came back
+ * empty. A leg with no asset id is dropped again here rather than carried as
+ * a name with nothing behind it, because every id on a selection is routed on.
+ */
+function legsOf(item: ScoredFeedItem | null): IdeasSelection['legs'] {
+  const row = item as unknown as { long_legs?: FeedLeg[]; short_legs?: FeedLeg[] } | null
+  if (!row) return null
+  const out: { assetId: string; symbol: string | null; side: 'long' | 'short' }[] = []
+  const take = (legs: FeedLeg[] | undefined, side: 'long' | 'short') => {
+    for (const l of legs ?? []) {
+      const id = l?.asset?.id
+      if (id) out.push({ assetId: id, symbol: l.asset?.symbol ?? null, side })
+    }
+  }
+  take(row.long_legs, 'long')
+  take(row.short_legs, 'short')
+  return out.length ? out : null
 }
 
 export function selectionFor(entry: AttentionEntry): IdeasSelection {
@@ -147,6 +349,8 @@ export function selectionFor(entry: AttentionEntry): IdeasSelection {
     objectId: entry.family === 'post' ? entry.item?.id ?? null : null,
     postType: entry.family === 'post' ? postTypeOf(entry.item) : null,
     item: entry.family === 'post' ? entry.item : null,
+    /* Only a pair has them, and `legsOf` returns null for everything else. */
+    legs: entry.family === 'post' ? legsOf(entry.item) : null,
     assetId: card.entity?.kind === 'asset' ? card.entity.id : null,
     symbol: card.entity?.ticker ?? null,
     portfolioId: book?.id ?? null,

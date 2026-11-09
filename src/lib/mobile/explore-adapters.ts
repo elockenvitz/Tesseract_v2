@@ -1,6 +1,8 @@
 import { signalTypeForTemplate } from '../signals/builders/legacy-kinds'
+import { CONTENT_REGISTRY, categoryForType } from '../signals/content-registry'
+import type { SignalType } from '../signals/contract'
 import { insightSignalType } from '../signals/insight-type'
-import { ideaSignalType } from './entry-signal-type'
+import { ideaSignalType, isTradePostType, postKindOf } from './entry-signal-type'
 import type { ExploreItem } from './explore-item'
 import type { FeedCategory } from './feed-categories'
 
@@ -29,6 +31,95 @@ import type { FeedCategory } from './feed-categories'
  */
 
 const upper = (s: unknown) => String(s ?? '').trim().toUpperCase()
+
+/**
+ * The first candidate that is a real clause, and is not the headline again.
+ *
+ * The LAST argument is the title: a producer whose second line merely
+ * restates its first adds nothing, and `explorePreview` already drops a
+ * context equal to the title, so this agrees with it at the source rather
+ * than leaving the strip to clean up after.
+ */
+function firstProse(...parts: unknown[]): string | undefined {
+  const title = String(parts[parts.length - 1] ?? '').trim().toLowerCase()
+  for (const p of parts.slice(0, -1)) {
+    const t = String(p ?? '').trim()
+    if (t && t.toLowerCase() !== title) return t
+  }
+  return undefined
+}
+
+/**
+ * The first part that is actually a string, with no title to avoid.
+ *
+ * `firstProse` above exists to stop a card repeating its own headline on the
+ * second line, so it reserves its last argument as the thing NOT to return.
+ * Naming a tab is the opposite problem -- the headline is often the right
+ * name -- and reaching for the wrong one of these two produced a project tab
+ * titled "Project".
+ */
+function firstNonBlank(...parts: unknown[]): string | undefined {
+  for (const p of parts) {
+    const t = String(p ?? '').trim()
+    if (t) return t
+  }
+  return undefined
+}
+
+/**
+ * One entry of a crowding row's `weightsByPortfolio`, as it actually arrives.
+ *
+ * `usePortfolioLenses` declares both fields required; this widens them to
+ * nullable because the lens rows reach here through an `any[]` and a book with
+ * a missing weight is a thing the adapter has to be able to drop rather than
+ * trust away.
+ */
+type BookWeight = { name?: string | null; weightPct?: number | null }
+
+/**
+ * The category the REGISTRY declares, not the one the adapter happened to type.
+ *
+ * ── The drift this closes ─────────────────────────────────────────────────
+ *
+ * `CONTENT_REGISTRY` is the single answer to "where does this card belong",
+ * and `categoryOf` defers to it for every surface that has a built card. The
+ * adapters below never consulted it: each one typed a category literal beside
+ * its signal type, and three of them disagreed with the registry.
+ *
+ *   signal type     adapter said   registry says
+ *   no_target       decisions      PORTFOLIO
+ *   crowding        decisions      PORTFOLIO
+ *   active_risk     news           PORTFOLIO
+ *
+ * Each of those three has a comment in the registry explaining why it is
+ * Portfolio -- a book fact, not a document fact; a spread that cannot be
+ * stated without more than one portfolio; a weight against a benchmark -- and
+ * `active_risk` under News is recorded there as having been reported from a
+ * phone and called, "correctly, nonsense". The registry was the fix. Explore
+ * then re-made the same mistake one layer up, where nothing was watching.
+ *
+ * The consequence a reader sees: Portfolio has been a category of the
+ * taxonomy, with its own filter row, its own colour and three declared
+ * members, that NO Explore tile could ever belong to. Every crowding and
+ * no-target tile wore "Decisions" instead, which is also why that chip is on
+ * most of the field.
+ *
+ * ── Why a pass over the items and not a literal per producer ──────────────
+ *
+ * Because a literal per producer is what broke. A new family added below
+ * cannot forget to consult the registry if nothing below names a category
+ * that the registry already knows. The adapter's own literal survives only as
+ * the fallback for a type the registry does not hold -- an aggregate, whose
+ * `signalType` is deliberately null because it stands for many cards.
+ */
+export function withRegistryCategory(items: ExploreItem[]): ExploreItem[] {
+  return items.map(i => {
+    const t = i.signalType
+    if (!t || !(t in CONTENT_REGISTRY)) return i
+    const declared = categoryForType(t as SignalType)
+    return declared === i.category ? i : { ...i, category: declared }
+  })
+}
 
 /** Portfolio lenses: targets hit and expired, positions with no target, sizing. */
 export function lensesToExplore(lenses: {
@@ -168,17 +259,56 @@ export function lensesToExplore(lenses: {
         name: c.weightsByPortfolio?.[0]?.name ?? undefined,
       },
       occurredAt: c.asOf ?? null,
+      /**
+       * The spread, which is what "held across N portfolios" is actually about.
+       *
+       * The bar underneath drew `maxWeightPct` alone, so a card whose claim is
+       * that five books carry this name showed one of the five and discarded
+       * the rest -- while the phone's own crowding detail has rendered the full
+       * spread from this very field for two releases. Same source, no second
+       * query, and `weightsByPortfolio` arrives weight-ordered.
+       */
+      visual: {
+        // `flatMap` rather than filter-then-map so the narrowing is the
+        // compiler's, not an assertion: a row without a name or a finite
+        // weight contributes no element at all. `!= null` is checked before
+        // `isFinite` because `Number(null)` is a finite zero, which would let
+        // a book with no weight through as a 0.0% bar.
+        books: (c.weightsByPortfolio as BookWeight[] | undefined)?.flatMap(w =>
+          w?.name && w.weightPct != null && Number.isFinite(Number(w.weightPct))
+            ? [{ name: w.name, weightPct: Number(w.weightPct) }]
+            : [],
+        ),
+      },
       destination: { kind: 'action', action: 'open_asset', assetId: c.assetId, symbol: c.symbol },
       importance: 0.4,
     })
   }
 
-  return out
+  // `no_target` and `crowding` are declared Portfolio; the literals above are
+  // now only the fallback. See `withRegistryCategory`.
+  return withRegistryCategory(out)
 }
 
 /** Scenario cards, which are already built contract cards. */
 export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
-  return (cards ?? []).map(c => ({
+  /**
+   * The capital stamp beats the type, exactly as it does in `categoryOf`.
+   *
+   * `scenario_gap` is ONE signal type covering two findings -- a held position
+   * outside its modelled range, and an unheld name outside the same range --
+   * and the registry can give a type only one category, so it says Decisions.
+   * The builder settles it per card: `capital.issueType` is stamped only where
+   * a real position sits behind the break. `portfolio-taxonomy.test.ts` pins
+   * this rule for Curate; Explore applies the same one rather than a second.
+   *
+   * Applied AFTER the registry pass, so the precedence is the same both ways
+   * round: capital, then the declared type, then the adapter's fallback.
+   */
+  const stamped = (c: any, item: ExploreItem): ExploreItem =>
+    c?.capital?.issueType ? { ...item, category: 'portfolio' as FeedCategory } : item
+
+  const built = (cards ?? []).map(c => ({
     id: `scenario-${c.entity?.id ?? c.id}`,
     dedupeKey: `scenario_gap:${c.entity?.id ?? c.id}`,
     signalType: 'scenario_gap',
@@ -218,6 +348,7 @@ export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
     // it called informational, and the builder computed that from the numbers.
     importance: c.severity === 'critical' ? 0.9 : c.severity === 'attention' ? 0.6 : 0.3,
   }))
+  return withRegistryCategory(built).map((item, i) => stamped((cards ?? [])[i], item))
 }
 
 /**
@@ -241,7 +372,7 @@ export function scenarioCardsToExplore(cards: any[]): ExploreItem[] {
  * redesign into a repair. Flagged for Explore to decide on its own terms.
  */
 export function insightsToExplore(insights: any[]): ExploreItem[] {
-  return (insights ?? []).map(i => {
+  return withRegistryCategory((insights ?? []).map(i => {
     // Was `i.context?.kind`. Same question, new home.
     const issue = i.issue
     const moved = issue?.framing === 'price_move'
@@ -258,9 +389,30 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
       category: 'research' as FeedCategory,
       subtype: 'research' as const,
       title: i.headline,
+      /**
+       * The exposure line where there is one, and the producer's own body
+       * where there is not.
+       *
+       * ── What was being dropped ──────────────────────────────────────────
+       *
+       * `researchCopy` computes a body that names exactly what is missing --
+       * "Thesis is written; where different and risks to thesis are not" --
+       * and the adapter discarded it, keeping only the exposure clause. For a
+       * name nobody holds there is no exposure clause, so those tiles carried
+       * a headline and nothing else. MEASURED live: IBM, BKNG and TGT, each a
+       * single sentence and an Open button.
+       *
+       * The exposure line still wins where it exists: "4.2% of Large Cap
+       * Growth" is the fact that makes a documentation gap urgent, and the
+       * body repeats what the headline already implies. This is the fallback
+       * for the unheld case, not a replacement.
+       *
+       * `explorePreview` drops a context equal to the title, so a producer
+       * whose body merely restates its headline still adds nothing.
+       */
       context: i.portfolioName
         ? `${i.weightPct != null ? `${Number(i.weightPct).toFixed(1)}% of ` : ''}${i.portfolioName}`
-        : undefined,
+        : typeof i.body === 'string' && i.body.trim() ? i.body.trim() : undefined,
       symbol: i.symbol, assetId: i.assetId, companyName: i.companyName,
       metric: moved
         ? {
@@ -304,7 +456,7 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
       },
       importance: Math.min((i.score ?? 0), 1),
     }
-  })
+  }))
 }
 
 /**
@@ -316,9 +468,12 @@ export function insightsToExplore(insights: any[]): ExploreItem[] {
  * takes the post itself rather than a feed entry wrapping it.
  */
 export function ideasToExplore(posts: any[]): ExploreItem[] {
-  return (posts ?? []).map(p => {
+  return withRegistryCategory((posts ?? []).map(p => {
     const type = String(p.type ?? p.item_type ?? '')
-    const isTrade = type === 'trade' || type === 'trade_idea'
+    // The same set `ideaSignalType` answers from: a pair trade is a trade, and
+    // this deciding otherwise is how one row got a trade's type and a
+    // thought's headline at the same time.
+    const isTrade = isTradePostType(type)
     // A thesis update is research, not a post about research — the artifact is
     // the thesis. Categorising by what it IS keeps Curate and Explore agreeing.
     const isThesis = type === 'thesis_update' || type === 'research_note'
@@ -342,6 +497,8 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
       // The one family where type and asset do not identify the object: a desk
       // posts many ideas about one name. See `ExploreTarget.objectId`.
       objectId: p.id != null ? String(p.id) : null,
+      // Which surface that id would open. See `ExploreItem.postKind`.
+      postKind: postKindOf(p),
       signalType: ideaSignalType(p.type),
       category: (isThesis ? 'research' : 'ideas') as FeedCategory,
       subtype: isThesis ? ('research' as const) : ('idea' as const),
@@ -409,7 +566,7 @@ export function ideasToExplore(posts: any[]): ExploreItem[] {
       positive: true,
       importance: 0.4,
     }
-  })
+  }))
 }
 
 /**
@@ -499,7 +656,7 @@ export function postContext(
 
 /** Market news, where it is about a name the desk follows. */
 export function newsToExplore(news: any[]): ExploreItem[] {
-  return (news ?? []).map(n => ({
+  return withRegistryCategory((news ?? []).map(n => ({
     id: `news-${n.id ?? n.url}`,
     dedupeKey: `news:${n.id ?? n.url}`,
     // A desk follows several stories about one name on any given day, so the
@@ -538,12 +695,14 @@ export function newsToExplore(news: any[]): ExploreItem[] {
         ? { kind: 'action' as const, action: 'open_asset', assetId: n.assetId, symbol: n.primarySymbol }
         : { kind: 'filter' as const, category: 'news' as FeedCategory },
     importance: 0.25,
-  }))
+  })))
 }
 
 /** Market templates: unusual moves, earnings, corporate actions, releases. */
 export function templatesToExplore(cards: any[]): ExploreItem[] {
-  return (cards ?? []).map(c => ({
+  // `active_risk` arrives as a template and is declared Portfolio, which is
+  // the whole reason the registry entry exists. See `withRegistryCategory`.
+  return withRegistryCategory((cards ?? []).map(c => ({
     id: `tpl-${c.id ?? `${c.kind}-${c.symbol}`}`,
     dedupeKey: `${c.kind}:${c.assetId ?? c.symbol ?? c.id}`,
     // `economic` is not `economic_release`, and `active_risk` is not in the map
@@ -562,7 +721,7 @@ export function templatesToExplore(cards: any[]): ExploreItem[] {
       ? { kind: 'action' as const, action: 'open_asset', assetId: c.assetId, symbol: c.symbol }
       : { kind: 'filter' as const, category: 'news' as FeedCategory },
     importance: 0.3,
-  }))
+  })))
 }
 
 /**
@@ -582,8 +741,126 @@ export function templatesToExplore(cards: any[]): ExploreItem[] {
  * card from the same row — raised date, due date, days either side of it — so
  * the two surfaces now say the same thing about the same item.
  */
+/**
+ * Where an attention tile goes when it is not about an asset.
+ *
+ * ── The tiles that opened nothing ─────────────────────────────────────────
+ *
+ * This adapter sent every row with no `context.asset_id` to
+ * `{ kind: 'filter' }`, and `resolveExploreItem` maps a non-aggregate filter
+ * to `focus`. On desktop `exploreOpen` then looks for a card in the attention
+ * pool, finds none, has no `objectId` and no `assetId`, and returns `none` --
+ * so the tile is rendered deliberately inert, with no verb.
+ *
+ * MEASURED on the live desktop field, 151 tiles: 13 opened nothing, and 10 of
+ * those were Workflow. Those ten are not missing information. They are project
+ * and deliverable rows that carry `context.project_id`, and decision requests
+ * that carry the trade-queue item's own id -- every one of them names a surface
+ * this app already has a tab for.
+ *
+ * ── Why this is a tab and not a focus ────────────────────────────────────
+ *
+ * There is no level-two preview for a project: the attention pool holds no
+ * card for one, so focusing would show the same text the tile already shows.
+ * The project tab is the real surface, and both it and `PortfolioTab` re-fetch
+ * from the id, so `data` carries the id and the title and nothing invented.
+ * `ProjectDetailTab` merges its own fetch over the prop, which is why passing
+ * a two-field stand-in is honest rather than a fabricated row.
+ *
+ * ── What deliberately still opens nothing ────────────────────────────────
+ *
+ * A `task` row has no context at all and `source_url: '/today'`; a
+ * `notification` about something other than an asset has a null asset and no
+ * other id. Neither names a surface, so neither gets a destination. A tile
+ * that cannot answer must keep not looking actionable, which is the rule
+ * `IdeasExploreBrowse` enforces with `inert`.
+ */
+/**
+ * Only the fields the ladder reads, structurally.
+ *
+ * The adapters around this take `any[]` because they normalise rows from eight
+ * collectors with no shared type, and widening that is a separate job. The
+ * ladder is small enough to state what it needs, so it does -- which is also
+ * what caught `source_id` being a uuid rather than a string.
+ */
+interface AttentionRowForDestination {
+  source_type?: string | null
+  source_id?: string | null
+  title?: string | null
+  subtitle?: string | null
+  context?: {
+    asset_id?: string | null
+    symbol?: string | null
+    project_id?: string | null
+    portfolio_id?: string | null
+  } | null
+}
+
+export function attentionDestination(
+  a: AttentionRowForDestination | null | undefined,
+  isTrade: boolean,
+): ExploreItem['destination'] {
+  const assetId = a?.context?.asset_id
+  if (assetId) {
+    return { kind: 'action' as const, action: 'open_asset', assetId, symbol: a?.context?.symbol }
+  }
+
+  // A PM decision waiting on a recommendation. The verb lives in the queue, so
+  // the queue is where the tile goes, with the row preselected. `source_id` is
+  // the `trade_queue_items` id (see `collectDecisionRequests`), which is what
+  // `MobilePipeline` and `TradeQueuePage` both select on.
+  if (isTrade && a?.source_id) {
+    return {
+      kind: 'tab' as const,
+      target: {
+        id: 'trade-queue', title: 'Idea Pipeline', type: 'trade-queue',
+        data: { selectedTradeId: String(a.source_id) },
+      },
+    }
+  }
+
+  const projectId = a?.context?.project_id
+  if (projectId) {
+    /* The project's own title where the row carries it. A deliverable puts the
+       project title in `subtitle` and its own title in `title`, so the tab is
+       named after the project it opens, not the task that raised it. A project
+       row names itself in `title`.
+
+       Deliberately NOT `firstProse`: that helper takes its LAST argument as a
+       title to avoid and returns the first earlier part that differs from it,
+       so `firstProse(a.title, a.title)` is undefined -- which is exactly how
+       a project row came out named "Project". This wants plain first-non-blank. */
+    const name = firstNonBlank(a.source_type === 'project' ? a.title : a.subtitle, a.title) ?? 'Project'
+    return {
+      kind: 'tab' as const,
+      target: {
+        id: `project-${projectId}`,
+        title: name,
+        type: 'project',
+        data: { id: String(projectId), title: name },
+      },
+    }
+  }
+
+  const portfolioId = a?.context?.portfolio_id
+  if (portfolioId) {
+    const name = firstNonBlank(a.subtitle, a.title)
+    return {
+      kind: 'tab' as const,
+      target: {
+        id: `portfolio-${portfolioId}`,
+        title: name ?? 'Portfolio',
+        type: 'portfolio',
+        data: { id: String(portfolioId), name: name ?? null },
+      },
+    }
+  }
+
+  return { kind: 'filter' as const, category: (isTrade ? 'decisions' : 'workflow') as FeedCategory }
+}
+
 export function attentionToExplore(items: any[], now: number = Date.now()): ExploreItem[] {
-  return (items ?? []).map(a => {
+  return withRegistryCategory((items ?? []).map(a => {
     const isTrade = a.source_type === 'trade_queue_item'
     const raisedAt = a.created_at ?? a.last_activity_at ?? null
     const dueAt = a.due_at ?? null
@@ -600,7 +877,20 @@ export function attentionToExplore(items: any[], now: number = Date.now()): Expl
       category: (isTrade ? 'decisions' : 'workflow') as FeedCategory,
       subtype: isTrade ? ('signal' as const) : ('workflow' as const),
       title: a.title ?? a.summary ?? 'Awaiting you',
-      context: a.summary && a.title ? a.summary : undefined,
+      /**
+       * The row's own second line, read from the fields it actually has.
+       *
+       * This read `a.summary`, and `AttentionItem` has no such field -- it
+       * carries `subtitle`, `preview` and `reason_text`. So every workflow
+       * tile rendered a headline and nothing else, which is the thinness the
+       * adapter header above already complained about for a different field.
+       *
+       * `reason_text` is last because it is the system's explanation of why
+       * the row exists rather than anything about the work, and it repeats
+       * across every row of a kind. `summary` is kept first for a caller that
+       * does supply one.
+       */
+      context: firstProse(a.summary, a.subtitle, a.preview, a.reason_text, a.title),
       /**
        * The deadline, said the way the Curate card says it.
        *
@@ -637,12 +927,10 @@ export function attentionToExplore(items: any[], now: number = Date.now()): Expl
        * did before.
        */
       visual: raisedAt && dueAt ? { statedAt: raisedAt, dueAt } : undefined,
-      destination: a.context?.asset_id
-        ? { kind: 'action' as const, action: 'open_asset', assetId: a.context.asset_id, symbol: a.context?.symbol }
-        : { kind: 'filter' as const, category: (isTrade ? 'decisions' : 'workflow') as FeedCategory },
+      destination: attentionDestination(a, isTrade),
       importance: a.priority === 'high' ? 0.6 : 0.3,
     }
-  })
+  }))
 }
 
 /**
@@ -673,6 +961,34 @@ export function shortNextAction(next: unknown): string | undefined {
  */
 const MIN_AGGREGATE = 3
 const AGGREGATE_WINDOW_DAYS = 7
+/** How many names an aggregate prints before it counts the rest. */
+const AGGREGATE_NAMES = 3
+
+/**
+ * The names an aggregate stands for, as a sentence.
+ *
+ * Deduped because one asset can contribute several rows to the same window and
+ * "AAPL, AAPL and MSFT" reads as a bug. Capped so a window of twenty does not
+ * print twenty tickers, and the remainder is COUNTED rather than dropped: the
+ * reader needs to know the line is partial. A member with no symbol is skipped
+ * rather than rendered as a gap, and an aggregate whose members are all
+ * symbolless says nothing at all instead of an empty sentence.
+ */
+function namesBehind(members: ExploreItem[]): string | undefined {
+  const seen = new Set<string>()
+  for (const m of members) {
+    const s = upper(m.symbol)
+    if (s) seen.add(s)
+  }
+  const names = [...seen]
+  if (!names.length) return undefined
+  const shown = names.slice(0, AGGREGATE_NAMES)
+  const rest = names.length - shown.length
+  const list = shown.length > 1
+    ? `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`
+    : shown[0]
+  return rest > 0 ? `${list}, and ${rest} more` : list
+}
 
 export function aggregatesFor(items: ExploreItem[], now: number): ExploreItem[] {
   const recent = items.filter(i => {
@@ -688,7 +1004,8 @@ export function aggregatesFor(items: ExploreItem[], now: number): ExploreItem[] 
   ]
 
   for (const g of groups) {
-    const n = recent.filter(i => i.category === g.category).length
+    const members = recent.filter(i => i.category === g.category)
+    const n = members.length
     if (n < MIN_AGGREGATE) continue
     out.push({
       id: `agg-${g.category}`,
@@ -698,6 +1015,32 @@ export function aggregatesFor(items: ExploreItem[], now: number): ExploreItem[] 
       category: g.category,
       subtype: 'aggregate',
       title: g.label(n),
+      /**
+       * The names behind the count.
+       *
+       * ── The defect ──────────────────────────────────────────────────────
+       *
+       * MEASURED live at 1920x889: the Ideas aggregate rendered at `large` --
+       * 418px tall, no picture, one line of text and one button. An aggregate
+       * carries a title and a count and nothing else, so `exploreVisualFor`
+       * correctly resolves `none`, and the tile had a sentence to fill a card
+       * the size of a chart.
+       *
+       * The count is the one thing an aggregate says, and a count is the least
+       * informative form of what it knows. It stands for real rows; those rows
+       * have names; and "AAPL, MSFT and NVDA" is the same fact told in a way a
+       * reader can act on -- they can see whether any of the three is theirs
+       * before deciding to open the filter.
+       *
+       * Not fabricated and not padded: the symbols are the members' own, in
+       * the order they were composed, deduped, and capped so the line stays a
+       * line. A member with no symbol contributes nothing rather than a blank.
+       */
+      context: namesBehind(members),
+      /* The count, as the metric it always was. Printing it in the figure slot
+         as well as the sentence is the one place a tile may repeat itself:
+         `visualRestatesMetric` has no picture here to defer to. */
+      metric: { value: String(n), label: g.category === 'ideas' ? 'ideas' : 'updates', direction: 'neutral' },
       count: n,
       // The newest member's timestamp, so an aggregate of stale things does not
       // present itself as fresh.

@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { ScenarioLadder } from './ScenarioLadder'
 import { FeedPriceChart } from './FeedPriceChart'
 import { WeightBars } from './WeightBars'
-import type { FeedPreview as Descriptor } from '../../lib/signals/feed-preview'
+import { VisualPager } from '../desktop/VisualPager'
+import type { FeedPreview as Descriptor, FeedPreviewPane } from '../../lib/signals/feed-preview'
 
 /**
  * One switch, from a semantic descriptor to a shared primitive.
@@ -70,5 +72,60 @@ export function FeedPreview({ preview }: { preview: Descriptor }) {
       baselineIndex={preview.baselineIndex}
       unitNote={preview.unitNote}
     />
+  )
+}
+
+/**
+ * The feed card's objects, as one carousel.
+ *
+ * ── Why the feed had no pager and the gallery did ────────────────────────
+ *
+ * `VisualPager` is a shared component with a header explaining that two
+ * surfaces should page with one gesture, and until now only one of them
+ * paged: the Explore tile built a list of panels and cycled them, while the
+ * feed card drew whatever single object `previewFor` returned and offered no
+ * way to anything else. A reader meeting the two surfaces back to back got
+ * one vocabulary on a tile and none on a card.
+ *
+ * ── Why the state lives HERE ─────────────────────────────────────────────
+ *
+ * Which pane a card is on is that card's business and nobody else's. Held in
+ * the feed it would be a map keyed by entry, mutated from inside a `map`
+ * callback, and every keystroke would re-render every card in the column --
+ * the exact shape that made the Explore gallery drop frames on selection.
+ * A component per card means a paging card re-renders itself and nothing
+ * else.
+ *
+ * ── Why the box is fixed and the pane is not ─────────────────────────────
+ *
+ * The panes are different heights: the ladder is 16rem by its own geometry
+ * and the price chart is shorter. Letting the box follow the pane means
+ * paging a card resizes it and shoves every card below it down the column --
+ * a read that relayouts the page under the cursor. The gallery tile solved
+ * this the same way and its note is worth repeating: the cost is some empty
+ * room under the shorter pane, which is the right way round.
+ */
+export function FeedPreviewCarousel({ panes }: { panes: FeedPreviewPane[] }) {
+  const [index, setIndex] = useState(0)
+  if (panes.length === 0) return null
+
+  const active = Math.min(index, panes.length - 1)
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {/* `h-64` is the ladder's own height, which is the taller of the two.
+          See the header: the box does not follow the pane. */}
+      <div className="min-w-0" style={{ minHeight: panes.length > 1 ? '16rem' : undefined }}>
+        <FeedPreview preview={panes[active].preview} />
+      </div>
+      {/* Draws nothing below two panes, by its own contract. */}
+      <VisualPager
+        labels={panes.map(p => p.label)}
+        keys={panes.map(p => p.id)}
+        index={active}
+        onChange={setIndex}
+        describe={i => `Show the ${panes[i].label.toLowerCase()}`}
+        className="justify-center"
+      />
+    </div>
   )
 }

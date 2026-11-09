@@ -129,6 +129,28 @@ const codeOf = (p: string): string => {
   return hit.code
 }
 
+describe('the scan these rules depend on is real', () => {
+  /*
+   * Both whole-tree rules below assert an empty array. If the walk returned
+   * nothing — a moved root, a bad cwd — they would pass while checking no
+   * files at all, which is the failure mode this repo keeps producing. This
+   * is what makes those gates non-vacuous.
+   *
+   * `sources()` already throws on a COMPLETELY empty tree. These two go
+   * further: a walk that reached three files, or one whose comment stripping
+   * silently stopped working, is not empty and would slip past that check
+   * while making every "appears nowhere" assertion meaningless.
+   */
+  it('reached a meaningful number of source files', () => {
+    expect(sources().length).toBeGreaterThan(300)
+  })
+
+  it('actually stripped comments, so the rules match code and not prose', () => {
+    expect(sources().some(s => s.code.length > 0)).toBe(true)
+    expect(sources().every(s => !/^\s*\/\/ /m.test(s.code))).toBe(true)
+  })
+})
+
 describe('getPublicUrl is never used', () => {
   /*
    * Every bucket in this project is private. `getPublicUrl` on a private

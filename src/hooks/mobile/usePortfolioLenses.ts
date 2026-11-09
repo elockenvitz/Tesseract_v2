@@ -273,6 +273,28 @@ export interface PortfolioLenses {
    * denominator. See the construction near the return.
    */
   weightIndex: Map<string, PortfolioExposure[]>
+  /**
+   * Asset id to ticker, for every holding this query read.
+   *
+   * ── Why `weightIndex` alone is not enough ────────────────────────────────
+   *
+   * `weightIndex` is keyed by asset id and its entries name the BOOK, never
+   * the name. That is fine for the scenario chip, which already knows which
+   * asset it is asking about, and useless for a consumer that wants to rank
+   * ACROSS the book -- it gets a complete set of weights it cannot label.
+   *
+   * Desktop Explore's active-risk template is exactly that consumer, and the
+   * alternative was to label only the names the lenses happened to surface.
+   * That subset would have produced a FALSE SUPERLATIVE: `outsizedActiveRisk`
+   * prints "X is your largest overweight", and the largest within a dozen
+   * selected names is not the largest in the book. A number a reader cannot
+   * trust is worse than a tile that is not there.
+   *
+   * So the whole population is labelled. It costs nothing -- the ticker was
+   * already joined for the lens rows above, and this is one pass over the same
+   * holdings.
+   */
+  symbolByAssetId: Map<string, string>
 }
 
 interface HoldingRow {
@@ -373,6 +395,12 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
     queryFn: async () => {
       const empty: PortfolioLenses = {
         conviction: [], crowded: [], breaches: [], stale: [], untargeted: [],
+        /* Both maps declared. They were omitted, so every early return handed
+           back an object that did not satisfy its own type and a consumer
+           reading `weightIndex` on it got `undefined` rather than an empty
+           map. Desktop Explore's active-risk template reads both. */
+        weightIndex: new Map(),
+        symbolByAssetId: new Map(),
         book: currentBook([]),
       }
 
@@ -1028,8 +1056,14 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
        * technically-correct number nobody should read.
        */
       const weightIndex = new Map<string, PortfolioExposure[]>()
+      /* Labels for the index above. See `symbolByAssetId` on the result type:
+         a complete set of weights that cannot be labelled can only be ranked
+         over a subset, and a subset makes a superlative lie. */
+      const symbolByAssetId = new Map<string, string>()
       for (const h of holdings) {
         if (!h.asset_id || !h.portfolio_id) continue
+        const ticker = h.assets?.symbol
+        if (ticker && !symbolByAssetId.has(h.asset_id)) symbolByAssetId.set(h.asset_id, ticker)
         const total = totals.get(h.portfolio_id) ?? 0
         const name = (h as any).portfolios?.name
         if (!name) continue
@@ -1073,6 +1107,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
         stale: stale.slice(0, 12),
         untargeted: untargeted.slice(0, 12),
         weightIndex,
+        symbolByAssetId,
         book,
       }
     },

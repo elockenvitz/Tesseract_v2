@@ -1,0 +1,15 @@
+-- Rollback for 20261106023000_has_unread_direct_messages.sql
+--
+-- Dropping the function is safe at any time and loses nothing: no table,
+-- column, policy, grant on a table, or row is touched by the forward
+-- migration, and nothing else in the schema references this function.
+--
+-- The client is written to survive this. `readUnreadDirectMessages` in
+-- `src/lib/messaging/unread-direct-messages.ts` detects PostgREST's PGRST202
+-- ("could not find the function") and falls back to a two-query client path
+-- that returns the same boolean. So the badge keeps working after a rollback;
+-- it costs 2 queries per poll instead of 1.
+--
+-- Run this only if the forward migration has been applied.
+
+drop function if exists public.has_unread_direct_messages();

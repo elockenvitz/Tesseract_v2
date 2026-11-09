@@ -5,6 +5,7 @@ import { Eye, X, Archive } from 'lucide-react'
 import { Header } from './Header'
 import { TabManager, type Tab } from './TabManager'
 import { CommunicationPane } from '../communication/CommunicationPane'
+import { supabase } from '../../lib/supabase'
 import { subscribeToEngagement } from '../../lib/engagement'
 import type { EngagementTarget } from '../../lib/engagement'
 import { NotificationPane } from '../notifications/NotificationPane'
@@ -33,8 +34,21 @@ interface LayoutProps {
   hideNewTab?: boolean
 }
 
-// Tab types that should render full-width without padding
-const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'audit', 'lists', 'idea-generator', 'today', 'ideas', 'ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']
+/*
+  Tab types that should render full-width without padding.
+
+  A surface belongs here when it owns its own frame -- its own header band, its
+  own scrollport, its own internal gutters. The wrapper's `px-3 py-4 sm:px-6
+  sm:py-6 lg:px-8` is for a page that is CONTENT inside a chrome, and putting
+  it around a page that is already a chrome draws a second, narrower window
+  inside the first: 32px of white on both sides and 24px top and bottom,
+  measured, around a surface whose own header already starts at `px-6`.
+
+  `dashboard-next` was the one such surface missing from this list, which is
+  why it alone sat inset while `dashboard`, `ideas` and `today` -- the lenses
+  it is a replacement for -- did not.
+*/
+const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'dashboard-next', 'audit', 'lists', 'idea-generator', 'today', 'ideas', 'ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']
 
 export function Layout({
   children,
@@ -261,6 +275,84 @@ export function Layout({
     window.addEventListener('openDirectMessage', handleOpenDirectMessage as EventListener)
     return () => window.removeEventListener('openDirectMessage', handleOpenDirectMessage as EventListener)
   }, [isCommPaneOpen, toggleCommPane])
+
+  /**
+   * Open an asset tab from a bare ticker.
+   *
+   * ── The event had no listener at all ──────────────────────────────────────
+   *
+   * `AISection` turns every $TICKER the model mentions into a pill and
+   * dispatches `open-asset-by-symbol` on click. Its own comment said so:
+   * "Until that listener is wired, the pill renders but clicks are a no-op --
+   * visual win first, navigation later." Nothing was ever wired, so every
+   * ticker pill in the AI pane was dead: it looked exactly like a link,
+   * highlighted on hover, and did nothing at all when clicked.
+   *
+   * This is the listener. It belongs here because `Layout` is where tabs are
+   * reached (`tabs`, `onTabChange`, `onSearchResult`) and where the app's
+   * other window-event seams already live.
+   *
+   * ── A symbol is not enough to open a tab ──────────────────────────────────
+   *
+   * The tab wants the asset's id, so the symbol has to be resolved first.
+   * `ilike` rather than `eq` because a model writes "$aapl" as readily as
+   * "$AAPL", and the same lookup in `AddTradeIdeaModal` is already
+   * case-insensitive.
+   *
+   * An already-open tab is switched to rather than duplicated, matching
+   * `handleContextChange` below. The match is on the tab's symbol, which is
+   * what this event has, instead of the id it does not yet.
+   *
+   * Silent on a symbol that resolves to nothing: the model can invent a
+   * ticker, and an error toast for a plausible-looking hallucination would
+   * blame the reader for the model's guess.
+   */
+  useEffect(() => {
+    const openAsset = async (symbol: string) => {
+      const open = tabs.find(
+        t => t.type === 'asset' &&
+          String(t.data?.symbol ?? '').toUpperCase() === symbol.toUpperCase(),
+      )
+      if (open) {
+        onTabChange(open.id)
+        return
+      }
+
+      const { data } = await supabase
+        .from('assets')
+        .select('id, symbol, company_name, sector')
+        .ilike('symbol', symbol)
+        .limit(1)
+
+      /* Named at the boundary: an untyped Supabase select infers `never[]`
+         here, as most queries in this app do, so reading `.id` off the row
+         is an error until the shape is stated once. */
+      const found = (data as unknown as Array<{
+        id: string; symbol: string; company_name: string | null; sector: string | null
+      }> | null)?.[0]
+      if (!found) return
+
+      onSearchResult?.({
+        id: found.id,
+        title: found.symbol,
+        type: 'asset',
+        data: found,
+      })
+    }
+
+    /* Sync listener around the async work, rather than an async handler cast
+       to `EventListener`: the cast is the thing TypeScript objects to, and
+       `addEventListener` discards a returned promise anyway. */
+    const handleOpenAssetBySymbol = (event: Event) => {
+      const detail = (event as CustomEvent).detail
+      const symbol = String(detail?.symbol ?? '').trim()
+      if (!symbol) return
+      void openAsset(symbol)
+    }
+
+    window.addEventListener('open-asset-by-symbol', handleOpenAssetBySymbol)
+    return () => window.removeEventListener('open-asset-by-symbol', handleOpenAssetBySymbol)
+  }, [tabs, onTabChange, onSearchResult])
 
   // Listen for custom event to open thoughts capture (from Attention Dashboard)
   useEffect(() => {
@@ -574,6 +666,24 @@ export function Layout({
         contextId={contextId}
         contextTitle={contextTitle}
         engagementTarget={engagementTarget}
+        /*
+          Where the reader is ACTUALLY standing — the active tab, before the
+          override above is applied.
+
+          `commPaneContext` and `engagementTarget` are both set on every
+          engagement and neither is cleared on navigation, so after resuming
+          a thread from AAPL and walking to MSFT all three of the pane's
+          notions of "what this is about" still said AAPL. The tab is the
+          only one that follows the reader, so it is the one the pane
+          compares the open conversation against.
+        */
+        tabSubject={tabContext.contextType && tabContext.contextId
+          ? {
+              type: tabContext.contextType,
+              id: tabContext.contextId,
+              label: tabContext.contextTitle ?? null,
+            }
+          : null}
         citedContent={currentCitation?.content}
         fieldName={currentCitation?.fieldName}
         onCite={cite}

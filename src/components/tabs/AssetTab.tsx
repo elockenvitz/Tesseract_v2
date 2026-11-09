@@ -1,10 +1,27 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { Target, FileText, Plus, Calendar, User, Users, ArrowLeft, Activity, Clock, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, List, ExternalLink, Sparkles, Star, History, Layers, Lock, Share2, ChevronRight, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, Tag, FolderKanban, Repeat } from 'lucide-react'
+/* `Sparkles` is gone with the "AI summary" read mode: the only remaining
+   sparkles on this page belong to ThesisUnifiedSummary, which draws its own. */
+import { Target, FileText, Plus, Calendar, User, Users, Activity, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3, GitBranch, CheckCircle2, RotateCcw, Play } from 'lucide-react'
 import { clsx } from 'clsx'
+/* `effectiveMemberCounts` left with the org-chart query, which is now
+   `useOrgAudienceContext`. `buildAudienceOptions` had already stopped being
+   called here when the option building moved into `AudiencePicker` -- only
+   the comment at the old call site still named it. */
+import { type AudienceNode } from '../../lib/contributions/audience-reach'
+import { AudiencePicker } from '../contributions/AudiencePicker'
+import {
+  /* `stageColor` went with the Open Items rows that used it; the idea
+     surface imports it where the chip now lives. */
+  stageLabel, toIdeaStage,
+  IDEA_STAGES, IDEA_STAGE_CONFIG, type IdeaStage,
+} from '../../lib/ideas/stage-model'
 import { fetchSignedUrl } from '../../lib/storage/signed-url'
 import { WORKFLOW_TEMPLATES_BUCKET, workflowTemplatePath } from '../../lib/storage/buckets'
 import { useAuth } from '../../hooks/useAuth'
+import { useOrgAudienceContext } from '../../hooks/useOrgAudienceContext'
+import { useAIConfig } from '../../hooks/useAIConfig'
+import { initialResearchView } from '../../lib/desktop-asset/research-view'
 import {
   fetchOneAssetResearch,
   fetchThesisReferences,
@@ -13,33 +30,106 @@ import {
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useAssetModels } from '../../hooks/useAssetModels'
 import { TabStateManager } from '../../lib/tabStateManager'
+import { requestUnsavedNavigation } from '../../lib/contributions/unsaved-edits-guard'
 import { Card } from '../ui/Card'
 import { Button } from '../ui/Button'
-import { Badge } from '../ui/Badge'
+/* `Badge` went with the Themes card, its last reader on this page. */
 // PriorityBadge and BadgeSelect removed — priority selector replaced by state chips
 import { EditableSectionWithHistory, type EditableSectionWithHistoryRef } from '../ui/EditableSectionWithHistory'
 import { InvestmentTimeline } from '../ui/InvestmentTimeline'
 import { QuickStageSwitcher } from '../ui/QuickStageSwitcher'
 // AssetWorkflowSelector and WorkflowSelector removed — header workflow dropdown replaced by state chips
-import { AssetWorkflowSelectorEnhanced } from '../asset/AssetWorkflowSelectorEnhanced'
 import { AssetDecisionView } from '../asset/AssetDecisionView'
 import { DecisionTimeline } from '../asset/DecisionTimeline'
-import { WorkflowActionButton } from '../asset/WorkflowActionButton'
+import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
+import { ResearchToolbarMenu } from '../asset/ResearchToolbarMenu'
+import { LayoutStatusChip } from '../research/LayoutStatusChip'
+import { ArrangeableSectionHeader } from '../research/ResearchArrangeSection'
+/*
+ * `AssetWorkPane` — the orientation band — is gone, along with its tests.
+ * The navigator carries the attention split, the ideas and the process
+ * summary; the context strip carries the lists. `WorkAttentionItem` moved to
+ * `lib/asset-work/attention`, beside the function that produces it.
+ */
+import { useAssetWorkAttention } from '../../hooks/useAssetWorkAttention'
+import { useAssetProcessSummary } from '../../hooks/useAssetProcessSummary'
+import { BookFilter } from '../shared/BookFilter'
 import { WorkflowManager } from '../ui/WorkflowManager'
 import { CaseCard } from '../ui/CaseCard'
 import { AddToListButton } from '../lists/AddToListButton'
 import { AddToThemeButton } from '../lists/AddToThemeButton'
-import { AddToQueueButton } from '../lists/AddToQueueButton'
+/* `AddToQueueButton` is gone with the Portfolios card that carried it. Its
+   label was "New Trade Idea", which is not a portfolio relationship; the
+   control lives on the sidebar's In Progress header. */
 import { useAssetTradeIdeas } from '../../hooks/useAssetTradeIdeas'
-import { StockQuote } from '../financial/StockQuote'
 import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
-import { CoverageDisplay } from '../coverage/CoverageDisplay'
+import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
+import { AssetWorkspaceHeader } from '../asset/AssetWorkspaceHeader'
+import '../asset/asset-ux2.css'
+// The component itself renders on the Snapshot now; this tab still derives
+// the FIELD list from the org's template and passes it down, so the two
+// surfaces cannot disagree about which sections exist.
+import { OurViewSummary, type OurViewField } from '../asset/OurViewSummary'
+import { contributionSectionsForSlug } from '../../lib/research/contribution-sections'
 // DocumentLibrarySection removed — consolidated into KeyReferencesSection
 import { RelatedProjects } from '../projects/RelatedProjects'
 import { AddToProjectButton } from '../projects/AddToProjectButton'
-import { ContributionSection, ThesisUnifiedSummary, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
+import { ContributionSection, ThesisUnifiedSummary, AISetupNotice, ThesisHistoryView, ThesisContainer, KeyReferencesSection, ModelVersionHistory } from '../contributions'
+import type { WorkspaceDestination, SignalFocus } from '../../lib/asset-workspace/context'
+import { attentionTarget } from '../../lib/asset-workspace/attention-target'
+import {
+  ASSET_MODES, MODE_LABEL, MODE_LANDING, WORK_SECTION_ID,
+  modeOf, workSectionId,
+  type AssetMode, type AssetSubPage,
+} from '../../lib/asset-workspace/modes'
+import { scrollToSection } from '../../lib/asset-workspace/scroll-to-section'
+import { stripTarget, type StripCell } from '../../lib/asset-workspace/strip-targets'
+import { focusIntentKey, shouldApplyFocus } from '../../lib/asset-workspace/arrival-focus'
+import { useAssetListMemberships } from '../../hooks/lists/useAssetListMemberships'
+import { useAssetConversations } from '../../hooks/ai/useAssetConversations'
+import { askAI } from '../../lib/engagement'
+import {
+  buildWorkItems, resolveSelection, type WorkItem,
+  /* Aliased: `workItemKey` is also the name of this component's selection
+     state, and the two must not shadow each other. */
+  workItemKey as workItemKeyFor,
+} from '../../lib/asset-work/work-items'
+import { WorkActionsMenu } from '../asset/work/WorkActionsMenu'
+import { ProcessSwitcher } from '../asset/work/ProcessSwitcher'
+import { useAssetWorkspace } from '../../hooks/useAssetWorkspace'
+import { useAssetResearchNotes } from '../../hooks/useAssetResearchNotes'
+import {
+  AssetWorkOverview, WorkOverviewReturn, type OverviewConnection,
+} from '../asset/work/AssetWorkOverview'
+import { buildWorkOverview } from '../../lib/asset-work/work-overview'
+import { WORK_OVERVIEW_KEY, destinationFromTabData, shouldApplyArrival, arrivalKey } from '../../lib/asset-work/work-destination'
+import { splitProcessRun } from '../../lib/asset-work/process-switcher'
+import { ProcessReport } from '../asset/work/ProcessReport'
+import { EMPTY_REPORT } from '../../lib/asset-work/process-report'
+import { useProcessReport } from '../asset/work/useProcessReport'
+import { groupProcesses, type SwitcherRunRow } from '../../lib/asset-work/process-switcher'
+
+import { ProcessHistory } from '../asset/work/ProcessHistory'
+import { ProcessDocuments } from '../asset/work/ProcessDocuments'
+import {
+  contextualKey, contextualSelection, backTarget,
+} from '../../lib/asset-work/contextual-destination'
+import { IdeaWorkSurface } from '../asset/work/IdeaWorkSurface'
+import { ListWorkSurface } from '../asset/work/ListWorkSurface'
+import { PortfolioWorkSurface } from '../asset/work/PortfolioWorkSurface'
+import { AddTradeIdeaModal } from '../trading/AddTradeIdeaModal'
+import { openIdeaDetail } from '../../lib/navigation/open-idea'
+
+/* The nav's icons, beside the labels the model owns. Kept here rather than in
+   the model so the model stays free of React imports. */
+const MODE_ICON: Record<AssetMode, typeof FileText> = {
+  overview: LayoutDashboard,
+  research: FileText,
+  work: Briefcase,
+  history: History,
+}
 import { useContributions, type ContributionVisibility } from '../../hooks/useContributions'
 import { useKeyReferences } from '../../hooks/useKeyReferences'
 import { useUserAssetPriority, type Priority } from '../../hooks/useUserAssetPriority'
@@ -48,7 +138,16 @@ import { useAssetHeaderContext } from '../../hooks/useAssetHeaderContext'
 import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection, FirmConsensusPanel, PriceTargetsSummary, ViewWarningIndicator } from '../outcomes'
 import type { ViewScope } from '../../hooks/useExpectedValue'
 import { useViewWarnings } from '../../hooks/useViewWarnings'
-import { UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder } from '../research'
+import { assetSubject } from '../../lib/research/subject'
+import {
+  UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder,
+  ResearchArrangeProvider, ResearchArrangeBar, ArrangeableFieldGrid, ArrangeableField,
+  /* The field tile's class list and the section grid's, now shared with the
+     Theme page's research body rather than written out once per field type
+     here. Eleven copies of a class list is eleven chances for the two pages
+     to drift, and they had. See `ResearchSectionCard.tsx`. */
+  RESEARCH_FIELD_CARD_CLASS, RESEARCH_FIELD_GRID_CLASS,
+} from '../research'
 import {
   ChecklistField,
   MetricField,
@@ -60,9 +159,10 @@ import { useUserAssetWidgets, type WidgetType } from '../../hooks/useUserAssetWi
 import { supabase } from '../../lib/supabase'
 import { formatDistanceToNow } from 'date-fns'
 import { calculateAssetCompleteness } from '../../utils/assetCompleteness'
-import { latestSnapshotRows } from '../../lib/holdings/latest-snapshot'
-import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
-import { currentRows, type HoldingRow } from '../../lib/portfolio/holdings'
+// `discuss` and `canDiscuss` are no longer imported here: the generic
+// asset-level entry point is withdrawn (see the note at its old site). Both
+// remain exported and in use from seven other surfaces.
+import { currentRows, buildBook, type HoldingRow, type Book } from '../../lib/portfolio/holdings'
 import { ASSET_REFERENCE_SELECT } from '../../lib/assets/asset-columns'
 
 // Visibility options for thesis sections
@@ -126,6 +226,20 @@ async function getWorkflowStages(workflowId: string) {
   return { data: data || [], error }
 }
 
+/**
+ * Template field types that are NOT analyst prose.
+ *
+ * Each of these has a dedicated surface that owns its logic — price targets
+ * and ratings through `PriceTargetsSummary` and `FirmConsensusPanel`, key
+ * references through the References view. Our View and the aggregated document
+ * both skip them, and they share this list so the summary can never claim to
+ * cover a field the document renders, or vice versa.
+ */
+const NON_PROSE_FIELD_TYPES = [
+  'checklist', 'metric', 'timeline', 'numeric', 'date',
+  'rating', 'estimates', 'price_target', 'key_references',
+]
+
 interface AssetTabProps {
   asset: any
   onCite?: (content: string, fieldName?: string) => void
@@ -184,6 +298,16 @@ function AssetTabKeyReferencesInline({
 
 export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: AssetTabProps) {
   const { user } = useAuth()
+  /*
+   * Read here, not only inside the synthesis band, because "AI is not set up"
+   * is state about the whole Firm section and its notice belongs at the top of
+   * it beside the read-only banner, not three blocks down where the band that
+   * needs AI happens to sit.
+   *
+   * No extra cost: `useAIConfig` is react-query on a fixed key, so this and
+   * ThesisUnifiedSummary's own call share one cache entry and one request.
+   */
+  const { effectiveConfig: aiConfig } = useAIConfig()
 
   // Mark the "Explore an asset page" step in PilotWelcomeBanner complete
   // on first visit, keyed per (user, org) so opening an asset in one
@@ -281,33 +405,270 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))
   }
 
-  // Active sub-page selector (Research, Workflow, Decisions, Lists)
-  const [activeSubPage, setActiveSubPage] = useState<'research' | 'workflow' | 'decisions' | 'lists'>(() => {
+  /*
+   * Which piece of work the reader was on, restored from the same tab state
+   * that restores the sub-page.
+   *
+   * Declared HERE, beside the other restored state, because the save effect
+   * a few hundred lines below lists it as a dependency — and a dependency
+   * array is evaluated on every render, so declaring it further down threw
+   * "Cannot access 'workItemKey' before initialization" and took the whole
+   * Asset page to the error boundary. The items it resolves against are
+   * built much later, once every source hook has run; only the KEY lives up
+   * here, which is all the save effect needs.
+   */
+  const [workItemKey, setWorkItemKey] = useState<string | null>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.activeSubPage || 'research'
+    return savedState?.activeWorkItem ?? null
   })
-  // Research view filter: 'aggregated' or a specific user_id
-  const [researchViewFilter, setResearchViewFilter] = useState<'aggregated' | string>(() => {
+
+  /*
+   * Active sub-page selector (Snapshot, Research, Workflow, Decisions, Lists).
+   *
+   * `snapshot` is the default landing for a general arrival. The four deeper
+   * workspaces are unchanged and keep their own entry points — Snapshot is a
+   * fifth destination, not a replacement for any of them.
+   *
+   * A SAVED sub-page still wins. Someone who left this tab on Process comes
+   * back to Process: the default answers "where does an asset open", not
+   * "where must you be". `loadTabState` is per-asset and per-session.
+   */
+  const [activeSubPage, setActiveSubPage] = useState<AssetSubPage>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.researchViewFilter || 'aggregated'
+    return savedState?.activeSubPage || 'snapshot'
   })
-  // Thesis view mode: 'all' shows 3 sections, 'summary' shows unified narrative, 'history' shows timeline
-  const [thesisViewMode, setThesisViewMode] = useState<'all' | 'summary' | 'history' | 'references'>(() => {
+  /*
+   * The arrival focus this tab has already acted on.
+   *
+   * Held in state only so the save effect below keeps writing it —
+   * `saveTabState` REPLACES a tab's record rather than merging into it, so a
+   * key left out of `stateToSave` is dropped on the next save and the focus
+   * becomes replayable again. The effect that consumes it reads storage
+   * directly; see the arrival-focus effect.
+   */
+  const [consumedFocusIntent, setConsumedFocusIntent] = useState<string | null>(() => {
     const savedState = TabStateManager.loadTabState(asset.id)
-    return savedState?.thesisViewMode || 'all'
+    return savedState?.consumedFocusIntent ?? null
   })
+  /*
+   * ── The four modes ─────────────────────────────────────────────────────
+   *
+   * The nav shows Overview / Research / Work / History; the sub-page is still
+   * the destination underneath, because tab state, `asset.focus` and every
+   * existing handoff are keyed on it. In Work the three work sub-pages render
+   * together on one surface, and the sub-page picks the section to scroll to
+   * rather than the content to show.
+   */
+  const activeMode: AssetMode = modeOf(activeSubPage)
+  /*
+   * Set only by an explicit handoff ("show me the Lists", "open the
+   * process"), never by entering Work — entering a mode should land at the
+   * top of it.
+   *
+   * It carries a NONCE, the same way `attentionAnchor` below does, because a
+   * bare id made every second click dead: if the scroll frame was cancelled
+   * the id was never cleared, and setting state to the value it already holds
+   * is a no-op in React, so the next identical request never re-ran the
+   * effect. Two clicks on "go to the process", one scroll.
+   */
+  const [workAnchor, setWorkAnchor] = useState<{ id: string; nonce: number } | null>(null)
+  /* The same, for the Overview — set only by a context-strip cell that names
+     a section of it. Nonce for the same reason. */
+  const [overviewAnchor, setOverviewAnchor] = useState<{ id: string; nonce: number } | null>(null)
+  const focusWorkSection = useCallback((id: string | null) => {
+    setWorkAnchor(id ? { id, nonce: Date.now() } : null)
+  }, [])
+  // UX2 Phase 1 — whether the context strip is collapsed to a compact working
+  // header. Per-viewer convenience only (localStorage), wrapped so a blocked or
+  // private store never throws.
+  const [headerCollapsed, setHeaderCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem('ux2-asset-header-collapsed') === '1' } catch { return false }
+  })
+  const toggleHeaderCollapsed = useCallback(() => {
+    setHeaderCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem('ux2-asset-header-collapsed', next ? '1' : '0') } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+  /*
+   * The Work sidebar's collapse preference used to live here. There is no
+   * sidebar any more — the Work overview is the only navigator — so the
+   * state, its localStorage key and the expand controls scattered through
+   * three branches went with it.
+   */
+  /*
+   * Which book the Decision Memory narrative is scoped to. `null` is
+   * organization-wide and is the default — the asset page's own context is
+   * the org, and a reader arriving from a lens should see every decision
+   * they are authorized to see before narrowing.
+   *
+   * Persisted with the rest of the tab state so returning to the asset
+   * restores the scope the reader left it in, which is the "return context
+   * preserved" requirement. Arriving WITH a portfolio in the request seeds
+   * it, so a click from a portfolio lens lands already scoped to that book.
+   */
+  const [decisionBookId, setDecisionBookId] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.decisionBookId ?? asset.portfolioId ?? null
+  })
+  /*
+   * Research view filter: 'aggregated' (Our View), a specific user_id, or
+   * UNRESOLVED.
+   *
+   * ── Why there is a third state ───────────────────────────────────────
+   *
+   * This used to initialise to 'aggregated', which made the firm summary the
+   * default full-length research document for everyone. An analyst opening a
+   * name they cover landed on a combined pane rather than their own work.
+   *
+   * The right default is "my own view". For a SIGNED-IN reader that is known
+   * on the first render and `initialResearchView` settles it there and then:
+   * `ProtectedRoute` renders this tree only once `user` is non-null. The
+   * earlier version deferred to the resolver below regardless, so every asset
+   * open painted the Firm case and swapped it for My Research ~70ms
+   * later — the page visibly flipping between two different cases.
+   *
+   * UNRESOLVED survives for the case that genuinely needs it: no reader at
+   * all, where the standin has to come from `coverage` / `thesisContributions`
+   * and is therefore async. It renders as Our View (the safe, attributable
+   * fallback) and is replaced exactly once, by the effect below, and never
+   * over a choice the reader or a navigation already made.
+   *
+   * A persisted perspective is deliberately NOT restored: a stale "Firm"
+   * preference must never strand the reader on a read-only view. Within a
+   * mounted session the choice persists in React state (sub-tab switches do
+   * not remount), so a deliberate Firm switch is kept while
+   * navigating.
+   *
+   * The seed is taken once, at mount — hence the ref. The rules themselves
+   * live in src/lib/desktop-asset/research-view.ts, where they are testable
+   * without mounting five thousand lines of asset page.
+   */
+  const researchSeed = useRef(initialResearchView({
+    arriving: asset.data?.researchViewFilter ?? null,
+    userId: user?.id ?? null,
+  })).current
+
+  const [researchViewFilter, setResearchViewFilter] =
+    useState<'aggregated' | string>(researchSeed.filter)
+
+  /**
+   * Whether the research view was CHOSEN, as opposed to merely defaulted.
+   *
+   * Distinguishing these is the whole mechanism: "nobody has picked yet" and
+   * "somebody picked Our View" look identical in the filter value, and
+   * conflating them is what made the firm summary everyone's default
+   * full-length research document.
+   *
+   * Seeded true whenever the seed above is a real answer, so the resolver
+   * below leaves it alone.
+   */
+  const [researchDefaultDecided, setResearchDefaultDecided] =
+    useState<boolean>(researchSeed.decided)
+
+  /**
+   * Whether the current view was CHOSEN, rather than resolved by default.
+   *
+   * Only a chosen view is persisted. A default that happened to land on
+   * another analyst's view must not be saved as if the reader picked it --
+   * that would keep sending them there even after they write their own
+   * research, which is the exact outcome the new default exists to produce.
+   *
+   * Note this is NOT `researchSeed.decided`: landing a signed-in reader on
+   * their own view is decided but not chosen.
+   */
+  const [researchViewChosen, setResearchViewChosen] =
+    useState<boolean>(researchSeed.chosen)
+
+  /**
+   * Any explicit pick — by the reader or by a navigation — settles it. Guarded
+   * (UX1c-2b): switching the Firm/personal perspective unmounts the editable
+   * section, so pause for unsaved research first.
+   */
+  const chooseResearchView = useCallback((next: string) => {
+    requestUnsavedNavigation(() => {
+      setResearchDefaultDecided(true)
+      setResearchViewChosen(true)
+      setResearchViewFilter(next)
+    })
+  }, [])
+  // Guarded in-tab navigation (UX1c-2b): switching the Asset Page sub-tab or the
+  // Research read-mode also unmounts an open inline editor, so route the user
+  // controls through the unsaved-research guard. Clean editors pass through
+  // synchronously, so behaviour is unchanged when nothing is being edited.
+  const goToSubPage = useCallback((next: AssetSubPage) => {
+    requestUnsavedNavigation(() => {
+      setActiveSubPage(next)
+      /* A Work destination asked for explicitly is a scroll, because all
+         three already render. Anything else clears a stale anchor. */
+      focusWorkSection(workSectionId(next))
+    })
+  }, [focusWorkSection])
+  /* The nav. Picking a mode lands on that mode's destination and never sets
+     an anchor, so Work opens at the top. */
+  const goToMode = useCallback((mode: AssetMode) => {
+    requestUnsavedNavigation(() => {
+      setActiveSubPage(MODE_LANDING[mode])
+      focusWorkSection(null)
+    })
+  }, [focusWorkSection])
+  /*
+   * Thesis read mode: 'all' is the case itself, 'history' its timeline,
+   * 'references' the key-reference surface.
+   *
+   * ── 'summary' is gone, and why ─────────────────────────────────────────
+   *
+   * It was an AI synthesis of the three core sections offered as a fourth
+   * read mode, and it answered the same question the Firm perspective does,
+   * from the same contributions: what does the desk think. Two controls on
+   * two different axes (which analyst, and how to read them) both landing on
+   * one answer, so a reader had to find out by pressing that the firm's
+   * numbers were in one and the firm's argument in the other.
+   *
+   * The synthesis now renders inside the Firm view, above the attributed
+   * detail and below the aggregated valuation it never had. Nothing was
+   * removed: see the Firm branch in the Research body.
+   *
+   * A tab persisted before this carries 'summary', which has no button and
+   * no branch any more, so it migrates to 'all' instead of restoring blank.
+   */
+  const [thesisViewMode, setThesisViewMode] = useState<'all' | 'history' | 'references'>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    const saved: unknown = savedState?.thesisViewMode
+    return saved === 'all' || saved === 'history' || saved === 'references' ? saved : 'all'
+  })
+  const goToThesisMode = useCallback((next: typeof thesisViewMode) => {
+    requestUnsavedNavigation(() => setThesisViewMode(next))
+  }, [])
+  // Attention band → research-section deep link: anchor to scroll to, with a
+  // nonce so re-clicking the same signal re-fires.
+  const [attentionAnchor, setAttentionAnchor] = useState<
+    { anchor: 'thesis' | 'risks' | 'targets' | 'rating' | 'case'; nonce: number } | null
+  >(null)
   // Research layout mode: 'classic' uses hardcoded sections, 'dynamic' uses configurable fields
   // User asset widgets
   const [showFieldCustomizer, setShowFieldCustomizer] = useState(false)
+  /**
+   * Arrange mode: the Research body becomes its own tiles, in place, and
+   * the reader drags them. Not a dialog — see ResearchArrangeCanvas.
+   */
+  const [arrangingLayout, setArrangingLayout] = useState(false)
   const [showCaseBuilder, setShowCaseBuilder] = useState(false)
   const [widgetCollapsedState, setWidgetCollapsedState] = useState<Record<string, boolean>>({})
   // Shared visibility state for all thesis sections
   const [sharedThesisVisibility, setSharedThesisVisibility] = useState<ContributionVisibility>('firm')
   const [sharedThesisTargetIds, setSharedThesisTargetIds] = useState<string[]>([])
-  const [showVisibilityDropdown, setShowVisibilityDropdown] = useState(false)
-  const [visibilityStep, setVisibilityStep] = useState<'level' | 'targets'>('level')
   const [hasInitializedVisibility, setHasInitializedVisibility] = useState(false)
-  const visibilityRef = useRef<HTMLDivElement>(null)
+  /** The visibility level the shared picker was last LOADED with. */
+  const rehydratedVisibilityRef = useRef<ContributionVisibility | null>(null)
+  /**
+   * The audience as SAVED on the contribution, kept apart from the live
+   * selection so the picker can always show what exists today — including
+   * nodes the author could not pick again.
+   */
+  const [savedAudience, setSavedAudience] =
+    useState<{ visibility: ContributionVisibility; targetIds: string[] } | null>(null)
   const [currentlyEditing, setCurrentlyEditing] = useState<string | null>(null)
   const [hasLocalChanges, setHasLocalChanges] = useState(false)
   const [showCoverageManager, setShowCoverageManager] = useState(false)
@@ -315,16 +676,58 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const savedState = TabStateManager.loadTabState(asset.id)
     return savedState?.viewingStageId || null
   })
+  /* The requirement inside that stage, restored the same way. An
+     `asset_checklist_items.id`; null is "none selected", which is what a
+     first visit should be. */
+  const [viewingRequirementId, setViewingRequirementId] = useState<string | null>(() => {
+    const savedState = TabStateManager.loadTabState(asset.id)
+    return savedState?.viewingRequirementId || null
+  })
   const [pendingWorkflowSwitch, setPendingWorkflowSwitch] = useState<{workflowId: string, stageId: string | null} | null>(null)
   const [showTimelineView, setShowTimelineView] = useState(false)
   const [showTemplatesView, setShowTemplatesView] = useState(false)
+  /** The consolidated record of this cycle. A view, never a stored copy. */
+  const [showReportView, setShowReportView] = useState(false)
+  /*
+   * Which Process-dashboard deep link has already been honoured.
+   *
+   * Declared here, with the other persisted state, because the save
+   * effect lists it as a dependency and a dependency array is evaluated
+   * during render — a `const` declared further down would still be in its
+   * temporal dead zone at that point.
+   */
+  const [consumedArrival, setConsumedArrival] = useState<string | null>(() =>
+    TabStateManager.loadTabState(asset.id)?.consumedWorkArrival ?? null)
+  /*
+   * The same thing again, for the task/workflow NOTIFICATION arrival.
+   *
+   * Held separately from `consumedWorkArrival` on purpose. Both effects read
+   * the same tab data, so one shared key would let whichever ran first consume
+   * it and silently skip the other — a fix that swaps this defect for a
+   * quieter one.
+   *
+   * Declared here with the other consumed ids, above the effects, for the
+   * reason the comment above gives: an initialiser that runs during render
+   * cannot reach a `const` still in its temporal dead zone.
+   */
+  const [consumedTaskArrival, setConsumedTaskArrival] = useState<string | null>(() =>
+    TabStateManager.loadTabState(asset.id)?.consumedTaskArrival ?? null)
   const [isTabStateInitialized, setIsTabStateInitialized] = useState(false)
   const [showWorkflowManager, setShowWorkflowManager] = useState(false)
   // showAssetPriorityDropdown removed — priority selector replaced by state chips
   const [showWorkflowPriorityDropdown, setShowWorkflowPriorityDropdown] = useState(false)
-  const [showTickerDropdown, setShowTickerDropdown] = useState(false)
-  const [listsFocus, setListsFocus] = useState<string | null>(null)
-  const [openItemsFilter, setOpenItemsFilter] = useState<'all' | 'idea' | 'working_on' | 'modeling' | 'deciding'>('all')
+  /*
+   * The within-Work scroll target the header's context chips set.
+   *
+   * It carries a nonce for the same reason `workAnchor` does: setting state to
+   * the value it already holds is a React no-op, so a bare id made the SECOND
+   * click on the same chip do nothing at all.
+   */
+  const [listsFocus, setListsFocus] = useState<{ id: string; nonce: number } | null>(null)
+  const focusListsSection = useCallback((id: string | null) => {
+    setListsFocus(id ? { id, nonce: Date.now() } : null)
+  }, [])
+  const [openItemsFilter, setOpenItemsFilter] = useState<'all' | IdeaStage>('all')
   const headerContext = useAssetHeaderContext(asset.id)
   const [addRefType, setAddRefType] = useState<'none' | 'note' | 'file' | 'model' | 'url'>('none')
   const [newRefUrl, setNewRefUrl] = useState('')
@@ -335,7 +738,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const { models: assetModels = [] } = useAssetModels(asset.id)
 
   // Fetch active trade ideas for Open Items section
-  const { ideas: openItems, isLoading: openItemsLoading, totalHint: openItemsTotalHint } = useAssetTradeIdeas({ assetId: asset.id })
+  /* `totalHint` went with the Open Items header that displayed it; the
+     navigator states the count by listing the rows. */
+  const { ideas: openItems, isLoading: openItemsLoading } = useAssetTradeIdeas({ assetId: asset.id })
 
   // Refs for EditableSectionWithHistory components
   const thesisRef = useRef<EditableSectionWithHistoryRef>(null)
@@ -427,16 +832,79 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   }, [asset.id, asset.noteId])
 
-  // Handle task assignment navigation from notifications
+  /*
+   * Task-assignment arrival, from a notification. Applied ONCE.
+   *
+   * ── The defect ──────────────────────────────────────────────────────────
+   *
+   * This read `asset.data.workflowId` / `.taskId` on every run and forced the
+   * sub-page to Work. Tab data is durable — the shell merges it into the open
+   * tab and keeps it there — and only the active tab renders, so leaving the
+   * asset and coming back is an unmount and a remount. The effect therefore
+   * re-fired on every return and overwrote wherever the reader had navigated
+   * since; the save effect then persisted the overwrite, so the position was
+   * not merely ignored, it was destroyed.
+   *
+   * Measured on a tab opened once from a Process link: saved `activeSubPage`
+   * went `research` -> `workflow` across a single switch away and back. A
+   * reader who had never used a notification was unaffected; one who had used
+   * one ONCE could never leave Work again.
+   *
+   * This is the third occurrence of one defect class in this file. `asset.focus`
+   * is guarded by `focusIntentKey`/`shouldApplyFocus` + `consumedFocusIntent`,
+   * the Process-dashboard deep link by `arrivalKey`/`shouldApplyArrival` +
+   * `consumedWorkArrival`, and both carry a comment describing exactly this.
+   * This effect simply never got one.
+   *
+   * ── Why the key is built here ───────────────────────────────────────────
+   *
+   * `arrivalKey` wants a `WorkDestination`, and this arrival is not one: it may
+   * carry a task id and no workflow at all, resolving the workflow through
+   * `taskDetails`. The shape is different, so the key is spelled out — same
+   * rule, same `shouldApplyFocus` comparison, different fields.
+   *
+   * `focusRequestId` is part of it, so following the SAME notification twice
+   * is two arrivals and works both times, exactly as `focusIntentKey` reasons
+   * about `req:` keys.
+   */
+  const taskArrival = React.useMemo(() => {
+    /* One cast, in one place. `taskDetails` resolves to `never` under the
+       generated Supabase types, so reading these fields in two places was two
+       type errors rather than one fact; the effect below now reads what this
+       resolved instead of resolving it again. */
+    const details = taskDetails as { workflow_id?: string; stage_id?: string } | null | undefined
+    const workflowId = navigationWorkflowId || details?.workflow_id
+    const stageId = navigationStageId || details?.stage_id
+    if (!workflowId && !navigationTaskId) return null
+    return {
+      workflowId,
+      stageId,
+      key: ['task', navigationTaskId ?? '', workflowId ?? '', stageId ?? '',
+        asset.focusRequestId ?? ''].join('|'),
+    }
+  }, [navigationTaskId, navigationWorkflowId, navigationStageId, taskDetails, asset.focusRequestId])
+
   useEffect(() => {
-    // Use fetched task details as fallback if navigation data is missing
-    const effectiveWorkflowId = navigationWorkflowId || taskDetails?.workflow_id
-    const effectiveStageId = navigationStageId || taskDetails?.stage_id
+    const effectiveWorkflowId = taskArrival?.workflowId
+    const effectiveStageId = taskArrival?.stageId
 
     if (effectiveWorkflowId || navigationTaskId) {
+      /* Read through to storage, not through state: this component is keyed by
+         asset, and the record that outlives the remount is the asset-scoped
+         one. */
+      const saved = TabStateManager.loadTabState(asset.id)
+      if (!shouldApplyFocus(taskArrival?.key ?? null, saved?.consumedTaskArrival ?? null)) return
 
-      // Switch to Workflow sub-page
+      setConsumedTaskArrival(taskArrival?.key ?? null)
+      TabStateManager.saveTabState(asset.id, {
+        ...(saved ?? {}),
+        consumedTaskArrival: taskArrival?.key ?? null,
+      })
+
+      /* A task notification lands in Work and scrolls to the Process
+         section, which is where the task lives now. */
       setActiveSubPage('workflow')
+      focusWorkSection(WORK_SECTION_ID.workflow)
 
       // Only optimistically cache if this is from a fresh navigation (not stale session data)
       // The actual effectiveWorkflowId query will fetch fresh from DB and correct if needed
@@ -452,25 +920,91 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         }
       }
     }
-  }, [asset, navigationStageId, navigationWorkflowId, navigationTaskId, taskDetails])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asset.id, taskArrival, navigationTaskId])
 
   /**
-   * Arrival focus, from the Research and Portfolio lenses.
+   * Arrival focus, from the Research, Portfolio, Ideas and Decisions lenses.
    *
-   * The smallest useful thing: land on the sub-page the sender's question
-   * belongs to. `openAsset` carries `focus` in tab data, and the only sub-pages
-   * that exist are Research, Workflow, Decisions and Lists -- so 'research' and
-   * 'decisions' map, and 'position'/'framework' have no sub-page of their own
-   * and deliberately change nothing rather than guessing at one.
+   * Land on the sub-page the sender's question belongs to. `openAsset` carries
+   * `focus` in tab data (`lib/desktop-asset/navigate.ts`).
+   *
+   * An EXPLICIT focus always wins over the Snapshot default. A reader sent
+   * here by Research to answer a research question must not be redirected to
+   * an overview of everything — that is the sender's intent discarded, and it
+   * is the main way a new default landing breaks existing navigation.
+   *
+   *   research   -> Research      (explicit, preserved)
+   *   decisions  -> Decisions     (explicit, preserved)
+   *   overview   -> Snapshot      NEW. This is what 'overview' always meant;
+   *                               until now there was nothing for it to mean,
+   *                               so it silently did nothing.
+   *   position   -> Snapshot      Position is a Snapshot domain. Previously a
+   *                               no-op, which landed a reader arriving from a
+   *                               book on whatever page they last used.
+   *   framework  -> unchanged     The framework lives in Research's outcomes;
+   *                               it has no home of its own yet, and guessing
+   *                               is worse than leaving the saved page alone.
+   *
+   * ── Consumed ONCE per request, not re-applied on every mount ────────────
+   *
+   * `focus` lives in tab DATA, which is durable — the shell merges it into
+   * the open tab and keeps it. Only the active tab renders, so leaving for
+   * another tab unmounts this component and coming back remounts it. This
+   * effect then saw the same `focus` and applied it again, discarding
+   * whatever the reader had navigated to since. Arriving from "Edit on the
+   * asset" meant being returned to Research on every single return.
+   *
+   * `focusRequestId` is stamped per `openAsset` call, and the id we last
+   * acted on is written to the SAME per-asset tab state that already restores
+   * the sub-page. A component ref cannot do this job: the component is the
+   * thing being unmounted.
+   *
+   * Consuming and landing are persisted together, immediately, rather than
+   * left to the batched save effect below — a reader can leave the tab in the
+   * same breath as arriving, and a consumption that had not reached storage
+   * would replay exactly as before.
+   *
+   * A descriptor with no `focusRequestId` is a hand-built one from an older
+   * sender (none of which set `focus` today). It falls back to a key derived
+   * from the focus itself, so it is still applied once rather than forever;
+   * what it gives up is re-requesting the SAME focus twice, which only
+   * `openAsset` can express.
    */
   useEffect(() => {
-    if (asset.focus === 'research') setActiveSubPage('research')
-    else if (asset.focus === 'decisions') setActiveSubPage('decisions')
-  }, [asset.focus, asset.id])
+    const focus = asset.focus
+    if (!focus) return
+
+    const target: AssetSubPage | null =
+      focus === 'research' ? 'research'
+      : focus === 'decisions' ? 'decisions'
+      : (focus === 'overview' || focus === 'position') ? 'snapshot'
+      : null
+    /* `framework` and anything unrecognised still leave the saved page alone. */
+    if (!target) return
+
+    const intent = focusIntentKey(focus, asset.focusRequestId)
+    /* Read through to storage rather than through state: this component may be
+       reused for a different asset, and the saved record is asset-scoped. */
+    const saved = TabStateManager.loadTabState(asset.id)
+    if (!shouldApplyFocus(intent, saved?.consumedFocusIntent)) return
+
+    setActiveSubPage(target)
+    setConsumedFocusIntent(intent)
+    TabStateManager.saveTabState(asset.id, {
+      ...(saved ?? {}),
+      activeSubPage: target,
+      consumedFocusIntent: intent,
+    })
+  }, [asset.focus, asset.focusRequestId, asset.id])
 
   // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
   useEffect(() => {
     if (asset.data?.researchViewFilter) {
+      // An explicit navigation intent -- e.g. Trade Queue linking to the
+      // proposer's view. It settles the default so the resolver stays out.
+      setResearchDefaultDecided(true)
+      setResearchViewChosen(true)
       setResearchViewFilter(asset.data.researchViewFilter)
       setActiveSubPage('research')
     }
@@ -493,8 +1027,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     setActiveSubPage('research')
     // The rating anchor only exists in the Individual "All" view branch
     // (thesisViewMode='all' + researchViewFilter !== 'aggregated'). If a
-    // saved state restored 'summary' / 'history' / 'references', the
-    // anchor isn't in the DOM at all. Force 'all' so the field renders.
+    // saved state restored 'history' or 'references', the anchor isn't in
+    // the DOM at all. Force 'all' so the field renders.
     setThesisViewMode('all')
     // Rating + Price Targets live in the Forecasts section, keyed
     // 'outcomes' for collapsed state. Force-expand so the anchor
@@ -525,33 +1059,333 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asset.data?.scrollTo, asset.data?.scrollNonce])
 
+  // Attention band → an exact research anchor. Reuses the same approach as the
+  // external scrollTo above (force Research + the All view, expand the section,
+  // then poll until the anchor is in the DOM). The anchors already exist in the
+  // render; this adds no new routing. 'case' has no anchor of its own — the
+  // case begins at the thesis, which is the nearest truthful target.
+  useEffect(() => {
+    if (!attentionAnchor) return
+    const map: Record<string, string> = {
+      thesis: 'asset-anchor-thesis',
+      case: 'asset-anchor-thesis',
+      risks: 'asset-warning-anchor-risks',
+      targets: 'asset-warning-anchor-targets',
+      rating: 'asset-warning-anchor-rating',
+    }
+    const targetId = map[attentionAnchor.anchor]
+    setActiveSubPage('research')
+    setThesisViewMode('all')
+    if (attentionAnchor.anchor === 'targets' || attentionAnchor.anchor === 'rating') {
+      setCollapsedSections(prev => ({ ...prev, outcomes: false }))
+    }
+    let cancelled = false
+    let attempts = 0
+    const tick = () => {
+      if (cancelled) return
+      const el = document.getElementById(targetId)
+      if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return }
+      if (attempts++ < 30) window.setTimeout(tick, 100)
+    }
+    const initial = window.setTimeout(tick, 150)
+    return () => { cancelled = true; window.clearTimeout(initial) }
+  }, [attentionAnchor])
+
+  /*
+   * Where an attention signal takes the reader — the precise `focus` first,
+   * the signal's own page as the truthful fallback. No silent redirect: a
+   * signal with no exact target lands on the page it names, never elsewhere.
+   */
+  const handleAttentionFocus = useCallback((destination: WorkspaceDestination, focus?: SignalFocus) => {
+    const t = attentionTarget(destination, focus)
+    if (t.anchor) {
+      // Per-section prose only renders in an individual research view. If the
+      // reader is on the firm (aggregated) view there is no section to scroll
+      // to, so switch to their own research — the nearest view that shows it.
+      if (researchViewFilter === 'aggregated' && user?.id) setResearchViewFilter(user.id)
+      // The anchor effect then forces Research + the All view, expands, scrolls.
+      setAttentionAnchor({ anchor: t.anchor, nonce: Date.now() })
+      return
+    }
+    // Scope the Decisions sub-page to the request's book so the specific
+    // waiting requests are identifiable (null = every book).
+    if (t.decisionsBook !== undefined) setDecisionBookId(t.decisionsBook ?? null)
+    setActiveSubPage(t.subPage)
+    focusWorkSection(workSectionId(t.subPage))
+    if (t.researchMode) setThesisViewMode(t.researchMode)
+    if (t.openItems) {
+      /*
+       * An attention signal about open items now SELECTS the work rather
+       * than scrolling to a list of it.
+       *
+       * This used to poll for `decisions-open-items` and scroll there. That
+       * section is gone — the navigator lists the same ideas and the surface
+       * shows the one in hand — so clearing the saved selection hands the
+       * choice to `resolveSelection`, whose first preference is precisely
+       * the thing an attention signal is about: an item this reader is
+       * empowered to act on. No second ranking rule, and no scroll to a
+       * section that no longer exists.
+       */
+      setWorkItemKey(null)
+    }
+  }, [researchViewFilter, user?.id])
+
+  /*
+   * ── The header strip jumps to the fact, not to the page ────────────────
+   *
+   * Each cell of the context strip now names the FACT it states, and this
+   * turns that into a destination (`lib/asset-workspace/strip-targets`).
+   *
+   * Before, the strip handed over a sub-page and stopped. Measured on AMZN at
+   * 1920: pressing "Firm rating" switched to Research and left the Rating
+   * card at y=701 — 420px down the content area, partly past the fold — with
+   * the scroller at 328 of 1939, which was simply where Research had been
+   * left. Nothing scrolled, because nothing asked it to.
+   *
+   * Three cells resolve to a research anchor, and go through
+   * `attentionAnchor` rather than a fresh scroll of their own: that effect
+   * already knows the rating and the targets only EXIST in the DOM once the
+   * "All" view is forced and the Forecasts section is expanded, and it polls
+   * until the template query has rendered them. A second implementation would
+   * have had to learn all of that again, and would have drifted.
+   */
+  const handleStripJump = useCallback((cell: StripCell) => {
+    const t = stripTarget(cell)
+    if (t.anchor) {
+      /* Per-section prose only renders in an individual research view. On the
+         firm (aggregated) view there is no section to land on, so switch to
+         the reader's own research first — the same move `handleAttentionFocus`
+         makes, and for the same reason. */
+      if (researchViewFilter === 'aggregated' && user?.id) setResearchViewFilter(user.id)
+      setAttentionAnchor({ anchor: t.anchor, nonce: Date.now() })
+      return
+    }
+    goToSubPage(t.subPage)
+    /* No `sectionId` is the honest answer for Active work: arriving at Work
+       already shows the ideas, and `WORK_SECTION_ID.decisions` is null for
+       exactly that reason. */
+    setOverviewAnchor(t.sectionId ? { id: t.sectionId, nonce: Date.now() } : null)
+  }, [researchViewFilter, user?.id, goToSubPage])
+
+  /*
+   * The Overview's own scroll anchor.
+   *
+   * Same shape and same discipline as `workAnchor`: a nonce so pressing the
+   * same cell twice re-fires, `scrollToSection` rather than `scrollIntoView`
+   * because the sub-page body is a nested scroller under a sticky band, the
+   * clear INSIDE the frame so it cannot cancel its own scroll, and a deadline
+   * so an id this build does not have is abandoned rather than left pending.
+   */
+  useEffect(() => {
+    if (!overviewAnchor || activeMode !== 'overview') return
+    const DEADLINE = Date.now() + 1000
+    let raf = 0
+    const attempt = () => {
+      if (scrollToSection(overviewAnchor.id) || Date.now() > DEADLINE) {
+        setOverviewAnchor(null)
+        return
+      }
+      raf = requestAnimationFrame(attempt)
+    }
+    raf = requestAnimationFrame(attempt)
+    return () => cancelAnimationFrame(raf)
+  }, [overviewAnchor, activeMode])
+
   // Save tab state whenever relevant state changes (but only after initialization)
   useEffect(() => {
     if (isTabStateInitialized) {
       const stateToSave = {
         activeSubPage,
-        researchViewFilter,
+        /*
+         * Only a CHOSEN view is persisted. Saving a defaulted one would turn
+         * it into an explicit choice on the next visit and freeze the reader
+         * on whichever view the resolver happened to pick.
+         */
+        ...(researchViewChosen ? { researchViewFilter } : {}),
         thesisViewMode,
         collapsedSections,
-        viewingStageId
+        viewingStageId,
+        viewingRequirementId,
+        // Decision Memory's book scope, so leaving and returning to the asset
+        // restores the narrative the reader was reading.
+        decisionBookId,
+        /*
+         * Which piece of work the reader was on.
+         *
+         * Only the KEY is stored, never a resolved item: the item it names
+         * may have completed or become unauthorized by the time the tab is
+         * reopened, and `resolveSelection` is what decides what to do about
+         * that. Persisting the item itself would resurrect work that is gone.
+         */
+        activeWorkItem: workItemKey,
+        /* Carried on every save because `saveTabState` replaces the record;
+           omitting it here would let the arrival focus replay. */
+        consumedFocusIntent,
+        /* Same reason, for the Process-dashboard deep link. Dropping it
+           here would make every save re-arm the arrival, and returning to
+           the tab would yank the reader back to the linked requirement. */
+        consumedWorkArrival: consumedArrival,
+        /* And again for the task/workflow notification arrival. Leaving it out
+           here is not a no-op: the record is REPLACED, so the next save would
+           drop it and the next return to the tab would be dragged back to
+           Work — the very defect the key exists to stop. */
+        consumedTaskArrival,
       }
       TabStateManager.saveTabState(asset.id, stateToSave)
     }
-  }, [asset.id, activeSubPage, researchViewFilter, thesisViewMode, collapsedSections, viewingStageId, isTabStateInitialized])
+  }, [asset.id, activeSubPage, researchViewFilter, researchViewChosen, thesisViewMode, collapsedSections, viewingStageId, viewingRequirementId, decisionBookId, workItemKey, consumedFocusIntent, consumedArrival, consumedTaskArrival, isTabStateInitialized])
 
-  // Focus-scroll into a Lists tab section when listsFocus is set
+  /*
+   * The newest execution on this asset that the reader is authorized to see,
+   * for the Last Action tile on Decisions.
+   *
+   * Called at component level, unconditionally — the Decisions block below is
+   * an IIFE inside JSX, and a hook there would be a conditional hook.
+   *
+   * Same arguments as the DecisionTimeline render, so it shares that query's
+   * cache key and costs no extra request. `enabled` keeps it off every other
+   * sub-page. Executions are portfolio-team scoped by RLS; nothing here
+   * widens that.
+   */
+  /*
+   * Work-pane integration (prototype).
+   *
+   * Mounted ABOVE Open Items on the existing Decisions tab; nothing is
+   * removed. The duplication that creates is deliberate and temporary — see
+   * the comment at the render site.
+   */
+  const { attention: workAttention, isLoading: workAttentionLoading } =
+    useAssetWorkAttention(asset.id, activeMode === 'work')
+
+  const workIdeas = React.useMemo(
+    () => openItems.map(i => ({
+      id: i.id,
+      action: i.action,
+      stage: i.stage,
+      rationale: i.rationale,
+      portfolioName: i.portfolio?.name ?? null,
+      creatorName: i.creator
+        ? [i.creator.first_name, i.creator.last_name].filter(Boolean).join(' ') || null
+        : null,
+      updatedAgo: i.updated_at
+        ? formatDistanceToNow(new Date(i.updated_at), { addSuffix: true })
+        : null,
+    })),
+    [openItems],
+  )
+
+
+  const { events: decisionTimelineEvents } = useAssetDecisionTimeline({
+    assetId: asset.id,
+    portfolioId: decisionBookId,
+    /* The timeline is History's content now. Work reads the same rows only
+       through `useAssetWorkAttention`, which has its own gate. */
+    enabled: activeMode === 'history',
+  })
+  const lastExecution = React.useMemo(
+    () => decisionTimelineEvents.find(e => e.phase === 'execution') ?? null,
+    [decisionTimelineEvents]
+  )
+
+  /*
+   * ── Focus-scroll into a membership section ──────────────────────────────
+   *
+   * Set by the header's context chips (portfolios / lists / themes / projects).
+   * Two defects lived in the three lines this replaces:
+   *
+   *  1. `setListsFocus(null)` ran in the EFFECT BODY. That re-renders at once,
+   *     which changes this effect's deps and runs its cleanup — cancelling the
+   *     frame that was about to scroll. The same self-cancelling frame the
+   *     Work anchor had. The clear now happens inside the frame, after the
+   *     scroll, and only if the target was actually found.
+   *  2. With the clear repaired, a bare string id would then make every second
+   *     click on the same chip a no-op, because React skips a state write that
+   *     changes nothing. Hence the nonce.
+   *
+   * The scroll itself is the shared helper — `scrollIntoView` moves every
+   * scrollable ancestor and overshoots this page's nested container.
+   */
   useEffect(() => {
-    if (!listsFocus || activeSubPage !== 'lists') return
+    if (!listsFocus || activeMode !== 'work') return
     // Expand the target section if collapsed
-    setCollapsedSections(prev => ({ ...prev, [listsFocus]: false }))
-    // Wait a tick for DOM to update, then scroll
+    setCollapsedSections(prev => ({ ...prev, [listsFocus.id]: false }))
+    // Wait a tick for the expansion to land in the DOM, then scroll.
     const raf = requestAnimationFrame(() => {
-      const el = document.getElementById(`lists-section-${listsFocus}`)
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      /*
+       * The chips pass a sub-anchor — 'listsContent', 'themesContent',
+       * 'portfoliosContent', 'projectsContent' — which were the four
+       * collapsible sections of the Work SIDEBAR. The sidebar is no longer
+       * rendered and the membership surfaces are one band, so no
+       * `lists-section-*` element exists anywhere: every lists, themes,
+       * portfolios and projects chip in the header scrolled nowhere.
+       *
+       * Fall back to the Lists section, which is where that band lives. The
+       * specific id is still tried first, so re-introducing a sub-anchor
+       * needs no change here.
+       *
+       * And consume the focus either way. Clearing it only on a successful
+       * scroll is what let a dead id persist and fire again on the next
+       * return to Work.
+       */
+      if (!scrollToSection(`lists-section-${listsFocus.id}`)) {
+        scrollToSection(WORK_SECTION_ID.lists)
+      }
+      setListsFocus(null)
     })
-    setListsFocus(null)
     return () => cancelAnimationFrame(raf)
-  }, [listsFocus, activeSubPage])
+  }, [listsFocus, activeMode])
+
+  /*
+   * ── Work handoffs scroll instead of switching ──────────────────────────
+   *
+   * Process, Ideas and Lists are sections of one surface now, so "open the
+   * process" is a scroll, not a tab change. The anchor is cleared after one
+   * scroll so re-rendering Work does not yank the reader back.
+   */
+  useEffect(() => {
+    if (!workAnchor || activeMode !== 'work') return
+    /*
+     * `scrollToSection`, not `scrollIntoView`. The sub-page body is a nested
+     * scroll container under a sticky header, and scrollIntoView adjusts
+     * every scrollable ancestor — it overshot by ~600px and left the Process
+     * section above the viewport. The helper measures the rect delta against
+     * the container that actually scrolls, and the membership chips use the
+     * same one.
+     *
+     * Cleared INSIDE the frame, after the scroll. Clearing it in the effect
+     * body instead re-renders immediately, which changes this effect's deps
+     * and runs its cleanup — cancelling the very frame that was going to
+     * scroll. Nothing moved, and nothing said so.
+     *
+     * ── Why this retries, and why it gives up ──────────────────────────
+     *
+     * It used to be ONE frame. `scrollToSection` returns false when the id is
+     * absent, and the comment on it says that lets a caller "tell 'not
+     * rendered yet' from 'done'" — but nothing acted on that: the deps are
+     * `workAnchor` (a stable state object) and `activeMode` (a string), so a
+     * failed attempt never ran again. A target that had not mounted yet was
+     * simply missed, and the anchor stayed set to re-fire on the next return
+     * to Work, scrolling nowhere each time.
+     *
+     * Both halves are now handled. The Process surface waits on queries, so
+     * an anchor set before it mounts gets ~1s of frames to find it; after
+     * that the request is abandoned rather than left pending, because an id
+     * still absent a second after entering Work names a section this build
+     * does not have. That is what `WORK_SECTION_ID.decisions` was until it
+     * became null — see the note there.
+     */
+    const DEADLINE = Date.now() + 1000
+    let raf = 0
+    const attempt = () => {
+      if (scrollToSection(workAnchor.id) || Date.now() > DEADLINE) {
+        setWorkAnchor(null)
+        return
+      }
+      raf = requestAnimationFrame(attempt)
+    }
+    raf = requestAnimationFrame(attempt)
+    return () => cancelAnimationFrame(raf)
+  }, [workAnchor, activeMode])
 
   // ---------- Queries ----------
   const { data: coverage } = useQuery({
@@ -609,56 +1443,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     enabled: contributorIds.length > 0
   })
 
-  // Get user's org chart context for visibility targets
-  const { data: userOrgContext } = useQuery({
-    queryKey: ['user-org-context', user?.id],
-    queryFn: async () => {
-      const { data: memberships } = await supabase
-        .from('org_chart_node_members')
-        .select('node_id, org_chart_nodes(id, name, color, node_type, parent_id)')
-        .eq('user_id', user?.id)
-
-      if (!memberships) return { portfolios: [], teams: [], departments: [], divisions: [] }
-
-      const directNodes = memberships
-        .map(m => m.org_chart_nodes as { id: string; name: string; color: string; node_type: string; parent_id: string | null })
-        .filter(Boolean)
-
-      const { data: allNodes } = await supabase
-        .from('org_org_chart_nodes_v')
-        .select('id, name, color, node_type, parent_id')
-
-      if (!allNodes) return { portfolios: [], teams: [], departments: [], divisions: [] }
-
-      const nodeMap = new Map(allNodes.map(n => [n.id, n]))
-      const teamsSet = new Map<string, typeof allNodes[0]>()
-      const departmentsSet = new Map<string, typeof allNodes[0]>()
-      const divisionsSet = new Map<string, typeof allNodes[0]>()
-
-      const traverseUp = (nodeId: string | null) => {
-        if (!nodeId) return
-        const node = nodeMap.get(nodeId)
-        if (!node) return
-        if (node.node_type === 'team') teamsSet.set(node.id, node)
-        else if (node.node_type === 'department') departmentsSet.set(node.id, node)
-        else if (node.node_type === 'division') divisionsSet.set(node.id, node)
-        traverseUp(node.parent_id)
-      }
-
-      directNodes.forEach(node => {
-        if (node.node_type === 'team') teamsSet.set(node.id, node)
-        traverseUp(node.parent_id)
-      })
-
-      const portfolios = directNodes.filter(n => n.node_type === 'portfolio').sort((a, b) => a.name.localeCompare(b.name))
-      const teams = Array.from(teamsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
-      const departments = Array.from(departmentsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
-      const divisions = Array.from(divisionsSet.values()).sort((a, b) => a.name.localeCompare(b.name))
-
-      return { portfolios, teams, departments, divisions }
-    },
-    enabled: !!user?.id
-  })
+  /*
+   * Where this user sits in the org chart, and so which groups they may
+   * address. This was ~80 lines here; none of it was about an asset, and the
+   * Theme page needs the same inputs to offer the same AudiencePicker, so it
+   * moved to `useOrgAudienceContext` unchanged -- same query key, same
+   * tables, same traversal, same sort. `getTargetOptions` below is now that
+   * hook's `nodesFor`.
+   */
+  const {
+    context: userOrgContext,
+    nodesFor: audienceNodesFor,
+    memberCounts: audienceMemberCounts,
+    nodeById: audienceNodeById,
+  } = useOrgAudienceContext()
 
   // Fetch ALL contributions for this asset (for unified summary view)
   const { contributions: allAssetContributions, isLoading: contributionsLoading, isFetching: contributionsFetching } = useContributions({ assetId: asset.id })
@@ -685,14 +1483,138 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     fieldsWithPreferences,
     fieldsBySection,
     displayedFieldsBySection,
+    sectionsForArranging,
     activeLayout,
+    overridesTemplate,
+    clearAssetOverrides,
+    updateSectionOverride,
+    reorderSections,
+    deleteAddedSection,
     isLoading: layoutLoading
   } = useUserAssetPagePreferences(asset.id)
+
+  /*
+   * Section handles, for arrange mode.
+   *
+   * `reorderSections` takes the whole order rather than a delta, because
+   * `display_order` is an absolute position: renumbering only the section
+   * that moved puts two sections on the same number and the tie breaks
+   * however the sort happens to feel that render. So a move is expressed
+   * as a swap inside the full list and the full list is written back.
+   *
+   * The list is `sectionsForArranging`, not the reading list — arranging
+   * draws the sections nothing is in, and moving past one you cannot see
+   * would skip it silently.
+   */
+  const moveSectionWhileArranging = (sectionId: string, direction: -1 | 1) => {
+    const ids = sectionsForArranging.map(s => s.section_id)
+    const from = ids.indexOf(sectionId)
+    const to = from + direction
+    if (from < 0 || to < 0 || to >= ids.length) return
+    const next = [...ids]
+    ;[next[from], next[to]] = [next[to], next[from]]
+    reorderSections.mutate({ orderedSectionIds: next })
+  }
+
+  const sectionWriteBusy =
+    updateSectionOverride.isPending || reorderSections.isPending || deleteAddedSection.isPending
+
+  /**
+   * The section header, while arranging.
+   *
+   * Replaces the collapse toggle rather than sitting beside it: collapsing
+   * a section hides the fields you are trying to arrange, so inside
+   * arrange mode the header's job is the section itself.
+   */
+  const arrangeSectionHeader = (
+    section: {
+      section_id: string
+      section_name: string
+      section_original_name: string
+      section_is_hidden: boolean
+      section_is_added: boolean
+    },
+    index: number,
+  ) => (
+    <ArrangeableSectionHeader
+      sectionId={section.section_id}
+      name={section.section_name}
+      originalName={section.section_original_name}
+      isHidden={section.section_is_hidden}
+      isAdded={section.section_is_added}
+      canMoveUp={index > 0}
+      canMoveDown={index < sectionsForArranging.length - 1}
+      busy={sectionWriteBusy}
+      onRename={name => updateSectionOverride.mutate({
+        subjectId: asset.id,
+        sectionId: section.section_id,
+        nameOverride: name,
+      })}
+      onToggleHidden={hidden => updateSectionOverride.mutate({
+        subjectId: asset.id,
+        sectionId: section.section_id,
+        isHidden: hidden,
+      })}
+      onMove={direction => moveSectionWhileArranging(section.section_id, direction)}
+      onRemove={section.section_is_added
+        ? () => deleteAddedSection.mutate({ sectionId: section.section_id })
+        : undefined}
+    />
+  )
 
   // Check if user is viewing their own tab - used to conditionally apply layout customizations
   // Layout/template customizations should ONLY apply when viewing "My View"
   const isViewingOwnTab = user && researchViewFilter === user.id
   const isAggregatedView = researchViewFilter === 'aggregated'
+
+  /**
+   * The prose fields Our View summarises, in the org's own template order.
+   *
+   * Derived from the template rather than listed, for the same reason the
+   * aggregated document was: the organisation decides which fields exist, what
+   * they are called and what order they read in. A hardcoded list inside the
+   * summary would be a second research vocabulary that silently disagrees with
+   * this one the first time an org adds or renames a field.
+   *
+   * The filter mirrors the aggregated document exactly — the same hidden
+   * sections, the same Key References exclusion, the same non-prose field types
+   * that have dedicated summary components (`PriceTargetsSummary`,
+   * `FirmConsensusPanel`) above. So the summary reports on precisely the
+   * sections the full document would have rendered.
+   */
+  const ourViewFields: OurViewField[] = React.useMemo(() => {
+    const out: OurViewField[] = []
+    for (const section of displayedFieldsBySection) {
+      if (section.section_is_hidden) continue
+      if (section.section_slug === 'supporting_docs') continue
+      for (const field of section.fields) {
+        if (!field.is_visible) continue
+        if (NON_PROSE_FIELD_TYPES.includes(field.field_type)) continue
+        out.push({
+          slug: field.field_slug,
+          label: field.field_name,
+          sectionKeys: contributionSectionsForSlug(field.field_slug),
+        })
+      }
+    }
+    return out
+  }, [displayedFieldsBySection])
+
+  /**
+   * The analysts formally covering this asset.
+   *
+   * Computed once rather than inline at each consumer. The `coverage` query
+   * selects an embed, which the generated row type does not describe, so its
+   * rows infer as `never` and every inline `coverage?.map(c => c.user_id)`
+   * produced its own type error. One annotated read states the shape in a
+   * single place; the annotation is narrow on purpose — `user_id` is all a
+   * covering-set needs, so it cannot drift into a second description of a
+   * coverage row.
+   */
+  const coveringAnalystIds = React.useMemo(() => {
+    const rows = (coverage ?? []) as unknown as { user_id: string | null }[]
+    return new Set(rows.map(c => c.user_id).filter((id): id is string => Boolean(id)))
+  }, [coverage])
 
   // Get section info with overrides (name, visibility, etc.)
   const getSectionInfo = useCallback((sectionSlug: string) => {
@@ -721,19 +1643,18 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   const hasUserLayout = !!activeLayout
 
   // Get target options for selected visibility level
-  const getTargetOptions = useCallback((visibility: ContributionVisibility) => {
-    if (!userOrgContext) return []
-    switch (visibility) {
-      case 'firm': return []
-      case 'division': return userOrgContext.divisions
-      case 'department': return userOrgContext.departments
-      case 'team': return userOrgContext.teams
-      case 'portfolio': return userOrgContext.portfolios
-      default: return []
-    }
-  }, [userOrgContext])
+  /* `useOrgAudienceContext().nodesFor` is this function, verbatim, beside the
+   * query that feeds it. Kept under the old name so the call sites below read
+   * as they did. */
+  const getTargetOptions = audienceNodesFor
 
-  const targetOptions = getTargetOptions(sharedThesisVisibility)
+  /*
+   * Building the option list — candidates, stored targets, reachability —
+   * moved into AudiencePicker, which needs it per scope as the author browses
+   * rather than only for the level currently applied. It still calls
+   * `buildAudienceOptions` with the same inputs, so a saved group the author
+   * can no longer pick stays listed and checked.
+   */
 
   // Initialize visibility from user's existing contributions
   useEffect(() => {
@@ -743,11 +1664,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         || userRisksContributions.find(c => c.created_by === user.id)
 
       if (userContribution) {
-        setSharedThesisVisibility(userContribution.visibility as ContributionVisibility)
+        const savedVisibility = userContribution.visibility as ContributionVisibility
+        // Before the state, so the level-change effect below can tell this
+        // transition was a load rather than a user choice.
+        rehydratedVisibilityRef.current = savedVisibility
+        setSharedThesisVisibility(savedVisibility)
         const targets = (userContribution as any).visibility_targets
-        if (targets && Array.isArray(targets)) {
-          setSharedThesisTargetIds(targets.map((t: any) => t.node_id).filter(Boolean))
-        }
+        const savedIds: string[] = Array.isArray(targets)
+          ? targets.map((t: any) => t.node_id).filter(Boolean)
+          : []
+        setSharedThesisTargetIds(savedIds)
+        setSavedAudience({ visibility: savedVisibility, targetIds: savedIds })
         setHasInitializedVisibility(true)
       }
     }
@@ -756,45 +1683,59 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Reset initialization when asset changes
   useEffect(() => {
     setHasInitializedVisibility(false)
+    rehydratedVisibilityRef.current = null
+    setSavedAudience(null)
     setSharedThesisVisibility('firm')
     setSharedThesisTargetIds([])
   }, [asset.id])
 
-  // Reset target IDs when visibility level changes
+  /*
+   * Reset target IDs when the visibility LEVEL changes — a team id is not a
+   * department id, so the old selection cannot carry over.
+   *
+   * The ref is what stops this from undoing the rehydration above. That effect
+   * sets the level and the targets together; this one then saw the level change
+   * and wiped the targets it had just loaded, in the same render cycle. The
+   * result was a save with `targetIds: []`, which deleted every
+   * contribution_visibility_targets row for the section — the restriction
+   * destroyed, the badge still showing a lock.
+   */
   useEffect(() => {
+    if (rehydratedVisibilityRef.current === sharedThesisVisibility) return
     setSharedThesisTargetIds([])
   }, [sharedThesisVisibility])
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (visibilityRef.current && !visibilityRef.current.contains(event.target as Node)) {
-        setShowVisibilityDropdown(false)
-        setVisibilityStep('level')
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  /*
+   * The dropdown's own click-outside handler, level selector and target
+   * confirmation moved into AudiencePicker, which owns its draft, its
+   * dismissal and its focus. What is left here is the page-level state the
+   * picker commits into, and the save path that reads it.
+   */
 
-  // Handle visibility level selection
-  const handleVisibilitySelect = useCallback((newVisibility: ContributionVisibility) => {
-    const targets = getTargetOptions(newVisibility)
-    if (newVisibility === 'firm' || targets.length === 0) {
-      setSharedThesisVisibility(newVisibility)
-      setSharedThesisTargetIds([])
-      setShowVisibilityDropdown(false)
-      setVisibilityStep('level')
-    } else {
-      setSharedThesisVisibility(newVisibility)
-      setVisibilityStep('targets')
-    }
-  }, [getTargetOptions])
-
-  // Handle target selection confirmation
-  const handleTargetsConfirm = useCallback(() => {
-    setShowVisibilityDropdown(false)
-    setVisibilityStep('level')
+  /**
+   * Commit the picker's draft.
+   *
+   * This STAGES the audience; it does not write. The only write path remains
+   * `set_contribution_audience`, which `ContributionSection` calls when the
+   * section is saved — unchanged by this lane, and the reason the picker can
+   * be explored freely.
+   *
+   * It is async because the picker treats a rejection as "nothing changed" and
+   * keeps the panel open; a future version that writes on Apply can slot in
+   * here without the component learning anything new.
+   */
+  const handleAudienceApply = useCallback(async (next: { visibility: ContributionVisibility; targetIds: string[] }) => {
+    /*
+     * The ref is set to the INCOMING level before the state, so the
+     * level-change effect below bails instead of clearing the targets this
+     * call is setting. Without it the two setState calls batch, the effect
+     * sees the level change, and wipes the ids — the same defect that once
+     * saved `targetIds: []` and destroyed a restriction while still showing a
+     * lock (see the comment on that effect).
+     */
+    rehydratedVisibilityRef.current = next.visibility
+    setSharedThesisVisibility(next.visibility)
+    setSharedThesisTargetIds(next.targetIds)
   }, [])
 
   // Check if user is viewing their own tab
@@ -931,6 +1872,67 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     })
   }, [coverage, thesisContributions, contributorProfiles, isLoadingContributorProfiles, user])
 
+  /**
+   * Resolve the research default, once, when the analyst list arrives.
+   *
+   * ── The rule, in order ───────────────────────────────────────────────
+   *
+   *   1. The reader HAS their own research on this name  → their own view.
+   *      This is the change: an analyst opening a name they cover lands on
+   *      their own work, not on a combined firm pane.
+   *   2. Otherwise, the primary covering analyst's view  → clearly labelled
+   *      as that person's, because the pills show whose view is selected.
+   *   3. Otherwise any covering analyst, then any contributor.
+   *   4. Nobody has written anything                     → Our View, which
+   *      is the honest landing state when there is no individual research to
+   *      open.
+   *
+   * ── What it must never do ────────────────────────────────────────────
+   *
+   * It does NOT create a research record, claim ownership, or write anything.
+   * Selecting a filter is a read. Case 2 and 3 open somebody ELSE's view, and
+   * the selector makes whose it is explicit — the alternative, opening an
+   * empty "own" view, would imply the reader has research they do not have.
+   *
+   * It runs only while UNRESOLVED, so an explicit choice, a restored choice,
+   * or an arriving navigation intent is never overridden. Waiting for
+   * `isLoadingContributorProfiles` avoids resolving against a half-loaded
+   * list and then appearing to "jump" views.
+   */
+  useEffect(() => {
+    if (researchDefaultDecided) return
+    if (isLoadingContributorProfiles) return
+    // Coverage is the other input; `undefined` means still loading.
+    if (coverage === undefined || thesisContributions === undefined) return
+
+    // Decided either way now, so this runs once.
+    setResearchDefaultDecided(true)
+
+    // UX2 Phase 1 — My Research is the default landing whenever there is a
+    // signed-in reader, INCLUDING when they have not written a case yet (their
+    // own view then shows the "Add your view" prompts). Edit is therefore always
+    // reachable on arrival. Only with no user at all do we fall back to a
+    // covering analyst's view, and finally to the firm (aggregated) summary.
+    //
+    // In the app this branch no longer fires: the initialiser decides for a
+    // signed-in reader synchronously, so `researchDefaultDecided` is already
+    // true and we return above. It remains for a reader who arrives LATE —
+    // a harness that mounts this tree without `ProtectedRoute`, where `user`
+    // starts null and fills in — so the fallback below cannot strand them on
+    // somebody else's view.
+    if (user?.id) {
+      setResearchViewFilter(user.id)
+      return
+    }
+    const primary = researchAnalysts.find(a => a.isCovering && a.role === 'primary')
+    const covering = researchAnalysts.find(a => a.isCovering)
+    const fallback = primary ?? covering ?? researchAnalysts[0]
+    setResearchViewFilter(fallback ? fallback.id : 'aggregated')
+  }, [
+    researchDefaultDecided, isLoadingContributorProfiles, coverage,
+    thesisContributions, researchAnalysts, user?.id,
+  ])
+
   // Accessible analyst IDs for rating divergence badge filtering (must be after researchAnalysts)
   const ratingAccessibleUserIds: string[] | undefined = React.useMemo(() => {
     if (!researchAnalysts || researchAnalysts.length === 0) return undefined
@@ -1027,43 +2029,87 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     },
   })
 
-  // Get all holdings for each portfolio to calculate weights
-  const { data: portfolioTotals } = useQuery({
-    queryKey: ['portfolio-totals', portfolioHoldings?.map(h => h.portfolio_id)],
+  /*
+   * ── One book per portfolio, so a weight divides by its own book ─────────
+   *
+   * This used to return a bare total per portfolio, built with
+   * `latestSnapshotRows` — the portfolio's newest snapshot DATE. The
+   * numerator, meanwhile, came from `portfolioHoldings` → `currentRows` —
+   * the newest row PER ASSET. Those are two different books whenever an
+   * asset's newest row predates the portfolio's newest upload, and the page
+   * divided one by the other.
+   *
+   * On Vision Fund 10K that is not hypothetical. Its uploads are 2026-04-24
+   * (2 rows, $2.07m), 2026-04-15 (1 row) and 2026-04-13 (26 rows, $95.4m).
+   * AMZN appears only in the 2026-04-13 book, so its $3.95m was divided by
+   * the $2.07m of a two-line upload it was never part of: 190.91%. Twenty-
+   * seven weights were struck this way and twenty-five of them printed above
+   * 100%; the remaining two were simply wrong and said nothing.
+   *
+   * `buildBook` is the fix because it does not have two books. It reduces
+   * with `currentRows` and then takes its denominator from exactly the rows
+   * it kept, so numerator and denominator cannot disagree, and it reports
+   * the `asOf` of each line so a weight can say which upload it is from.
+   * `scripts/holdings-collapse-audit.mjs` records why that reduction and
+   * `latestSnapshotRows` are not interchangeable: this one keeps a position
+   * that is absent from the latest upload instead of dropping it.
+   *
+   * Books, not totals, because every caller on this page needs the same
+   * line — weight, market value, shares and as-of together — and deriving
+   * them separately is how the two definitions arose in the first place.
+   */
+  const { data: portfolioBooks } = useQuery({
+    queryKey: ['portfolio-books', portfolioHoldings?.map(h => h.portfolio_id)],
     queryFn: async () => {
       if (!portfolioHoldings || portfolioHoldings.length === 0) return {}
 
       const portfolioIds = [...new Set(portfolioHoldings.map(h => h.portfolio_id))]
-      const totals: Record<string, number> = {}
+      const books: Record<string, Book> = {}
 
       for (const portfolioId of portfolioIds) {
-        const { data: costRows, error } = await supabase
+        /*
+         * Every row of the book, not just this asset's: a weight is a ratio
+         * and the denominator is the whole book. `asset_id` and the symbol
+         * travel too — `buildBook` keys positions by asset and classifies
+         * cash lines by symbol, and cash is a book line that belongs in the
+         * denominator.
+         */
+        const { data: bookRows, error } = await supabase
           .from('portfolio_holdings')
-          .select('shares, cost, price, date')
+          .select('portfolio_id, asset_id, shares, cost, price, date, assets ( symbol )')
           .eq('portfolio_id', portfolioId)
 
         if (error) throw error
-        // Dated snapshots: summing every row multiplies the book by the
-        // number of uploads. See src/lib/holdings/latest-snapshot.ts.
-        const data = latestSnapshotRows(costRows ?? [])
-
-        // The book's MARKET value, not its cost basis. Weight has one
-        // definition across Tesseract -- current market value over the book's
-        // own current market value -- and this page was the only place still
-        // dividing cost by cost, which is a different number for the same
-        // position. See src/lib/portfolio/holdings.ts.
-        totals[portfolioId] = ((data || []) as any[]).reduce((sum, holding) => {
-          const shares = parseFloat(holding.shares)
-          const price = parseFloat(holding.price ?? holding.cost)
-          if (!Number.isFinite(shares) || !Number.isFinite(price)) return sum
-          return sum + shares * price
-        }, 0)
+        books[portfolioId] = buildBook(portfolioId, (bookRows ?? []) as unknown as HoldingRow[])
       }
 
-      return totals
+      return books
     },
     enabled: !!portfolioHoldings && portfolioHoldings.length > 0,
   })
+
+  /*
+   * This asset's line in a given book, or null when there is no book yet.
+   *
+   * The one accessor all three exposure surfaces read, so the Work sidebar,
+   * the Net Exposure tiles and the holdings table cannot drift apart again.
+   * Returns null rather than zero while the books are loading: an unknown
+   * weight is not a weight of nothing.
+   */
+  const exposureIn = useCallback((portfolioId: string) => {
+    const book = portfolioBooks?.[portfolioId]
+    if (!book) return null
+    const position = book.positions.find(p => p.assetId === asset.id)
+    if (!position) return null
+    return {
+      weightPct: position.weightPct,
+      marketValue: position.marketValue,
+      shares: position.shares,
+      /* The upload THIS line came from, which is what the number is as of. */
+      asOf: position.asOf,
+      bookValue: book.totalValue,
+    }
+  }, [portfolioBooks, asset.id])
 
   // Current stock price for P&L calculations
   const { data: currentQuote } = useQuery({
@@ -1072,7 +2118,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       const quote = await financialDataService.getQuote(asset.symbol)
       return quote
     },
-    enabled: !!asset.symbol && portfolioHoldings && portfolioHoldings.length > 0,
+    /*
+     * A price does not depend on owning the thing.
+     *
+     * This read `&& portfolioHoldings.length > 0`, so the quote was fetched
+     * only for names already in a book. For every other security — a
+     * research candidate, a watchlist name, anything being worked up before
+     * a position exists — `currentQuote` stayed undefined, and three things
+     * went quiet with it:
+     *
+     *   • `PriceTargetsSummary` computes upside as
+     *     `currentPrice && aggregatedPrice ? … : …` (PriceTargetsSummary.tsx:77),
+     *     so every upside figure rendered blank;
+     *   • `useRatingDivergence` bails on `!currentPrice`
+     *     (useRatingDivergence.ts:234) and returns no warning — the
+     *     rating-versus-expected-value check was SUPPRESSED rather than
+     *     deferred, on exactly the assets where a view is still forming;
+     *   • the capital bar's market value fell back to the holdings price.
+     *
+     * Meanwhile the header rendered a live price the whole time, because
+     * `StockQuote` (:2436) fetches its own and is ungated. So the symptom was
+     * a header quoting a price above a price-target panel showing dashes,
+     * with its integrity warnings off and nothing saying why.
+     *
+     * The holdings dependency was never a correctness condition. It was a
+     * cost control, and the cost it saved is one quote per asset page.
+     */
+    enabled: !!asset.symbol,
     staleTime: 15000, // Cache for 15 seconds
     refetchInterval: 30000, // Auto-refresh every 30 seconds
   })
@@ -1452,6 +2524,38 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   }, [effectiveWorkflowId, workflowIdLoading, asset.symbol])
 
+  /*
+   * The active workflow's identity for the Work summary.
+   *
+   * Declared HERE rather than beside the other Work state, because it reads
+   * `effectiveWorkflowId` and `availableWorkflows`, which are declared above
+   * this line — referencing them earlier is a temporal dead zone, which this
+   * repo has a guard for.
+   *
+   * Name only. Progress is deliberately absent (see the render site), and
+   * `null` means "this asset has no running process", never "I did not look".
+   */
+  const processSummary = useAssetProcessSummary(
+    asset.id, effectiveWorkflowId, activeMode === 'work'
+  )
+  const workProcessSummary = React.useMemo(() => {
+    if (processSummary.status === 'none') return null
+    return {
+      workflowName: processSummary.workflowName ?? 'Active process',
+      stages: processSummary.stages.map(s => ({
+        id: s.id,
+        label: s.label,
+        done: s.done ?? undefined,
+        total: s.total ?? undefined,
+        active: s.active,
+      })),
+      openStageLabel: processSummary.active?.label ?? null,
+      openStageDone: processSummary.active?.done ?? undefined,
+      openStageTotal: processSummary.active?.total ?? undefined,
+      deadline: processSummary.nextDeadlineDate ?? null,
+    }
+  }, [processSummary])
+
   // Fetch templates for the asset's workflow
   const { data: workflowTemplates, isLoading: templatesLoading } = useQuery({
     queryKey: ['workflow-templates', effectiveWorkflowId],
@@ -1502,20 +2606,311 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    *
    * Scope needs no filter. RLS on these tables is owner-or-collaborator, so
    * this returns the lists this reader may see and no others.
+   *
+   * ── Then it had to answer one more question ──────────────────────────────
+   *
+   * Naming the lists is not managing membership. The select above dropped the
+   * membership row's own id and `added_by`, so there was nothing to delete and
+   * no way to ask whether this reader may. `useAssetListMemberships` is that
+   * same single request, widened to carry both, with the existing per-row rule
+   * applied. It replaces this query rather than joining it.
    */
-  const { data: assetLists, isLoading: listsLoading } = useQuery({
-    queryKey: ['asset-lists', asset.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('asset_list_items')
-        .select('added_at, asset_lists(id, name, description, list_type, created_at)')
-        .eq('asset_id', asset.id)
-        .order('added_at', { ascending: false })
+  const {
+    memberships: assetListMemberships,
+    isLoading: listsLoading,
+    remove: removeFromList,
+  } = useAssetListMemberships(asset.id)
 
-      if (error) throw error
-      return data?.map((item: any) => item.asset_lists).filter(Boolean) || []
-    }
+  /*
+   * ── The reader's own CoAnalyst threads about this name ──────────────────
+   *
+   * Gated on the Work mode, like the other Work-only reads. Strictly
+   * private: `ai_conversations` is `user_id = auth.uid()` and the hook
+   * filters on the owner again on top of that. No message content is
+   * fetched — the surface shows titles and timestamps only.
+   */
+  const {
+    conversations: assetConversations,
+    isLoading: conversationsLoading,
+  } = useAssetConversations(asset.id, activeMode === 'work')
+
+  /*
+   * The engagement target for this asset, built once.
+   *
+   * `askAI` is the existing seam — the same one the header's Ask AI button
+   * uses — so opening a thread from here goes through the pane that already
+   * exists rather than a second route into CoAnalyst.
+   */
+  const assetEngagementTarget = React.useMemo(() => ({
+    objectType: 'asset' as const,
+    objectId: asset.id,
+    label: asset.company_name ? `${asset.symbol} — ${asset.company_name}` : (asset.symbol ?? 'Asset'),
+    symbol: asset.symbol ?? undefined,
+    assetId: asset.id,
+    origin: { itemId: asset.id, surface: 'asset-work' },
+  }), [asset.id, asset.symbol, asset.company_name])
+
+  /*
+   * ── The work items, and which one the surface is showing ───────────────
+   *
+   * Built from the data Work already loads: the attention split (the existing
+   * `portfolio_team` pm/admin rule), the open ideas, the running processes
+   * and the reader's own CoAnalyst threads. No new query, and no new notion
+   * of priority — the grouping is categorical and the order within a group is
+   * the order each source query returned.
+   */
+  const workProcesses = React.useMemo(
+    () => (allAssetWorkflows ?? []).map((w: any) => ({
+      workflowId: w.workflow_id as string,
+      name: (w.workflows?.name as string) || 'Process',
+      /* Already selected by the query above. It is what tells the Apr 10 run
+         of a weekly review from the Apr 3 one. */
+      branchSuffix: (w.workflows?.branch_suffix as string | null) ?? null,
+      /* The stage label only when the summary hook actually knows it. A
+         running process whose stages have not loaded says nothing rather
+         than guessing one. */
+      stageLabel: w.workflow_id === effectiveWorkflowId
+        ? (workProcessSummary?.openStageLabel ?? null)
+        : null,
+      isStarted: !!w.is_started,
+      isCompleted: !!w.is_completed,
+    })),
+    [allAssetWorkflows, effectiveWorkflowId, workProcessSummary],
+  )
+
+  /*
+   * The idea stage filter, carried over from the Open Items section.
+   *
+   * It narrows the IDEA rows only. A process is not at an idea stage, and a
+   * filter that hid the running process because the reader wanted to see
+   * "Researching" ideas would hide the one thing they can always act on.
+   */
+  const filteredWorkIdeas = React.useMemo(
+    () => (openItemsFilter === 'all'
+      ? workIdeas
+      : workIdeas.filter(i => toIdeaStage(i.stage) === openItemsFilter)),
+    [workIdeas, openItemsFilter],
+  )
+
+  const workItems = React.useMemo(
+    () => buildWorkItems({
+      needsYourAction: workAttention.needsYourAction,
+      awaitingOthers: workAttention.awaitingOthers,
+      ideas: filteredWorkIdeas.map(i => ({
+        id: i.id,
+        action: i.action,
+        stageLabel: i.stage ? stageLabel(i.stage) : null,
+        rationale: i.rationale,
+        portfolioName: i.portfolioName,
+      })),
+      processes: workProcesses,
+      conversations: assetConversations.map(c => ({
+        id: c.id,
+        title: c.title,
+        lastActivity: c.lastActivityAt
+          ? formatDistanceToNow(new Date(c.lastActivityAt), { addSuffix: true })
+          : null,
+      })),
+    }),
+    [workAttention, filteredWorkIdeas, workProcesses, assetConversations],
+  )
+
+  const workSelection = React.useMemo(
+    () => resolveSelection(workItems, workItemKey, {
+      /* A completed or historical cycle is open on screen but absent from
+         the navigator, which lists live runs only. */
+      activeProcessWorkflowId: effectiveWorkflowId || null,
+      activeProcessLabel: (allAssetWorkflows ?? [])
+        .find((w: any) => w.workflow_id === effectiveWorkflowId)?.workflows?.name ?? null,
+    }),
+    [workItems, workItemKey, effectiveWorkflowId, allAssetWorkflows],
+  )
+  const selectedWorkItem = workSelection.selected
+
+  /*
+   * ── Requirement counts for every run, not just the open one ──────────
+   *
+   * The overview states progress for each active process, so it needs the
+   * counts across all of them. One query per run would be N round trips
+   * on a page that opens cold; this is two `in()` reads over the same
+   * tables the workspace uses.
+   *
+   * The TEMPLATE is the denominator. A requirement nobody has touched has
+   * no `asset_checklist_items` row at all, so counting rows would report
+   * "0 of 0 done" for a cycle that has not been started and make an
+   * untouched process look finished.
+   */
+  const workflowIdsForCounts = React.useMemo(
+    () => (allAssetWorkflows ?? [])
+      .map((w: any) => w.workflow_id as string)
+      .filter(Boolean)
+      .sort(),
+    [allAssetWorkflows],
+  )
+
+  const { data: runCounts } = useQuery({
+    queryKey: ['asset-work-run-counts', asset.id, workflowIdsForCounts.join(',')],
+    enabled: workflowIdsForCounts.length > 0,
+    staleTime: 15_000,
+    queryFn: async () => {
+      const [tmpl, rows] = await Promise.all([
+        supabase
+          .from('workflow_checklist_templates')
+          .select('workflow_id, stage_id, item_id')
+          .in('workflow_id', workflowIdsForCounts),
+        supabase
+          .from('asset_checklist_items')
+          .select('workflow_id, stage_id, item_id, status, completed, notes, updated_at')
+          .eq('asset_id', asset.id)
+          .in('workflow_id', workflowIdsForCounts),
+      ])
+
+      const totals = new Map<string, number>()
+      const firstOpen = new Map<string, { stageId: string | null; itemId: string | null }>()
+      for (const t of ((tmpl.data ?? []) as any[])) {
+        totals.set(t.workflow_id, (totals.get(t.workflow_id) ?? 0) + 1)
+      }
+
+      const done = new Map<string, number>()
+      const updated = new Map<string, string | null>()
+      const satisfied = new Set<string>()
+      const rowIdByPair = new Map<string, string>()
+      for (const r of ((rows.data ?? []) as any[])) {
+        const pair = `${r.workflow_id}|${r.stage_id ?? ''}|${r.item_id ?? ''}`
+        if (r.completed || r.status === 'completed' || r.status === 'na') {
+          satisfied.add(pair)
+          done.set(r.workflow_id, (done.get(r.workflow_id) ?? 0) + 1)
+        }
+        if (r.id) rowIdByPair.set(pair, r.id)
+        const prev = updated.get(r.workflow_id) ?? null
+        if (r.updated_at && (!prev || r.updated_at > prev)) updated.set(r.workflow_id, r.updated_at)
+      }
+
+      /* The next thing to do: the first template requirement in the run
+         that is not yet satisfied. Template order, so it matches the rail. */
+      const ordered = [...((tmpl.data ?? []) as any[])].sort((a, b) =>
+        String(a.item_id ?? '').localeCompare(String(b.item_id ?? '')))
+      for (const t of ordered) {
+        const pair = `${t.workflow_id}|${t.stage_id ?? ''}|${t.item_id ?? ''}`
+        if (satisfied.has(pair)) continue
+        if (!firstOpen.has(t.workflow_id)) {
+          firstOpen.set(t.workflow_id, { stageId: t.stage_id ?? null, itemId: t.item_id ?? null })
+        }
+      }
+
+      return { totals, done, updated, firstOpen }
+    },
   })
+
+  /** Labels for the first open requirement of each run, from the template. */
+  const { data: nextRequirementLabels } = useQuery({
+    queryKey: ['asset-work-next-labels', asset.id, workflowIdsForCounts.join(',')],
+    enabled: workflowIdsForCounts.length > 0,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('workflow_checklist_templates')
+        .select('workflow_id, stage_id, item_id, item_text')
+        .in('workflow_id', workflowIdsForCounts)
+      const m = new Map<string, string>()
+      for (const t of ((data ?? []) as any[])) {
+        m.set(`${t.workflow_id}|${t.stage_id ?? ''}|${t.item_id ?? ''}`, t.item_text ?? '')
+      }
+      return m
+    },
+  })
+
+  const assetWorkOverview = React.useMemo(() => {
+    const runs = (allAssetWorkflows ?? []).map((w: any) => {
+      const id = w.workflow_id as string
+      const split = splitProcessRun(w.workflows?.name, w.workflows?.branch_suffix)
+      const open = runCounts?.firstOpen.get(id) ?? null
+      const pair = open ? `${id}|${open.stageId ?? ''}|${open.itemId ?? ''}` : null
+      return {
+        workflowId: id,
+        name: split.name,
+        cycle: split.run,
+        currentStageId: (w.current_stage_key as string | null) ?? null,
+        currentStageLabel: id === effectiveWorkflowId
+          ? (workProcessSummary?.openStageLabel ?? null)
+          : null,
+        isStarted: !!w.is_started,
+        isCompleted: !!w.is_completed,
+        requirementsTotal: runCounts?.totals.get(id) ?? 0,
+        requirementsDone: runCounts?.done.get(id) ?? 0,
+        /* The per-run row id if the requirement has been touched,
+           otherwise null — the workspace opens the stage and the reader
+           picks it up from the rail. */
+        nextRequirementId: null,
+        nextRequirementText: pair ? (nextRequirementLabels?.get(pair) ?? null) : null,
+        assigneeName: null,
+        dueDate: null,
+        updatedAt: runCounts?.updated.get(id) ?? (w.updated_at as string | null) ?? null,
+      }
+    })
+    return buildWorkOverview(runs, {
+      lastOpenedWorkflowId: effectiveWorkflowId || null,
+      hasIdeas: workItems.some(i => i.kind === 'idea'),
+      hasInvestigations: workItems.some(i => i.kind === 'conversation'),
+    })
+  }, [allAssetWorkflows, runCounts, nextRequirementLabels, effectiveWorkflowId, workProcessSummary, workItems])
+
+
+  /*
+   * ── Lists and portfolios select, they do not depart ──────────────────
+   *
+   * Both used to call `onNavigate`, which opens a top-level tab: clicking
+   * a book in the asset's own sidebar closed the asset workspace and
+   * opened the Portfolio application, losing the process you were working
+   * and offering no way back. They are now two more kinds on the SAME
+   * selection key the sidebar already persists, so they restore on reload
+   * like any other work item, and leaving the asset is a labelled control
+   * on the surface instead.
+   */
+  const contextual = React.useMemo(() => contextualSelection(workItemKey), [workItemKey])
+  /** What Back returns to. Null means the Work overview. */
+  const [previousWorkKey, setPreviousWorkKey] = useState<string | null>(null)
+  const openContextual = React.useCallback((key: string) => {
+    /*
+     * The RESOLVED selection, not the raw key. On first entry the key is
+     * null — the surface auto-resolved to the first process without writing
+     * one — so capturing the raw key sent the reader back to "work" when
+     * they had been on Earnings Season a moment earlier.
+     */
+    setPreviousWorkKey(prev =>
+      contextualSelection(workItemKey) ? prev : (workItemKey ?? selectedWorkItem?.key ?? null))
+    setWorkItemKey(key)
+  }, [workItemKey, selectedWorkItem])
+  const contextualBack = React.useMemo(
+    () => backTarget(previousWorkKey, (key) => workItems.find(i => i.key === key)?.label ?? null),
+    [previousWorkKey, workItems],
+  )
+  const leaveContextual = React.useCallback(() => {
+    setWorkItemKey(contextualBack.key)
+    setPreviousWorkKey(null)
+  }, [contextualBack.key])
+  /*
+   * ── Loading is not absence ──────────────────────────────────────────
+   *
+   * The work surface said "No active work on this asset" whenever nothing
+   * was selected, and nothing can be selected until the four queries that
+   * BUILD the list have answered. On a cold load that is a false statement
+   * held on screen for several seconds — measured at ~8s against the dev
+   * server, on an asset with four running processes — and it is the worst
+   * kind of wrong, because it is a confident claim about the reader's own
+   * work rather than a blank.
+   *
+   * One flag, read by the navigator and the surface together, so the two
+   * can never disagree about whether the answer is in yet.
+   */
+  const workIsResolving =
+    workAttentionLoading || openItemsLoading || conversationsLoading || allWorkflowsLoading
+  const selectedWorkIdea = React.useMemo(
+    () => (selectedWorkItem?.kind === 'idea'
+      ? workIdeas.find(i => i.id === selectedWorkItem.id) ?? null
+      : null),
+    [selectedWorkItem, workIdeas],
+  )
 
   // Fetch themes that contain this asset
   const { data: assetThemes, isLoading: themesLoading } = useQuery({
@@ -1535,6 +2930,151 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       return themes
     }
   })
+
+  /*
+   * ── Overview wiring, deliberately placed here ────────────────────────
+   *
+   * These three read `assetThemes`, `portfolioHoldings` and
+   * `openContextual`, all declared above this line. Putting them beside
+   * `assetWorkOverview` — which is where they belong by subject — threw a
+   * ReferenceError on first render, because a `const` is in its temporal
+   * dead zone until its own declaration runs and a `useMemo` body runs
+   * during render. CLAUDE.md lists this as a recurring defect class here;
+   * it is the reason for the split.
+   */
+
+  /** Passive relationships, as chips rather than as work. */
+  const overviewConnections = React.useMemo<OverviewConnection[]>(() => [
+    ...assetListMemberships.map(l => ({ kind: 'list' as const, id: l.listId, label: l.name })),
+    ...(((assetThemes ?? []) as any[]).map(t => ({ kind: 'theme' as const, id: t.id, label: t.name }))),
+    ...Array.from(
+      new Map(((portfolioHoldings ?? []) as any[]).map((h: any) => [h.portfolio_id, h])).values()
+    ).map((h: any) => {
+      const exposure = exposureIn(h.portfolio_id)
+      return {
+        kind: 'portfolio' as const,
+        id: h.portfolio_id,
+        label: h.portfolios?.name || 'Portfolio',
+        detail: exposure && exposure.bookValue > 0 ? `${exposure.weightPct.toFixed(2)}%` : null,
+      }
+    }),
+  ], [assetListMemberships, assetThemes, portfolioHoldings, exposureIn])
+
+  /*
+   * ── What Work shows about research ───────────────────────────────────
+   *
+   * Read from `useAssetWorkspace`, which the requirement context already
+   * calls — so this costs no query. Until now Work fetched the case and
+   * every research note on the asset and rendered neither: the case as a
+   * bare age ("202d old"), the notes not at all.
+   *
+   * Work shows what exists and hands off. Research still owns writing it.
+   */
+  const workspaceForResearch = useAssetWorkspace(asset.id, asset.symbol ?? null, 'overview')
+  /*
+   * Starting an idea from a list or a book.
+   *
+   * One modal instance, not one per surface: it is the existing
+   * `AddTradeIdeaModal` with the audited create mutation inside it, and two
+   * copies would be two places to keep in step. `null` means closed; a
+   * string or `''` means open, carrying the book to preselect — the
+   * portfolio surface knows which, a list does not, so the modal asks.
+   */
+  const [startIdeaIn, setStartIdeaIn] = React.useState<string | null>(null)
+
+  const overviewResearch = React.useMemo(() => ({
+    /* Notes only. The case's own sections were listed here for one pass
+       and are not any more — a case is read in Research, not skimmed as a
+       list of field names in Work. */
+    notes: (workspaceForResearch.data?.evidence ?? []).map(e => ({
+      id: e.id,
+      title: e.title?.trim() || 'Untitled note',
+      authorName: e.authorName ?? null,
+      at: e.createdAt ?? null,
+    })),
+  }), [workspaceForResearch.data])
+
+  /*
+   * Processes this asset is not yet in.
+   *
+   * Computed at component level because BOTH the overview and the
+   * process switcher offer the join, and the switcher's copy lives
+   * inside the process branch — which does not render at all when no
+   * process is running, which is exactly when a reader most needs to add
+   * one.
+   */
+  const joinableProcesses = React.useMemo(
+    () => groupProcesses(
+      (allAssetWorkflows ?? []) as unknown as SwitcherRunRow[],
+      effectiveWorkflowId || null,
+      ((availableWorkflows ?? []) as unknown as Array<{
+        id: string; name: string; branch_suffix: string | null
+      }>).map(w => ({ id: w.id, name: w.name, branch_suffix: w.branch_suffix })),
+    ).joinable,
+    [allAssetWorkflows, effectiveWorkflowId, availableWorkflows],
+  )
+
+  const openWorkConnection = React.useCallback((c: OverviewConnection) => {
+    if (c.kind === 'list') { openContextual(contextualKey.list(c.id)); return }
+    if (c.kind === 'portfolio') { openContextual(contextualKey.portfolio(c.id)); return }
+    /* Themes have no in-asset surface, so they keep the existing
+       top-level navigation rather than a half-built one here. */
+    if (c.kind === 'theme') {
+      onNavigate?.({ id: c.id, title: c.label, type: 'theme', data: { id: c.id, name: c.label } })
+    }
+  }, [onNavigate, openContextual])
+
+  const openConversationPane = React.useCallback((conversationId: string) => {
+    askAI({ ...assetEngagementTarget, conversationId })
+  }, [assetEngagementTarget])
+
+  /*
+   * The report reads the CYCLE being viewed, so opening a previous run
+   * and opening its report are the same act: `effectiveWorkflowId` moves
+   * and the report follows. Nothing else is needed to keep a historical
+   * report historical.
+   */
+  const processReport = useProcessReport(
+    asset.id,
+    showReportView ? (effectiveWorkflowId || null) : null,
+  )
+
+  /*
+   * ── Arriving from the Process dashboard ──────────────────────────────
+   *
+   * Process-first and asset-first converge here. The dashboard hands over
+   * `{ workflowId, stageId, requirementId }` in tab data; this applies it
+   * to the SAME state the asset's own navigation sets, so there is one
+   * workspace and one set of records either way.
+   *
+   * Applied once. Tab data is durable and only the active tab renders, so
+   * without the consumed-id check this would re-apply on every remount
+   * and drag the reader back to the deep-linked requirement each time
+   * they returned to the tab — the defect `arrival-focus` documents for
+   * sub-pages, in a second place.
+   */
+  const workArrival = React.useMemo(
+    () => destinationFromTabData(asset.data as Record<string, unknown> | null | undefined),
+    [asset.data],
+  )
+  useEffect(() => {
+    if (!workArrival) return
+    const key = arrivalKey(workArrival, asset.focusRequestId ?? null)
+    const saved = TabStateManager.loadTabState(asset.id)
+    if (!shouldApplyArrival(key, saved?.consumedWorkArrival ?? null)) return
+
+    setActiveSubPage('workflow')
+    setWorkItemKey(workItemKeyFor.process(workArrival.workflowId))
+    void handleWorkflowChange(workArrival.workflowId)
+    if (workArrival.stageId) setViewingStageId(workArrival.stageId)
+    /* Identifiers only. A label or an index would resolve to the wrong
+       requirement the first time a Process definition is edited. */
+    if (workArrival.requirementId) setViewingRequirementId(workArrival.requirementId)
+
+    setConsumedArrival(key)
+    TabStateManager.saveTabState(asset.id, { ...(saved ?? {}), consumedWorkArrival: key })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workArrival, asset.focusRequestId, asset.id])
 
   // Thesis references (crucial supporting documents). Was
   // assets.thesis_references, a jsonb column on the globally shared asset row;
@@ -1570,16 +3110,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   // Fetch per-user key references (new system)
   const { references: userKeyReferences = [] } = useKeyReferences(asset.id)
 
-  const getThemeTypeColor = (type: string | null) => {
-    switch (type) {
-      case 'sector': return 'primary'
-      case 'geography': return 'success'
-      case 'strategy': return 'warning'
-      case 'macro': return 'error'
-      case 'general': return 'default'
-      default: return 'default'
-    }
-  }
+  /* `getThemeTypeColor` went with the Themes card that coloured its Badge.
+     The sidebar shows the theme type as a neutral tag, so there is no
+     variant to pick. */
 
   // ---------- Mutations ----------
   const updateAssetMutation = useMutation({
@@ -2074,8 +3607,36 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     queryClient.setQueryData(['asset-effective-workflow', effectiveAsset.id], workflowId)
     asset.workflow_id = workflowId
 
-    // Clear the viewing stage initially to prevent showing stale information from previous workflow
-    setViewingStageId(null)
+    /*
+     * ── One switch moves BOTH the workspace and the sidebar ───────────────
+     *
+     * The Work sidebar reads `workItemKey`; this surface reads
+     * `effectiveWorkflowId`. They were moved by different code paths, so each
+     * could be pointing at a different run. Setting the selection key here
+     * makes this function the single place a process switch happens, whether
+     * it was asked for from the dropdown or from the sidebar.
+     */
+    setWorkItemKey(workItemKeyFor.process(workflowId))
+
+    /*
+     * ── Returning is not switching ──────────────────────────────────────
+     *
+     * Clearing the stage and the requirement is right when the run CHANGES:
+     * a requirement id belongs to one run's checklist, and carrying it
+     * across points completion and assignment at an item the displayed
+     * process does not contain.
+     *
+     * It is wrong when the id is the one already open. This handler runs
+     * for every selection of a process row, including re-selecting the one
+     * you were on — so opening an idea and clicking back on Earnings Season
+     * threw away the requirement you had open and landed you on the stage
+     * overview. The reader had not switched anything; they had come back.
+     */
+    const isSameProcess = workflowId === effectiveWorkflowId
+    if (!isSameProcess) {
+      setViewingStageId(null)
+      setViewingRequirementId(null)
+    }
 
     try {
       // Get the first stage of the new workflow and check if there's an existing workflow progress
@@ -2105,10 +3666,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       setStage(effectiveCurrentStage)
 
-      // Auto-select the appropriate stage to show what needs to be done
-      setTimeout(() => {
-        setViewingStageId(effectiveCurrentStage)
-      }, 100)
+      // Auto-select the appropriate stage to show what needs to be done —
+      // but never over a stage the reader is already on in the same run.
+      if (!isSameProcess) {
+        setTimeout(() => {
+          setViewingStageId(effectiveCurrentStage)
+        }, 100)
+      }
 
       // Persist to DB — only invalidate after the write lands
       updateAssetMutation.mutate({ workflow_id: workflowId }, {
@@ -2339,6 +3903,27 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     })
   }
 
+  /*
+   * The write seam for a research note, and nothing else.
+   *
+   * `enabled: false` because the Process workbench already has the asset's
+   * notes through `useAssetWorkspace` — this is here to CREATE one, which
+   * needs no list, so taking it costs no query.
+   *
+   * `createArtifact` returns null when no organization is active rather than
+   * writing an unowned row, so the caller must not assume an id came back.
+   */
+  const { createArtifact: createResearchNote, isCreating: creatingResearchNote } =
+    useAssetResearchNotes(asset.id, false)
+  const createNoteFromWork = useCallback(async () => {
+    const id = await createResearchNote()
+    // Open it immediately: a note created and not opened is a blank row the
+    // reader has to go and find.
+    if (id) handleNoteClick(id)
+    return id
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createResearchNote, asset.id, asset.symbol, onNavigate])
+
   const handleCreateNote = () => {
     // Use stable tab ID - same tab for all notes of this asset
     const tabId = `note-asset-${asset.id}`
@@ -2388,9 +3973,9 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               <div key={i} className="h-7 w-20 bg-gray-200 dark:bg-gray-700 rounded-full" />
             ))}
           </div>
-          {/* Tab bar skeleton */}
+          {/* Tab bar skeleton — five, matching the real nav since Snapshot. */}
           <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 pb-2">
-            {[1, 2, 3, 4].map(i => (
+            {[1, 2, 3, 4, 5].map(i => (
               <div key={i} className="h-8 w-24 bg-gray-100 dark:bg-gray-800 rounded-t-lg" />
             ))}
           </div>
@@ -2413,351 +3998,131 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }
 
   return (
-    <div className="flex flex-col bg-gray-50 dark:bg-gray-900 -mx-8 -my-6 h-[calc(100%+48px)] overflow-hidden">
+    <div className="asset-ux2 ux2-scope flex flex-col bg-gray-50 dark:bg-gray-900 -mx-8 -my-6 h-[calc(100%+48px)] overflow-hidden">
       {/* Sticky Header Section */}
-      <div className="flex-shrink-0 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-8 pt-6 space-y-3 shadow-sm">
-      {/* Asset Header */}
-      <div className="space-y-3">
-        {/* Single Row - All Summary Info and Controls */}
-        <div className="flex items-center justify-between gap-6">
-          <div className="flex items-start gap-6">
-            {/* Ticker, Price and Company Name */}
-            <div className="flex flex-col relative">
-              <div className="flex items-baseline gap-4">
-                <button
-                  onClick={() => setShowTickerDropdown(!showTickerDropdown)}
-                  aria-haspopup="dialog"
-                  aria-expanded={showTickerDropdown}
-                  className="text-3xl font-bold text-gray-900 hover:text-gray-700 transition-colors flex items-baseline gap-1.5 group dark:hover:text-gray-200 dark:text-white"
-                >
-                  <span className="group-hover:underline underline-offset-4 decoration-gray-300">{asset.symbol}</span>
-                  <ChevronDown className={clsx('w-4 h-4 text-gray-400 transition-transform', showTickerDropdown && 'rotate-180')} />
-                </button>
-                <StockQuote symbol={asset.symbol} showOnlyPrice={true} className="text-2xl font-bold" />
-                <StockQuote symbol={asset.symbol} showOnlyChange={true} className="text-xl font-semibold" />
-              </div>
-              <p className="text-lg text-gray-600 mt-1 dark:text-gray-400">{asset.company_name}</p>
-
-              {/* Ticker Dropdown */}
-              {showTickerDropdown && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={() => setShowTickerDropdown(false)}
-                  />
-                  <div className="absolute top-full left-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-20 p-4 min-w-[320px] max-h-viewport-70 overflow-y-auto">
-                    <div className="space-y-4">
-                      {/* Coverage */}
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Coverage</h4>
-                          {onNavigate && (
-                            <button
-                              onClick={() => {
-                                setShowTickerDropdown(false)
-                                onNavigate({
-                                  id: 'coverage',
-                                  title: 'Coverage',
-                                  type: 'coverage',
-                                  data: { assetId: asset.id, assetSymbol: asset.symbol }
-                                })
-                              }}
-                              className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700 font-medium transition-colors"
-                            >
-                              <span>Go to Coverage</span>
-                              <ExternalLink className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
-                        <CoverageDisplay
-                          assetId={asset.id}
-                          coverage={coverage || []}
-                          showHeader={false}
-                          thesisStatuses={thesisStatuses}
-                          showThesisStatus={true}
-                          onUserClick={(user) => {
-                            if (onNavigate) {
-                              onNavigate({
-                                id: user.id,
-                                title: user.full_name,
-                                type: 'user',
-                                data: user
-                              })
-                            }
-                          }}
-                        />
-                      </div>
-
-                      {/* Sector */}
-                      {(asset.sector || fullAsset?.sector) && (
-                        <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Sector</h4>
-                          <p className="text-sm text-gray-900 dark:text-gray-100">{asset.sector || fullAsset?.sector}</p>
-                        </div>
-                      )}
-
-                      {/* Context */}
-                      <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Context</h4>
-                        {headerContext.isError ? (
-                          <p className="text-xs text-gray-400 italic">Context unavailable</p>
-                        ) : headerContext.isLoading ? (
-                          <div className="space-y-2">
-                            {[1, 2, 3, 4].map((i) => (
-                              <div key={i} className="h-5 bg-gray-100 dark:bg-gray-700 rounded animate-pulse" />
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            {/* Portfolios */}
-                            <div className="flex items-center justify-between py-1 group/row">
-                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                                <Briefcase className="w-3.5 h-3.5 text-gray-400" />
-                                <span>{headerContext.portfolios.length > 0
-                                  ? `${headerContext.portfolios.length} portfolio${headerContext.portfolios.length !== 1 ? 's' : ''}`
-                                  : 'No portfolios'}</span>
-                              </div>
-                              {headerContext.portfolios.length > 0 && (
-                                <button
-                                  onClick={() => {
-                                    setShowTickerDropdown(false)
-                                    setActiveSubPage('lists')
-                                    setListsFocus('portfoliosContent')
-                                  }}
-                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
-                            {/* Lists */}
-                            <div className="flex items-center justify-between py-1 group/row">
-                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                                <List className="w-3.5 h-3.5 text-gray-400" />
-                                <span>{(() => {
-                                  const s = headerContext.listsShared.length
-                                  const p = headerContext.listsMine.length
-                                  if (s + p === 0) return 'No lists'
-                                  const parts: string[] = []
-                                  if (p > 0) parts.push(`${p} personal list${p !== 1 ? 's' : ''}`)
-                                  if (s > 0) parts.push(`${s} shared list${s !== 1 ? 's' : ''}`)
-                                  return parts.join(' · ')
-                                })()}</span>
-                              </div>
-                              {(headerContext.listsShared.length + headerContext.listsMine.length) > 0 && (
-                                <button
-                                  onClick={() => {
-                                    setShowTickerDropdown(false)
-                                    setActiveSubPage('lists')
-                                    setListsFocus('listsContent')
-                                  }}
-                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
-                            {/* Themes */}
-                            <div className="flex items-center justify-between py-1 group/row">
-                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                                <Tag className="w-3.5 h-3.5 text-gray-400" />
-                                <span>{headerContext.themes.length > 0
-                                  ? `${headerContext.themes.length} theme${headerContext.themes.length !== 1 ? 's' : ''}`
-                                  : 'No themes'}</span>
-                              </div>
-                              {headerContext.themes.length > 0 && (
-                                <button
-                                  onClick={() => {
-                                    setShowTickerDropdown(false)
-                                    setActiveSubPage('lists')
-                                    setListsFocus('themesContent')
-                                  }}
-                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
-                            {/* Projects */}
-                            <div className="flex items-center justify-between py-1 group/row">
-                              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                                <FolderKanban className="w-3.5 h-3.5 text-gray-400" />
-                                <span>{headerContext.projectsCount > 0
-                                  ? `${headerContext.projectsCount} project${headerContext.projectsCount !== 1 ? 's' : ''}`
-                                  : 'No projects'}</span>
-                              </div>
-                              {headerContext.projectsCount > 0 && (
-                                <button
-                                  onClick={() => {
-                                    setShowTickerDropdown(false)
-                                    setActiveSubPage('lists')
-                                    setListsFocus('projectsContent')
-                                  }}
-                                  className="text-xs text-primary-600 hover:text-primary-700 font-medium opacity-0 group-hover/row:opacity-100 transition-opacity"
-                                >
-                                  View
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* ─── Header State Chips ──────────────────────────── */}
-          <div className="flex items-center gap-2">
-            {/* Active Processes chip */}
-            <button
-              onClick={() => setActiveSubPage('workflow')}
-              className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-purple-300 hover:text-purple-700 hover:bg-purple-50/50 transition-colors dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-              title="View active processes"
-            >
-              <Repeat className="w-3 h-3" />
-              <span>Processes</span>
-              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center dark:text-gray-400 dark:bg-gray-800">
-                {activeProcessCount}
-              </span>
-            </button>
-
-            {/* Open Decisions chip */}
-            <button
-              onClick={() => {
-                setActiveSubPage('decisions')
-                // Scroll to open items after tab renders
-                requestAnimationFrame(() => {
-                  document.getElementById('decisions-open-items')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                })
-              }}
-              className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50/50 transition-colors dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-              title="View decisions and exposure"
-            >
-              <Layers className="w-3 h-3" />
-              <span>Decisions</span>
-              <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center dark:text-gray-400 dark:bg-gray-800">
-                0
-              </span>
-            </button>
-
-            {/* In Portfolios chip */}
-            {headerContext.portfolios.length > 0 && (
-              <button
-                onClick={() => {
-                  setActiveSubPage('lists')
-                  setListsFocus('portfoliosContent')
-                }}
-                className="px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 border border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-700 hover:bg-emerald-50/50 transition-colors dark:border-gray-700 dark:text-gray-400 dark:bg-gray-800"
-                title="View portfolio holdings"
-              >
-                <Briefcase className="w-3 h-3" />
-                <span>Portfolios</span>
-                <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-px rounded-full min-w-[18px] text-center dark:text-gray-400 dark:bg-gray-800">
-                  {headerContext.portfolios.length}
-                </span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Why the reader is here, and who they can ask about it.
-          One quiet line above the sub-pages: the reason a lens sent them, and
-          the D1 engagement seam this page has never had. Nothing is fabricated
-          -- with no arrival context the line is absent and only the two verbs
-          remain. */}
-      <AssetArrivalBar
+      {/* Tightened from pt-6/space-y-3: the identity row lost a line, and the
+          vertical rhythm around it was still sized for the two-line block. */}
+      <div className="flex-shrink-0 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-8 pt-4 space-y-2 shadow-sm">
+      {/* UX2 Phase 1 — deep-navy identity band. Replaces the former identity row
+          + state chips + context strip + arrival row with one band: ticker +
+          company together, price/change, Ask AI, the ⚡ attention popover (one
+          A1 resolver), and the collapsible context strip. No new data path. */}
+      <AssetWorkspaceHeader
         asset={asset}
-        focus={asset.focus ?? null}
-        portfolioId={asset.portfolioId ?? null}
-        portfolioName={asset.portfolioName ?? null}
-        issue={asset.issue ?? null}
-        origin={asset.origin ?? null}
+        sector={asset.sector || (fullAsset as unknown as { sector?: string | null } | undefined)?.sector}
+        quote={currentQuote ?? null}
+        spot={currentQuote?.price ?? null}
+        headerContext={headerContext}
+        coverage={coverage || []}
+        thesisStatuses={thesisStatuses}
+        coveringUserIds={(coverage || []).map((c: any) => c.user_id).filter(Boolean)}
+        onFocus={handleAttentionFocus}
+        onNavigate={onNavigate}
+        onJumpTo={handleStripJump}
+        onOpenList={(focus) => {
+          /* Lists is a section of Work now; `listsFocus` still does the
+             within-section scroll, so no Work anchor is needed here. The
+             'listsContent' target is the membership row in the band — the
+             chip lands on the surface that can change the membership, not on
+             a card that only names it. */
+          setActiveSubPage('lists')
+          focusListsSection(focus)
+        }}
+        collapsed={headerCollapsed}
+        onToggleCollapse={toggleHeaderCollapsed}
       />
 
-      {/* Sub-page Tab Selector */}
+      {/*
+        ── Mode selector ──────────────────────────────────────────────────
+        Four modes, not five features. Overview answers "what is the state of
+        this name", Research holds the written case, Work holds everything
+        with an open loop (ideas, the running process, the lists this name
+        sits in — one surface, not three tabs), History is the record.
+
+        The count on Work is the running processes, the same number and the
+        same source the Process tab carried.
+      */}
       <div className="border-b border-gray-200 dark:border-gray-700">
-        <nav className="flex space-x-1" aria-label="Tabs">
-          <button
-            onClick={() => setActiveSubPage('research')}
-            className={clsx(
-              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
-              activeSubPage === 'research'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <FileText className="h-4 w-4" />
-              <span>Research</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveSubPage('workflow')}
-            className={clsx(
-              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
-              activeSubPage === 'workflow'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <Repeat className="h-4 w-4" />
-              <span>Process</span>
-              {activeProcessCount > 0 && (
-                <span className="text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center">
-                  {activeProcessCount}
-                </span>
-              )}
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveSubPage('decisions')}
-            className={clsx(
-              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
-              activeSubPage === 'decisions'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <Layers className="h-4 w-4" />
-              <span>Decisions</span>
-            </div>
-          </button>
-          <button
-            onClick={() => setActiveSubPage('lists')}
-            className={clsx(
-              'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
-              activeSubPage === 'lists'
-                ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
-            )}
-          >
-            <div className="flex items-center space-x-2">
-              <List className="h-4 w-4" />
-              <span>Lists</span>
-            </div>
-          </button>
+        <nav className="flex space-x-1" aria-label="Asset modes">
+          {ASSET_MODES.map(mode => {
+            const Icon = MODE_ICON[mode]
+            const current = activeMode === mode
+            return (
+              <button
+                key={mode}
+                onClick={() => goToMode(mode)}
+                aria-current={current ? 'page' : undefined}
+                className={clsx(
+                  'px-4 py-2 text-sm font-medium rounded-t-lg transition-colors',
+                  current
+                    ? 'bg-white border-t border-l border-r border-gray-200 text-primary-600 -mb-px dark:border-gray-700 dark:bg-gray-800'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 dark:hover:text-gray-200 dark:hover:bg-gray-800 dark:text-gray-400'
+                )}
+              >
+                <div className="flex items-center space-x-2">
+                  <Icon className="h-4 w-4" />
+                  <span>{MODE_LABEL[mode]}</span>
+                  {mode === 'work' && (
+                    /* ALWAYS rendered, and hidden rather than omitted when
+                       there is nothing to count. `activeProcessCount` is
+                       `allAssetWorkflows?.filter(...).length ?? 0`, so it is
+                       0 while that query is in flight, so the pill was absent
+                       on first paint and appeared a moment later -- widening
+                       the Work tab by its own box plus the row's `space-x-2`
+                       gap and pushing History, which sits to its right, along
+                       with it on every asset load. An invisible element keeps
+                       its box, so the row is measured once. Same fix and same
+                       reason as the Theme page's Assets count. */
+                    <span
+                      className={clsx(
+                        'text-[10px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-px rounded-full min-w-[18px] text-center',
+                        activeProcessCount === 0 && 'invisible',
+                      )}
+                    >
+                      {activeProcessCount}
+                    </span>
+                  )}
+                </div>
+              </button>
+            )
+          })}
         </nav>
       </div>
       </div>
 
+
       {/* Research View Filter - Fixed bar that doesn't scroll */}
-      {activeSubPage === 'research' && (
+      {activeMode === 'research' && (
         <div className="px-8 py-2 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between gap-3">
+          {/* flex-wrap lets the perspective (left) and the view/utility controls
+              (right) drop to a second row on narrow widths instead of
+              overflowing or clipping. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             {/* Left side: View filter */}
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-400 uppercase tracking-wide font-medium">View</span>
               {researchAnalysts.length <= 5 ? (
                 // Pills mode for 5 or fewer analysts
                 <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+                  {/* UX2 Phase 1 — two explicit perspectives: My Research (your
+                      editable case, the default landing) and Firm (the
+                      read-only, permission-aware firm view). Other analysts'
+                      views remain reachable as pills to the right. */}
+                  {user?.id && (
+                    <button
+                      onClick={() => chooseResearchView(user.id)}
+                      className={clsx(
+                        'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
+                        researchViewFilter === user.id
+                          ? 'bg-primary-600 text-white shadow-sm'
+                          : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                      )}
+                    >
+                      My Research
+                    </button>
+                  )}
                   <button
-                    onClick={() => setResearchViewFilter('aggregated')}
+                    onClick={() => chooseResearchView('aggregated')}
                     className={clsx(
                       'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
                       researchViewFilter === 'aggregated'
@@ -2765,10 +4130,32 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
                     )}
                   >
+                    {/*
+                      "Firm", which is the scope this actually is.
+
+                      Two earlier labels were each true of the pane at the
+                      time and wrong once it changed. "Our View (All
+                      Analysts)" survived the contributor summary moving to
+                      the Snapshot, so it promised prose over a pane holding
+                      only numbers. "Organization (firm valuation)" then
+                      described numbers, and the pane has since taken the
+                      words back: the attributed per-field detail, and now the
+                      synthesis that used to be its own read mode.
+
+                      "Firm" is the one name that stays true, because it names
+                      WHOSE view this is rather than what happens to be
+                      rendered. It is also the word the rest of the product
+                      already uses for this scope -- visibility is
+                      team | division | firm, and `ratingViewScope` has said
+                      `{ type: 'firm' }` for this branch all along. "Team"
+                      would have read as the NARROWEST of those three while
+                      showing the widest, which is the collision that picked
+                      this word.
+                    */}
                     <Users className="w-3.5 h-3.5" />
-                    Our View
+                    Firm
                   </button>
-                  {researchAnalysts.map(analyst => {
+                  {researchAnalysts.filter(a => a.id !== user?.id).map(analyst => {
                     const isCurrentUser = analyst.id === user?.id
                     const isPrimary = analyst.isCovering && analyst.role === 'primary'
                     const roleLabel = analyst.isCovering
@@ -2777,7 +4164,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     return (
                       <button
                         key={analyst.id}
-                        onClick={() => setResearchViewFilter(analyst.id)}
+                        onClick={() => chooseResearchView(analyst.id)}
                         title={roleLabel}
                         className={clsx(
                           'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-150 flex items-center gap-1.5',
@@ -2803,11 +4190,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 // Dropdown mode for more than 5 analysts
                 <select
                   value={researchViewFilter}
-                  onChange={(e) => setResearchViewFilter(e.target.value)}
+                  onChange={(e) => chooseResearchView(e.target.value)}
                   className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 border-0 focus:ring-2 focus:ring-primary-500 dark:bg-gray-700 dark:text-gray-200"
                 >
-                  <option value="aggregated">Our View (All Analysts)</option>
-                  {researchAnalysts.map(analyst => {
+                  {user?.id && <option value={user.id}>My Research</option>}
+                  {/* Same name as the pill above, which is the other arm of
+                      this one control. "(firm valuation)" is dropped: the
+                      branch is no longer only numbers. */}
+                  <option value="aggregated">Firm</option>
+                  {researchAnalysts.filter(a => a.id !== user?.id).map(analyst => {
                     const roleTag = analyst.isCovering
                       ? analyst.role === 'primary' ? '★ ' : '☆ '
                       : ''
@@ -2825,167 +4216,62 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             <div className="flex items-center gap-2">
               {/* Visibility control - only show when viewing own view (placed first so view buttons don't shift) */}
               {researchViewFilter === user?.id && (
-                <div className="relative" ref={visibilityRef}>
-                  <button
-                    onClick={() => setShowVisibilityDropdown(!showVisibilityDropdown)}
-                    className={clsx(
-                      'inline-flex items-center px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors',
-                      VISIBILITY_CONFIG[sharedThesisVisibility].bgColor,
-                      VISIBILITY_CONFIG[sharedThesisVisibility].color,
-                      'hover:ring-1 hover:ring-gray-300'
-                    )}
-                    title="Research visibility"
-                  >
-                    {React.createElement(VISIBILITY_CONFIG[sharedThesisVisibility].icon, { className: 'w-4 h-4 mr-1.5' })}
-                    <span className="hidden sm:inline">{VISIBILITY_CONFIG[sharedThesisVisibility].label}</span>
-                    {sharedThesisTargetIds.length > 0 && (
-                      <span className="ml-1 opacity-75">({sharedThesisTargetIds.length})</span>
-                    )}
-                    <ChevronDown className="w-4 h-4 ml-1" />
-                  </button>
-
-                  {showVisibilityDropdown && (
-                    <div className="absolute right-0 top-full mt-1 z-20 w-64 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-lg shadow-lg py-1">
-                      {visibilityStep === 'level' ? (
-                        <>
-                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 border-b dark:border-gray-700">
-                            Research visibility
-                          </div>
-                          {VISIBILITY_OPTIONS.map((option) => {
-                            const OptionIcon = option.icon
-                            const isSelected = sharedThesisVisibility === option.value
-                            const targets = getTargetOptions(option.value)
-                            const needsTargets = option.value !== 'firm' && targets.length > 0
-                            return (
-                              <button
-                                key={option.value}
-                                onClick={() => handleVisibilitySelect(option.value)}
-                                className={clsx(
-                                  'w-full flex items-center px-3 py-2 text-sm text-left hover:bg-gray-50 dark:hover:bg-gray-700',
-                                  isSelected && 'bg-primary-50 dark:bg-primary-900/20'
-                                )}
-                              >
-                                <OptionIcon className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
-                                <div className="flex-1">
-                                  <span className="font-medium text-gray-900 dark:text-gray-100">{option.label}</span>
-                                  {needsTargets && (
-                                    <span className="text-xs text-gray-400 ml-1">→</span>
-                                  )}
-                                </div>
-                                {isSelected && <Check className="w-4 h-4 text-primary-600 dark:text-primary-400" />}
-                              </button>
-                            )
-                          })}
-                        </>
-                      ) : (
-                        <>
-                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 border-b dark:border-gray-700 flex items-center">
-                            <button
-                              onClick={() => setVisibilityStep('level')}
-                              className="mr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
-                            >
-                              ←
-                            </button>
-                            Select {sharedThesisVisibility === 'portfolio' ? 'portfolios' :
-                                    sharedThesisVisibility === 'team' ? 'teams' :
-                                    sharedThesisVisibility === 'department' ? 'departments' : 'divisions'}
-                          </div>
-                          <div className="max-h-48 overflow-y-auto">
-                            {targetOptions.map((target) => {
-                              const isSelected = sharedThesisTargetIds.includes(target.id)
-                              return (
-                                <button
-                                  key={target.id}
-                                  onClick={() => {
-                                    setSharedThesisTargetIds(prev =>
-                                      prev.includes(target.id)
-                                        ? prev.filter(id => id !== target.id)
-                                        : [...prev, target.id]
-                                    )
-                                  }}
-                                  className={clsx(
-                                    'w-full flex items-center px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700',
-                                    isSelected && 'bg-primary-50 dark:bg-primary-900/20'
-                                  )}
-                                >
-                                  <div className={clsx(
-                                    'w-4 h-4 rounded border mr-3 flex items-center justify-center',
-                                    isSelected ? 'bg-primary-600 border-primary-600' : 'border-gray-300 dark:border-gray-600'
-                                  )}>
-                                    {isSelected && <Check className="w-3 h-3 text-white" />}
-                                  </div>
-                                  <span
-                                    className="w-3 h-3 rounded-full mr-2"
-                                    style={{ backgroundColor: target.color || '#6b7280' }}
-                                  />
-                                  <span className="flex-1 text-left text-gray-900 dark:text-gray-100">{target.name}</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                          <div className="border-t dark:border-gray-700 px-3 py-2 flex justify-end">
-                            <button
-                              onClick={() => handleTargetsConfirm()}
-                              disabled={sharedThesisTargetIds.length === 0}
-                              className="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              Done
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
+                <AudiencePicker
+                  saved={savedAudience ?? { visibility: sharedThesisVisibility, targetIds: sharedThesisTargetIds }}
+                  nodesFor={(v) => getTargetOptions(v) as AudienceNode[]}
+                  memberCounts={audienceMemberCounts}
+                  nodeById={audienceNodeById}
+                  isLoading={!userOrgContext}
+                  onApply={handleAudienceApply}
+                />
               )}
 
               {/* View warnings indicator - shows next to visibility */}
-              {activeSubPage === 'research' && (
+              {activeMode === 'research' && (
                 <ViewWarningIndicator warnings={viewWarnings} />
               )}
 
-              {/* Customize button - only show when viewing own view */}
-              {researchViewFilter === user?.id && (
-                <button
-                  onClick={() => setShowFieldCustomizer(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200 dark:text-gray-400"
-                  title="Customize asset page layout"
-                >
-                  <Settings2 className="w-4 h-4" />
-                  <span className="hidden sm:inline">Customize</span>
-                </button>
-              )}
+              {/*
+                How to read the case — the four Research modes, the PRIMARY nav
+                on this bar, now the last thing before the overflow. Labels show
+                from xl so a narrow desktop keeps the compact icons (titles
+                intact).
 
-              {/* View mode buttons */}
-              <div className="flex items-center gap-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg p-0.5">
+                Customize and Export used to sit here as bare icons at the same
+                weight as these modes. They are one-shot actions nobody uses
+                twice in a session, so they moved into the `⋯` menu after the
+                modes — two fewer permanent controls, and their labels are now
+                spelled out rather than hidden in a tooltip.
+
+                One divider, not two: the audience and view-checks to the left
+                are contextual status about THIS view, and the modes are how to
+                read it. That is one boundary.
+              */}
+              <div className="mx-0.5 h-5 w-px bg-gray-200 dark:bg-gray-700" aria-hidden="true" />
+              <div className="flex items-center gap-0.5 rounded-lg bg-gray-100 p-0.5 dark:bg-gray-800">
                 <button
-                  onClick={() => setThesisViewMode('all')}
+                  onClick={() => goToThesisMode('all')}
                   className={clsx(
-                    'p-1.5 rounded-md transition-colors',
+                    'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
                     thesisViewMode === 'all'
                       ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                   )}
-                  title="All sections"
+                  title="Investment Case"
                 >
                   <Layers className="w-4 h-4" />
+                  {/* "Investment Case" names the thing being read. "All
+                      sections" described the renderer. */}
+                  <span className="hidden xl:inline">Investment Case</span>
                 </button>
+                {/* "AI summary" stood here. It is now a band inside the Firm
+                    perspective, not a read mode, because it answered the same
+                    question that perspective does and this row is about HOW to
+                    read a case, not WHOSE. Three buttons, one axis. */}
                 <button
-                  onClick={() => setThesisViewMode('summary')}
+                  onClick={() => goToThesisMode('history')}
                   className={clsx(
-                    'p-1.5 rounded-md transition-colors',
-                    thesisViewMode === 'summary'
-                      ? 'bg-white dark:bg-gray-700 text-purple-600 dark:text-purple-400 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                  )}
-                  title="AI summary"
-                >
-                  <Sparkles className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setThesisViewMode('history')}
-                  className={clsx(
-                    'p-1.5 rounded-md transition-colors',
+                    'flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
                     thesisViewMode === 'history'
                       ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
@@ -2993,35 +4279,86 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   title="History timeline"
                 >
                   <History className="w-4 h-4" />
+                  <span className="hidden xl:inline">History</span>
                 </button>
                 <button
-                  onClick={() => setThesisViewMode('references')}
+                  onClick={() => goToThesisMode('references')}
                   className={clsx(
-                    'p-1.5 rounded-md transition-colors relative',
+                    'relative flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium transition-colors',
                     thesisViewMode === 'references'
                       ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                   )}
-                  title="Key references"
+                  /* "Key references" until this surface was renamed
+                     Artifacts. Its own contents already said artifacts
+                     ("Key Artifacts", "No matching artifacts"), so the tab
+                     was the last thing calling it something else. */
+                  title="Artifacts"
                 >
                   <Link2 className="w-4 h-4" />
+                  <span className="hidden xl:inline">Artifacts</span>
                   {userKeyReferences.length > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 text-white text-[10px] font-medium rounded-full flex items-center justify-center">
+                    <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
                       {userKeyReferences.length}
                     </span>
                   )}
                 </button>
               </div>
 
-              {/* Export Case Button */}
-              <button
-                onClick={() => setShowCaseBuilder(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors dark:hover:text-gray-200 dark:text-gray-400"
-                title="Export investment case as PDF"
-              >
-                <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">Export</span>
-              </button>
+              {/*
+                Overflow. Customize and Page layout are offered only in the
+                reader's own view, because they edit THEIR layout — showing
+                either while reading a colleague's research would promise
+                something it cannot do.
+
+                They are two entries because they are two questions. Which
+                fields exist, in what order, in which section, is a list.
+                How the page looks is the page, so "Arrange layout" does not
+                open anything — it turns the body below into its own tiles
+                and lets the reader move them.
+              */}
+              {/*
+                Which layout the page is actually drawing, named on the
+                page itself rather than only inside the tool that changes
+                it. Shown on the reader's own view only: the layout layer
+                does not apply to someone else's research, so claiming a
+                template there would be a lie.
+              */}
+              {researchViewFilter === user?.id && (
+                <LayoutStatusChip
+                  templateName={activeLayout?.name ?? null}
+                  isDefaultTemplate={activeLayout?.is_default ?? false}
+                  overridden={overridesTemplate}
+                  resetting={clearAssetOverrides.isPending}
+                  onReset={() => clearAssetOverrides.mutate(asset.id)}
+                />
+              )}
+
+              <ResearchToolbarMenu
+                items={[
+                  {
+                    key: 'customize',
+                    label: 'Customize fields',
+                    icon: Settings2,
+                    available: researchViewFilter === user?.id,
+                    onSelect: () => setShowFieldCustomizer(true),
+                  },
+                  {
+                    key: 'layout',
+                    label: 'Arrange layout',
+                    icon: LayoutDashboard,
+                    available: researchViewFilter === user?.id,
+                    onSelect: () => setArrangingLayout(true),
+                  },
+                  {
+                    key: 'export',
+                    label: 'Export investment case',
+                    icon: Download,
+                    onSelect: () => setShowCaseBuilder(true),
+                  },
+                ]}
+              />
+
             </div>
           </div>
         </div>
@@ -3030,21 +4367,62 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       {/* Sub-page Content */}
       <div className="flex-1 overflow-auto px-8 py-4">
 
-        {/* ========== RESEARCH SUB-PAGE ========== */}
-        {activeSubPage === 'research' && (
+        {/* UX2 Phase 1 — the attention surface moved to the header ⚡ popover
+            (same A1 resolver, signals, grouping, counts, priorities, deep-links).
+            No persistent banner in the tab body. */}
+
+        {/* ========== OVERVIEW ========== */}
+        {activeMode === 'overview' && (
+          <InvestmentSnapshot
+            asset={asset}
+            /* Already fetched above for the ticker dropdown — passed down so
+               the Snapshot adds no second read of the same rows. */
+            coverage={coverage || []}
+            /* `thesisStatuses` no longer goes down: the Overview stopped
+               drawing its own coverage roster, which was the only consumer.
+               The sticky header above still renders it. */
+            currentQuote={currentQuote}
+            /*
+              The firm's contributors, on the OVERVIEW rather than inside
+              Research. Research is one analyst's document; who else has
+              written, and where they disagree, is a fact about the
+              organisation and belongs where the organisation is described.
+
+              Passed down from the reads this tab already issues — no second
+              query, and the same `ourViewFields` the Research pane derives
+              from the org's own template, so the two cannot disagree about
+              which sections exist.
+            */
+            contributions={allAssetContributions}
+            /* `contributionFields`, `coveringAnalystIds` and `onOpenAnalyst`
+               went with the Overview's "Research perspectives" roster. Our
+               view now shows every contributor's words inline, so a roster
+               beneath it was a table of contents for the block above. The
+               Research pane still receives all three. */
+            /* Through `goToSubPage`, so an Overview link into Work both
+               lands in Work and scrolls to the section it named. */
+            onOpenSubPage={goToSubPage}
+            currentUserId={user?.id}
+            /* The existing note navigation — opens the note in its own tab.
+               Lets "What changed" name the research items instead of counting
+               them, without a new route or a second query. */
+            onOpenEvidence={handleNoteClick}
+          />
+        )}
+
+        {/* ========== RESEARCH ==========
+            ── The document column has a width ──────────────────────
+
+            Research stretched its container to the full 1,841px while
+            every section's prose was capped at 72ch (621px), so a
+            written thesis sat in the left third of a bordered box with
+            two-thirds of it blank. Capping the COLUMN instead means the
+            text fills what it is given and the space beside it is page
+            margin, not an empty card. */}
+        {activeMode === 'research' && (
           <div className="space-y-3 min-h-full">
 
-            {thesisViewMode === 'summary' ? (
-              /* AI Summary View - shows unified summary */
-              <Card padding="md">
-                <ThesisUnifiedSummary
-                  assetId={asset.id}
-                  viewFilter={researchViewFilter}
-                  contributions={allAssetContributions}
-                  coveringAnalystIds={new Set(coverage?.map(c => c.user_id) || [])}
-                />
-              </Card>
-            ) : thesisViewMode === 'history' ? (
+            {thesisViewMode === 'history' ? (
               /* History View - shows timeline instead of full layout */
               <Card padding="md">
                 <ThesisHistoryView
@@ -3083,7 +4461,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     </p>
                     {user && (
                       <button
-                        onClick={() => setResearchViewFilter(user.id)}
+                        onClick={() => chooseResearchView(user.id)}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
                       >
                         <Target className="w-4 h-4" />
@@ -3094,6 +4472,55 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 </Card>
               ) : (
                 <div className="space-y-3">
+                  {/* UX2 Phase 1 — the Firm perspective is read-only (aggregated
+                      valuation + synthesis + attributed research). "Edit my
+                      research" is the clearly-visible way back to the reader's
+                      own editable case. Perspective (what you're viewing) stays
+                      distinct from contribution visibility (who can see what you
+                      publish).
+
+                      The copy says "nobody wrote this" because nobody did: the
+                      numbers are computed, the synthesis is generated, and the
+                      words below are each still their own author's. Read as a
+                      firm-authored conclusion it would be an unattributed view
+                      in a product whose premise is that every view has an
+                      author. */}
+                  {user?.id && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+                      <span className="text-sm text-gray-500 dark:text-gray-400">
+                        Read-only firm view: aggregated valuation, a generated synthesis, and each analyst's own research. Not a firm-authored conclusion.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => chooseResearchView(user.id)}
+                        className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-primary-700"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                        Edit my research
+                      </button>
+                    </div>
+                  )}
+
+                  {/*
+                    ─── "AI is not set up", at the top with the other banner ───
+
+                    This notice used to live inside the synthesis band, which
+                    after the merge sits in the MIDDLE of this section, between
+                    the aggregated valuation and the attributed record. So the
+                    one thing a reader could act on was the one thing they had
+                    to scroll past two blocks of content to find, while the
+                    band it explained rendered nothing they could use.
+
+                    Turning AI on is state about this whole section, same as
+                    "read-only firm view" directly above, so it belongs in the
+                    same place. The band is passed `unconfigured="deferred"`
+                    and renders nothing: without that it would repeat this
+                    notice AND re-list these contributions underneath, which
+                    `OurViewSummary` at the foot of this branch already does
+                    in full and with attribution.
+                  */}
+                  {!aiConfig.isConfigured && <AISetupNotice />}
+
                   {/* Aggregated Price Targets (Bull/Bear/Base) - only shows when data exists */}
                   <PriceTargetsSummary
                     assetId={asset.id}
@@ -3103,51 +4530,148 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   {/* Aggregated Forecasts Summary - shows ratings, estimates when data exists */}
                   <FirmConsensusPanel assetId={asset.id} />
 
-                  {/* Contribution-based fields (rich_text sections with content) */}
-                  {displayedFieldsBySection.flatMap(section => {
-                    if (section.section_is_hidden) return []
+                  {/*
+                    ─── The synthesis, which used to be its own read mode ───
 
-                    // Skip Key References section — shown in references view tab
-                    if (section.section_slug === 'supporting_docs') return []
+                    This was the "AI summary" button, a fourth entry in the
+                    read-mode row beside Investment Case / History / Key
+                    references. It renders the executive summary, the sentiment
+                    split, where the desk agrees and disagrees, and a per
+                    analyst comparison -- which is the firm's perspective, the
+                    aggregate and the individual views. Exactly what THIS
+                    branch is for, from the same `allAssetContributions`.
 
-                    return section.fields
-                      .filter(f => f.is_visible)
-                      .map(field => {
-                        const fieldType = field.field_type
+                    So it was not a second feature, it was this one reached by
+                    a different button, and the split was the worst possible
+                    one: the firm's numbers in the perspective, the firm's
+                    argument in the read mode, and no way to see both at once.
 
-                        // Skip non-contribution field types in aggregated view
-                        // (handled by dedicated summary components above)
-                        if (['checklist', 'metric', 'timeline', 'numeric', 'date', 'rating', 'estimates', 'price_target', 'key_references'].includes(fieldType)) {
-                          return null
-                        }
+                    Order is deliberate, and it is "computed, then generated,
+                    then written":
+                      PriceTargetsSummary / FirmConsensusPanel  computed
+                      ThesisUnifiedSummary                      generated
+                      OurViewSummary                            written
 
-                        // Contribution-based fields (rich_text, etc.)
-                        return (
-                          <ContributionSection
-                            key={field.field_id}
-                            assetId={asset.id}
-                            section={field.field_slug}
-                            title={field.field_name}
-                            activeTab={researchViewFilter}
-                            onTabChange={setResearchViewFilter}
-                            defaultVisibility={sharedThesisVisibility}
-                            hideViewModeButtons={true}
-                            hideVisibility={true}
-                            sharedVisibility={sharedThesisVisibility}
-                            sharedTargetIds={sharedThesisTargetIds}
-                            hideWhenEmpty={true}
-                            flatMode={false}
-                          />
-                        )
-                      })
-                  })}
+                    The generated band sits in the middle because it is a
+                    reading OF the words below it and must not be mistaken for
+                    the numbers above it. It carries its own `generatedAt` and
+                    staleness, and when AI is not configured it falls back to a
+                    plain listing of the contributions and says so, so this
+                    branch does not go blank for a firm that never set AI up.
+
+                    It takes `viewFilter` and so stays correct if this ever
+                    renders under a single analyst, but today only the
+                    aggregated branch mounts it.
+                  */}
+                  {/* The CARD is conditional too, not just its contents:
+                      `unconfigured="deferred"` renders null, and a Card around
+                      null is an empty bordered box sitting between the numbers
+                      and the record. Every other state the band can be in
+                      (loading, generating, failed, ready-to-generate) happens
+                      only once AI is configured and does want the Card. */}
+                  {aiConfig.isConfigured && (
+                    <Card padding="md">
+                      <ThesisUnifiedSummary
+                        assetId={asset.id}
+                        viewFilter={researchViewFilter}
+                        contributions={allAssetContributions}
+                        coveringAnalystIds={coveringAnalystIds}
+                        /* Belt and braces with the guard above: the notice is
+                           hoisted to the top of this section and the
+                           attributed record is below, so with AI off this
+                           band has nothing left to add. */
+                        unconfigured="deferred"
+                      />
+                    </Card>
+                  )}
+
+                  {/*
+                    ─── Firm Research: valuation AND contributor context ───
+
+                    The firm-level VALUATION above (aggregated targets, rating
+                    consensus) is the organisation's numbers. Beneath it we now
+                    render the firm's WORDS too — each visible contributor's
+                    opening claim per section, attributed by name.
+
+                    The earlier objection — that contributor prose put "a fact
+                    about the firm inside a fact about a person" — was about the
+                    INDIVIDUAL view, which is one analyst's own document. This
+                    branch is the opposite: the aggregated Firm view, whose
+                    whole job is "what does the organisation think". So the
+                    attribution belongs here, and the firm position is no longer
+                    reachable only by leaving to the Snapshot.
+
+                    This is READ-ONLY and owns no data: it reuses the same
+                    OurViewSummary the Snapshot uses, over the RLS-scoped
+                    `allAssetContributions` (org + visibility filtered at the
+                    DB). It does not merge divergent views into a fabricated
+                    firm thesis — it lists them, per author, where they differ.
+                    Personal editing, drafts, history, publishing and the
+                    visibility controls are untouched; they live in the
+                    individual view this branch never renders. Choosing an
+                    analyst opens their full, editable research in place.
+
+                    ── Why this survives the synthesis above it ──────────────
+
+                    The two look redundant and are not. `ourViewFields` is
+                    derived from `displayedFieldsBySection`, so this lists
+                    every visible prose field of whatever case template the
+                    firm configured. The synthesis reads three hardcoded
+                    sections only -- thesis, where_different, risks_to_thesis
+                    (see `sectionLabels` in `useThesisAnalysis`). A firm with
+                    custom fields has research the synthesis cannot see, and
+                    dropping this would have silently hidden it.
+
+                    They also differ in kind: that band is one generated
+                    reading of the core argument, this is the complete
+                    attributed record. Deleting the record would leave only
+                    the model's account of it, with nothing to check it
+                    against.
+                  */}
+                  <OurViewSummary
+                    contributions={allAssetContributions}
+                    fields={ourViewFields}
+                    coveringAnalystIds={coveringAnalystIds}
+                    currentUserId={user?.id}
+                    symbol={asset.symbol}
+                    onOpenAnalyst={chooseResearchView}
+                    mode="full"
+                    className="px-1"
+                  />
                 </div>
               )
             ) : (
-              /* Individual User "All" View - shows full layout with all sections */
-              displayedFieldsBySection.map((section, sectionIdx) => {
-                // Skip hidden sections
-                if (section.section_is_hidden) return null
+              /* Individual User "All" View — the original per-section design:
+                 each section is its own card (blue/amber accent, hover
+                 highlight, hover-reveal edit), with alternating shade.
+
+                 ── Arrange mode wraps this; it does not replace it ──────
+
+                 Arranging renders these same sections and these same
+                 fields. The provider supplies the draft widths and order,
+                 and each field is wrapped rather than redrawn, so what the
+                 reader drags is the real page — a thesis is four
+                 paragraphs tall while they size it, because it IS the
+                 thesis. A separate canvas drawing named blocks could not
+                 show that, and was a second renderer free to disagree with
+                 this one about what the layout looks like. */
+              <ResearchArrangeProvider subject={assetSubject(asset.id)} active={arrangingLayout}>
+                {arrangingLayout && (
+                  <ResearchArrangeBar
+                    subjectName={asset.symbol || asset.name}
+                    onClose={() => setArrangingLayout(false)}
+                  />
+                )}
+                {/* Arranging also draws the sections nothing is in, so a
+                    field can be dragged back into one it was emptied out
+                    of. Reading draws only the sections with something in
+                    them, as it always has. */}
+                {(arrangingLayout ? sectionsForArranging : displayedFieldsBySection).map((section, sectionIdx) => {
+                /* Hidden sections are skipped for READING and drawn for
+                   ARRANGING. A section you cannot see is a section you
+                   cannot un-hide, which made hiding one a one-way door
+                   out of arrange mode and back into the old customizer. */
+                if (section.section_is_hidden && !arrangingLayout) return null
 
                 // Alternating shade for visual separation
                 const sectionShade = sectionIdx % 2 === 1 ? '!bg-gray-50/60' : ''
@@ -3156,19 +4680,31 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
               if (section.section_slug === 'forecasts') {
                 return (
                   <Card key={section.section_id} padding="none" className={sectionShade}>
-                    <button
-                      onClick={() => toggleSection('outcomes')}
-                      className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl"
-                    >
-                      <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
-                      {collapsedSections.outcomes ? (
-                        <ChevronDown className="h-5 w-5 text-gray-400" />
-                      ) : (
-                        <ChevronUp className="h-5 w-5 text-gray-400" />
-                      )}
-                    </button>
+                    {arrangingLayout ? arrangeSectionHeader(section, sectionIdx) : (
+                      <button
+                        onClick={() => toggleSection('outcomes')}
+                        className="w-full px-5 py-3 flex items-center gap-2 bg-gray-50 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
+                      >
+                        <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{section.section_name}</span>
+                        {collapsedSections.outcomes ? (
+                          <ChevronDown className="h-5 w-5 text-gray-400" />
+                        ) : (
+                          <ChevronUp className="h-5 w-5 text-gray-400" />
+                        )}
+                      </button>
+                    )}
                     {!collapsedSections.outcomes && (
                       <div className="border-t border-gray-100 px-5 py-2 space-y-3 dark:border-gray-800">
+                        {/* UX2 P2 — keep the reader's personal valuation visibly
+                            distinct from the firm consensus (which lives in the
+                            Firm perspective). Shown only on the reader's own
+                            view. */}
+                        {isViewingOwnThesisTab && (
+                          <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            Your rating, price target and estimates are personal, not the firm consensus. The aggregated firm view is under Firm.
+                          </p>
+                        )}
                         {section.fields
                           .filter(f => f.is_visible)
                           .map(field => {
@@ -3177,7 +4713,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Price target field
                             if (fieldType === 'price_target') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <div key={field.field_id} id="asset-warning-anchor-targets" className={RESEARCH_FIELD_CARD_CLASS}>
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3196,7 +4732,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Rating field
                             if (fieldType === 'rating') {
                               return (
-                                <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <div key={field.field_id} id="asset-warning-anchor-rating" className={RESEARCH_FIELD_CARD_CLASS}>
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3217,7 +4753,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             // Estimates field
                             if (fieldType === 'estimates') {
                               return (
-                                <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                                <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                   <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                   {field.field_description && (
                                     <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3249,6 +4785,8 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                   hideVisibility={true}
                                   sharedVisibility={sharedThesisVisibility}
                                   sharedTargetIds={sharedThesisTargetIds}
+                                  fullPageEditor
+                                  onOpenNote={handleNoteClick}
                                 />
                               </div>
                             )
@@ -3259,37 +4797,124 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                 )
               }
 
-              // Key References section — skip here, shown in references view tab
+              /*
+                Key References — its CONTENTS live in the Key references
+                view tab, so reading draws nothing here.
+
+                Arranging still draws the header. The section itself is
+                real: it can be renamed, reordered against its neighbours
+                and hidden like any other, and skipping it outright meant
+                the one section a reader could not manage was the one
+                they had to leave the page to see. The body says where
+                its contents are, so an empty card does not read as a
+                section that lost its fields.
+              */
               if (section.section_slug === 'supporting_docs') {
-                return null
+                if (!arrangingLayout) return null
+                return (
+                  <Card key={section.section_id} padding="none" className={sectionShade}>
+                    {arrangeSectionHeader(section, sectionIdx)}
+                    <p className="px-5 py-3 text-xs text-gray-500 dark:text-gray-400">
+                      Shown under <span className="font-medium">Artifacts</span>. Its
+                      position, name and visibility are arranged here; the artifacts
+                      themselves are added there.
+                    </p>
+                  </Card>
+                )
               }
 
               // Generic Section - for all other section types
               return (
                 <Card key={section.section_id} padding="none" className={sectionShade}>
-                  <button
-                    onClick={() => toggleSection(section.section_slug as any)}
-                    className="w-full px-5 py-2.5 flex items-center gap-2 bg-gray-200 hover:bg-gray-300 transition-colors rounded-t-xl"
-                  >
-                    <span className="font-semibold text-gray-900 dark:text-white">{section.section_name}</span>
-                    {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
-                      <ChevronDown className="h-5 w-5 text-gray-400" />
-                    ) : (
-                      <ChevronUp className="h-5 w-5 text-gray-400" />
-                    )}
-                  </button>
+                  {arrangingLayout ? arrangeSectionHeader(section, sectionIdx) : (
+                    <button
+                      onClick={() => toggleSection(section.section_slug as any)}
+                      className="w-full px-5 py-3 flex items-center gap-2 bg-gray-50 hover:bg-gray-100 border-b border-gray-200 transition-colors rounded-t-xl dark:bg-gray-800/60 dark:hover:bg-gray-800 dark:border-gray-700"
+                    >
+                      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{section.section_name}</span>
+                      {collapsedSections[section.section_slug as keyof typeof collapsedSections] ? (
+                        <ChevronDown className="h-5 w-5 text-gray-400" />
+                      ) : (
+                        <ChevronUp className="h-5 w-5 text-gray-400" />
+                      )}
+                    </button>
+                  )}
                   {!collapsedSections[section.section_slug as keyof typeof collapsedSections] && (
-                    <div className="border-t border-gray-100 px-5 py-2 space-y-3 dark:border-gray-800">
-                      {section.fields
-                        .filter(f => f.is_visible)
+                    /*
+                      ── The reader decides the width ──────────────────
+
+                      Full width per field by default — a thesis is a
+                      document section, and pairing two prose fields made
+                      Business Model and Where Our Thesis Differs look
+                      like columns of one table.
+
+                      But a rating or a price target is a short fact that
+                      spent a whole row of a 1,900px page on it, so each
+                      field now carries a width in the saved layout and
+                      two half-width fields pack side by side. The
+                      preference lives in `user_asset_page_layouts.
+                      field_config`, which is already jsonb.
+
+                      ── Twelve columns, not two ───────────────────────
+
+                      Full-or-half could only say "a whole row" or "two
+                      across". A field now carries a SPAN in twelfths, so
+                      a rating can take a quarter of a row and a thesis
+                      three quarters. SPAN_CLASS spells all twelve class
+                      names out, because Tailwind never sees a name built
+                      at runtime and the field would silently collapse.
+
+                      Below `xl` the grid is one column and every field is
+                      full width whatever was saved: a half-width thesis
+                      on a laptop is a newspaper column.
+                    */
+                    <ArrangeableFieldGrid
+                      sectionId={section.section_id}
+                      sectionSlug={section.section_slug}
+                      fieldIds={section.fields.filter(f => f.is_visible).map(f => f.field_id)}
+                      /* `items-start` stops a card being stretched to the
+                         height of the tallest card beside it. Grid's
+                         default `stretch` meant a short field sitting next
+                         to a long one was padded with dead whitespace —
+                         measured at 140px under Business Model next to a
+                         quarter-width Investment Thesis — while the long
+                         one truncated with "Show more". Each card is now
+                         its own content's height. */
+                      className={RESEARCH_FIELD_GRID_CLASS}
+                    >
+                      {/*
+                        While arranging, every section is handed EVERY
+                        field on the page — not just its own, and not just
+                        the visible ones.
+
+                        Both are needed for a reason the filter cannot
+                        see. "Add field" has to be able to mount something
+                        currently hidden, and a field dragged into another
+                        section has to be able to render under its new
+                        heading, which it can only do if that heading is
+                        already drawing it. `ArrangeableField` keeps
+                        exactly one of these: it is the one place that
+                        knows what the layout saved AND what the draft
+                        changed, so it is the only thing that can decide.
+
+                        Outside arrange mode this is exactly the
+                        `is_visible` filter on this section's own fields
+                        that it has always been.
+                      */}
+                      {(arrangingLayout
+                        ? sectionsForArranging.flatMap(s => s.fields)
+                        : section.fields.filter(f => f.is_visible))
                         .map(field => {
                           // Render field based on its type
                           const fieldType = field.field_type
+                          /* One wrapper per field, so the width applies
+                             without every render branch repeating it. */
+                          const node = (() => {
 
                           // Checklist field
                           if (fieldType === 'checklist') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3306,7 +4931,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Metric field
                           if (fieldType === 'metric') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3323,7 +4948,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Timeline field
                           if (fieldType === 'timeline') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3340,7 +4965,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Numeric field
                           if (fieldType === 'numeric') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3357,7 +4982,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Date field
                           if (fieldType === 'date') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3374,7 +4999,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Rating field - render analyst ratings section
                           if (fieldType === 'rating') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-rating" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} id="asset-warning-anchor-rating" className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3395,7 +5020,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Estimates field - render analyst estimates section
                           if (fieldType === 'estimates') {
                             return (
-                              <div key={field.field_id} className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3411,7 +5036,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                           // Price target field - render outcomes container for price targets
                           if (fieldType === 'price_target') {
                             return (
-                              <div key={field.field_id} id="asset-warning-anchor-targets" className="border-l-4 border-l-blue-400 bg-white rounded-lg shadow-sm hover:border-amber-200 hover:bg-amber-50/30 transition-all duration-200 p-4 dark:bg-gray-800">
+                              <div key={field.field_id} id="asset-warning-anchor-targets" className={RESEARCH_FIELD_CARD_CLASS}>
                                 <h4 className="text-sm font-medium text-gray-700 mb-1 dark:text-gray-300">{field.field_name}</h4>
                                 {field.field_description && (
                                   <p className="text-xs text-gray-500 mb-3 dark:text-gray-400">{field.field_description}</p>
@@ -3445,15 +5070,32 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                                 hideVisibility={true}
                                 sharedVisibility={sharedThesisVisibility}
                                 sharedTargetIds={sharedThesisTargetIds}
+                                fullPageEditor
+                                onOpenNote={handleNoteClick}
                               />
                             </div>
                           )
+                          })()
+                          return (
+                            <ArrangeableField
+                              key={field.field_id}
+                              fieldId={field.field_id}
+                              fieldName={field.field_name}
+                              sectionId={section.section_id}
+                              sectionSlug={section.section_slug}
+                              savedSpan={field.span}
+                              savedVisible={field.is_visible}
+                            >
+                              {node}
+                            </ArrangeableField>
+                          )
                         })}
-                    </div>
+                    </ArrangeableFieldGrid>
                   )}
                 </Card>
               )
-            })
+            })}
+              </ResearchArrangeProvider>
             )}
 
             {/* User-Added Widgets Section */}
@@ -3513,214 +5155,588 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           </div>
         )}
 
-        {/* ========== WORKFLOW SUB-PAGE ========== */}
-        {activeSubPage === 'workflow' && (
-          <div>
-            {(() => {
-            return (
-              <div className="space-y-6">
-                <div className="flex justify-between items-center">
-                  <div className="flex items-center space-x-3">
-                    {showTimelineView ? (
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Activity Timeline</h3>
-                    ) : allWorkflowsLoading || (allWorkflowsFetching && !allAssetWorkflows) ? (
-                      <div className="flex items-center space-x-3 animate-pulse">
-                        <div className="h-8 w-44 bg-gray-200 rounded-lg" />
-                        <div className="h-8 w-20 bg-gray-200 rounded-lg" />
+        {/*
+          ══════════════════ WORK ══════════════════
+
+          One surface, four sections, in order of immediacy:
+
+            1. the orientation band — what needs you, right now
+            2. Process  — the running workflow
+            3. Ideas    — the open items in full
+            4. Lists    — the lists this name sits in
+
+          Process, Ideas and Lists were three peer tabs. They are sections
+          now, and the handoffs that used to switch tabs scroll instead, so
+          "open the process" no longer costs the reader their place.
+
+          The band at the top is the only thing here that aggregates: it is
+          what makes this a surface rather than three accordions. Everything
+          below it is the detail behind one of its lines.
+        */}
+        {activeMode === 'work' && (
+          /*
+            The band carries the `work-lists` anchor because its first child is
+            the membership row. The 'lists' destination — from the Overview and
+            from a saved sub-page — therefore lands on the lists themselves,
+            not on the themes-and-portfolios block at the foot of Work.
+          */
+          <div id={WORK_SECTION_ID.lists} className="scroll-mt-4">
+            {/*
+              ── One sidebar, one working surface ──────────────────────────
+
+              The left column holds everything this asset IS and everything
+              there is to DO about it; the centre holds the doing. Before
+              this, those were four places in three idioms: a 248px work
+              rail, a horizontal list strip above it, and full-width theme /
+              portfolio / project Cards stranded 708px BELOW the surface,
+              where a reader working a process never saw them.
+
+              296px, which is the widest the sidebar can be before the
+              centre's 78ch reading measure stops fitting beside it at the
+              narrow end of "wide desktop".
+            */}
+            {/*
+              Collapsed, the sidebar's column is gone rather than emptied —
+              one track, so there is no 296px gutter and no implicit second
+              row. Only the container's class changes; both children keep
+              their slots, so nothing in the working surface is rebuilt.
+            */}
+            {/*
+              ── One navigator, not two ────────────────────────────────────
+
+              This was a 296px sidebar beside the working surface, listing
+              processes, ideas, investigations, lists, themes, portfolios
+              and projects — every one of which the Work overview also
+              lists. Two full navigators for one set of things, and no
+              answer to which one you were meant to use.
+
+              The overview is the navigator now and the surface is full
+              width. Everything the sidebar uniquely held moved into it:
+              projects, the three "Add to" controls, the escape links and
+              the idea stage filter. Nothing became unreachable.
+            */}
+            <div className="grid grid-cols-1 items-start gap-5">
+              <div key="work-surface" className="min-w-0" data-testid="work-surface">
+                {/*
+                  The way back in, while the sidebar is away.
+
+                  It used to be one `mb-2` row above everything, which simply
+                  moved the dedicated row from the sidebar to the surface. It
+                  now rides whichever header the surface is already showing:
+                  the Process identity row below, the Idea surface's own
+                  header, or the empty state's text block. Nothing reserves a
+                  row for it in any of the three.
+                */}
+                {/*
+                  ── A contextual destination owns the whole surface ──────
+
+                  A list or a portfolio replaces the work item rather than
+                  sitting beside it, so each of the four branches below is
+                  guarded on its absence. Without that, selecting a book
+                  while a process was open would render both.
+                */}
+                {contextual?.kind === 'list' && (() => {
+                  const m = assetListMemberships.find(l => l.listId === contextual.id)
+                  if (!m) {
+                    return (
+                      <div
+                        data-testid="contextual-list-missing"
+                        className="rounded-lg border border-dashed border-gray-300 px-4 py-10 text-center dark:border-gray-700"
+                      >
+                        <p className="text-[13px] text-gray-500 dark:text-gray-400">
+                          {asset.symbol} is no longer on that list.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={leaveContextual}
+                          className="mt-2 text-[12px] font-medium text-primary-600 hover:underline"
+                        >
+                          {contextualBack.label}
+                        </button>
                       </div>
-                    ) : (
-                      <>
-                        <AssetWorkflowSelectorEnhanced
-                          mode="stage-tab"
-                          selectedWorkflowId={effectiveWorkflowId || null}
-                          allAssetWorkflows={allAssetWorkflows || []}
-                          availableWorkflows={availableWorkflows || []}
-                          upcomingBranches={upcomingBranches || []}
-                          onSelectWorkflow={handleWorkflowChange}
-                          onJoinWorkflow={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
-                          onRemoveWorkflow={(wfId) => removeFromWorkflowMutation.mutate(wfId)}
-                        />
-                        <WorkflowActionButton
-                          workflowId={effectiveWorkflowId || null}
-                          workflowProgress={allAssetWorkflows?.find(aw => aw.workflow_id === effectiveWorkflowId) || null}
-                          onStart={(wfId) => startWorkflowMutation.mutate(wfId)}
-                          onComplete={(wfId) => markWorkflowCompleteMutation.mutate(wfId)}
-                          onRestart={(wfId) => restartWorkflowMutation.mutate(wfId)}
-                          onRemove={(wfId) => removeFromWorkflowMutation.mutate(wfId)}
-                          size="sm"
-                        />
-                      </>
-                    )}
+                    )
+                  }
+                  return (
+                    <ListWorkSurface
+                      list={{
+                        listId: m.listId,
+                        itemId: m.itemId,
+                        name: m.name,
+                        description: m.description,
+                        listType: m.listType,
+                        addedAt: m.addedAt,
+                        canRemove: m.canRemove,
+                      }}
+                      assetSymbol={asset.symbol}
+                      back={{ label: contextualBack.label, onBack: leaveContextual }}
+                      onRemove={(itemId) => removeFromList.mutate(itemId)}
+                      removing={removeFromList.isPending}
+                      /* No book to preselect — a list is not one. The modal
+                         asks for the portfolio, which it requires anyway. */
+                      onStartIdea={() => setStartIdeaIn('')}
+                      /* The deliberate departure. The List tab derives its
+                         own permissions from the row it is handed, so
+                         `list_type` and `created_by` travel with it —
+                         dropping them opens a list its owner cannot edit. */
+                      onOpenFull={() => onNavigate?.({
+                        id: m.listId,
+                        title: m.name,
+                        type: 'list',
+                        data: {
+                          id: m.listId,
+                          name: m.name,
+                          description: m.description,
+                          list_type: m.listType,
+                          created_by: m.createdBy,
+                        },
+                      })}
+                    />
+                  )
+                })()}
+
+                {contextual?.kind === 'portfolio' && (() => {
+                  const holding = (portfolioHoldings as any[] | undefined)
+                    ?.find(h => h.portfolio_id === contextual.id)
+                  const name = holding?.portfolios?.name || 'Portfolio'
+                  const exposure = exposureIn(contextual.id)
+                  return (
+                    <PortfolioWorkSurface
+                      portfolio={{ id: contextual.id, name }}
+                      assetSymbol={asset.symbol}
+                      exposure={exposure}
+                      exposureLoading={portfolioBooks === undefined}
+                      /* Matched on portfolio ID. Two books can share a name
+                         across organizations. */
+                      ideas={openItems
+                        .filter(i => i.portfolio?.id === contextual.id)
+                        .map(i => ({ id: i.id, action: i.action, stage: i.stage, rationale: i.rationale }))}
+                      back={{ label: contextualBack.label, onBack: leaveContextual }}
+                      onOpenIdea={(ideaId) => openIdeaDetail(ideaId)}
+                      onStartIdea={() => setStartIdeaIn(contextual.id)}
+                      onOpenFull={() => onNavigate?.({
+                        id: contextual.id, title: name, type: 'portfolio', data: { id: contextual.id },
+                      })}
+                    />
+                  )
+                })()}
+
+                {!contextual && !selectedWorkItem && workIsResolving && (
+                  /* The shape of what is coming, and no claim about it. */
+                  <div data-testid="work-surface-loading" className="space-y-3">
+                    <div className="h-9 animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
+                    <div className="h-24 animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
+                    <div className="h-40 animate-pulse rounded-md bg-gray-100 dark:bg-gray-800" />
+                    <p className="text-[11px] text-gray-400">Loading this asset's work…</p>
                   </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => {
-                      setShowTimelineView(!showTimelineView)
-                      setShowTemplatesView(false)
+                )}
+
+                {/*
+                  ── The landing page ────────────────────────────────────
+
+                  This used to be a dashed box reading "No active work on
+                  this asset", reachable only when the asset genuinely had
+                  none — because `resolveSelection` auto-opened the first
+                  item otherwise. Now nothing is selected until the reader
+                  selects it, so this is what Work opens on, and it has to
+                  carry the answer to "what is being done about this
+                  name".
+                */}
+                {!contextual && !selectedWorkItem && !workIsResolving && (
+                  <AssetWorkOverview
+                    symbol={asset.symbol ?? null}
+                    overview={assetWorkOverview}
+                    items={workItems}
+                    connections={overviewConnections}
+                    connectionsLoading={listsLoading}
+                    recoveredFrom={workSelection.recovered}
+                    /* One call, not two. `handleWorkflowChange` moves the
+                       surface AND sets the selection key; setting the key
+                       beside it was a second half-switch of the kind that
+                       once let a reader complete Apr 10's requirements
+                       while looking at Apr 3. */
+                    onOpenProcess={(wfId) => { void handleWorkflowChange(wfId) }}
+                    onResume={(wfId, stageId, requirementId) => {
+                      handleWorkflowChange(wfId)
+                      setWorkItemKey(workItemKeyFor.process(wfId))
+                      if (stageId) setViewingStageId(stageId)
+                      if (requirementId) setViewingRequirementId(requirementId)
                     }}
-                    className="flex items-center space-x-2 px-3 py-1.5 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors duration-200 text-xs font-medium border border-gray-200 hover:border-gray-300 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400"
-                  >
-                    {showTimelineView ? (
-                      <>
-                        <Activity className="w-4 h-4" />
-                        <span>Stage View</span>
-                      </>
-                    ) : (
-                      <>
-                        <Clock className="w-4 h-4" />
-                        <span>Timeline</span>
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowTemplatesView(!showTemplatesView)
-                      setShowTimelineView(false)
+                    onOpenItem={(item: WorkItem) => {
+                      if (item.launchesPane) { openConversationPane(item.id); return }
+                      setWorkItemKey(item.key)
                     }}
-                    className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg transition-colors duration-200 text-xs font-medium border ${
-                      showTemplatesView
-                        ? 'bg-blue-50 text-blue-700 border-blue-300'
-                        : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100 border-gray-200 hover:border-gray-300 dark:hover:bg-gray-700 dark:border-gray-700 dark:text-gray-400'
-                    }`}
-                  >
-                    <FileText className="w-4 h-4" />
-                    <span>Files</span>
-                  </button>
-                </div>
+                    onOpenConnection={(c) => openWorkConnection(c)}
+                    onOpenAll={(kind) => {
+                      if (kind === 'list') {
+                        onNavigate?.({ id: 'lists', title: 'Lists', type: 'lists', data: null })
+                      } else if (kind === 'theme') {
+                        onNavigate?.({ id: 'themes-list', title: 'All Themes', type: 'themes-list', data: null })
+                      } else {
+                        onNavigate?.({ id: 'portfolios-list', title: 'All Portfolios', type: 'portfolios-list', data: null })
+                      }
+                    }}
+                    /* Research is its own mode and still owns writing; Work
+                       shows what exists and hands off. */
+                    research={overviewResearch}
+                    /* Adding the asset to a process, from the page that
+                       lists its processes — previously only reachable
+                       from inside one. */
+                    joinable={joinableProcesses}
+                    onJoin={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
+                    onOpenResearch={() => goToSubPage('research')}
+                    onOpenNote={(noteId) => handleNoteClick(noteId)}
+                    /* The three dialogs and the stage filter the sidebar
+                       used to carry. Same components, same handlers. */
+                    addActions={
+                      <>
+                        <AddToListButton assetId={asset.id} size="sm" variant="ghost" />
+                        <AddToThemeButton assetId={asset.id} variant="ghost" size="sm" />
+                        <AddToProjectButton assetId={asset.id} variant="ghost" size="sm" />
+                      </>
+                    }
+                    /* So the overview can say "no ideas at this stage"
+                       instead of hiding the section and the filter with it. */
+                    ideasFiltered={openItemsFilter !== 'all'}
+                    ideaFilter={
+                      <div className="flex flex-wrap gap-1">
+                        {([{ key: 'all', label: 'All' },
+                           ...IDEA_STAGES.map(s => ({ key: s, label: IDEA_STAGE_CONFIG[s].label }))
+                        ]).map(o => (
+                          <button
+                            key={o.key}
+                            type="button"
+                            data-testid={`overview-idea-filter-${o.key}`}
+                            onClick={() => setOpenItemsFilter(o.key as 'all' | IdeaStage)}
+                            className={clsx(
+                              'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                              openItemsFilter === o.key
+                                ? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
+                                : 'text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800',
+                            )}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    }
+                    projectsSlot={
+                      <RelatedProjects
+                        contextType="asset"
+                        contextId={asset.id}
+                        contextTitle={`${asset.symbol} - ${asset.company_name}`}
+                        onProjectClick={(projectId) => onNavigate?.({
+                          id: projectId, title: 'Project', type: 'project', data: { id: projectId },
+                        })}
+                        hideCreateButton
+                      />
+                    }
+                  />
+                )}
+
+                {!contextual && selectedWorkItem?.kind === 'idea' && (
+                  selectedWorkIdea ? (
+                    <IdeaWorkSurface
+                      idea={selectedWorkIdea}
+                      assetId={asset.id}
+                      /* Every focused workspace gets the same labelled way
+                         out, not just the Process one. */
+                      headerAction={
+                        <span className="flex items-center gap-2">
+                          <WorkOverviewReturn onBack={() => setWorkItemKey(WORK_OVERVIEW_KEY)} />
+                          <span className="text-gray-300" aria-hidden="true">/</span>
+                        </span>
+                      }
+                    />
+                  ) : (
+                    /* The navigator listed a request whose idea the open-items
+                       query did not return. Say so and offer the real editor
+                       rather than rendering a blank panel. */
+                    <div className="rounded-lg border border-gray-200 px-4 py-6 dark:border-gray-700">
+                      <p className="text-[13px] text-gray-600 dark:text-gray-300">
+                        This idea is no longer in the open pipeline.
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="work-surface-open-closed-idea"
+                        onClick={() => openIdeaDetail(selectedWorkItem.id)}
+                        className="mt-2 text-[12px] font-medium text-primary-600 hover:underline"
+                      >
+                        Open it in the idea pipeline
+                      </button>
+                    </div>
+                  )
+                )}
+
+                {/* ─────────── The process, as the surface ───────────
+                    `InvestmentTimeline` itself, mounted rather than linked
+                    to: the authoritative engine, stages, checklist,
+                    assignments, deadlines and permissions, unchanged. */}
+                {!contextual && selectedWorkItem?.kind === 'process' && (
+          <div id={WORK_SECTION_ID.workflow} className="scroll-mt-4">
+            {(() => {
+            /*
+              ── Which Process, which stage: one line ────────────────────
+
+              This was a band of its own above the rail — selector and Mark
+              Complete on the left, two labelled view buttons pushed to the
+              far right of a 1,500px row. Below it sat the rail, and below
+              that a second band for the stage's own controls. Three bands
+              of chrome, each holding a handful of short controls, before
+              any analysis.
+
+              The identity and its actions now ride the rail's row, in the
+              order a reader asks the questions: which Process, what can I
+              do to it, which stage. Timeline and Files keep their single
+              click and lose their labels to their own icons — they are
+              view switches used once a session, and they were spending two
+              labels and 150px to say so on every render.
+
+              The row is still rendered standalone for the Timeline and
+              Files views, which replace the rail entirely: the way back
+              must not live inside the thing it is replacing.
+            */
+            /*
+              ── Identity, not a second selector ─────────────────────────
+
+              The header opened with a dropdown listing the reader's
+              processes — the same list the sidebar to its left already
+              shows, permanently, with run dates and stage labels. Two
+              selectors for one choice, and no obvious answer to "where do I
+              switch process".
+
+              The sidebar is the answer. The header now STATES which process
+              is open, which run, and its status; switching and joining live
+              on one labelled menu, which also carries the view switches that
+              were two unlabelled icons.
+            */
+            const currentRun = allAssetWorkflows?.find(aw => aw.workflow_id === effectiveWorkflowId)
+            /*
+              ── One switcher, anchored to the title ────────────────────
+
+              `groupProcesses` decides what is offered and in what order;
+              `ProcessSwitcher` renders it. Between them they replace the
+              "⋯" → selector-trigger → 384px panel stack, and they carry
+              Documents and Activity too, which were sitting in a menu
+              that had nothing else to do with them.
+            */
+            const switcherGroups = groupProcesses(
+              (allAssetWorkflows ?? []) as unknown as SwitcherRunRow[],
+              effectiveWorkflowId || null,
+              /* `availableWorkflows` infers as `never[]` from an untyped
+                 Supabase select, as most queries in this file do. Named
+                 at the boundary rather than spread untyped into the
+                 switcher. */
+              ((availableWorkflows ?? []) as unknown as Array<{
+                id: string; name: string; branch_suffix: string | null
+              }>).map(w => ({ id: w.id, name: w.name, branch_suffix: w.branch_suffix })),
+            )
+            const processHeader = (
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+                {/* The way out of a focused workspace, named for where it
+                    goes. Sets the sentinel rather than clearing the key, so
+                    the overview is a destination the reader holds. */}
+                <WorkOverviewReturn
+                  onBack={() => {
+                    setShowReportView(false)
+                    setShowTimelineView(false)
+                    setShowTemplatesView(false)
+                    setWorkItemKey(WORK_OVERVIEW_KEY)
+                  }}
+                  className="flex-none"
+                />
+                <span className="flex-none text-gray-300" aria-hidden="true">/</span>
+                {allWorkflowsLoading || (allWorkflowsFetching && !allAssetWorkflows) ? (
+                  <div className="flex items-center space-x-3 animate-pulse">
+                    <div className="h-6 w-44 rounded bg-gray-200 dark:bg-gray-700" />
+                  </div>
+                ) : (
+                  <>
+                    <GitBranch className="h-4 w-4 flex-none text-gray-400" aria-hidden="true" />
+                    <ProcessSwitcher
+                      groups={switcherGroups}
+                      fallbackLabel={selectedWorkItem?.label ?? 'Process'}
+                      onSelect={handleWorkflowChange}
+                      onJoin={(workflowId) => joinWorkflowMutation.mutate({ workflowId, startImmediately: false })}
+                      upcoming={(upcomingBranches ?? []) as unknown as Array<{
+                        workflowId: string; branchName: string; estimatedStartDate: Date
+                      }>}
+                      onOpenReport={() => { setShowReportView(true); setShowTimelineView(false); setShowTemplatesView(false) }}
+                      onOpenActivity={() => { setShowTimelineView(true); setShowTemplatesView(false); setShowReportView(false) }}
+                      onOpenDocuments={() => { setShowTemplatesView(true); setShowTimelineView(false); setShowReportView(false) }}
+                      activityActive={showTimelineView}
+                      documentsActive={showTemplatesView}
+                      reportActive={showReportView}
+                    />
+                    {/*
+                      ── "Mark Complete" said what, exactly? ─────────────
+
+                      A solid blue primary button beside the process title
+                      that completed the whole PROCESS — the heaviest
+                      control on the Work tab, one of three things on the
+                      screen called some variant of "complete", and the
+                      only one that did not say what it finished.
+
+                      It keeps its handler, its permissions and its
+                      mutation; it is now named for what it ends and sits
+                      in a labelled process-actions menu, because
+                      finishing a process is a once-a-cycle act and was
+                      outranking the analysis on every render.
+                    */}
+                  </>
+                )}
               </div>
+            )
+            /*
+              ── The row's actions belong at the row's end ──────────────
 
-              {showTemplatesView ? (
-                <div className="mt-6 space-y-6">
-                  {/* Workflow Templates Section */}
-                  <Card>
-                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Process Templates</h3>
-                      <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Templates available for this process</p>
-                    </div>
-                    <div className="p-4">
-                      {templatesLoading ? (
-                        <div className="text-center py-8">
-                          <p className="text-gray-500 text-sm dark:text-gray-400">Loading templates...</p>
-                        </div>
-                      ) : workflowTemplates && workflowTemplates.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {workflowTemplates.map((template) => (
-                            <div key={template.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow dark:border-gray-700">
-                              <div className="flex items-start justify-between mb-3">
-                                <div className="flex items-center space-x-3 flex-1 min-w-0">
-                                  <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                                    <FileText className="w-5 h-5 text-blue-600" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium text-gray-900 truncate dark:text-white">{template.name}</h4>
-                                    <p className="text-xs text-gray-500 truncate dark:text-gray-400">{template.file_name}</p>
-                                  </div>
-                                </div>
-                              </div>
+              This menu sat immediately after the process title, where it
+              read as part of the process's NAME rather than as the
+              actions for the bar. It renders at the far right of the
+              rail row now; the handlers and permissions are unchanged.
+            */
+            const processActions = (allWorkflowsLoading && !allAssetWorkflows) ? null : (
+                    <WorkActionsMenu
+                      label="Process actions"
+                      actions={[
+                        /* Had no caller at all before: the old button took
+                           an `onStart` prop and never invoked it, so a run
+                           sitting unstarted could not be started from here. */
+                        ...(currentRun && !currentRun.is_started && !currentRun.is_completed ? [{
+                          key: 'start-process',
+                          label: 'Start process',
+                          icon: <Play className="h-3.5 w-3.5" />,
+                          onSelect: () => {
+                            if (effectiveWorkflowId) startWorkflowMutation.mutate(effectiveWorkflowId)
+                          },
+                        }] : []),
+                        ...(currentRun && !currentRun.is_completed ? [{
+                          key: 'complete-process',
+                          label: 'Complete process',
+                          icon: <CheckCircle2 className="h-3.5 w-3.5" />,
+                          onSelect: () => {
+                            if (effectiveWorkflowId) markWorkflowCompleteMutation.mutate(effectiveWorkflowId)
+                          },
+                        }] : []),
+                        ...(currentRun?.is_completed ? [{
+                          key: 'resume-process',
+                          label: 'Reopen process',
+                          icon: <RotateCcw className="h-3.5 w-3.5" />,
+                          onSelect: () => {
+                            if (effectiveWorkflowId) restartWorkflowMutation.mutate(effectiveWorkflowId)
+                          },
+                        }] : []),
+                        {
+                          key: 'remove',
+                          label: 'Remove this asset from the process',
+                          icon: <X className="h-3.5 w-3.5" />,
+                          startsGroup: true,
+                          onSelect: () => {
+                            if (effectiveWorkflowId) removeFromWorkflowMutation.mutate(effectiveWorkflowId)
+                          },
+                        },
+                      ]}
+                    />
+            )
+            return (
+              <div className="space-y-3">
+                {/* Standalone only for the views that REPLACE the rail. */}
+                {(showTemplatesView || showTimelineView || showReportView) && (
+                  /*
+                    ── One title and one back, not two ──────────────────
+                    The comment that used to sit here claimed this row had
+                    been removed; it rendered the whole process header
+                    anyway. `ProcessReport`, `ProcessDocuments` and
+                    `ProcessHistory` each draw their own title and their
+                    own "Back to <process>", so above them that header was
+                    a second title and a second back control.
 
-                              {template.description && (
-                                <p className="text-xs text-gray-600 mb-3 line-clamp-2 dark:text-gray-400">{template.description}</p>
-                              )}
+                    What it uniquely carried is the breadcrumb out of the
+                    process entirely, so that is all that stays.
+                  */
+                  <WorkOverviewReturn
+                    onBack={() => {
+                      setShowReportView(false)
+                      setShowTimelineView(false)
+                      setShowTemplatesView(false)
+                      setWorkItemKey(WORK_OVERVIEW_KEY)
+                    }}
+                  />
+                )}
 
-                              <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-800">
-                                <span className="text-xs text-gray-400">
-                                  {template.file_size ? `${(template.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
-                                </span>
-                                <button
-                                  onClick={async () => {
-                                    /*
-                                     * `file_url` holds a storage path in a
-                                     * private bucket, so it has to be signed
-                                     * before it can be opened. It used to hold
-                                     * a `getPublicUrl` result, which opened a
-                                     * tab onto a 400.
-                                     */
-                                    const url = await fetchSignedUrl(
-                                      queryClient,
-                                      WORKFLOW_TEMPLATES_BUCKET,
-                                      workflowTemplatePath(template.file_url),
-                                    )
-                                    if (url) window.open(url, '_blank')
-                                  }}
-                                  className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                  title="Download template"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center dark:border-gray-600">
-                          <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm text-gray-500 font-medium dark:text-gray-400">No templates available</p>
-                          <p className="text-xs text-gray-400 mt-2">Process admins can upload templates in the Processes tab</p>
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-
-                  {/* Workflow Attachments Section */}
-                  <Card>
-                    <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Process Attachments</h3>
-                      <p className="text-sm text-gray-500 mt-1 dark:text-gray-400">Files attached to process tasks and stages</p>
-                    </div>
-                    <div className="p-4">
-                      {attachmentsLoading ? (
-                        <div className="text-center py-8">
-                          <p className="text-gray-500 text-sm dark:text-gray-400">Loading attachments...</p>
-                        </div>
-                      ) : checklistAttachments && checklistAttachments.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {checklistAttachments.map((attachment) => (
-                            <div key={attachment.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow dark:border-gray-700">
-                              <div className="flex items-start justify-between mb-3">
-                                <div className="flex items-center space-x-3 flex-1 min-w-0">
-                                  <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                                    <FileText className="w-5 h-5 text-green-600" />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="text-sm font-medium text-gray-900 truncate dark:text-white">{attachment.file_name}</h4>
-                                    <p className="text-xs text-gray-500 dark:text-gray-400">Stage: {attachment.stage_id}</p>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-gray-800">
-                                <span className="text-xs text-gray-400">
-                                  {attachment.file_size ? `${(attachment.file_size / 1024).toFixed(1)} KB` : 'Unknown size'}
-                                </span>
-                                <button
-                                  onClick={() => window.open(attachment.file_path, '_blank')}
-                                  className="p-1.5 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                  title="Download file"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center dark:border-gray-600">
-                          <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-                          <p className="text-sm text-gray-500 font-medium dark:text-gray-400">No attachments yet</p>
-                          <p className="text-xs text-gray-400 mt-2">Files can be attached to process tasks in the Stage view</p>
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                </div>
+              {showReportView ? (
+                /*
+                  ── The cycle's record ──────────────────────────────────
+                  Assembled from the same rows the workspace writes, so
+                  it cannot disagree with them, and every requirement
+                  links back to itself in the rail.
+                */
+                <ProcessReport
+                  symbol={asset.symbol ?? null}
+                  processName={switcherGroups.current?.name ?? 'Process'}
+                  cycle={switcherGroups.current?.run ?? null}
+                  status={currentRun?.is_completed ? 'Complete' : 'In progress'}
+                  report={processReport.report ?? EMPTY_REPORT}
+                  loading={processReport.isLoading}
+                  error={processReport.error}
+                  backLabel={`Back to ${switcherGroups.current?.name ?? 'the process'}`}
+                  onBack={() => setShowReportView(false)}
+                  onOpenRequirement={(requirementId) => {
+                    setShowReportView(false)
+                    setViewingRequirementId(requirementId)
+                  }}
+                />
+              ) : showTemplatesView ? (
+                <ProcessDocuments
+                  backLabel={`Back to ${selectedWorkItem?.label ?? 'the process'}`}
+                  onBack={() => setShowTemplatesView(false)}
+                  attachmentsLoading={attachmentsLoading}
+                  templatesLoading={templatesLoading}
+                  attachments={(checklistAttachments ?? []).map((a) => ({
+                    id: a.id,
+                    name: a.file_name,
+                    context: a.stage_id ? `Stage: ${a.stage_id}` : null,
+                    sizeBytes: a.file_size ?? null,
+                    onOpen: () => window.open(a.file_path, '_blank'),
+                  }))}
+                  templates={(workflowTemplates ?? []).map((t) => ({
+                    id: t.id,
+                    name: t.name,
+                    context: t.file_name ?? null,
+                    sizeBytes: t.file_size ?? null,
+                    /* `file_url` holds a storage path in a private bucket, so
+                       it has to be signed before it can be opened. It used to
+                       hold a `getPublicUrl` result, which opened a tab onto a
+                       400. Unchanged, moved. */
+                    onOpen: async () => {
+                      const url = await fetchSignedUrl(
+                        queryClient,
+                        WORKFLOW_TEMPLATES_BUCKET,
+                        workflowTemplatePath(t.file_url),
+                      )
+                      if (url) window.open(url, '_blank')
+                    },
+                  }))}
+                />
               ) : showTimelineView ? (
-                <AssetTimelineView
+                /* Previous runs lead; the activity feed is demoted into a
+                   collapsed section inside it, which is what it is. */
+                <ProcessHistory
                   assetId={effectiveAsset.id}
                   assetSymbol={asset.symbol}
-                  workflowId={effectiveWorkflowId}
-                  isOpen={true}
-                  onClose={() => setShowTimelineView(false)}
-                  inline={true}
+                  workflowId={effectiveWorkflowId || null}
+                  backLabel={`Back to ${selectedWorkItem?.label ?? 'the process'}`}
+                  onBack={() => setShowTimelineView(false)}
+                  onOpenRun={(wfId) => { setShowTimelineView(false); handleWorkflowChange(wfId) }}
+                  activitySlot={
+                    <AssetTimelineView
+                      assetId={effectiveAsset.id}
+                      assetSymbol={asset.symbol}
+                      workflowId={effectiveWorkflowId}
+                      isOpen={true}
+                      onClose={() => setShowTimelineView(false)}
+                      inline={true}
+                    />
+                  }
                 />
               ) : workflowIdLoading || pendingWorkflowSwitch || allWorkflowsLoading ? (
                 <div className="flex items-center justify-center py-16">
@@ -3745,31 +5761,124 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   assetSymbol={asset.symbol}
                   assetId={effectiveAsset.id}
                   viewingStageId={viewingStageId}
+                  viewingRequirementId={viewingRequirementId}
+                  onViewingRequirementChange={setViewingRequirementId}
                   onViewingStageChange={setViewingStageId}
                   workflowId={effectiveWorkflowId}
                   currentPriority={workflowPriorityState}
                   onPriorityChange={handleWorkflowPriorityChange}
+                  headerSlot={processHeader}
+                  headerActions={processActions}
+                  /* Opening a previous cycle from the prior-work panel is
+                     the same process switch the sidebar performs. */
+                  onOpenRun={handleWorkflowChange}
+                  onOpenNote={handleNoteClick}
+                  /* A finding reached while working a requirement becomes a
+                     real asset_notes row, instead of being retyped into
+                     Research afterwards. */
+                  onCreateNote={createNoteFromWork}
+                  creatingNote={creatingResearchNote}
+                  onOpenResearch={() => goToSubPage('research')}
+                  /*
+                    ── Analysis help, tagged so it comes back ────────────
+
+                    Opens CoAnalyst on this requirement through the
+                    existing engagement seam, which tags the thread to the
+                    asset — so it reappears under this asset's
+                    investigations rather than in a global chat list, and
+                    `origin` records which requirement raised it.
+
+                    The seed prompt is placed in the composer and never
+                    auto-sent: the seam's own rule, and the right one.
+                  */
+                  onAnalyzeRequirement={(ctx) => askAI({
+                    ...assetEngagementTarget,
+                    origin: { itemId: ctx.requirementId, surface: 'asset-work-requirement' },
+                    seedPrompt: [
+                      `I'm working the requirement "${ctx.requirementText}"`,
+                      ctx.stageLabel ? ` in the ${ctx.stageLabel} stage` : '',
+                      ` of a process on ${asset.symbol ?? 'this asset'}.`,
+                      ctx.stageObjective ? ` The stage asks: ${ctx.stageObjective}` : '',
+                      ' What should I look at, and what would change the answer?',
+                    ].join(''),
+                  })}
                 />
               )}
             </div>
             )
           })()}
           </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         {/* ========== DECISIONS SUB-PAGE ========== */}
-        {activeSubPage === 'decisions' && (() => {
+        {/*
+          Work and History both render from this block, because both need the
+          same holdings arithmetic: Work does not use it, but History's
+          capital bar and Current Exposure do, and the book filter that
+          governs the timeline is derived from it. The two halves are guarded
+          separately inside.
+        */}
+        {(activeMode === 'work' || activeMode === 'history') && (() => {
           // Derive summary metrics from portfolio holdings
           const portfolioCount = portfolioHoldings?.length ?? 0
-          const currentPrice = currentQuote?.price || 0
+          /*
+           * ── One price for both sides of every figure in this bar ────────
+           *
+           * `mktVal` was `shares * (currentPrice || held)` — the LIVE quote —
+           * while `weight` was `(shares * held) / ptotal`, a book price over
+           * a book-priced NAV. Two tiles rendered side by side from the same
+           * array therefore described different portfolios: Net Exposure
+           * marked this one holding at today's price while every other
+           * holding in the denominator stayed at its upload price. A reader
+           * could divide the two visible columns of one Current Exposure row
+           * and not recover the percentage printed beside them.
+           *
+           * It is not fixable by repricing the numerator alone, which is the
+           * tempting move. `useAssetLiveWeights.ts:34-37` states the rule:
+           * "weight is a ratio, and repricing only the numerator against a
+           * stale denominator is worse than leaving both stale." The
+           * denominator here is the book `exposureIn` reads, every holding at
+           * its upload price, and repricing it means a quote for every name
+           * in every book — ~40 requests per portfolio, which the mapping
+           * document marks desktop opt-in at most.
+           *
+           * So both sides are struck at the book price, which is what
+           * `lib/portfolio/holdings.ts` does, what `PositionsTab:250-253` and
+           * `OverviewTab:184-197` already do, and what `useAssetWorkspace`
+           * returns. The cost is that Net Exposure no longer moves intraday.
+           * That is the honest reading of a book priced at its last upload,
+           * and the figure is labelled with its as-of date rather than left
+           * to look live.
+           *
+           * The live quote is still fetched and still used — for the header,
+           * and for the upside and divergence checks that genuinely compare
+           * a target against today's price. It is simply not mixed into a
+           * ratio whose denominator it does not reach.
+           */
           const holdingMetrics = portfolioHoldings?.map((h: any) => {
-            const shares = parseFloat(h.shares)
-            const held = parseFloat(h.price ?? h.cost)
-            // Against the book's market value, on the shared definition.
-            const mktVal = shares * (currentPrice || held)
-            const ptotal = portfolioTotals?.[h.portfolio_id] || 0
-            const weight = ptotal > 0 ? ((shares * held) / ptotal) * 100 : 0
-            return { weight, mktVal, shares, name: h.portfolios?.name || 'Unknown', portfolioId: h.portfolio_id }
+            const exposure = exposureIn(h.portfolio_id)
+            /*
+             * `weight` feeds Largest Position, which compares weights ACROSS
+             * books. That comparison is only meaningful while each weight is
+             * struck against its own book — the previous denominator came
+             * from a different upload per portfolio, so the comparison was
+             * between numbers that measured different things.
+             *
+             * `mktVal` is a sum, not a ratio, so it was never affected by the
+             * denominator defect; it is read from the book here only so one
+             * reduction feeds every figure in this block.
+             */
+            return {
+              weight: exposure?.weightPct ?? 0,
+              mktVal: exposure?.marketValue ?? parseFloat(h.shares) * parseFloat(h.price ?? h.cost),
+              shares: parseFloat(h.shares),
+              name: h.portfolios?.name || 'Unknown',
+              portfolioId: h.portfolio_id,
+            }
           }) || []
 
           // Net exposure = sum of all market values across portfolios
@@ -3781,6 +5890,87 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
           return (
             <div className="space-y-3">
+              {/*
+                ─── Order: the decision workflow first ──────────────────
+
+                This tab opened with five exposure tiles and a holdings
+                table, and put Open Items and the decision timeline BELOW
+                them — roughly four hundred lines of portfolio arithmetic
+                before the first thing anybody can act on.
+
+                Decisions is the authoritative environment for
+                recommendations, approvals, commitments, executions and
+                reviews. Exposure is the context those happen against, not
+                the subject, and the Snapshot already states it in the
+                conclusion band and the Position module.
+
+                So the lifecycle leads and exposure follows. Nothing was
+                removed: both exposure blocks are intact and unchanged
+                below, and the capital bar keeps the one-price rule
+                documented in its own comment.
+              */}
+              {/* ─────────── Work · Ideas — REMOVED ───────────
+                  The Open Items list rendered the same ideas the navigator
+                  now lists, 1,092px down a 661px viewport, and clicking one
+                  left the Asset page for the Ideas tab. Everything it could
+                  do is reachable in the shell above:
+
+                    the list          → the navigator's idea rows
+                    the stage pills   → the navigator's stage filter
+                    New Trade Idea    → the navigator's + control
+                    opening an idea   → the idea surface, which also carries
+                                        the rationale and the decision module
+                    Open Idea Pipeline→ "Edit in the idea pipeline" on that
+                                        surface, the same event
+
+                  The attention deep-link that used to scroll here now clears
+                  the selection and lets `resolveSelection` choose, which
+                  lands on an item this reader can act on. */}
+
+              {/* ─────────── History ───────────
+                  The record: what was decided, in which book, and the
+                  capital behind it. This was the lower half of the old
+                  Decisions tab. */}
+              {activeMode === 'history' && (<>
+              {/*
+                * The book selector sits ABOVE the timeline rather than inside
+                * it, so the same control governs the capital bar and the
+                * narrative below it and a reader is never looking at one
+                * book's numbers beside another book's history.
+                *
+                * Books come from this asset's own holdings, which are already
+                * fetched for the bar above — so the list is exactly the books
+                * the reader is authorized to see (RLS-scoped) AND in which
+                * this asset actually appears. Offering a book with no
+                * exposure and no decisions would be offering an empty filter.
+                *
+                * `BookFilter` renders nothing at one book or fewer: a choice
+                * of one is not a choice.
+                */}
+              {(() => {
+                const books = [...new Map(
+                  holdingMetrics.map(m => [m.portfolioId, { id: m.portfolioId, name: m.name }]),
+                ).values()]
+                return books.length > 1 ? (
+                  <div className="flex items-center justify-end">
+                    <BookFilter
+                      books={books}
+                      portfolioId={decisionBookId}
+                      onSelect={setDecisionBookId}
+                      allLabel="All portfolios"
+                      testId="decision-memory-book-filter"
+                      compact
+                    />
+                  </div>
+                ) : null
+              })()}
+
+              <DecisionTimeline
+                assetId={asset.id}
+                portfolioId={decisionBookId}
+                onNavigate={onNavigate}
+              />
+
               {/* ─── Capital State Bar ────────────────────────────── */}
               <div className="grid grid-cols-5 gap-2">
                 {[
@@ -3792,10 +5982,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   },
                   {
                     label: 'Net Exposure',
-                    value: netExposure > 0 && currentPrice > 0
+                    /* Gated on the exposure itself, not on a quote. It is
+                       struck at the book price now, so a missing quote is
+                       irrelevant to it \u2014 and the old gate rendered an
+                       active-styled em-dash while a book-priced exposure
+                       was sitting right there. */
+                    value: netExposure > 0
                       ? `$${netExposure.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
                       : '\u2014',
-                    sub: null,
+                    sub: 'at book price',
                     active: netExposure > 0,
                   },
                   {
@@ -3810,11 +6005,30 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                     sub: null,
                     active: false,
                   },
+                  /*
+                   * The newest EXECUTION the reader is allowed to see.
+                   *
+                   * Same hook, same arguments and therefore the same React
+                   * Query key as the DecisionTimeline directly above, so this
+                   * reads the cached result rather than issuing a second
+                   * request \u2014 and inherits that query's authorization exactly.
+                   * Executions are portfolio-team scoped by RLS, so a reader
+                   * who cannot see a book does not see its trades here either.
+                   *
+                   * Still an em-dash when there is nothing: an asset with no
+                   * execution the reader may see has no last action, and
+                   * substituting a recommendation or an idea would answer a
+                   * different question than the label asks.
+                   */
                   {
                     label: 'Last Action',
-                    value: '\u2014',
-                    sub: null,
-                    active: false,
+                    value: lastExecution
+                      ? lastExecution.title
+                      : '\u2014',
+                    sub: lastExecution
+                      ? formatDistanceToNow(new Date(lastExecution.timestamp), { addSuffix: true })
+                      : null,
+                    active: !!lastExecution,
                   },
                 ].map((metric) => (
                   <div
@@ -3860,9 +6074,18 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                         const shares = parseFloat(holding.shares)
                         const costPerShare = parseFloat(holding.cost)
                         const held = parseFloat(holding.price ?? holding.cost)
-                        const currentValue = shares * (currentPrice || held)
-                        const portfolioTotal = portfolioTotals?.[holding.portfolio_id] || 0
-                        const weight = portfolioTotal > 0 ? ((shares * held) / portfolioTotal) * 100 : 0
+                        // Book price, matching the weight beside it. See the
+                        // note above `holdingMetrics`.
+                        const currentValue = shares * held
+                        /*
+                         * The weight and its as-of come from the same book.
+                         * `exposure` is null while the books load, and the
+                         * cell shows an em dash rather than a percentage of
+                         * an unknown denominator.
+                         */
+                        const exposure = exposureIn(holding.portfolio_id)
+                        const weight = exposure?.weightPct ?? null
+                        const weightAsOf = exposure?.asOf ?? null
 
                         return (
                           <tr key={holding.id} className="hover:bg-blue-50/40 group transition-colors">
@@ -3870,8 +6093,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                               <span className="text-[13px] font-medium text-gray-900 dark:text-white">{holding.portfolios?.name || 'Unknown'}</span>
                             </td>
                             <td className="px-4 py-1.5 text-right">
-                              <span className="text-[13px] font-bold text-gray-900 tabular-nums dark:text-white">
-                                {portfolioTotal > 0 ? `${weight.toFixed(2)}%` : '\u2014'}
+                              <span
+                                className="text-[13px] font-bold text-gray-900 tabular-nums dark:text-white"
+                                /* A snapshot weight with no date invites the
+                                   reader to trade against a number that may
+                                   be weeks old. */
+                                title={weightAsOf ? `Weight as of ${weightAsOf}` : undefined}
+                              >
+                                {weight !== null && exposure && exposure.bookValue > 0
+                                  ? `${weight.toFixed(2)}%`
+                                  : '\u2014'}
                               </span>
                             </td>
                             <td className="px-4 py-1.5 text-right">
@@ -3885,7 +6116,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                             </td>
                             <td className="px-4 py-1.5 text-right">
                               <span className="text-[12px] text-gray-500 tabular-nums dark:text-gray-400">
-                                {currentPrice > 0
+                                {held > 0
                                   ? `$${currentValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                   : '\u2014'}
                               </span>
@@ -3952,428 +6183,44 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                   </div>
                 )}
               </Card>
-
-              {/* ─── Open Items ──────────────────────────────────── */}
-              <Card padding="none" id="decisions-open-items">
-                <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-3 dark:border-gray-800">
-                  <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Open Items</h4>
-                  <span className="text-[10px] font-medium text-gray-400 tabular-nums">({openItemsTotalHint})</span>
-                  <div className="flex items-center gap-1 ml-1">
-                    {([
-                      { key: 'all', label: 'All' },
-                      { key: 'idea', label: 'Idea' },
-                      { key: 'working_on', label: 'Working On' },
-                      { key: 'modeling', label: 'Modeling' },
-                      { key: 'deciding', label: 'Deciding' },
-                    ] as const).map(({ key, label }) => (
-                      <button
-                        key={key}
-                        onClick={() => setOpenItemsFilter(key)}
-                        className={`px-2.5 py-0.5 rounded text-[10px] font-semibold transition-colors ${
-                          openItemsFilter === key
-                            ? 'bg-gray-900 text-white shadow-sm'
-                            : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {openItemsLoading ? (
-                  <div className="px-4 py-3 space-y-2">
-                    {[1, 2].map((i) => (
-                      <div key={i} className="h-8 bg-gray-50 rounded animate-pulse dark:bg-gray-900" />
-                    ))}
-                  </div>
-                ) : (() => {
-                  // Normalize legacy stage names: 'simulating' → 'modeling', 'discussing' → 'working_on'
-                  const normalizeStage = (s: string) => s === 'simulating' ? 'modeling' : s === 'discussing' ? 'working_on' : s
-                  const filteredItems = openItemsFilter === 'all'
-                    ? openItems
-                    : openItems.filter(item => normalizeStage(item.stage) === openItemsFilter)
-                  return filteredItems.length === 0 ? (
-                    <div className="px-4 py-3 flex items-center gap-4">
-                      <span className="text-[13px] text-gray-400">
-                        {openItems.length === 0 ? 'No open items.' : 'No items match this filter.'}
-                      </span>
-                      {openItems.length === 0 && (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                                detail: {
-                                  type: 'new-trade-idea',
-                                  data: { assetId: asset.id, symbol: asset.symbol }
-                                }
-                              }))
-                            }}
-                            className="px-2.5 py-1 rounded text-[11px] font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 transition-colors"
-                          >
-                            New Trade Idea
-                          </button>
-                          <button
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                                detail: {
-                                  type: 'trade-queue',
-                                  data: { filterAssetId: asset.id, filterSymbol: asset.symbol }
-                                }
-                              }))
-                            }}
-                            className="px-2.5 py-1 rounded text-[11px] font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors dark:text-gray-400 dark:bg-gray-800"
-                          >
-                            Open Idea Pipeline
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                      {filteredItems.map((item) => {
-                        const actionConfig: Record<string, { bg: string; text: string; border: string }> = {
-                          buy:  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-l-emerald-400' },
-                          add:  { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-l-emerald-400' },
-                          sell: { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-l-red-400' },
-                          trim: { bg: 'bg-red-50',     text: 'text-red-700',     border: 'border-l-red-400' },
-                        }
-                        const stageColors: Record<string, string> = {
-                          idea: 'bg-gray-100 text-gray-700 ring-gray-300 dark:text-gray-300 dark:bg-gray-800',
-                          working_on: 'bg-blue-100/80 text-blue-800 ring-blue-300',
-                          discussing: 'bg-blue-100/80 text-blue-800 ring-blue-300',
-                          modeling: 'bg-purple-100/80 text-purple-800 ring-purple-300',
-                          simulating: 'bg-purple-100/80 text-purple-800 ring-purple-300',
-                          deciding: 'bg-amber-100/80 text-amber-800 ring-amber-300',
-                        }
-                        const stageLabels: Record<string, string> = {
-                          idea: 'Idea',
-                          working_on: 'Working On',
-                          discussing: 'Working On',
-                          modeling: 'Modeling',
-                          simulating: 'Modeling',
-                          deciding: 'Deciding',
-                        }
-                        const ac = actionConfig[item.action] || { bg: 'bg-gray-100 dark:bg-gray-800', text: 'text-gray-600 dark:text-gray-400', border: 'border-l-gray-300' }
-                        const creatorName = item.creator
-                          ? [item.creator.first_name, item.creator.last_name].filter(Boolean).join(' ') || 'Unknown'
-                          : null
-                        return (
-                          <button
-                            key={item.id}
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                                detail: {
-                                  type: 'trade-queue',
-                                  data: { filterAssetId: asset.id, filterSymbol: asset.symbol }
-                                }
-                              }))
-                            }}
-                            className={`w-full px-4 py-2.5 flex items-center gap-3 hover:bg-blue-50/50 active:bg-blue-100/40 transition-colors text-left group border-l-[3px] ${ac.border}`}
-                          >
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide flex-shrink-0 ${ac.bg} ${ac.text}`}>
-                              {item.action}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <span className="text-[13px] font-semibold text-gray-900 block truncate leading-tight dark:text-white">
-                                {item.rationale || 'No rationale'}
-                              </span>
-                              <span className="text-[10px] text-gray-400 block mt-0.5 leading-tight">
-                                {item.portfolio && <>{item.portfolio.name}</>}
-                                {item.portfolio && creatorName && <> &middot; </>}
-                                {creatorName}
-                                {(item.portfolio || creatorName) && <> &middot; </>}
-                                {formatDistanceToNow(new Date(item.updated_at), { addSuffix: true })}
-                              </span>
-                            </div>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex-shrink-0 ring-1 ring-inset ${stageColors[item.stage] || 'bg-gray-100 text-gray-600 ring-gray-200 dark:text-gray-400 dark:bg-gray-800'}`}>
-                              {stageLabels[item.stage] || item.stage}
-                            </span>
-                            <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-primary-500 flex-shrink-0 transition-colors" />
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )
-                })()}
-              </Card>
-
-              {/* ─── Decision Timeline ────────────────────────────── */}
-              <DecisionTimeline
-                assetId={asset.id}
-                onNavigate={onNavigate}
-              />
+              </>)}
             </div>
           )
         })()}
 
-        {/* ========== LISTS SUB-PAGE ========== */}
-        {activeSubPage === 'lists' && (
-          <div className="space-y-2">
-            {(() => {
-              const listsByType = (assetLists as any[] || []).reduce((acc, list) => {
-                // `list_type` is the column; `type` never existed, so this
-                // grouping has been collapsing everything onto 'list' for as
-                // long as the query above returned anything — which it did not.
-                const type = list.list_type || 'list'
-                if (!acc[type]) acc[type] = []
-                acc[type].push(list)
-                return acc
-              }, {} as Record<string, any[]>)
+        {/* ─────────── Work · Other memberships — REMOVED ───────────
 
-              return (
-                <>
-                  {/* Lists Section */}
-                  <Card padding="none" id="lists-section-listsContent">
-                    <button
-                      onClick={() => toggleSection('listsContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
-                    >
-                      <div className="flex justify-between items-center flex-1 mr-2">
-                        <h4
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (onNavigate) {
-                              onNavigate({
-                                id: 'lists',
-                                title: 'Lists',
-                                type: 'lists',
-                                data: null
-                              })
-                            }
-                          }}
-                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
-                        >
-                          Lists
-                        </h4>
-                        <AddToListButton assetId={asset.id} />
-                      </div>
-                      {collapsedSections.listsContent ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronUp className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                    {!collapsedSections.listsContent && (
-                      <div className="border-t border-gray-100 px-4 py-2 dark:border-gray-800">
-                        {listsByType.list && listsByType.list.length > 0 ? (
-                          <div className="divide-y divide-gray-50">
-                            {listsByType.list.map((list: any) => (
-                              <div key={list.id} className="flex items-center justify-between py-1.5 hover:bg-gray-50/50 -mx-1 px-1 rounded transition-colors cursor-pointer">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="text-[13px] font-medium text-gray-900 truncate dark:text-white">{list.name}</span>
-                                  {list.description && (
-                                    <span className="text-[11px] text-gray-400 truncate hidden sm:inline">{list.description}</span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                  {list.created_at && (
-                                    <span className="text-[10px] text-gray-400">
-                                      {formatDistanceToNow(new Date(list.created_at), { addSuffix: true })}
-                                    </span>
-                                  )}
-                                  <Badge variant="default" size="sm">list</Badge>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="py-1">
-                            <p className="text-[13px] text-gray-500 dark:text-gray-400">Not in any lists.</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">Add this asset to a list to organize and track it.</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Card>
+            Themes, portfolios and projects were full-width collapsible Cards
+            here, 708px BELOW the working surface, where a reader working a
+            process never saw them. They are sections of the sidebar now,
+            beside the work they relate to, with the same rows, the same
+            navigation and the same Add dialogs:
 
-                  {/* Themes Section */}
-                  <Card padding="none" id="lists-section-themesContent">
-                    <button
-                      onClick={() => toggleSection('themesContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
-                    >
-                      <div className="flex justify-between items-center flex-1 mr-2">
-                        <h4
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (onNavigate) {
-                              onNavigate({
-                                id: 'themes-list',
-                                title: 'All Themes',
-                                type: 'themes-list',
-                                data: null
-                              })
-                            }
-                          }}
-                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
-                        >
-                          Themes
-                        </h4>
-                        <AddToThemeButton assetId={asset.id} />
-                      </div>
-                      {collapsedSections.themesContent ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronUp className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                    {!collapsedSections.themesContent && (
-                      <div className="border-t border-gray-100 px-4 py-2 dark:border-gray-800">
-                        {assetThemes && assetThemes.length > 0 ? (
-                          <div className="divide-y divide-gray-50">
-                            {assetThemes.map((theme: any) => (
-                              <div
-                                key={theme.id}
-                                className="flex items-center gap-2 py-1.5 hover:bg-gray-50/50 -mx-1 px-1 rounded transition-colors"
-                              >
-                                <span
-                                  onClick={() => {
-                                    if (onNavigate) {
-                                      onNavigate({
-                                        id: theme.id,
-                                        title: theme.name,
-                                        type: 'theme',
-                                        data: theme
-                                      })
-                                    }
-                                  }}
-                                  className="text-[13px] font-medium text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
-                                >
-                                  {theme.name}
-                                </span>
-                                <Badge variant={getThemeTypeColor(theme.theme_type)} size="sm">
-                                  {theme.theme_type || 'general'}
-                                </Badge>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="py-1">
-                            <p className="text-[13px] text-gray-500 dark:text-gray-400">Not in any themes.</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">Themes group assets by investment thesis or macro trend.</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Card>
+              Add to Theme      → the Themes section header
+              Add to Project    → the Projects section header
+              RelatedProjects   → the Projects section body, unchanged
+              theme rows        → open the theme
+              portfolio rows    → open the portfolio, weight beside the name
+              "All themes" /
+              "All portfolios"  → the ↗ on each header
 
-                  {/* Portfolios Section */}
-                  <Card padding="none" id="lists-section-portfoliosContent">
-                    <button
-                      onClick={() => toggleSection('portfoliosContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
-                    >
-                      <div className="flex justify-between items-center flex-1 mr-2">
-                        <h4
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (onNavigate) {
-                              onNavigate({
-                                id: 'portfolios-list',
-                                title: 'All Portfolios',
-                                type: 'portfolios-list',
-                                data: null
-                              })
-                            }
-                          }}
-                          className="text-[13px] font-semibold text-gray-900 hover:text-primary-600 cursor-pointer transition-colors dark:text-white"
-                        >
-                          Portfolios
-                        </h4>
-                        <AddToQueueButton assetId={asset.id} />
-                      </div>
-                      {collapsedSections.portfoliosContent ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronUp className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                    {!collapsedSections.portfoliosContent && (
-                      <div className="border-t border-gray-100 px-4 py-2.5 dark:border-gray-800">
-                        {portfolioHoldings && portfolioHoldings.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {/* Deduplicate by portfolio_id, compute weight for tooltip */}
-                            {Array.from(new Map(portfolioHoldings.map((h: any) => [h.portfolio_id, h])).values()).map((holding: any) => {
-                              const shares = parseFloat(holding.shares)
-                              const cost = parseFloat(holding.cost)
-                              const ptotal = portfolioTotals?.[holding.portfolio_id] || 0
-                              const held = parseFloat((holding as any).price ?? cost)
-                              const weight = ptotal > 0 ? ((shares * held) / ptotal * 100).toFixed(2) : null
-                              return (
-                                <button
-                                  key={holding.portfolio_id}
-                                  onClick={() => {
-                                    if (onNavigate) {
-                                      onNavigate({
-                                        id: holding.portfolio_id,
-                                        title: holding.portfolios?.portfolio_id || holding.portfolios?.name || 'Portfolio',
-                                        type: 'portfolio',
-                                        data: { id: holding.portfolio_id }
-                                      })
-                                    }
-                                  }}
-                                  title={weight ? `Open portfolio \u00B7 Port Wgt: ${weight}%` : 'Open portfolio'}
-                                  className="group/chip inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-semibold text-gray-800 bg-gray-50 border border-gray-200 cursor-pointer hover:border-primary-400 hover:text-primary-700 hover:bg-primary-50 hover:shadow-sm transition-all dark:border-gray-700 dark:text-gray-100 dark:bg-gray-900"
-                                >
-                                  <Briefcase className="w-3.5 h-3.5 text-gray-400 group-hover/chip:text-primary-500 transition-colors" />
-                                  {holding.portfolios?.name || 'Unknown Portfolio'}
-                                  <ExternalLink className="w-3 h-3 text-gray-300 group-hover/chip:text-primary-400 transition-colors" />
-                                </button>
-                              )
-                            })}
-                          </div>
-                        ) : (
-                          <div className="py-0.5">
-                            <p className="text-[13px] text-gray-500 dark:text-gray-400">Not in any portfolios.</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5">This asset has no current holdings across portfolios.</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </Card>
+            The one thing deliberately NOT carried over is the Portfolios
+            card's `AddToQueueButton`, labelled "New Trade Idea": creating an
+            idea is not a portfolio relationship, and the control already
+            exists on In Progress.
 
-                  {/* Projects Section */}
-                  <Card padding="none" id="lists-section-projectsContent">
-                    <button
-                      onClick={() => toggleSection('projectsContent')}
-                      className="w-full px-4 py-2 flex items-center justify-between hover:bg-gray-50 transition-colors dark:hover:bg-gray-800"
-                    >
-                      <div className="flex justify-between items-center flex-1 mr-2">
-                        <h4 className="text-[13px] font-semibold text-gray-900 dark:text-white">Projects</h4>
-                        <AddToProjectButton assetId={asset.id} />
-                      </div>
-                      {collapsedSections.projectsContent ? (
-                        <ChevronDown className="h-4 w-4 text-gray-400" />
-                      ) : (
-                        <ChevronUp className="h-4 w-4 text-gray-400" />
-                      )}
-                    </button>
-                    {!collapsedSections.projectsContent && (
-                      <div className="border-t border-gray-100 px-4 py-1.5 dark:border-gray-800">
-                        <RelatedProjects
-                          contextType="asset"
-                          contextId={asset.id}
-                          contextTitle={`${asset.symbol} - ${asset.company_name}`}
-                          onProjectClick={(projectId) => {
-                            if (onNavigate) {
-                              onNavigate({
-                                id: projectId,
-                                title: 'Project',
-                                type: 'project',
-                                data: { id: projectId }
-                              })
-                            }
-                          }}
-                          hideCreateButton
-                        />
-                      </div>
-                    )}
-                  </Card>
-                </>
-              )
-            })()}
-          </div>
-        )}
+            That still holds for a row in a relationship list, which is all
+            this section is. It is no longer the whole story for the app:
+            the list and portfolio WORK surfaces each offer "Start an idea",
+            because those pages are where a reader is looking at one book or
+            one watchlist and deciding whether to act. Both open the single
+            `AddTradeIdeaModal` mounted at the foot of this file — one
+            create path, several doors to it.
+
+            The `lists-section-*Content` ids moved with the sections, so the
+            header's context chips still deep-link to them. */}
+
+
       </div>
 
       {/* Workflow Manager Modal */}
@@ -4381,88 +6228,43 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         isOpen={showWorkflowManager}
         onClose={() => setShowWorkflowManager(false)}
       />
+
+      {/*
+        ── Starting an idea from a list or a book ────────────────────────
+
+        The existing modal, with this asset preselected and — from a
+        portfolio — that book too. Mounted once here rather than inside
+        either surface, so there is one instance and one create path.
+
+        `startIdeaIn` carries the book: `''` from a list, which has none.
+        `|| undefined` keeps the empty string out of `preselectedPortfolioId`,
+        where it would read as "a portfolio whose id is empty" rather than
+        "no portfolio chosen yet".
+      */}
+      <AddTradeIdeaModal
+        isOpen={startIdeaIn !== null}
+        onClose={() => setStartIdeaIn(null)}
+        onSuccess={() => {
+          setStartIdeaIn(null)
+          /* The surfaces that will now be wrong: this asset's open ideas,
+             the Work overview's list, and the pipeline board. The modal's
+             own service invalidates the trade caches; these are the asset
+             page's own reads of them. */
+          queryClient.invalidateQueries({ queryKey: ['asset-trade-ideas', asset.id] })
+          queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
+        }}
+        preselectedAssetId={asset.id}
+        preselectedPortfolioId={startIdeaIn || undefined}
+      />
     </div>
   )
 }
 
 
-/**
- * The arrival line, and Ask AI / Team.
- *
- * ── Why it is here and not in a new page ─────────────────────────────────
- *
- * The Asset page had no engagement wiring at all: the D1 pane is mounted once
- * in Layout and binds to whatever object is passed, and this page never passed
- * one. That was the single real capability the replacement workspace added, and
- * it turns out to be about forty lines -- no reason to replace a page for it.
- *
- * The target is built from what the sender actually knew. Nothing is invented:
- * no issue means no issue, and the pane composes its own prompt from structured
- * context rather than a hand-written sentence.
+/*
+ * UX2 Phase 1 — the asset arrival/Ask-AI row moved into AssetWorkspaceHeader
+ * (the navy identity band). Ask AI uses the same `askAI` engagement target;
+ * arrival provenance ("Opened from …") was dropped from the dedicated row per
+ * the approved design. The D1 pane in Layout and every other discuss() call
+ * site are untouched.
  */
-function AssetArrivalBar({
-  asset, focus, portfolioId, portfolioName, issue, origin,
-}: {
-  asset: any
-  focus: string | null
-  portfolioId: string | null
-  portfolioName: string | null
-  issue: any
-  origin: string | null
-}) {
-  const issueText = !issue ? null : typeof issue === 'string' ? issue : issue.title
-  const issueDetail = issue && typeof issue !== 'string' ? issue.detail : null
-
-  const target: EngagementTarget = {
-    // `asset` is already in DISCUSSABLE_OBJECT_TYPES, so Team works without
-    // widening any constraint.
-    objectType: 'asset',
-    objectId: asset.id,
-    label: asset.company_name ? `${asset.symbol} — ${asset.company_name}` : (asset.symbol ?? 'Asset'),
-    symbol: asset.symbol ?? undefined,
-    assetId: asset.id,
-    portfolioId: portfolioId ?? undefined,
-    portfolioName: portfolioName ?? undefined,
-    origin: { itemId: asset.id, surface: origin ?? 'asset' },
-    ...(issueText
-      ? { issue: { title: issueText, detail: issueDetail ?? undefined, reason: `asset:${focus ?? 'overview'}` } }
-      : {}),
-  }
-  const teamable = canDiscuss(target)
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 pb-2 pt-1">
-      {origin && (
-        <span className="text-[11px] text-gray-500 dark:text-gray-400">
-          Opened from {ASSET_ORIGIN_NAME[origin] ?? origin}
-          {issueText && <> · <span className="font-medium text-gray-700 dark:text-gray-300">{issueText}</span></>}
-          {portfolioName && <> · {portfolioName}</>}
-        </span>
-      )}
-      <div className="ml-auto flex items-center gap-1">
-        <button
-          type="button"
-          onClick={() => askAI(target)}
-          className="rounded-md px-2.5 py-1 text-[12px] font-medium text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
-        >
-          Ask AI
-        </button>
-        {teamable && (
-          <button
-            type="button"
-            onClick={() => discuss(target)}
-            className="rounded-md px-2.5 py-1 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
-          >
-            Team
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** Sender names, shared with the vocabulary the lenses use. */
-const ASSET_ORIGIN_NAME: Record<string, string> = {
-  today: 'Dashboard', research: 'Research', portfolio: 'Portfolio',
-  ideas: 'Ideas', decisions: 'Decisions',
-}

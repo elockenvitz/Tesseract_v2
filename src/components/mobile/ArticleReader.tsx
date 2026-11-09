@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
+import { clsx } from 'clsx'
 import { ArrowUpRight, Loader2, X } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { useArticle } from '../../hooks/useArticle'
@@ -31,6 +32,23 @@ interface ArticleReaderProps {
   desk?: { symbol: string; assetId: string | null; holding: string | null } | null
   /** Route to the asset page. Absent when the caller cannot navigate. */
   onOpenAsset?: (assetId: string | null, symbol: string) => void
+  /**
+   * Draw the story INSIDE the caller's layout instead of over the whole app.
+   *
+   * ── Why this is a flag and not a second component ───────────────────────
+   *
+   * The desktop workspace holds a story in its pane now, beside the feed and
+   * above the name's own page. Everything below the chrome is the same story
+   * in the same words, so a second reader would be a second answer to a
+   * question this product has already answered -- the exact duplication this
+   * component's own header refuses.
+   *
+   * What differs is only what a modal owns and an embedded surface must not:
+   * the portal, the fixed full-screen box, the lock on the body's scroll, the
+   * Escape key and the close button. The pane it sits in owns its own exit,
+   * its own scrolling and its own share of the screen.
+   */
+  embedded?: boolean
 }
 
 /**
@@ -53,15 +71,18 @@ interface ArticleReaderProps {
  */
 export function ArticleReader({
   open, onClose, url, fallbackTitle, fallbackSource, fallbackImage, desk, onOpenAsset,
+  embedded = false,
 }: ArticleReaderProps) {
   const { data, isLoading } = useArticle(url, { enabled: open })
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Escape closes, and the body must not scroll behind the overlay — on iOS a
   // scrollable body under a fixed overlay is what makes a modal feel like it
-  // is sliding around.
+  // is sliding around. Neither applies to an embedded story: it covers
+  // nothing, so locking the page behind it would freeze a page the reader can
+  // still see, and Escape belongs to whatever does own the screen.
   useEffect(() => {
-    if (!open) return
+    if (!open || embedded) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -70,7 +91,7 @@ export function ArticleReader({
       document.body.style.overflow = prev
       window.removeEventListener('keydown', onKey)
     }
-  }, [open, onClose])
+  }, [open, onClose, embedded])
 
   // A new article starts at the top. Without this, opening a second story
   // from the same mounted reader keeps the previous scroll position.
@@ -84,20 +105,26 @@ export function ArticleReader({
   const source = article?.siteName ?? fallbackSource
   const image = article?.leadImage ?? fallbackImage ?? null
 
-  return createPortal(
-    <div className="fixed inset-0 z-[100] bg-white dark:bg-gray-950 flex flex-col">
+  const view = (
+    <div
+      className={embedded
+        ? 'flex flex-col bg-white dark:bg-gray-950'
+        : 'fixed inset-0 z-[100] bg-white dark:bg-gray-950 flex flex-col'}
+    >
       {/* Bar stays put while the story scrolls: on a long article the way out
           should not require scrolling back to find it. */}
       <div className="flex-shrink-0 flex items-center gap-2 px-2 py-2 border-b border-gray-200 dark:border-gray-800 bg-white/95 dark:bg-gray-950/95 backdrop-blur">
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close reader"
-          className="flex items-center justify-center h-10 w-10 rounded-full text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-        >
-          <X className="h-5 w-5" />
-        </button>
-        <div className="flex-1 min-w-0">
+        {!embedded && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close reader"
+            className="flex items-center justify-center h-10 w-10 rounded-full text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
+        <div className={clsx('flex-1 min-w-0', embedded && 'pl-3')}>
           {source && (
             <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 truncate">
               {source}
@@ -115,7 +142,14 @@ export function ArticleReader({
         </a>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto overscroll-contain">
+      {/* The modal owns the screen, so it owns a scroller. Embedded, the
+          story is one block in a column its host scrolls -- a second scroll
+          box inside that column would trap the wheel and give the reader two
+          scrollbars for one piece of reading. */}
+      <div
+        ref={scrollRef}
+        className={embedded ? undefined : 'flex-1 overflow-y-auto overscroll-contain'}
+      >
         {/* 65ch is the measure that stops a line being tiring to track back
             from. On a phone the padding does the work; on a tablet the cap does. */}
         <article className="mx-auto w-full max-w-[65ch] px-5 pt-6 pb-16">
@@ -260,7 +294,10 @@ export function ArticleReader({
           )}
         </article>
       </div>
-    </div>,
-    document.body,
+    </div>
   )
+
+  /* A modal goes to the body so nothing can clip or stack over it; an
+     embedded story belongs exactly where its caller put it. */
+  return embedded ? view : createPortal(view, document.body)
 }

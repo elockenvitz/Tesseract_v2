@@ -43,6 +43,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { stageLabel as ideaStageLabel } from '../../lib/ideas/stage-model'
 import { fetchLatestBenchmarkWeightsFor } from '../../lib/holdings/benchmark-latest-query'
 import { emitAuditEvent } from '../../lib/audit'
 import { useAuth } from '../../hooks/useAuth'
@@ -5821,10 +5822,13 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                               size="sm"
                               variant="outline"
                               onClick={() => {
-                                const stageLabelMap: Record<string, string> = { aware: 'Aware', investigate: 'Investigate', deep_research: 'Deep Research', thesis_forming: 'Thesis Forming', ready_for_decision: 'Ready for Decision', idea: 'Aware', working_on: 'Investigate', modeling: 'Deep Research', deciding: 'Ready for Decision' }
-                                const stageLabel = stageLabelMap[trade.stage] || trade.stage || trade.status
+                                /* The canonical label. This message is sent to
+                                   a colleague, so the local map's fallback —
+                                   the raw stage, then the status — could put
+                                   `ready_for_decision` into a chat message. */
+                                const label = ideaStageLabel(trade.stage)
                                 sendDiscussionMessageMutation.mutate({
-                                  content: `Any update on this? Currently in ${stageLabel} — wondering if it's ready to move forward.`,
+                                  content: `Any update on this? Currently in ${label} — wondering if it's ready to move forward.`,
                                 })
                                 setActiveTab('discussion')
                               }}

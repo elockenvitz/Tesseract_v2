@@ -53,12 +53,263 @@ export const SYSTEM_DEFAULT_FIELD_SLUGS = new Set([
 // TYPES
 // ============================================================================
 
+/**
+ * How wide a field is drawn, as a span of a twelve-column row.
+ *
+ * ── Why twelve, and why this replaced `full | half` ─────────────────────
+ *
+ * Width began as two values because the problem was one-line facts eating
+ * a whole row of a 1,900px page. Two values cannot express a third, which
+ * is the most common research arrangement after halves — a thesis beside
+ * two short panels, three ratings across. Twelve divides by 2, 3, 4 and 6,
+ * so halves, thirds, quarters and sixths are all exact; a four-column
+ * model would make thirds unrepresentable, which is the same wall again
+ * one step further out.
+ *
+ * Still `user_asset_page_layouts.field_config` / the selection's
+ * `field_overrides`, both already `jsonb`. No schema change.
+ */
+export type FieldSpan = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
+
+/** The full row. What a field gets when the layout says nothing. */
+export const FULL_SPAN: FieldSpan = 12
+
+/**
+ * The two-value vocabulary every layout saved before this used.
+ *
+ * Kept as a type and read forever, never written again. Layouts holding
+ * `width: 'half'` predate spans and must keep drawing as they did, so the
+ * resolver maps them rather than treating an unrecognised value as full —
+ * which would silently re-lay-out every page that had been customised.
+ */
+export type FieldWidth = 'full' | 'half'
+
+/** Legacy `width` as a span. `half` is six of twelve; anything else is full. */
+export function spanFromWidth(width: FieldWidth | null | undefined): FieldSpan {
+  return width === 'half' ? 6 : FULL_SPAN
+}
+
+/**
+ * A stored span, or null when it is absent or not a span this grid can draw.
+ *
+ * `field_config` is jsonb written by several versions of this app, so the
+ * value arriving here is `unknown` in practice however it is typed. A
+ * fractional, zero, negative or out-of-range number would produce a
+ * `col-span-` class that does not exist and silently collapse the field to
+ * the grid's default width, so it is rejected in favour of the next source.
+ */
+export function asSpan(value: unknown): FieldSpan | null {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null
+  if (value < 1 || value > 12) return null
+  return value as FieldSpan
+}
+
+/**
+ * What a per-asset override must differ from to be worth keeping.
+ *
+ * One resolved field as the template alone would have drawn it. Produced
+ * by re-running the resolver with the asset layer stripped — never by
+ * re-deriving what a template means, because a second implementation of
+ * the span fallback would eventually disagree with the first and prune a
+ * real setting away as a no-op.
+ */
+export interface FieldBaseline {
+  span?: number
+  is_visible: boolean
+  section_id?: string
+  display_order?: number | null
+}
+
+/**
+ * Does this override actually say anything the template did not?
+ *
+ * Two callers need the same answer and must not drift apart: the save,
+ * which drops no-op overrides so setting a page back by hand returns it
+ * to the template, and the status chip, which says whether the page is
+ * following its template. If these disagreed, a stock would be labelled
+ * "Custom layout" with nothing custom about it, or reset itself on save
+ * while still claiming to be custom.
+ */
+export function overrideDiffersFromBaseline(
+  o: FieldOverride,
+  base: FieldBaseline | undefined,
+): boolean {
+  /* No baseline means the template says nothing about this field at all,
+     so anything the asset says about it is a real instruction. */
+  if (!base) return true
+
+  /*
+     A `span` and a legacy `width` are one instruction in two
+     vocabularies. Comparing only `span` reads an override that says
+     `width: 'half'` as saying nothing — so the save would prune it and
+     silently widen a field the reader had narrowed before spans existed.
+  */
+  const stated = asSpan(o.span) ?? (o.width !== undefined ? spanFromWidth(o.width) : undefined)
+  if (stated !== undefined && stated !== (asSpan(base.span) ?? FULL_SPAN)) return true
+
+  if (o.is_visible !== base.is_visible) return true
+  if (o.section_id !== undefined && o.section_id !== base.section_id) return true
+  if (o.display_order !== undefined && o.display_order !== base.display_order) return true
+  return false
+}
+
+/**
+ * Does this section override say anything the template did not?
+ *
+ * The section-level twin of `overrideDiffersFromBaseline`, and it exists
+ * for the same reason: an override that merely repeats the template is
+ * not an override, it is a PIN. The page looks right, so nothing reports
+ * a problem, but the stock now carries an explicit instruction and will
+ * silently refuse to follow the template when the template changes.
+ *
+ * `is_hidden: false` is the subtle one. Against a template that does not
+ * hide the section it says nothing; against a template that DOES hide it,
+ * it is the only way the stock can ask for it back. So the template's own
+ * view has to be passed in rather than assumed.
+ */
+export function sectionOverrideSaysSomething(
+  o: Partial<SectionOverride>,
+  opts: { templateHidesIt?: boolean } = {},
+): boolean {
+  return !!(
+    o.name_override ||
+    o.is_added ||
+    o.is_hidden === true ||
+    (o.is_hidden === false && opts.templateHidesIt) ||
+    o.display_order !== undefined
+  )
+}
+
+/**
+ * What a stock's `section_overrides` should become after a reorder.
+ *
+ * ── Why this is a function and not four lines inside the mutation ──────
+ *
+ * `display_order` is an ABSOLUTE position, so expressing a reorder means
+ * numbering every section — there is no way to say "this one moved"
+ * without saying where the others are. That is right while the order
+ * genuinely differs from the template's, and wrong the moment it does
+ * not: nudging a section down and back up left explicit positions behind
+ * for every section on the page, pinning the stock to today's template
+ * order and marking it "Custom layout" forever. Pulled out here so the
+ * decision can be tested on its own, rather than only through a Supabase
+ * write nobody can run in a unit test.
+ *
+ * @param baselineOrderOf  where a section sits with no per-asset
+ *   override — the template's position for it, else the section's own
+ *   `display_order`. `null` when that cannot be established.
+ */
+/** The minimum the catalogue comparator needs to place a field. */
+export interface CatalogFieldPosition {
+  /** Where the field's SECTION sits. */
+  section_display_order?: number | null
+  /** Where the field sits inside that section. */
+  display_order?: number | null
+  /** Final tiebreak, so equal rows still come back in a fixed order. */
+  name?: string | null
+}
+
+/**
+ * Where a field belongs in the catalogue: by section, then within it, then
+ * by name.
+ *
+ * This exists because `research_fields.display_order` is only meaningful
+ * WITHIN a section, and the query that reads the catalogue sorted on it
+ * alone. Across sections that interleaves them, and in the live database it
+ * ties outright — the first field of Thesis & Risks, Catalysts & Events and
+ * Forecasts & Estimates all carry 0, so Postgres chose, and could choose
+ * differently between runs.
+ *
+ * Arrival order is not cosmetic: `buildSystemDefaultLayout` stamps
+ * `display_order` from the array index, and the template editor groups
+ * sections by the first field it meets. A tie broken the unlucky way is how
+ * the Default template came to list Forecasts & Estimates above Thesis &
+ * Risks while the asset page, which sorts by the section's own
+ * `display_order`, listed them the other way round.
+ *
+ * `name` last so the result is total: two rows that tie on both numbers
+ * still have one answer rather than whichever the database felt like.
+ * Missing numbers sort as 0, matching the column's own default.
+ */
+export function catalogFieldOrder(a: CatalogFieldPosition, b: CatalogFieldPosition): number {
+  return (
+    ((a.section_display_order ?? 0) - (b.section_display_order ?? 0)) ||
+    ((a.display_order ?? 0) - (b.display_order ?? 0)) ||
+    (a.name ?? '').localeCompare(b.name ?? '')
+  )
+}
+
+export function reorderedSectionOverrides({
+  orderedSectionIds,
+  currentOverrides,
+  baselineOrderOf,
+  templateHidesSection = () => false,
+}: {
+  orderedSectionIds: string[]
+  currentOverrides: SectionOverride[]
+  baselineOrderOf: (sectionId: string) => number | null
+  templateHidesSection?: (sectionId: string) => boolean
+}): SectionOverride[] {
+  const baselines = orderedSectionIds.map(baselineOrderOf)
+
+  /*
+   * Only when every baseline position is known and distinct. Two
+   * sections sharing a `display_order` have no defined order between
+   * them, so "this is the baseline" cannot be established — and the safe
+   * answer is to keep the explicit numbering, which preserves exactly
+   * what the reader just did.
+   */
+  const usable =
+    baselines.every((b): b is number => b !== null) &&
+    new Set(baselines as number[]).size === baselines.length
+
+  const matchesBaseline =
+    usable && baselines.every((b, i) => i === 0 || (baselines[i - 1] as number) < (b as number))
+
+  const forOrderedSections = orderedSectionIds
+    .map((sectionId, index): SectionOverride | null => {
+      const existing = currentOverrides.find(o => o.section_id === sectionId)
+      if (!matchesBaseline) {
+        return { ...existing, section_id: sectionId, display_order: index }
+      }
+      /* Back at the baseline: drop the position, and the whole override
+         with it if the position was all it said. */
+      if (!existing) return null
+      /* The position is what is back at the baseline; everything else
+         the override says is kept. */
+      const rest: SectionOverride = { ...existing }
+      delete rest.display_order
+      return sectionOverrideSaysSomething(rest, {
+        templateHidesIt: templateHidesSection(sectionId),
+      })
+        ? rest
+        : null
+    })
+    .filter((o): o is SectionOverride => o !== null)
+
+  /*
+   * Anything the list does not mention is carried through untouched. The
+   * stored array is REPLACED wholesale by the write, and the ordered list
+   * only ever holds the sections the page is drawing — so rebuilding from
+   * it alone quietly deleted the rename and the hidden flag of any
+   * section that happened not to be on screen.
+   */
+  return [
+    ...forOrderedSections,
+    ...currentOverrides.filter(o => !orderedSectionIds.includes(o.section_id)),
+  ]
+}
+
 export interface FieldConfigItem {
   field_id: string
   section_id: string
   is_visible: boolean
   display_order: number | null
   is_collapsed: boolean
+  /** Twelfths of a row. Absent on layouts saved before spans existed. */
+  span?: number
+  /** Superseded by `span`; still read so old layouts draw unchanged. */
+  width?: FieldWidth
 }
 
 export interface FieldOverride {
@@ -66,6 +317,10 @@ export interface FieldOverride {
   is_visible: boolean
   section_id?: string
   display_order?: number
+  /** Per-asset span override, when the reader arranged this page. */
+  span?: number
+  /** Superseded by `span`; still read so old overrides draw unchanged. */
+  width?: FieldWidth
 }
 
 export interface SectionOverride {
@@ -80,6 +335,29 @@ export interface LayoutTemplate {
   id: string
   name: string
   field_config: FieldConfigItem[]
+  /**
+   * The template's own view of its SECTIONS: renames, order, hidden flags,
+   * and sections the user added.
+   *
+   * `field_config` places each field into a section, so a template has
+   * always carried which fields exist and how they are laid out. What it
+   * could not carry was anything about the sections themselves — that
+   * lived only in the per-asset `section_overrides`, so renaming a section
+   * on one stock could never become part of a template.
+   *
+   * Absent on every layout saved before the column existed, which reads
+   * identically to "this template says nothing about sections".
+   */
+  section_config?: SectionOverride[] | null
+  /**
+   * When this template was last written.
+   *
+   * Carried because it is the concurrency token for writing it back: a
+   * template is shared by every asset using it, so two tabs editing one is
+   * ordinary. The write is conditioned on this value, and the table's
+   * BEFORE UPDATE trigger moves it on every change.
+   */
+  updated_at?: string
   is_default: boolean
 }
 
@@ -135,6 +413,8 @@ export interface ResolvedField {
   display_order: number | null
   default_display_order: number
   is_collapsed: boolean
+  /** How wide this field is drawn, in twelfths of a row. */
+  span: FieldSpan
   is_universal: boolean
   is_system: boolean
   is_custom: boolean
@@ -170,8 +450,23 @@ export interface LayoutResolutionResult {
   hasAssetCustomization: boolean
   /** The field overrides applied for this asset */
   assetFieldOverrides: FieldOverride[]
-  /** The section overrides applied for this asset */
+  /**
+   * The section overrides stored against THIS ASSET, unmerged.
+   *
+   * This is what a save must hand back: the RPC replaces the array it is
+   * given, so writing the merged view would copy the template's sections
+   * down onto the asset and freeze them there.
+   */
   assetSectionOverrides: SectionOverride[]
+  /**
+   * What each section actually resolves to — the template's section_config
+   * with this asset's overrides merged over it, per key.
+   *
+   * This is the one to RENDER from. Reading `assetSectionOverrides`
+   * directly shows a section's template name as though no one had renamed
+   * it, because the asset layer alone does not mention it.
+   */
+  resolvedSectionOverrides: SectionOverride[]
   /** Per-field resolution decisions (for diagnostics) */
   decisions: ResolutionDecision[]
   /** The final resolved fields */
@@ -259,6 +554,22 @@ export interface ResolveLayoutInput {
   userDefaultLayout: LayoutTemplate | null
   /** The asset-specific layout selection (if any, for a specific asset) */
   assetSelection: AssetLayoutSelection | null
+  /**
+   * Whether a field is on the page when nothing else decides.
+   *
+   * Passed in rather than read from `SYSTEM_DEFAULT_FIELD_SLUGS`, because
+   * that set is ASSET vocabulary: the theme catalogue slugs its risks field
+   * `risks` where the asset list spells it `risks_to_thesis`, so a theme
+   * resolved against the shared set lost a field silently. The subject
+   * descriptor owns the answer; see `isInSystemDefault` in `subject.ts`.
+   *
+   * Optional, defaulting to the curated asset set, so every existing caller
+   * and test keeps the behaviour it was written against.
+   */
+  isInSystemDefault?: (field: {
+    readonly slug: string
+    readonly is_system?: boolean | null
+  }) => boolean
 }
 
 /**
@@ -268,6 +579,10 @@ export interface ResolveLayoutInput {
  */
 export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult {
   const { availableFields, allSections, userDefaultLayout, assetSelection } = input
+  /* The asset set is the default so this function keeps answering exactly
+     as it did for every caller that does not name a subject. */
+  const inSystemDefault =
+    input.isInSystemDefault ?? (f => SYSTEM_DEFAULT_FIELD_SLUGS.has(f.slug))
 
   // --- Step 1: Determine the active template ---
   let activeTemplate: LayoutTemplate | null = null
@@ -327,9 +642,33 @@ export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult
     fieldOverrideMap.set(fo.field_id, fo)
   }
 
+  /*
+   * Sections resolve in two layers, the same way fields do: what the
+   * TEMPLATE says, then what this ASSET says on top of it.
+   *
+   * Merged per key rather than per section, so an asset that renames a
+   * section does not thereby discard the template's order for it. Spreading
+   * the template first and the asset second is what gives the asset the
+   * last word on any key it actually sets — and `undefined` values are
+   * stripped from the asset layer, because an override row carrying
+   * `name_override: undefined` would otherwise erase the template's name
+   * while claiming to say nothing.
+   */
+  const templateSectionConfig = activeTemplate?.section_config ?? []
   const sectionOverrideMap = new Map<string, SectionOverride>()
+  for (const so of templateSectionConfig) {
+    sectionOverrideMap.set(so.section_id, { ...so })
+  }
   for (const so of assetSectionOverrides) {
-    sectionOverrideMap.set(so.section_id, so)
+    const defined = Object.fromEntries(
+      Object.entries(so).filter(([, v]) => v !== undefined),
+    ) as Partial<SectionOverride>
+    const base = sectionOverrideMap.get(so.section_id)
+    sectionOverrideMap.set(so.section_id, {
+      ...base,
+      ...defined,
+      section_id: so.section_id,
+    })
   }
 
   // Section lookup
@@ -387,7 +726,7 @@ export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult
       isVisible = false
       source = 'template-not-listed'
     } else {
-      isVisible = SYSTEM_DEFAULT_FIELD_SLUGS.has(field.slug)
+      isVisible = inSystemDefault(field)
       source = 'system-default'
     }
 
@@ -420,6 +759,21 @@ export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult
       display_order: displayOrder,
       default_display_order: field.display_order ?? 0,
       is_collapsed: isCollapsed,
+      /*
+         Four sources, most specific first, and the fallback is the full
+         row rather than a guess from the field's type — guessing would
+         silently re-lay-out every page that already reads correctly.
+
+         The two legacy `width` steps are what keep layouts saved before
+         spans drawing exactly as they did. They are read, never written:
+         a page arranged once in the new editor stops consulting them.
+      */
+      span:
+        asSpan(assetOverride?.span)
+        ?? asSpan(layoutConfig?.span)
+        ?? (assetOverride?.width ? spanFromWidth(assetOverride.width) : null)
+        ?? (layoutConfig?.width ? spanFromWidth(layoutConfig.width) : null)
+        ?? FULL_SPAN,
       is_universal: field.is_universal,
       is_system: field.is_system ?? false,
       is_custom: isCustomField,
@@ -437,6 +791,7 @@ export function resolveLayout(input: ResolveLayoutInput): LayoutResolutionResult
     hasAssetCustomization,
     assetFieldOverrides,
     assetSectionOverrides,
+    resolvedSectionOverrides: Array.from(sectionOverrideMap.values()),
     decisions,
     resolvedFields
   }

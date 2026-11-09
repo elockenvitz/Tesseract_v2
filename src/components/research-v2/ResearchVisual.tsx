@@ -30,6 +30,7 @@
 
 
 import { dateWords, type ResearchDateKind } from '../../lib/desktop-research'
+import { AnchoredPriceChart } from '../desktop/AnchoredPriceChart'
 
 /*
  * ── The slicer moved to `lib/market-data/anchored-window` ────────────────
@@ -52,54 +53,36 @@ export type { AnchoredWindow }
  * recorded. It is required: the chart used to say "since last review" about
  * every anchor it was given.
  */
-export function PriceSinceReview({ w, since, height = 88 }: { w: AnchoredWindow; since: ResearchDateKind; height?: number }) {
+/**
+ * ── The drawing moved to `desktop/AnchoredPriceChart` ────────────────────
+ *
+ * Everything this function's header used to argue -- the 1.61x horizontal
+ * smear under `preserveAspectRatio="none"`, the ellipse where a dot should
+ * be, 88px of plot against Today's 166, no scale and nothing to point at --
+ * was fixed HERE and nowhere else, so the Decisions detail pane went on
+ * drawing the identical defect from its own copy (measured at 1.87x). The
+ * geometry is shared now, for the same reason `anchoredWindow` is: one
+ * definition of how a price path looks, or the lenses drift apart one pass
+ * at a time.
+ *
+ * What stayed in this lens is what belongs to it -- the WORDS. `dateWords`
+ * knows whether the anchor is a review, a writing or an update, and the chart
+ * does not: it was saying "since last review" about every anchor it was given
+ * before this lens took that decision back.
+ */
+export function PriceSinceReview({ w, since, height = 166 }: { w: AnchoredWindow; since: ResearchDateKind; height?: number }) {
   const words = dateWords(since)
-  const W = 340
-  const H = height
-  const min = Math.min(...w.series)
-  const max = Math.max(...w.series)
-  const span = (max - min) || 1
-  const x = (i: number) => (i * W) / Math.max(1, w.series.length - 1)
-  const y = (v: number) => 4 + (H - 14) * (1 - (v - min) / span)
-  const d = w.series.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' L')
-
   return (
-    <div>
-      <div className="mb-1 flex items-baseline gap-2">
-        <span className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">
-          {w.reachesAnchor ? words.priceSince : 'Price over available history'}
-        </span>
-        <span className="ml-auto font-mono text-[10px] text-gray-500">
-          {w.reachesAnchor ? `${words.since} · ${w.days}d` : `${w.days}d of history`}
-        </span>
-      </div>
-
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="w-full" style={{ height: H }}
-           role="img" aria-label={`Price, ${w.changePct.toFixed(1)} percent`}>
-        <path d={`M${d} L${W},${H} L0,${H} Z`} className="fill-slate-500 opacity-[0.09]" />
-        <path d={`M${d}`} fill="none" strokeWidth={1.6} strokeLinejoin="round"
-              className="stroke-slate-500 dark:stroke-slate-400" />
-        {w.reachesAnchor && (
-          <>
-            <line x1={0.5} y1={0} x2={0.5} y2={H - 2} strokeWidth={1} strokeDasharray="2 3"
-                  className="stroke-gray-400 dark:stroke-gray-600" />
-            <text x={4} y={9} className="fill-gray-500 text-[8px]" style={{ letterSpacing: '.05em' }}>
-              {words.tick}
-            </text>
-          </>
-        )}
-        <circle cx={W - 2} cy={y(w.series[w.series.length - 1])} r={3}
-                className="fill-slate-600 dark:fill-slate-300" />
-      </svg>
-
-      <div className="mt-1 font-mono text-[16px] font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-        {w.changePct >= 0 ? '+' : ''}{w.changePct.toFixed(1)}%
-      </div>
-      {!w.reachesAnchor && (
-        <p className="mt-1 text-[10px] text-gray-500">
-          History does not reach {words.the}, so this is not a {words.since} move.
-        </p>
-      )}
-    </div>
+    <AnchoredPriceChart
+      w={w}
+      height={height}
+      caption={w.reachesAnchor ? words.priceSince : 'Price over available history'}
+      meta={w.reachesAnchor ? `${words.since} · ${w.days}d` : `${w.days}d of history`}
+      anchorTick={words.tick.toLowerCase()}
+      readoutTestId="research-chart-readout"
+      note={!w.reachesAnchor
+        ? `History does not reach ${words.the}, so this is not a ${words.since} move.`
+        : undefined}
+    />
   )
 }

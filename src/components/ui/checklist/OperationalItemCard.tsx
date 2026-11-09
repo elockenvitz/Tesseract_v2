@@ -16,6 +16,13 @@ import { supabase } from '../../../lib/supabase'
 import { useOrgMembers } from '../../../hooks/useOrgMembers'
 import { useOrganizationOptional } from '../../../contexts/OrganizationContext'
 import { assetsPath } from '../../../lib/storage/asset-paths'
+import { draftKey, readDraft, writeDraft, clearDraft } from '../../../lib/asset-work/requirement-drafts'
+import {
+  statusOf, primaryAction, secondaryActions, ACTION_LABEL,
+  type RequirementAction,
+} from '../../../lib/asset-work/requirement-status'
+import { ConfirmDialog } from '../ConfirmDialog'
+import { useToastOptional } from '../../common/toast-context'
 import {
   ChecklistItemData,
   userName, userInitials, avatarColor, relativeTime,
@@ -31,19 +38,49 @@ interface OperationalItemCardProps {
   isEditable: boolean
   isExpanded: boolean
   onToggleExpand: () => void
-  onToggleStatus: () => void
+  /**
+   * The row layout's circle: performs the primary action for the current
+   * status, which the parent resolves. Kept as a nullary callback because
+   * the row has one control and one destination.
+   */
+  onToggleStatus?: () => void
+  /**
+   * The detail layout's named controls. Each asks for one explicit
+   * transition; the card never decides where a status should go next.
+   */
+  onStatusAction?: (action: RequirementAction) => void
   onRemoveCustom?: () => void
   currentUser: { id: string; email?: string; user_metadata?: { first_name?: string; last_name?: string } } | null
   scopeType?: 'asset' | 'portfolio'
+  /**
+   * How this requirement is presented.
+   *
+   * `row` is the original: a clickable header that expands an accordion
+   * beneath it. `detail` is the same body with the accordion chrome
+   * removed and the title promoted — for a surface where the requirement
+   * IS the page rather than one line of a list.
+   *
+   * A presentation switch only. Every query, mutation and control below is
+   * shared verbatim between the two, because the alternative — a second
+   * component that writes notes, uploads files and posts comments its own
+   * way — is two implementations of one capability, and they drift.
+   */
+  layout?: 'row' | 'detail'
+  /** The surface already names the requirement; see the note at the title. */
+  hideTitle?: boolean
 }
 
 // ─── Component ──────────────────────────────────────────────────────────
 
 export function OperationalItemCard({
   item, stageId, assetId, workflowId, isEditable, isExpanded,
-  onToggleExpand, onToggleStatus, onRemoveCustom, currentUser,
-  scopeType = 'asset',
+  onToggleExpand, onToggleStatus, onStatusAction, onRemoveCustom, currentUser,
+  scopeType = 'asset', layout = 'row', hideTitle = false,
 }: OperationalItemCardProps) {
+  /* In the detail layout the body is the surface; there is nothing to
+     expand into and nothing to collapse. */
+  const detail = layout === 'detail'
+  const bodyOpen = detail || isExpanded
   const itemsTable = scopeType === 'portfolio' ? 'portfolio_checklist_items' : 'asset_checklist_items'
   const attachTable = scopeType === 'portfolio' ? 'portfolio_checklist_attachments' : 'asset_checklist_attachments'
   const scopeIdField = scopeType === 'portfolio' ? 'portfolio_id' : 'asset_id'
@@ -52,17 +89,51 @@ export function OperationalItemCard({
   // a throw in a leaf like this takes the whole surface down. A null org
   // instead fails loudly at upload time, where assetsPath() rejects it.
   const currentOrgId = useOrganizationOptional()?.currentOrgId ?? null
-  const status = item.status || (item.completed ? 'completed' : 'unchecked')
+  const toast = useToastOptional()
+  const status = statusOf(item)
+  const primary = primaryAction(status)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ─── Local state ────────────────────────────────────────────────────
-  const [editingNotes, setEditingNotes] = useState(false)
-  const [notesDraft, setNotesDraft] = useState(item.notes || '')
+
+  /*
+   * Unsent text survives the card.
+   *
+   * Switching requirements unmounts this component, so both editors open
+   * from whatever was last typed into them rather than from empty. The
+   * draft is cleared the moment the text is saved — see each mutation's
+   * `onSuccess` — so a kept draft always means "not saved yet".
+   */
+  const notesDraftKey = draftKey(item.id, 'notes')
+  const commentDraftKey = draftKey(item.id, 'comment')
+  const keptNotes = readDraft(notesDraftKey)
+  const keptComment = readDraft(commentDraftKey)
+
+  const [editingNotes, setEditingNotes] = useState(() => keptNotes !== null)
+  const [notesDraft, setNotesDraft] = useState(() => keptNotes ?? item.notes ?? '')
   const [assigningOwner, setAssigningOwner] = useState(false)
   const [ownerSearch, setOwnerSearch] = useState('')
   const [uploading, setUploading] = useState(false)
-  const [addingComment, setAddingComment] = useState(false)
-  const [commentText, setCommentText] = useState('')
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  /*
+   * The comment awaiting confirmation. A native `confirm()` used to sit
+   * here: it blocked the whole tab, carried no product styling, and said
+   * only "Delete comment?" — not whose, and not that it cannot be undone.
+   */
+  const [pendingCommentDelete, setPendingCommentDelete] = useState<string | null>(null)
+  const [addingComment, setAddingComment] = useState(() => keptComment !== null)
+  const [commentText, setCommentText] = useState(() => keptComment ?? '')
+
+  /*
+   * Typing writes the draft; opening an editor does not. Otherwise clicking
+   * into saved notes and pressing Escape left behind a "draft" identical to
+   * the stored text, which reopened the editor on the next visit and
+   * claimed unsaved work that did not exist.
+   */
+  const editNotes = (text: string) => { setNotesDraft(text); writeDraft(notesDraftKey, text) }
+  const editComment = (text: string) => { setCommentText(text); writeDraft(commentDraftKey, text) }
+  const openNotesEditor = () => { setNotesDraft(item.notes || ''); setEditingNotes(true) }
+  const notesDirty = notesDraft !== (item.notes ?? '')
 
   // ─── Queries ────────────────────────────────────────────────────────
 
@@ -82,7 +153,10 @@ export function OperationalItemCard({
       if (error) throw error
       return data || []
     },
-    enabled: !!item.dbId && isExpanded,
+    /* `bodyOpen`, not `isExpanded`: in the detail layout there is no
+       accordion, and gating on it left the surface depending on the caller
+       passing `isExpanded: true` for a body that is always open. */
+    enabled: !!item.dbId && bodyOpen,
   })
 
   const attachKey = ['op-item-attach', assetId, workflowId, stageId, item.id, scopeType]
@@ -98,7 +172,7 @@ export function OperationalItemCard({
       if (error) throw error
       return data || []
     },
-    enabled: !!assetId && !!workflowId && isExpanded,
+    enabled: !!assetId && !!workflowId && bodyOpen,
   })
 
   // ─── DB helper ──────────────────────────────────────────────────────
@@ -130,9 +204,23 @@ export function OperationalItemCard({
       const { error } = await supabase.from(itemsTable).update(fields).eq('id', dbId)
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_d, fields) => {
+      /* Saved text is no longer a draft. */
+      if ('notes' in fields) clearDraft(notesDraftKey)
       qc.invalidateQueries({ queryKey: ['existing-checklist-items', assetId, workflowId] })
       qc.invalidateQueries({ queryKey: ['asset-checklist', assetId, workflowId] })
+    },
+    /*
+     * This wrote assignment, notes and the due date and reported nothing
+     * when it failed: the picker closed, the row looked assigned, and the
+     * database had not changed. Refetching is what puts the row back.
+     */
+    onError: (_e, fields) => {
+      qc.invalidateQueries({ queryKey: ['existing-checklist-items', assetId, workflowId] })
+      toast.error(
+        'assignee_id' in fields ? 'The assignment was not saved.' : 'That change was not saved.',
+        { description: 'The requirement has been put back as it was.' },
+      )
     },
   })
 
@@ -147,6 +235,7 @@ export function OperationalItemCard({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: commentsKey })
+      clearDraft(commentDraftKey)
       setCommentText('')
       setAddingComment(false)
     },
@@ -176,8 +265,13 @@ export function OperationalItemCard({
       const { error: dbErr } = await supabase.from(attachTable).insert(insertRow)
       if (dbErr) throw dbErr
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: attachKey }); setUploading(false) },
-    onError: () => setUploading(false),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: attachKey }); setUploading(false); setUploadError(null) },
+    /* A failed upload used to end as a spinner that stopped: no file, no
+       message, nothing to retry from. */
+    onError: (err: unknown) => {
+      setUploading(false)
+      setUploadError(err instanceof Error ? err.message : 'Upload failed')
+    },
   })
 
   const deleteFileM = useMutation({
@@ -210,17 +304,140 @@ export function OperationalItemCard({
   // ─── Render ─────────────────────────────────────────────────────────
 
   return (
-    <div className={`rounded-lg border transition-all ${
-      isExpanded ? 'border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800' : 'border-gray-100 hover:border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-800'
-    } ${!isEditable ? 'opacity-75' : ''}`}>
+    <div className={detail
+      /*
+        No frame of its own in the detail layout.
+
+        The workspace around this already heads the region "Your
+        assessment" and rules it off, so a card border here produced a
+        bordered box inside a bordered section — and the writing area a
+        third border inside that. Three nested frames for one piece of
+        text. The workspace owns the framing; this owns the content.
+      */
+      ? `flex min-h-0 flex-col ${!isEditable ? 'opacity-75' : ''}`
+      : `rounded-lg border transition-all ${
+          isExpanded ? 'border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800' : 'border-gray-100 hover:border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-800'
+        } ${!isEditable ? 'opacity-75' : ''}`}>
+
+      {/* ── Detail header: the requirement, and what you can do to it ──
+          The title, one statement of status, and the completion action.
+          Nothing below repeats any of the three. */}
+      {detail && (
+        <div className="mb-3">
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              {/*
+                The title is the workspace's, not the card's.
+
+                `RequirementWorkspace` sets the requirement as the heading of
+                the whole surface, 17px, directly under the stage. The card
+                then set it AGAIN in 16px two hundred pixels below, which is
+                how "Your work" came to read as a separate checklist item
+                about the thing above it rather than the place to do it.
+                Rendered only when this card is the whole surface.
+              */}
+              {!hideTitle && (
+                <h3
+                  data-testid="requirement-detail-title"
+                  className={`text-[16px] font-semibold leading-snug ${status === 'completed' ? 'text-gray-400 line-through' : 'text-gray-900 dark:text-white'}`}
+                >
+                  {item.text}
+                </h3>
+              )}
+              {/*
+                The template carries a title, a type and an order — there is
+                no description column on `workflow_checklist_templates`, so
+                there are no instructions to show here. Inventing a sentence
+                about what "Flex Model" means would be writing the analyst's
+                process for them.
+              */}
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-400">
+                <span className={
+                  status === 'completed' ? 'font-medium text-emerald-600 dark:text-emerald-400'
+                  : status === 'na' ? 'font-medium text-gray-400'
+                  : 'font-medium text-amber-600 dark:text-amber-400'
+                }>
+                  {status === 'completed' ? 'Complete' : status === 'na' ? 'Not applicable' : 'Open'}
+                </span>
+                {item.completedAt && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span>
+                      {userName(item.completedByUser)} · {new Date(item.completedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    </span>
+                  </>
+                )}
+                {item.due_date && (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span>Due {new Date(item.due_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                  </>
+                )}
+                {item.isCustom && (<><span aria-hidden>·</span><span>added here</span></>)}
+              </p>
+            </div>
+
+            {/*
+              Named actions, not a cycle. Each button states its
+              destination and performs exactly that transition; there is no
+              control here that can take a finished requirement somewhere
+              the reader did not ask for. Marking a completed requirement
+              not applicable takes two deliberate steps — Reopen, then Mark
+              not applicable — because it is two decisions.
+            */}
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              <button
+                onClick={() => onStatusAction?.(primary)}
+                disabled={!isEditable}
+                data-testid="requirement-detail-status"
+                data-action={primary}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  !isEditable ? 'cursor-not-allowed bg-gray-100 text-gray-400 dark:bg-gray-800'
+                  : primary === 'complete'
+                    /* Outlined for the same reason as the decision card:
+                       in the workspace, completing is the record of the
+                       work and must not outrank the work. */
+                    ? 'border border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300'
+                }`}
+              >
+                {primary === 'complete' && <Check className="h-3 w-3" strokeWidth={3} />}
+                {ACTION_LABEL[primary]}
+              </button>
+              {isEditable && secondaryActions(status).map(a => (
+                <button
+                  key={a}
+                  onClick={() => onStatusAction?.(a)}
+                  data-testid={`requirement-detail-action-${a}`}
+                  data-action={a}
+                  className="rounded-md px-2 py-1 text-[11px] font-medium text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300"
+                >
+                  {ACTION_LABEL[a]}
+                </button>
+              ))}
+            </div>
+
+            {item.isCustom && isEditable && (
+              <button
+                onClick={() => onRemoveCustom?.()}
+                aria-label="Remove this requirement"
+                className="flex-shrink-0 rounded p-1 text-gray-300 hover:bg-red-50 hover:text-red-500"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Header row ─────────────────────────────────────────── */}
+      {!detail && (
       <div
         className="flex items-start gap-2.5 px-3 py-2.5 cursor-pointer select-none"
         onClick={onToggleExpand}
       >
         <button
-          onClick={e => { e.stopPropagation(); onToggleStatus() }}
+          onClick={e => { e.stopPropagation(); onToggleStatus?.() }}
           disabled={!isEditable}
           className={`flex-shrink-0 w-[18px] h-[18px] mt-[1px] rounded-full border-[1.5px] flex items-center justify-center transition-colors ${
             status === 'completed' ? 'bg-emerald-500 border-emerald-500 text-white'
@@ -251,10 +468,13 @@ export function OperationalItemCard({
           )}
         </div>
       </div>
+      )}
 
-      {/* ── Expanded body ─────────────────────────────────────────── */}
-      {isExpanded && (
-        <div className="border-t border-gray-100 text-[12px] dark:border-gray-800">
+      {/* ── Body: owner, notes, attachments, comments ─────────────── */}
+      {bodyOpen && (
+        <div className={detail
+          ? 'min-h-0 flex-1 overflow-y-auto text-[12px]'
+          : 'border-t border-gray-100 text-[12px] dark:border-gray-800'}>
 
           {/* ── Source provenance ───────────────────────────────── */}
           {item.source_type === 'work_request' && (
@@ -270,7 +490,15 @@ export function OperationalItemCard({
           )}
 
           {/* ── Owner row ──────────────────────────────────────── */}
-          <div className="flex items-center gap-3 px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
+          {/* Part of the header strip in the detail layout, not a section
+              of its own: who owns the requirement is identity, not work. */}
+          {/* No rule under it in the detail layout: a border made one short
+              line — "Owner  + Assign" — read as a band of its own between
+              the status row and the writing box. It is identity, so it
+              sits quietly with the status above it. */}
+          <div className={detail
+            ? 'mb-2 flex items-center gap-3'
+            : 'flex items-center gap-3 px-3 py-1.5 border-b border-gray-100 dark:border-gray-800'}>
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider w-[44px] flex-shrink-0">Owner</span>
               {assigningOwner ? (
@@ -300,11 +528,33 @@ export function OperationalItemCard({
                         <span>{userName(u)}</span>
                       </button>
                     ))}
+                    {/*
+                      The way back to nobody. Assignment had no inverse at
+                      all: once a requirement was given to someone there
+                      was no control that could take it back, so a wrong
+                      pick was permanent. Same mutation, same picker, one
+                      more row — and `assignee_id: null` touches only that
+                      column, so notes, files, comments and completion are
+                      untouched.
+                    */}
+                    {item.assignee_id && (
+                      <button
+                        data-testid="requirement-unassign"
+                        className="w-full border-t border-gray-100 px-2 py-1 text-left text-[11px] text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                        onClick={() => {
+                          updateFieldM.mutate({ assignee_id: null })
+                          setAssigningOwner(false); setOwnerSearch('')
+                        }}
+                      >
+                        Clear assignment
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : assigneeName ? (
                 <button
                   onClick={() => isEditable && setAssigningOwner(true)}
+                  aria-label={`Change or clear the assignee, currently ${assigneeName}`}
                   className="flex items-center gap-1.5 text-[11px] text-gray-700 hover:text-blue-600 transition-colors dark:text-gray-300"
                 >
                   <div className={`w-4 h-4 rounded-full ${avatarColor(assigneeName)} flex items-center justify-center`}>
@@ -323,41 +573,145 @@ export function OperationalItemCard({
           </div>
 
           {/* ── Notes ───────────────────────────────────────────── */}
-          <div className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
+          {/*
+            The findings, not a field called Notes.
+
+            `asset_checklist_items.notes` is one text column per
+            requirement, so this is one document the analyst keeps — not a
+            feed of entries, and it is not turned into one here. In the
+            detail layout it is the first and largest thing on the surface,
+            set at a reading width, and the saved text itself is the edit
+            affordance.
+          */}
+          <div className={detail
+            ? 'mb-1'
+            : 'px-3 py-1.5 border-b border-gray-100 dark:border-gray-800'}>
             <div className="flex items-center justify-between mb-0.5">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Notes</span>
+              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                {detail ? 'Working notes' : 'Notes'}
+              </span>
               {isEditable && !editingNotes && (
-                <button onClick={() => { setEditingNotes(true); setNotesDraft(item.notes || '') }} className="text-[10px] text-blue-600 hover:text-blue-800 font-medium">
+                <button onClick={openNotesEditor} className="text-[10px] text-blue-600 hover:text-blue-800 font-medium">
                   {item.notes ? 'Edit' : '+ Add note'}
                 </button>
+              )}
+              {/* Reactive, and only when the text actually differs from
+                  what is stored — opening the editor is not an edit. */}
+              {detail && editingNotes && notesDirty && !updateFieldM.isPending && (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400">Unsaved</span>
               )}
             </div>
             {editingNotes ? (
               <div>
                 <textarea
-                  value={notesDraft} onChange={e => setNotesDraft(e.target.value)}
-                  placeholder="Add task notes, instructions, or context..."
-                  className="w-full text-[12px] px-2 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none leading-snug dark:border-gray-700"
-                  rows={2} autoFocus
+                  value={notesDraft} onChange={e => editNotes(e.target.value)}
+                  placeholder={detail
+                    ? 'What did you find? What did you conclude, and what would change it?'
+                    : 'Add task notes, instructions, or context...'}
+                  /*
+                    In the detail layout the box takes the room that is
+                    already there.
+
+                    Measured on a 1920x889 screen with a requirement open:
+                    the writing column's content ended at y=620 inside a
+                    scroller running to y=889, so ~269px sat empty directly
+                    under the box, while the reader scrolled 309px for the
+                    context column on the right. A flat `rows={10}` is about
+                    220px and ignored all of it.
+
+                    `min-h-viewport-30` is a floor, not a fixed height, so it
+                    still grows with `rows` on a tall screen and does not
+                    overflow a short laptop. `rows` stays as the floor when
+                    the stylesheet has not loaded.
+                  */
+                  className={detail
+                    ? 'w-full min-h-viewport-30 rounded border border-gray-200 px-3 py-2 text-[13.5px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-900'
+                    : 'w-full text-[12px] px-2 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none leading-snug dark:border-gray-700'}
+                  rows={detail ? 10 : 2} autoFocus
                   onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); updateFieldM.mutate({ notes: notesDraft.trim() || null }); setEditingNotes(false) }
+                    /*
+                      In the detail layout Enter is a new paragraph. This
+                      is somewhere analysts write several sentences, and a
+                      field that saves and closes on Enter cannot hold
+                      them. Ctrl/Cmd+Enter saves instead.
+                    */
+                    const save = detail
+                      ? e.key === 'Enter' && (e.metaKey || e.ctrlKey)
+                      : e.key === 'Enter' && !e.shiftKey
+                    if (save) { e.preventDefault(); updateFieldM.mutate({ notes: notesDraft.trim() || null }); setEditingNotes(false) }
+                    /* Escape leaves the editor; the draft is kept, so
+                       nothing typed is thrown away by a stray keypress. */
                     if (e.key === 'Escape') setEditingNotes(false)
                   }}
                 />
-                <div className="flex gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1">
                   <button onClick={() => { updateFieldM.mutate({ notes: notesDraft.trim() || null }); setEditingNotes(false) }} className="text-[10px] font-medium bg-gray-900 text-white px-2 py-0.5 rounded">Save</button>
-                  <button onClick={() => setEditingNotes(false)} className="text-[10px] text-gray-500 dark:text-gray-400">Cancel</button>
+                  <button onClick={() => { clearDraft(notesDraftKey); setNotesDraft(item.notes || ''); setEditingNotes(false) }} className="text-[10px] text-gray-500 dark:text-gray-400">Cancel</button>
+                  {detail && <span className="text-[10px] text-gray-300">{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enter saves</span>}
                 </div>
               </div>
             ) : item.notes ? (
-              <p className="text-[12px] text-gray-700 leading-snug whitespace-pre-wrap dark:text-gray-300">{item.notes}</p>
+              detail ? (
+                /* The notes are the edit control. An "Edit" link above a
+                   paragraph is discoverable only if you look for it. */
+                <div
+                  onClick={() => { if (isEditable) openNotesEditor() }}
+                  /* No `max-w` here any more. The column is the measure —
+                     see the grid in `RequirementWorkspace` — and a second
+                     cap inside it was what left the saved assessment
+                     filling half its own column. */
+                  className={`group/notes whitespace-pre-wrap rounded text-[13.5px] leading-relaxed text-gray-800 dark:text-gray-200 ${isEditable ? 'cursor-text hover:bg-gray-50 dark:hover:bg-gray-800/60' : ''}`}
+                  data-testid="requirement-notes-body"
+                >
+                  {item.notes}
+                </div>
+              ) : (
+                <p className="text-[12px] text-gray-700 leading-snug whitespace-pre-wrap dark:text-gray-300">{item.notes}</p>
+              )
+            ) : detail && isEditable ? (
+              /* Empty: one line and one action, not a card. */
+              <button
+                onClick={openNotesEditor}
+                data-testid="requirement-notes-empty"
+                /*
+                  Sized like the writing it invites, not like a form field.
+
+                  A one-line dashed strip read as a minor optional field,
+                  and "Read/Summarize News" is not a field — it is the
+                  place a summary gets written. In the detail layout this
+                  opens to a 10-row editor, so the resting state claims
+                  roughly that much room and stops the work area looking
+                  like the smallest thing on the screen.
+                */
+                className={detail
+                  /* A real writing area, not a field. At 71px this sat
+                     under 145px of chrome with 300px of empty surface
+                     below it — the smallest thing on a screen devoted to
+                     writing. `min-h` rather than padding so the invitation
+                     is the size of the work. */
+                  ? 'block w-full min-h-[180px] rounded-md border border-dashed border-gray-300 px-3.5 py-4 text-left text-[13.5px] leading-relaxed text-gray-400 transition-colors hover:border-gray-400 hover:bg-gray-50 hover:text-gray-500 dark:border-gray-700 dark:hover:bg-gray-900'
+                  : 'w-full rounded border border-dashed border-gray-200 px-3 py-2.5 text-left text-[12px] text-gray-400 transition-colors hover:border-gray-300 hover:text-gray-500 dark:border-gray-700'}
+              >
+                Nothing documented yet — write what you found here.
+              </button>
             ) : null}
           </div>
 
+          {/*
+            Supporting material, beside the discussion rather than under
+            it. Both are short, both are secondary to the notes, and at
+            1,194px stacking them left a column of whitespace next to each.
+          */}
+          {/* `xl`, not `lg`: the pane is ~725px at a 1150px viewport
+              because the sidebar stacks above it, and two columns there are
+              340px each — narrower than the single column they replaced. */}
+          <div className={detail ? 'mt-3 grid grid-cols-1 gap-x-6 gap-y-3 border-t border-gray-100 pt-3 xl:grid-cols-2 dark:border-gray-800' : ''}>
+
           {/* ── Attachments ─────────────────────────────────────── */}
-          <div className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-800">
+          <div className={detail ? 'min-w-0' : 'px-3 py-1.5 border-b border-gray-100 dark:border-gray-800'}>
             <div className="flex items-center justify-between mb-0.5">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                {detail && <Paperclip className="h-2.5 w-2.5" />}
                 Attachments{attachments.length > 0 && ` (${attachments.length})`}
               </span>
               {isEditable && (
@@ -372,33 +726,74 @@ export function OperationalItemCard({
                 </>
               )}
             </div>
-            {attachments.length > 0 && (
+            {/* A spinner that simply stopped was the whole failure report. */}
+            {uploadError && (
+              <p data-testid="requirement-upload-error" className="mt-1 text-[10px] text-red-600 dark:text-red-400">
+                {uploadError} — the file was not attached.
+              </p>
+            )}
+            {attachments.length > 0 ? (
               <div className="space-y-0">
                 {attachments.map((att: any) => (
-                  <div key={att.id} className="group/att flex items-center gap-2 py-0.5 hover:bg-gray-50 rounded -mx-1 px-1 dark:hover:bg-gray-800">
+                  <div key={att.id} className="group/att flex items-center gap-2 py-0.5 hover:bg-gray-50 rounded px-1 dark:hover:bg-gray-800">
                     <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                    <span className="text-[11px] text-gray-700 truncate flex-1 dark:text-gray-300">{att.file_name}</span>
-                    <span className="text-[10px] text-gray-400">{relativeTime(att.created_at)}</span>
-                    <div className="flex gap-0.5 opacity-0 group-hover/att:opacity-100 transition-opacity">
-                      <button onClick={() => handleDownload(att)} className="p-0.5 rounded hover:bg-blue-100 text-gray-400 hover:text-blue-600"><Download className="w-3 h-3" /></button>
-                      {isEditable && <button onClick={() => deleteFileM.mutate(att.id)} className="p-0.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>}
+                    <button
+                      onClick={() => handleDownload(att)}
+                      className="min-w-0 flex-1 truncate text-left text-[11px] text-gray-700 hover:text-blue-600 dark:text-gray-300"
+                    >
+                      {att.file_name}
+                    </button>
+                    {detail && att.file_size ? (
+                      <span className="flex-shrink-0 text-[10px] text-gray-300">{Math.max(1, Math.round(att.file_size / 1024))} KB</span>
+                    ) : null}
+                    <span className="flex-shrink-0 text-[10px] text-gray-400">{relativeTime(att.created_at)}</span>
+                    <div className="flex flex-shrink-0 gap-0.5 opacity-0 group-hover/att:opacity-100 transition-opacity">
+                      <button onClick={() => handleDownload(att)} aria-label={`Download ${att.file_name}`} className="p-0.5 rounded hover:bg-blue-100 text-gray-400 hover:text-blue-600"><Download className="w-3 h-3" /></button>
+                      {/*
+                        "Remove", deliberately — this detaches the file from
+                        the requirement. The stored object is left behind by
+                        `deleteFileM` today, so the control must not promise
+                        a deletion the product does not perform. Reported as
+                        its own issue; the semantics are untouched here.
+                      */}
+                      {isEditable && (
+                        <button
+                          onClick={() => deleteFileM.mutate(att.id)}
+                          aria-label={`Remove ${att.file_name} from this requirement`}
+                          title="Remove from this requirement"
+                          className="p-0.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
-            )}
+            ) : detail ? (
+              <p className="text-[11px] text-gray-300">No files attached.</p>
+            ) : null}
           </div>
 
-          {/* ── Comments ────────────────────────────────────────── */}
-          <div className="px-3 py-1.5">
+          {/* ── Discussion ──────────────────────────────────────────
+              Named apart from the notes on purpose: what colleagues say
+              about a requirement is not the same artefact as what the
+              analyst concluded, and the two must not read as one list. */}
+          <div className={detail
+            ? 'min-w-0 border-t border-gray-100 pt-3 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0 dark:border-gray-800'
+            : 'px-3 py-1.5'}>
             <div className="flex items-center justify-between mb-0.5">
-              <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
-                Comments{commentCount > 0 && ` (${commentCount})`}
+              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+                {detail && <MessageSquare className="h-2.5 w-2.5" />}
+                {detail ? 'Discussion' : 'Comments'}{commentCount > 0 && ` (${commentCount})`}
               </span>
               {!addingComment && (
                 <button onClick={() => setAddingComment(true)} className="text-[10px] text-blue-600 hover:text-blue-800 font-medium">+ Add comment</button>
               )}
             </div>
+            {comments.length === 0 && !addingComment && detail && (
+              <p className="text-[11px] text-gray-300">No discussion yet.</p>
+            )}
             {comments.length > 0 && (
               <div className="space-y-1 mb-1.5">
                 {comments.map((c: any) => {
@@ -414,13 +809,16 @@ export function OperationalItemCard({
                           <span className="text-[10px] font-medium text-gray-700 dark:text-gray-300">{userName(cUser)}</span>
                           <span className="text-[10px] text-gray-400">{relativeTime(c.created_at)}</span>
                           {isOwn && (
-                            <button onClick={() => { if (confirm('Delete comment?')) deleteCommentM.mutate(c.id) }}
+                            <button onClick={() => setPendingCommentDelete(c.id)}
+                              aria-label="Delete this comment"
                               className="opacity-0 group-hover/c:opacity-100 p-0.5 rounded hover:bg-red-100 text-gray-400 hover:text-red-600 ml-auto">
                               <Trash2 className="w-2.5 h-2.5" />
                             </button>
                           )}
                         </div>
-                        <p className="text-[11px] text-gray-700 leading-snug dark:text-gray-300">{c.comment_text}</p>
+                        <p className={detail
+                          ? 'whitespace-pre-wrap text-[12px] leading-relaxed text-gray-700 dark:text-gray-300'
+                          : 'text-[11px] text-gray-700 leading-snug dark:text-gray-300'}>{c.comment_text}</p>
                       </div>
                     </div>
                   )
@@ -430,17 +828,21 @@ export function OperationalItemCard({
             {addingComment && (
               <div>
                 <textarea
-                  value={commentText} onChange={e => setCommentText(e.target.value)}
+                  value={commentText} onChange={e => editComment(e.target.value)}
                   placeholder="Add a comment..."
-                  className="w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none dark:border-gray-700"
-                  rows={2} autoFocus
+                  className={detail
+                    ? 'w-full rounded border border-gray-200 px-2 py-1.5 text-[12px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-gray-400 dark:border-gray-700 dark:bg-gray-900'
+                    : 'w-full text-[11px] px-2 py-1.5 border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-gray-400 resize-none dark:border-gray-700'}
+                  rows={detail ? 3 : 2} autoFocus
                   onKeyDown={e => {
                     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (commentText.trim()) addCommentM.mutate(commentText.trim()) }
-                    if (e.key === 'Escape') { setAddingComment(false); setCommentText('') }
+                    /* The draft is kept, so Escape closes the composer
+                       without taking the message with it. */
+                    if (e.key === 'Escape') setAddingComment(false)
                   }}
                 />
                 <div className="flex items-center justify-end gap-2 mt-1">
-                  <button onClick={() => { setAddingComment(false); setCommentText('') }} className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Cancel</button>
+                  <button onClick={() => { clearDraft(commentDraftKey); setCommentText(''); setAddingComment(false) }} className="text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Discard</button>
                   <button
                     onClick={() => { if (commentText.trim()) addCommentM.mutate(commentText.trim()) }}
                     disabled={!commentText.trim()}
@@ -453,14 +855,33 @@ export function OperationalItemCard({
             )}
           </div>
 
-          {/* Completion footer */}
-          {item.completedAt && (
+          </div>{/* ── end supporting pair ───────────────────────────── */}
+
+          {/* Completion footer — the detail header already states this, and
+              saying it twice on one surface is what the header replaced. */}
+          {item.completedAt && !detail && (
             <div className="px-3 py-1.5 border-t border-gray-100 bg-gray-50/50 text-[10px] text-gray-400 dark:border-gray-800">
               Completed by {userName(item.completedByUser)} · {new Date(item.completedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
             </div>
           )}
         </div>
       )}
+
+      {/* Destructive confirmation, in the product's own dialog. States
+          what goes and that it does not come back; Cancel mutates
+          nothing, and neither path touches the notes or comment drafts. */}
+      <ConfirmDialog
+        isOpen={pendingCommentDelete !== null}
+        onClose={() => setPendingCommentDelete(null)}
+        onConfirm={() => {
+          if (pendingCommentDelete) deleteCommentM.mutate(pendingCommentDelete)
+          setPendingCommentDelete(null)
+        }}
+        title="Delete this comment?"
+        message="Your comment will be removed from this requirement for everyone. This cannot be undone."
+        confirmText="Delete comment"
+        isLoading={deleteCommentM.isPending}
+      />
     </div>
   )
 }

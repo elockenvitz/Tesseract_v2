@@ -256,12 +256,54 @@ describe('where graduation is written', () => {
     The same treatment the repo already gave the repo-wide security scans in
     10e639bb, for the same reason.
   */
-  it('only the mission marks it', () => {
+  /*
+   * ── Two writers now, and the list is still the subject ────────────────
+   *
+   * This read `toEqual(['hooks/usePilotMission.ts'])`. The point was never
+   * the count: it was that `graduated` has ONE meaning, so nothing may set it
+   * as a side effect of something else. Five surfaces gate on
+   * `effectiveIsPilot`, which is `hasGraduated ? false : isPilot`, and a
+   * stray writer silently opens all of them.
+   *
+   * The second writer is a reader saying they do not need the guide.
+   * `PilotSkipOnboarding` is the control on both pilot homes, and it writes
+   * this key for the same reason the mission does: it is already the
+   * definition of "this pilot's access is wide", and a parallel flag beside
+   * it would be a second definition that the surfaces reading the first one
+   * could disagree with.
+   *
+   * So the assertion stays exhaustive and the list stays short. A third entry
+   * appearing here is the defect, whatever its reason -- and so is either of
+   * these two disappearing, because that would mean the flow has no way to
+   * finish or no way to be skipped.
+   */
+  it('is written by the mission and by the reader skipping it, and by nothing else', () => {
     const writers = walk(root)
       .filter(f => /\bmark\w*\(\s*['"]graduated['"]\s*\)/.test(readFileSync(f, 'utf8')))
       .map(f => path.relative(root, f).replace(/\\/g, '/'))
-    expect(writers).toEqual(['hooks/usePilotMission.ts'])
+      .sort()
+    expect(writers).toEqual([
+      'components/pilot/PilotSkipOnboarding.tsx',
+      'hooks/usePilotMission.ts',
+    ])
   }, 30_000)
+
+  /*
+   * And the skip acknowledges the celebration in the same gesture.
+   *
+   * `PilotGraduationModal` opens on `hasGraduated` alone, deliberately, so
+   * that the celebration and the thing it celebrates cannot disagree. Writing
+   * only `graduated` from a skip therefore pops a trophy congratulating the
+   * reader on a loop they declined, over the Dashboard they just asked to be
+   * let into. Pinned here rather than only in the component's own suite,
+   * because this is the file that knows what writing this key costs.
+   */
+  it('is accompanied by the acknowledgement when the reader skips', () => {
+    const skip = readFileSync(path.join(root, 'components/pilot/PilotSkipOnboarding.tsx'), 'utf8')
+    const at = skip.indexOf("mark('graduated')")
+    expect(at).toBeGreaterThan(-1)
+    expect(skip.slice(at, at + 120)).toContain("mark('graduation_celebrated')")
+  })
 
   it('and only once the mission is complete', () => {
     const hook = readFileSync(path.join(root, 'hooks/usePilotMission.ts'), 'utf8')

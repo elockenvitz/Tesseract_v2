@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import React from 'react'
 
@@ -29,6 +29,10 @@ const stub = vi.hoisted(() => (lens: string) => (props: any) =>
       'data-selected': props.focusObjectId ?? '',
       'data-book': props.selectedPortfolioId ?? '',
       'data-issue': props.issue ?? '',
+      // What a cross-lens arrival hands the lens it lands on. Distinct from
+      // `data-selected`, which is the deck.
+      'data-idea': props.selectedIdeaId ?? '',
+      'data-asset': props.selectedAssetId ?? '',
     },
     $$typeof: Symbol.for('react.element'),
   }) as any)
@@ -49,6 +53,9 @@ const capture = (e: Event) => tabEvents.push(e as CustomEvent)
 
 beforeEach(() => {
   tabEvents.length = 0
+  // The lens AND the expanded card are both session-scoped now, so a test
+  // that expands a card would otherwise hand the next test a restored deck.
+  try { sessionStorage.clear() } catch { /* jsdom always has it; be safe */ }
   window.addEventListener('decision-engine-action', capture)
 })
 afterEach(() => window.removeEventListener('decision-engine-action', capture))
@@ -76,12 +83,115 @@ describe('one Dashboard, five lenses', () => {
   })
 })
 
+/**
+ * Crossing lenses is a move inside this tab.
+ *
+ * The defect, measured in the running app: on the Decisions lens, "Open the
+ * idea" opened a SECOND Dashboard tab. Both lenses are this one shell, so the
+ * reader's words were exact: "it opens another tab that shows the same
+ * workspace screen."
+ *
+ * The cause was a pair of dispatches fired unconditionally -- a tab descriptor
+ * for `ideas-v2` plus the typed `openIdea` event -- on the theory that the
+ * typed one would be handled when a workspace was mounted and the descriptor
+ * would be a harmless no-op otherwise. Only `IdeasWorkspace` subscribed, and
+ * this shell renders ONE lens at a time, so from Decisions the typed event had
+ * no listener and the descriptor fired every time.
+ *
+ * The shell is what knows a lens exists to switch to, so the shell is what
+ * listens.
+ */
+describe('a cross-lens request is answered in place, not in a new tab', () => {
+  it('switches to Ideas and hands it the idea', async () => {
+    const { openIdea } = await import('../../lib/desktop-ideas/navigate')
+    render(<DashboardShell initialLens="decisions" />)
+    expect(screen.getByTestId('lens-decisions')).toBeInTheDocument()
+
+    let claimed = false
+    await act(async () => { claimed = openIdea({ ideaId: 'tq-9', issue: 'Awaiting decision' }) })
+
+    // Claimed, so the caller knows not to open a tab.
+    expect(claimed).toBe(true)
+    const ideas = screen.getByTestId('lens-ideas')
+    expect(ideas).toHaveAttribute('data-idea', 'tq-9')
+    expect(ideas).toHaveAttribute('data-issue', 'Awaiting decision')
+    expect(screen.queryByTestId('lens-decisions')).not.toBeInTheDocument()
+    // The whole point: no tab.
+    expect(tabEvents).toHaveLength(0)
+  })
+
+  it('switches to Research and hands it the asset', async () => {
+    const { openResearch } = await import('../../lib/desktop-research/navigate')
+    render(<DashboardShell initialLens="portfolio" selectedPortfolioId="p1" />)
+
+    let claimed = false
+    await act(async () => { claimed = openResearch({ assetId: 'a-orcl', issue: 'No thesis on file' }) })
+
+    expect(claimed).toBe(true)
+    expect(screen.getByTestId('lens-research')).toHaveAttribute('data-asset', 'a-orcl')
+    expect(tabEvents).toHaveLength(0)
+  })
+
+  it('does not let an arrival outlive the lens the reader leaves', async () => {
+    /*
+     * The arrival overrides the tab's own selection, so it has to end when
+     * the reader navigates by hand. Otherwise coming back to Ideas later
+     * re-opens an idea they finished with, and the AI subject chip keeps
+     * reading it -- the same staleness `onFocusConsumed` exists to prevent
+     * for the tab payload.
+     */
+    const user = userEvent.setup()
+    const { openIdea } = await import('../../lib/desktop-ideas/navigate')
+    render(<DashboardShell initialLens="decisions" />)
+    await act(async () => { openIdea({ ideaId: 'tq-9' }) })
+    expect(screen.getByTestId('lens-ideas')).toHaveAttribute('data-idea', 'tq-9')
+
+    await user.click(screen.getByRole('button', { name: /Research/i }))
+    await user.click(screen.getByRole('button', { name: /Ideas/i }))
+    expect(screen.getByTestId('lens-ideas')).toHaveAttribute('data-idea', '')
+  })
+})
+
 const card = (id: string, over: Partial<RailCard> = {}): RailCard => ({
   id, workspaceLens: 'research', objectType: 'asset',
   symbol: id.toUpperCase(), reason: 'Thesis may be stale',
   figure: '247d', figureLabel: 'since the case', detail: 'Nobody has revisited it.',
   ...over,
 })
+
+/**
+ * An arrival into Portfolio, used by the deck's selection and rotation cases.
+ *
+ * It no longer carries the deck HEADER cases: Portfolio draws its own
+ * identity row and was printing the deck's above it, saying "JNJ / No thesis
+ * on file / 28.2% of the book in JNJ, with no thesis behind it." and then
+ * that sentence again, verbatim, 40px down. It yields now (`ownHeader`), so
+ * the header rules moved to `intoIdeas` below.
+ */
+const intoPortfolio = (objectId = 'a-tgt', rail = [card('a-amzn', { workspaceLens: 'portfolio' })]) =>
+  openDashboardFocus({
+    target: {
+      originLens: 'today', workspaceLens: 'portfolio', objectType: 'asset',
+      objectId, symbol: 'TGT', issue: 'Thesis may be stale', origin: 'today',
+    },
+    backLabel: 'Today',
+    rail,
+  })
+
+/**
+ * The same arrival, into the one lens that does NOT draw its own identity
+ * header and so still relies on the deck's. This is where the deck-header
+ * rules are tested.
+ */
+const intoIdeas = (objectId = 'a-tgt', rail = [card('a-amzn', { workspaceLens: 'ideas' })]) =>
+  openDashboardFocus({
+    target: {
+      originLens: 'today', workspaceLens: 'ideas', objectType: 'asset',
+      objectId, symbol: 'TGT', issue: 'Thesis may be stale', origin: 'today',
+    },
+    backLabel: 'Today',
+    rail,
+  })
 
 const fromToday = (objectId = 'a-tgt', rail = [card('a-amzn'), card('a-wmt')]) =>
   openDashboardFocus({
@@ -121,6 +231,54 @@ describe('expanding a card, in this tab', () => {
     expect(screen.getByTestId('workspace-back')).not.toHaveTextContent(/research/i)
   })
 
+  it('still has the card open after the reader leaves the tab and comes back', async () => {
+    /*
+     * The workspace's own primary action for most states opens the Asset
+     * tab. Coming back unmounted and remounted this shell, and `deck` was
+     * component state -- so every hop out to write cost the reader the card
+     * they were working and put them back at the top of the Today deck.
+     *
+     * Unmount/remount is exactly what the tab switch does, so that is what
+     * this asserts: no event is replayed, the card comes back from the
+     * session.
+     */
+    const first = render(<DashboardShell />)
+    await React.act(async () => { fromToday('a-amzn') })
+    expect(screen.getByTestId('lens-research')).toHaveAttribute('data-selected', 'a-amzn')
+    first.unmount()
+
+    render(<DashboardShell />)
+    expect(screen.getByTestId('lens-research')).toHaveAttribute('data-selected', 'a-amzn')
+    expect(screen.getByTestId('workspace-back')).toHaveTextContent('Today')
+  })
+
+  it('does not bring the card back after the reader closed it', async () => {
+    // The other half of the rule: leaving deliberately is remembered just as
+    // accurately as staying. Without this, Back would be undone by a tab
+    // switch -- a worse bug than the one above.
+    const user = userEvent.setup()
+    const first = render(<DashboardShell />)
+    await React.act(async () => { fromToday('a-amzn') })
+    await user.click(screen.getByTestId('workspace-back'))
+    first.unmount()
+
+    render(<DashboardShell />)
+    expect(screen.queryByTestId('dashboard-focus')).not.toBeInTheDocument()
+    expect(screen.getByTestId('lens-today')).toBeInTheDocument()
+  })
+
+  it('never lets a remembered card override a deep link', async () => {
+    // A v2 surface mounts this shell with its own lens. That is an explicit
+    // destination, and a card remembered from browsing must not take it.
+    const first = render(<DashboardShell />)
+    await React.act(async () => { fromToday('a-amzn') })
+    first.unmount()
+
+    render(<DashboardShell initialLens="portfolio" selectedPortfolioId="p1" />)
+    expect(screen.queryByTestId('dashboard-focus')).not.toBeInTheDocument()
+    expect(screen.getByTestId('lens-portfolio')).toHaveAttribute('data-book', 'p1')
+  })
+
   it('returns to the deck it came from', async () => {
     const user = userEvent.setup()
     render(<DashboardShell />)
@@ -137,9 +295,20 @@ describe('expanding a card, in this tab', () => {
     // about an asset, while the finding -- and the object's own name until the
     // workspace loaded -- did not survive the click. The rail listed the three
     // things the reader did not choose; nothing named the one they did.
+    /*
+     * Opened into IDEAS, which was PORTFOLIO, which was research.
+     *
+     * The rule is unchanged -- the surface answering a click must name the
+     * object that was clicked -- but who draws that name depends on the lens,
+     * and the list of lenses drawing their own identity row has grown each
+     * time one was measured against the deck's. Research, then Decisions,
+     * then Portfolio, each of which was printing the deck's header and then
+     * repeating it. Ideas is the one left that relies on the deck's, so it
+     * is where the deck-header rules are asserted.
+     */
     render(<DashboardShell />)
     await React.act(async () => {
-      fromToday('a-tgt', [card('a-tgt'), card('a-amzn')])
+      intoIdeas('a-tgt', [card('a-tgt', { workspaceLens: 'ideas' })])
     })
 
     const header = screen.getByTestId('focus-header')
@@ -148,14 +317,83 @@ describe('expanding a card, in this tab', () => {
     expect(header).toHaveTextContent('Nobody has revisited it.')
   })
 
+  it('yields the header to a lens that draws its own', async () => {
+    /*
+     * The two-ticker bug. Opening AMZN from Today drew the deck's header --
+     * "AMZN / THESIS MAY BE STALE / <claim>" -- and then, 75px below,
+     * Research's own "AMZN / Amazon.com, Inc." with its own figures and its
+     * own sentence saying the same thing in different words.
+     */
+    render(<DashboardShell />)
+    await React.act(async () => { fromToday('a-tgt', [card('a-amzn')]) })
+
+    expect(screen.getByTestId('lens-research')).toBeInTheDocument()
+    expect(screen.queryByTestId('focus-header')).not.toBeInTheDocument()
+  })
+
+  it('yields it to Decisions too, which also draws one', async () => {
+    /*
+     * The same bug, in the lens `ownHeader` was never applied to. Measured
+     * live: the deck printed "NKE / sell · Awaiting decision / The Barbero
+     * Fund / Mar 13, 2026" and `DecisionDetailPane` printed the same four
+     * facts again 40px below, the second at 30px against the deck's 22.
+     *
+     * Decisions is safe to yield in a way Portfolio is not: nothing raises a
+     * focus INTENT toward this lens -- only Today's and Ideas' tiles carry
+     * one, and both open Research -- so the deck's header is carrying nothing
+     * here that the pane does not already say.
+     */
+    render(<DashboardShell />)
+    await React.act(async () => {
+      openDashboardFocus({
+        target: {
+          originLens: 'decisions', workspaceLens: 'decisions', objectType: 'decision',
+          objectId: 'dec-1', symbol: 'NKE', issue: 'Awaiting decision', origin: 'decisions',
+        },
+        backLabel: 'Decisions',
+        rail: [card('dec-1', { workspaceLens: 'decisions', objectType: 'decision' })],
+      })
+    })
+
+    // Scoped to the expanded region: opening a Decisions card from the
+    // Decisions lens leaves the browse lens of the same name mounted behind
+    // it, so an unscoped query matches two.
+    const focus = screen.getByTestId('dashboard-focus')
+    expect(within(focus).getByTestId('lens-decisions')).toBeInTheDocument()
+    expect(within(focus).queryByTestId('focus-header')).not.toBeInTheDocument()
+  })
+
+  it('yields it to Portfolio, which was saying the same sentence twice', async () => {
+    /*
+     * Measured live: the deck printed "JNJ / No thesis on file / 28.2% of the
+     * book in JNJ, with no thesis behind it." and `PositionDetailPane`
+     * printed that sentence again, verbatim, 40px below, under a 30px ticker.
+     *
+     * What this gives up is the focus INTENT chip, which only the deck header
+     * renders. `PortfolioWorkspace` is not passed the intent and does nothing
+     * with it, so the chip named a mode the surface never entered.
+     */
+    render(<DashboardShell />)
+    await React.act(async () => {
+      intoPortfolio('a-tgt', [card('a-tgt', { workspaceLens: 'portfolio' })])
+    })
+
+    const focus = screen.getByTestId('dashboard-focus')
+    expect(within(focus).getByTestId('lens-portfolio')).toBeInTheDocument()
+    expect(within(focus).queryByTestId('focus-header')).not.toBeInTheDocument()
+  })
+
   it('finds the expanded card by id, never by symbol', async () => {
     // Two findings can concern one ticker. Matching on symbol would collapse
     // them and put the wrong claim above the workspace.
     render(<DashboardShell />)
     await React.act(async () => {
-      fromToday('a-two', [
-        { ...card('a-one'), symbol: 'DUP', detail: 'The first finding.' },
-        { ...card('a-two'), symbol: 'DUP', detail: 'The second finding.' },
+      // Ideas, for the same reason as the case above: it is the lens whose
+      // pane does not draw its own identity, so the deck's header is here
+      // to be read.
+      intoIdeas('a-two', [
+        { ...card('a-one', { workspaceLens: 'ideas' }), symbol: 'DUP', detail: 'The first finding.' },
+        { ...card('a-two', { workspaceLens: 'ideas' }), symbol: 'DUP', detail: 'The second finding.' },
       ])
     })
     expect(screen.getByTestId('focus-header')).toHaveTextContent('The second finding.')
@@ -409,11 +647,19 @@ describe('the rail is a deck, not a sidebar', () => {
   })
 
   it('keeps its column at laptop width', () => {
-    // The rail is core to the interaction, not decoration: hiding it below
-    // 2xl would remove the deck on the viewport most readers actually use.
+    /*
+     * The rail is core to the interaction, not decoration: hiding it below
+     * 2xl would remove the deck on the viewport most readers actually use.
+     *
+     * Was `toContain('lg:block')`. That named the display utility rather
+     * than the breakpoint, so it failed the day the rail became a flex
+     * column to pin its back control — a change that does not touch what
+     * this case is about. Rewritten to assert the breakpoint the rail
+     * appears at, whatever it is laid out as.
+     */
     const rail = readFileSync(join(process.cwd(), 'src/components/dashboard/WorkDeck.tsx'), 'utf8')
-    expect(rail).toContain('lg:block')
-    expect(rail).not.toContain('2xl:block')
+    expect(rail).toMatch(/\blg:(block|flex|grid)\b/)
+    expect(rail).not.toMatch(/\b2xl:(block|flex|grid)\b/)
   })
 
   it('carries a reason and a figure, not four text rows', async () => {

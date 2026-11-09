@@ -4,7 +4,7 @@ import {
   composeExplore, dedupeExplore, freshness,
   materiality, repulsion, scoreExplore,
 } from '../explore-compose'
-import { aggregatesFor, exploreSymbols } from '../explore-adapters'
+import { aggregatesFor, exploreSymbols, insightsToExplore } from '../explore-adapters'
 import type { ExploreItem } from '../explore-item'
 import { EXPLORE_FIXTURE, NOW } from './explore-fixture'
 
@@ -223,6 +223,43 @@ describe('taxonomy', () => {
   })
 })
 
+describe('a research insight with no exposure still says something', () => {
+  /**
+   * The exposure clause wins where it exists: "4.2% of Large Cap Growth" is
+   * what makes a documentation gap urgent, and the body repeats what the
+   * headline implies.
+   */
+  it('prefers the exposure line when the name is held', () => {
+    const [item] = insightsToExplore([{
+      kind: 'no_thesis', assetId: 'a1', symbol: 'IBM', headline: 'IBM has no investment thesis',
+      body: 'None of thesis, where different, risks to thesis has been written.',
+      portfolioName: 'Large Cap Growth', weightPct: 4.2,
+    }] as never)
+    expect(item.context).toBe('4.2% of Large Cap Growth')
+  })
+
+  /**
+   * THE case. An unheld name has no exposure clause, and before this the tile
+   * carried a headline and an Open button and nothing else -- measured live on
+   * IBM, BKNG and TGT once the incoherent prompt was removed.
+   */
+  it('falls back to the producer’s own body when nobody holds it', () => {
+    const [item] = insightsToExplore([{
+      kind: 'no_thesis', assetId: 'a1', symbol: 'IBM', headline: 'IBM has no investment thesis',
+      body: 'None of thesis, where different, risks to thesis has been written.',
+    }] as never)
+    expect(item.context).toBe('None of thesis, where different, risks to thesis has been written.')
+  })
+
+  /** And claims nothing when the producer gave it nothing. */
+  it.each([undefined, '', '   '])('adds nothing for a body of %o', body => {
+    const [item] = insightsToExplore([{
+      kind: 'no_thesis', assetId: 'a1', symbol: 'IBM', headline: 'IBM has no investment thesis', body,
+    }] as never)
+    expect(item.context).toBeUndefined()
+  })
+})
+
 describe('aggregates', () => {
   it('counts only what is actually in hand', () => {
     const aggs = aggregatesFor(EXPLORE_FIXTURE, NOW)
@@ -244,6 +281,62 @@ describe('aggregates', () => {
     for (const a of aggregatesFor(EXPLORE_FIXTURE, NOW)) {
       expect(a.destination.kind).toBe('filter')
     }
+  })
+
+  /**
+   * ── The names behind the count ──────────────────────────────────────────
+   *
+   * MEASURED live at 1920x889: the Ideas aggregate rendered at `large` --
+   * 418px, no picture, one line of text, one button. An aggregate carried a
+   * title and a count and nothing else, so `exploreVisualFor` correctly
+   * resolved `none` and the tile had a sentence to fill a card the size of a
+   * chart.
+   *
+   * A count is the least informative form of what an aggregate knows. It
+   * stands for real rows, those rows have names, and the names let a reader
+   * see whether any of them is theirs before deciding to open the filter.
+   */
+  const recent = (category: string, symbols: (string | null)[]) =>
+    symbols.map((symbol, n) => ({
+      id: `x${n}`, dedupeKey: `x${n}`, category, subtype: 'signal',
+      title: `t${n}`, symbol, occurredAt: new Date(NOW - 86_400_000).toISOString(),
+      destination: { kind: 'action', action: 'open_asset' }, importance: 0.5,
+    })) as never
+
+  it('names the assets it stands for', () => {
+    const [agg] = aggregatesFor(recent('ideas', ['AAPL', 'MSFT', 'NVDA']), NOW)
+    expect(agg.context).toBe('AAPL, MSFT and NVDA')
+  })
+
+  /** Deduped: one asset can contribute several rows, and "AAPL and AAPL" is a bug. */
+  it('names each asset once', () => {
+    const [agg] = aggregatesFor(recent('ideas', ['AAPL', 'AAPL', 'MSFT', 'AAPL']), NOW)
+    expect(agg.context).toBe('AAPL and MSFT')
+  })
+
+  /** Capped, with the remainder COUNTED rather than dropped: a partial line says so. */
+  it('counts the names it did not print', () => {
+    const [agg] = aggregatesFor(recent('ideas', ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMZN']), NOW)
+    expect(agg.context).toBe('AAPL, MSFT and NVDA, and 2 more')
+  })
+
+  /** A row with no symbol contributes nothing rather than a gap in the list. */
+  it('skips a member with no symbol', () => {
+    const [agg] = aggregatesFor(recent('ideas', ['AAPL', null, 'MSFT']), NOW)
+    expect(agg.context).toBe('AAPL and MSFT')
+  })
+
+  /** And says nothing at all rather than an empty sentence. */
+  it('says nothing when no member has a symbol', () => {
+    const [agg] = aggregatesFor(recent('ideas', [null, null, null]), NOW)
+    expect(agg.context).toBeUndefined()
+    // The tile is still produced: the count is real whether or not it can name.
+    expect(agg.count).toBe(3)
+  })
+
+  it('carries the count as a metric too', () => {
+    const [agg] = aggregatesFor(recent('ideas', ['AAPL', 'MSFT', 'NVDA']), NOW)
+    expect(agg.metric).toEqual({ value: '3', label: 'ideas', direction: 'neutral' })
   })
 })
 

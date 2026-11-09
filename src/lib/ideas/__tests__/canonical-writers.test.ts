@@ -73,23 +73,37 @@ function walk(dir: string, out: string[] = []): string[] {
  */
 const STAGE_ASSIGNMENT = /(?<!_)\bstage:\s*['"`]([a-z_]+)['"`]/g
 
-describe('no live writer emits a legacy trade_stage value', () => {
-  const files = walk(SRC)
+/**
+ * Every source file, walked and READ once, at module scope.
+ *
+ * The walk was already hoisted; the ~580 `readFileSync` calls were not — they
+ * ran inside the rule below. Alone that is fast. Under the parallel guard,
+ * with 500 test files competing for the same disk, it took 6.6s and tripped
+ * vitest's 5s default, so this gate reported `Test timed out` rather than a
+ * verdict on the codebase.
+ *
+ * A gate that goes red for being slow is indistinguishable from one that goes
+ * red for finding something. Reading at module scope moves the I/O into
+ * collection, where no per-test timeout applies.
+ */
+const SOURCES = walk(SRC).map(f => ({
+  rel: relative(SRC, f).replace(/\\/g, '/'),
+  text: readFileSync(f, 'utf8'),
+}))
 
+describe('no live writer emits a legacy trade_stage value', () => {
   it('scans a meaningful number of files', () => {
     // Guards the guard: a broken walk would make every assertion below pass
     // by examining nothing.
-    expect(files.length).toBeGreaterThan(500)
+    expect(SOURCES.length).toBeGreaterThan(500)
   })
 
   it('finds no legacy stage literal outside the allowed list', () => {
     const offenders: string[] = []
 
-    for (const file of files) {
-      const rel = relative(SRC, file).replace(/\\/g, '/')
+    for (const { rel, text: src } of SOURCES) {
       if (ALLOWED[rel]) continue
 
-      const src = readFileSync(file, 'utf8')
       for (const m of src.matchAll(STAGE_ASSIGNMENT)) {
         if (LEGACY.includes(m[1])) {
           const line = src.slice(0, m.index).split('\n').length

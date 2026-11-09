@@ -246,6 +246,33 @@ export const STATE_LABEL: Record<ResearchState, string> = {
 }
 
 /**
+ * What each state MEANS, in severity.
+ *
+ * It lived in `ResearchWorkspace`, which was fine while the rail was the only
+ * thing that badged a subject. The detail header badges one too now -- it
+ * absorbed the deck's header rather than letting a second ticker row carry
+ * the reason -- and a tone map copied into a second component is how one fact
+ * ends up with two severities on two screens. That is the exact failure the
+ * note below records, so the map moves to the model both views read.
+ *
+ * `no-thesis` was rose in Research while Portfolio painted the identical
+ * condition amber. A case nobody has written is work outstanding, not a
+ * framework that has broken, so it is `review` on both.
+ *
+ * `current` is `neutral`, not emerald: a green badge on every healthy name is
+ * decoration that dilutes the two tones that carry meaning.
+ */
+export const STATE_TONE: Record<ResearchState, 'critical' | 'review' | 'info' | 'neutral'> = {
+  'evidence-since-review': 'review',
+  'moved-since-review': 'review',
+  'no-thesis': 'review',
+  'incomplete-thesis': 'review',
+  stale: 'review',
+  thin: 'neutral',
+  current: 'neutral',
+}
+
+/**
  * The one-line investment reason, never a bare age.
  *
  * Each branch is built from real counts and real dates. Where a price move is

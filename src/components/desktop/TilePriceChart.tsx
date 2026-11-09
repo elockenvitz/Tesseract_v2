@@ -31,6 +31,29 @@ import { clsx } from 'clsx'
 import { anchoredWindow } from '../../lib/market-data/anchored-window'
 import { rangesFor, type RangeKey } from '../../lib/market-data/price-ranges'
 
+/**
+ * Everything in the chart block that is not the plot.
+ *
+ * Measured on a live Research tile rather than estimated: the chip row is
+ * 16px plus its 4px margin, the date axis 8px plus 2, and the readout row
+ * 27px plus 4. A floor that forgets any of them puts the plot's own minimum
+ * past the edge of the slot, which is how the date axis ended up printed on
+ * top of the percentage.
+ */
+const CHROME = 61
+
+/**
+ * How far past its asked-for `height` a filled plot may be stretched by the
+ * box it is measured in, before the bound kicks in.
+ *
+ * Three, because the widest legitimate gap measured on the live field is a
+ * compact tile (`height=64`) in a row sized by a `large` neighbour, which
+ * hands it about 100px -- a factor of 1.6. Three leaves that untouched and
+ * still caps a runaway at a height a reader could see rather than a page
+ * that grows without limit. See `H` below for why the bound is kept at all.
+ */
+const CEILING = 3
+
 /** One horizon chip. A real button, because the shelf's verbs are too. */
 function RangeChip({ label, on, onPick }: { label: string; on: boolean; onPick: () => void }) {
   return (
@@ -222,8 +245,32 @@ export function TilePriceChart({
    * Fill still does its job -- a chart in a short box shrinks to fit -- it
    * simply cannot inflate the box it is measuring.
    */
+  /*
+   * ── The ceiling is a safety net, not a size ──────────────────────────────
+   *
+   * This read `Math.min(height, …)`, so `height` was the floor (through
+   * `minHeight` on the block) AND the ceiling. One number doing both means a
+   * card that hands the chart MORE room than it asked for cannot use it.
+   *
+   * Measured on the Research field at 1920x889: a compact tile passes
+   * `height=64`, its chart block ended 13px above the bottom of the card with
+   * the plot pinned at 64px, while the `large` tiles in the row above -- same
+   * component, same mode, only a roomier `height` of 160 -- drew 85-100px
+   * plots from their measured box. The reported symptom was the compacts
+   * looking "squished" next to them, and the cause was the ceiling binding,
+   * not the floor.
+   *
+   * The ceiling still has a job. It is the second of two guards against the
+   * growth loop (the first is the SVG being `absolute inset-0`, which keeps
+   * the drawing out of its parent's measurement) and it is kept because
+   * either alone is fragile -- if some ancestor reintroduces a content-driven
+   * height, the ratchet is bounded rather than unbounded.
+   *
+   * So it becomes what it is: a bound, set well clear of any height a tile
+   * can legitimately give, rather than the plot's intended size.
+   */
   const H = fill
-    ? Math.min(height, Math.max(56, box.h > 0 ? box.h : height))
+    ? Math.min(height * CEILING, Math.max(56, box.h > 0 ? box.h : height))
     : height
   const min = Math.min(...w.series)
   const max = Math.max(...w.series)
@@ -298,7 +345,36 @@ export function TilePriceChart({
       data-reaches={w.reachesAnchor ? 'true' : 'false'}
       /* In fill mode the caption and chips keep their natural height and the
          plot row takes the rest, so the chart ends flush with the tile. */
-      className={fill ? 'flex h-full min-h-0 flex-col' : undefined}
+      /*
+        ── The floor the chart states for itself, once, at the top ───────────
+
+        56px of plot, 8px of date axis and a 27px readout do not fit in a 47px
+        slot, and a floor on any ONE of them makes that child overflow the
+        others instead of making the block ask for more room. It is stated
+        here, on the block, where the tile's own flex layout can satisfy it:
+        `min-height` on a flex item raises its hypothetical size, so the card
+        gives the chart its room and takes the difference from whatever else
+        was flexible.
+
+        ── Why it is `height`-derived and not a constant ─────────────────────
+
+        A flat 104px was tried and it is the wrong shape of answer. A tile's
+        height follows its CONTENT, so when the Research cards shed 92px of
+        restated text they did not hand that space to the chart -- the whole
+        card shrank from 452px to 259px and the plot went from 56px to 44.
+        Less text bought a smaller card, not a bigger chart, which is the
+        opposite of what the text was removed for.
+
+        `height` is the size the caller already says this chart deserves --
+        110 on a hero, 84 on a medium, 64 on a compact -- and in fill mode it
+        was being used only as a CEILING (`H = min(height, …)`), so a starved
+        slot could ignore it entirely in the other direction. Used as the
+        floor as well, it becomes what it reads as: the plot height this card
+        is asking for. CHROME is the fixed part around it -- the chip row, the
+        date axis and the readout -- measured rather than guessed.
+      */
+      className={fill ? 'flex h-full min-w-0 flex-col' : undefined}
+      style={fill ? { minHeight: height + CHROME } : undefined}
     >
       {/*
         ── The caption is a footer, not a heading ───────────────────────────
@@ -324,12 +400,25 @@ export function TilePriceChart({
         shell treats an unhandled click as "open this", and a control inside it
         has to say it is a control. Buttons, not a segmented div, because they
         are reached by keyboard like everything else on the shelf.
+
+        ── Why they sit right ───────────────────────────────────────────────
+
+        They were flush left, which is where the card's subject is: the
+        ticker, the claim and the state all start at the left edge, and the
+        chips started there too, reading as another line of what the card
+        says rather than as a control over the picture under them. On the
+        right they are plainly the chart's own knob -- the position
+        `PriceContext` already puts its identical row in (`ml-auto`), and the
+        one the rest of the block uses, since the caption and the percentage
+        read bottom-right under the plot. `justify-end` rather than a margin
+        so a narrow card that wraps the chips keeps every row aligned to the
+        same edge.
       */}
       <div
         data-testid="price-ranges"
         data-range={active}
         data-no-portal
-        className="mb-1 flex flex-wrap gap-1"
+        className="mb-1 flex flex-wrap justify-end gap-1"
       >
         {canSince && (
           <RangeChip
@@ -374,7 +463,37 @@ export function TilePriceChart({
           pixels every resize.
         */}
         <div className={clsx('flex min-w-0 flex-1 flex-col', fill && 'min-h-0')}>
-        <div ref={boxRef} className={clsx('relative min-w-0', fill && 'min-h-0 flex-1')}>
+        {/*
+          ── Where the floor went, and why it could not live here ────────────
+
+          In fill mode the plot is taken out of flow below, so this box's only
+          height comes from `flex-1` -- near zero where the row is short, and
+          a chart is not a chart at 4px. The floor was therefore a
+          `minHeight: 56` ON THIS BOX, which was wrong in a way that only
+          showed up on a starved card.
+
+          A minimum here cannot shrink. The plot column is `plot + date axis`,
+          so a 56px floor made the column 64px tall inside whatever slot the
+          tile gave it -- and the Research tiles were handing it FORTY-SEVEN.
+          The column overflowed its row by 17px, and the next sibling, the
+          "+30.1%" readout, is laid out after the ROW, not after the
+          overflowing content. So the date axis landed on top of the
+          percentage. Measured on PLTR: "May 3" at y=619 under a readout
+          starting at y=611, an 8px collision, on every tile whose chart slot
+          was under 64px.
+
+          The floor belongs to the WHOLE chart, where it can be satisfied by
+          the tile giving the block more room rather than by a child spilling
+          out of it -- see `min-h-[104px]` on the root. This box now takes
+          what `flex-1` gives it and clips, which is the correct behaviour for
+          a plot that has been taken out of flow: `H` still floors at 56 for
+          the viewBox, so the drawing stays readable while the window onto it
+          narrows.
+        */}
+        <div
+          ref={boxRef}
+          className={clsx('relative min-w-0 overflow-hidden', fill && 'min-h-0 flex-1')}
+        >
           <svg
             viewBox={`0 0 ${W} ${H}`}
             /*
@@ -393,11 +512,32 @@ export function TilePriceChart({
               one frame.
             */
             preserveAspectRatio="none"
-            className="w-full cursor-crosshair"
-            /* Percent in fill mode: an explicit pixel height here is content,
-               and content inside the very box being measured is the feedback
-               loop that made cards grow on every render. */
-            style={{ height: fill ? '100%' : H, display: 'block' }}
+            className={clsx('cursor-crosshair', fill ? 'absolute inset-0 h-full w-full' : 'w-full')}
+            /*
+              ── Out of flow in fill mode, not merely percentage-height ───────
+
+              This was `height: '100%'`, on the reasoning that a percentage is
+              not content and so cannot feed the box it is measured inside.
+              That is true only when the parent has a DEFINITE height. Here
+              the chain above is `min-h-0 flex-1` the whole way up with
+              nothing definite at the top, so `100%` resolves to `auto` -- and
+              an SVG sized `auto` falls back to its viewBox ASPECT RATIO.
+
+              The viewBox height is `H`, which is the measured box height. So
+              the chart drew itself at a height derived from the measurement,
+              that height was content, the box grew, the observer fired, and
+              `H` grew again. Measured on the Research field: the four
+              fill-mode tiles grew +1px per animation frame for 22 consecutive
+              frames on every switch into the lens -- the "charts slowly
+              increase in size" that was reported.
+
+              `absolute inset-0` is the fix the Ideas carousel needed for the
+              same reason, and it is worth stating plainly because the wrong
+              lesson is easy to draw: clipping and percentages govern
+              PAINTING, not intrinsic sizing. Only taking the element out of
+              flow removes it from its parent's measurement.
+            */
+            style={fill ? { display: 'block' } : { height: H, display: 'block' }}
             role="img"
             aria-label={`Price ${axisPrice(w.series[0])} to ${axisPrice(last)}, ${w.changePct.toFixed(1)} percent, ${axisDate(w.from)} to ${axisDate(w.to)}`}
             onPointerMove={(e) => {

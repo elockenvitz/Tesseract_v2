@@ -68,11 +68,39 @@ const A_YEAR_RISING: { date: Date; value: number }[] = Array.from({ length: 300 
   date: new Date(Date.now() - (299 - i) * 86_400_000),
   value: 100 + i * 0.08,
 }))
+/**
+ * A flat series ending at `price`, for cases about where spot sits.
+ *
+ * A tile's framework verdict is made against the LAST STORED CLOSE now, not
+ * against `portfolio_holdings.price` -- see `PositionFrame.mark` for the
+ * defect that closed: the book's price is whatever was in the file it was
+ * uploaded from, and on this project AAPL carried 175.50 from August 2025
+ * against a stored close of 330.32, so the lens called it below a bear case
+ * of 205 while the asset page called it above a bull case of 285.
+ *
+ * So a case that wants spot outside the written ladder has to say so in the
+ * series the tile draws. Flat rather than rising, so the distance outside the
+ * case and the six-month move beside it cannot be the same number and a
+ * passing assertion cannot be reading the wrong one.
+ */
+const FLAT_AT = (price: number): { date: Date; value: number }[] =>
+  Array.from({ length: 300 }, (_, i) => ({
+    date: new Date(Date.now() - (299 - i) * 86_400_000),
+    value: price,
+  }))
+
 /** Per test, so a case can say "this name has no stored closes". */
 let tileCloses: { date: Date; value: number }[] = A_YEAR_RISING
+/** Per test, so a case can say "the closes have not landed yet". */
+let closesPending = false
 
 vi.mock('../../hooks/useTileCloses', () => ({
   useTileCloses: () => ({ data: tileCloses, isLoading: false }),
+  /* The field's one batched read. Answers for every name with the same
+     series, so these tests see exactly what they saw when each tile fetched
+     its own -- the change under test is where the data comes from, not what
+     it is. */
+  useGalleryCloses: () => ({ map: { get: () => tileCloses }, pending: closesPending }),
 }))
 
 vi.mock('../../hooks/useDesktopPortfolio', () => ({
@@ -136,6 +164,7 @@ beforeEach(() => {
   rowsByBook = {}
   frames = {}
   tileCloses = A_YEAR_RISING
+  closesPending = false
   detail = { sections: [], alsoHeldIn: [] }
   bookRequestedFor.length = 0
   detailRequestedFor.length = 0
@@ -258,6 +287,23 @@ describe('the scan leads with the gap, not the holding', () => {
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     expect(screen.getByText(/no holdings on record/)).toBeInTheDocument()
   })
+
+  /**
+   * The grid waits for the prices, because the prices decide the ORDER.
+   *
+   * A tile's framework verdict is made against the last stored close, and
+   * `tierOf` ranks the book by that verdict. Painting before the closes land
+   * would order the book by the upload's prices and then re-order it under
+   * the reader's cursor a moment later -- the same reflow the frames gate
+   * already exists to prevent, now with the rows moving as well as growing.
+   */
+  it('holds the one placeholder until the prices have landed', () => {
+    closesPending = true
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 100 })] }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    expect(screen.queryByTestId('portfolio-lens')).not.toBeInTheDocument()
+    expect(screen.queryAllByTestId('position-tile')).toHaveLength(0)
+  })
 })
 
 describe('a position expands into the deck, in place', () => {
@@ -288,6 +334,128 @@ describe('a position expands into the deck, in place', () => {
     expect(req.target.portfolioId).toBe('p1')
     // Not "Portfolio": the reader returns to a named book.
     expect(req.backLabel).toBe('Large Cap Growth')
+  })
+
+  /*
+   * ── One press, one destination ───────────────────────────────────────────
+   *
+   * A host that puts the workspace beside the book passes `onOpenPosition`.
+   * The event seam is GLOBAL -- every shell mounted at the time hears it --
+   * and the product now has two Dashboard shells, so a lens that both called
+   * the host and dispatched would open a holding in the shell the reader is
+   * looking at and expand a card in the one they are not. Nobody would see
+   * the second one, and nobody could explain it from the screen.
+   *
+   * So these two cases are a pair: the handler gets the descriptor, and the
+   * dispatch does not happen. Either on its own passes the broken version.
+   */
+  it('hands the holding to the host that asked for it', async () => {
+    const user = userEvent.setup()
+    const onOpenPosition = vi.fn()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" onOpenPosition={onOpenPosition} />)
+    await user.click(screen.getAllByTestId('position-tile')[0])
+
+    expect(onOpenPosition).toHaveBeenCalledTimes(1)
+    /* The SAME descriptor the deck is given, not a second shape for one
+       fact -- so the two destinations can never disagree about what was
+       opened. */
+    const t = onOpenPosition.mock.calls[0][0]
+    expect(t.objectId).toBe('a-1')
+    expect(t.originLens).toBe('portfolio')
+    expect(t.portfolioId).toBe('p1')
+  })
+
+  /**
+   * The card and the workspace it opens name ONE side of the case.
+   *
+   * ── The report ──────────────────────────────────────────────────────────
+   *
+   * "I clicked on below bear case card for AAPL in portfolio and when I open
+   * the workspace it says above bull case."
+   *
+   * Both were reading a real price. They were reading DIFFERENT real prices:
+   * the tile took `portfolio_holdings.price` -- 175.50, the price in the file
+   * the book was uploaded from in August 2025 -- and the asset page took the
+   * newest stored close, 330.32. Against a written ladder of bear 205 / bull
+   * 285 the first is below the bear and the second is above the bull, so the
+   * two surfaces stated opposite verdicts one click apart.
+   *
+   * The fixture is those numbers. What is asserted is agreement: the
+   * eyebrow, the figures row and the descriptor the host is handed all say
+   * the same thing, and it is the thing the market says.
+   */
+  it('names the same break on the card and in the descriptor it hands the host', async () => {
+    const user = userEvent.setup()
+    tileCloses = FLAT_AT(330.32)
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAPL', shares: 100, price: 175.5 })] }
+    frames = {
+      'a-1': {
+        ...EMPTY_FRAME,
+        ladder: ladder([['Bear', 205], ['Bull', 285]]),
+        thesisUpdatedAt: daysAgo(40), daysSinceReview: 40,
+      },
+    }
+    const onOpenPosition = vi.fn()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" onOpenPosition={onOpenPosition} />)
+
+    const tile = screen.getAllByTestId('position-tile')[0]
+    expect(within(tile).getByText('Above bull case')).toBeInTheDocument()
+    expect(tile.textContent).not.toMatch(/below bear/i)
+    expect(within(tile).getByTestId('tile-stats').textContent).toMatch(/above bull/i)
+
+    await user.click(tile)
+    expect(onOpenPosition.mock.calls[0][0].issue).toBe('Above bull case')
+  })
+
+  /**
+   * The rail says which line is open, and drops the rest to one line each.
+   *
+   * ── The report ──────────────────────────────────────────────────────────
+   *
+   * "When I opened the card workspace, the left hand pane was not focused on
+   * that tile, it was still at the top. Can we make it so that if I have a
+   * card selected, that card is expanded in the left hand pane but if not
+   * selected it just shows the truncated summary."
+   *
+   * The press happens at full width and the column then narrows to a ~26rem
+   * rail, so twenty-two full cards pushed the one just opened off the screen
+   * and nothing on any of them said which one it was.
+   *
+   * `openAssetId` is deliberately not `selectedAssetId` or `focusObjectId`:
+   * those two replace the book with a detail pane, which is right for the
+   * deck and leaves a host that put the workspace beside the book with no
+   * book to go back to.
+   */
+  it('expands the open line and drops the rest to one line each', () => {
+    render(<PortfolioWorkspace selectedPortfolioId="p1" openAssetId="a-2" onOpenPosition={vi.fn()} />)
+    const tiles = screen.getAllByTestId('position-tile')
+    expect(tiles).toHaveLength(2)
+
+    const chosen = tiles.find(t => t.dataset.selected === 'true')!
+    expect(chosen).toBeTruthy()
+    expect(chosen.textContent).toMatch(/BBB/)
+    expect(chosen.dataset.size).not.toBe('compact')
+
+    const rest = tiles.filter(t => t !== chosen)
+    expect(rest).toHaveLength(1)
+    expect(rest[0].dataset.selected).toBeUndefined()
+    expect(rest[0].dataset.size).toBe('compact')
+  })
+
+  /* And the book drawn with nothing open beside it is untouched: no ring, and
+     the sizes are the ones the rank earned. */
+  it('rings nothing and demotes nothing while no line is open', () => {
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tiles = screen.getAllByTestId('position-tile')
+    expect(tiles.some(t => t.dataset.selected === 'true')).toBe(false)
+    expect(tiles.every(t => t.dataset.size === 'compact')).toBe(false)
+  })
+
+  it('does not also dispatch to the deck when a host took it', async () => {
+    const user = userEvent.setup()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" onOpenPosition={vi.fn()} />)
+    await user.click(screen.getAllByTestId('position-tile')[0])
+    expect(opened).toHaveLength(0)
   })
 
   it('hands over the rest of the book as rail cards', async () => {
@@ -531,8 +699,24 @@ describe('the tile drops prose that only restates itself', () => {
 
     // The sentence that repeated the ticker, the weight and the absent case.
     expect(tile.textContent).not.toMatch(/with no thesis behind it/i)
-    // What it says instead: the absence, once.
-    expect(within(tile).getByText('Nothing written')).toBeInTheDocument()
+    /*
+      What it says instead: the absence, ONCE -- and the eyebrow is where.
+
+      Rewritten twice, and the second time for the same reason as the first.
+      It originally named the words "Nothing written", which were the eyebrow
+      said again; that assertion was replaced with the parts list, "no
+      thesis, no where we differ, no risks", on the grounding that it carried
+      something the eyebrow did not -- WHICH pieces are missing.
+
+      That grounding was wrong on a card with nothing written, which is
+      exactly the fixture here: those three parts ARE the thesis, so the line
+      was "No thesis on file" in seven more words. The subject of this test
+      is that the absence is stated once, not which words state it, so it now
+      asserts the single statement and names both retired phrasings.
+    */
+    expect(within(tile).getByText('No thesis on file')).toBeInTheDocument()
+    expect(tile.textContent).not.toMatch(/no thesis, no where we differ, no risks/i)
+    expect(tile.textContent).not.toMatch(/Nothing written/i)
     // And the weight is still there, as the figure.
     expect(within(tile).getByTestId('position-weight')).toBeInTheDocument()
   })
@@ -540,11 +724,103 @@ describe('the tile drops prose that only restates itself', () => {
   it('keeps prose that carries something the figures do not', () => {
     // Spot outside the written case: how far outside is not on the card
     // anywhere else, so the sentence stays.
+    //
+    // The series carries the spot, not the holding row. The verdict is made
+    // against the last stored close now; see `FLAT_AT`.
+    tileCloses = FLAT_AT(400)
     rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 400 })] }
     frames = { 'a-1': { ...EMPTY_FRAME, ladder: ladder([['Bear', 100], ['Bull', 200]]) } }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     const tile = screen.getAllByTestId('position-tile')[0]
     expect(tile.textContent).toMatch(/above your bull case/i)
+  })
+
+  /**
+   * The figures the finding rests on, on the card.
+   *
+   * ── What the tile showed instead ────────────────────────────────────────
+   *
+   * An eyebrow, a ticker and a chart. On a name with nothing written -- most
+   * of this book -- the sentence is deliberately suppressed and there is no
+   * ladder, so the card ran from the company name straight to a price line
+   * with not one number on it. Reported as the tiles not looking like the
+   * prototype, whose tile carries two or three figures under uppercase keys.
+   *
+   * `TileStats` was already in the kit at that exact scale. This lens never
+   * called it.
+   */
+  it('states the figures its finding rests on', () => {
+    // Spot at 400 against a written bear of 100 and bull of 200: outside, and
+    // far enough outside that the distance is the first thing to say. The 400
+    // is in the SERIES, which is what the verdict is made against; see
+    // `FLAT_AT`.
+    tileCloses = FLAT_AT(400)
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'AAA', shares: 100, price: 400 })] }
+    frames = {
+      'a-1': {
+        ...EMPTY_FRAME,
+        ladder: ladder([['Bear', 100], ['Bull', 200]]),
+        thesisUpdatedAt: daysAgo(40), daysSinceReview: 40,
+      },
+    }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const stats = within(screen.getAllByTestId('position-tile')[0]).getByTestId('tile-stats')
+
+    /*
+     * How far outside, and THE RUNG IT BROKE. The distance alone is a claim
+     * the reader cannot check; "100.0% above bull" beside "$200 your bull"
+     * is one they can, and the rung is read back off the same ladder the
+     * distance was computed from so the two cannot disagree.
+     */
+    expect(stats.textContent).toMatch(/100\.0%/)
+    expect(stats.textContent).toMatch(/above bull/i)
+    expect(stats.textContent).toMatch(/\$200/)
+    expect(stats.textContent).toMatch(/your bull/i)
+
+    /*
+     * And the move the chart beside it draws, stated rather than left as a
+     * shape. The series here is FLAT at 400, so the card has to say +0.0% --
+     * which is also the proof that the figure is read off the series and not
+     * off the spot, the rungs or the weight, every one of which is non-zero
+     * on this fixture.
+     */
+    expect(stats.textContent).toMatch(/\+0\.0%/)
+    expect(stats.textContent).toMatch(/6 months/i)
+  })
+
+  /**
+   * And the weight is NOT among them.
+   *
+   * The corner chip states it once, at every size, with the dollars and the
+   * shares one click behind it -- which is what replaced four different ways
+   * of saying the same thing. A fifth in the figures row would undo that,
+   * and a row of figures is exactly where it would look like it belonged.
+   */
+  it('leaves the weight to the corner, where it is stated once', () => {
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'GOOGL', shares: 100, price: 100 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME } }
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    const tile = screen.getAllByTestId('position-tile')[0]
+    expect(within(tile).getByTestId('tile-stats').textContent).not.toMatch(/weight/i)
+    // Still stated, in the one place that states it.
+    expect(within(tile).getByTestId('position-weight')).toBeInTheDocument()
+  })
+
+  /**
+   * An unpriced name draws fewer figures, not padded ones.
+   *
+   * A row of three is not a target. With no closes there is no six-month
+   * move to state, and inventing one -- from the spot, from the weight --
+   * would put a number on the card that the card cannot show the source of.
+   */
+  it('draws no figures row at all when there is nothing to put in it', () => {
+    tileCloses = []
+    rowsByBook = { p1: [row({ asset_id: 'a-1', symbol: 'GOOGL', shares: 100, price: 100 })] }
+    frames = { 'a-1': { ...EMPTY_FRAME } }   // no ladder, no review date
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    expect(
+      within(screen.getAllByTestId('position-tile')[0]).queryByTestId('tile-stats'),
+    ).toBeNull()
   })
 
   it('lets the chart take the height the other column does not use', () => {
@@ -598,7 +874,12 @@ describe('the card stacks, and the chart runs full width', () => {
     frames = { 'a-1': { ...EMPTY_FRAME } }
     render(<PortfolioWorkspace selectedPortfolioId="p1" />)
     const tile = screen.getAllByTestId('position-tile')[0]
-    expect(within(tile).getByText('Nothing written')).toBeInTheDocument()
+    /* The absence stated once, by the eyebrow, and the parts line that used
+       to restate it gone -- see the note on the sibling test above for why
+       this assertion moved twice. The point this test is making is the
+       second clause: removing the line did not remove the chart. */
+    expect(within(tile).getByText('No thesis on file')).toBeInTheDocument()
+    expect(tile.textContent).not.toMatch(/no thesis, no where we differ, no risks/i)
     expect(within(tile).getByTestId('price-since-fill')).toBeInTheDocument()
   })
 
@@ -679,5 +960,55 @@ describe('the weight opens the size behind it', () => {
      * careful about that distinction elsewhere.
      */
     expect(screen.getByTestId('position-weight-detail')).toHaveTextContent(/no benchmark/i)
+  })
+
+  /*
+   * ── The reservation is for the WAIT, and it was outliving it ────────────
+   *
+   * The header's two panels resolve on their own queries after the book
+   * beneath them has painted, so the row reserves the height they will take
+   * and both arrivals are fades rather than jumps. That part is right.
+   *
+   * What it did not account for: both panels are sized by their ROW COUNT,
+   * capped at five a side but often far fewer. Measured live on a five
+   * position book, where the cap resolves to two: the tallest panel is 149px
+   * against a 200px reservation, so 51px of the header was permanently empty
+   * -- and it was the gap directly above the line that says how much of the
+   * book has no framework, which is the most important line in the header.
+   *
+   * Shrinking the number is not the fix; it would under-reserve the five-row
+   * book the number is sized for and bring the jump back.
+   *
+   * So the reservation stops once there is nothing left to wait for. This
+   * suite mocks `useActiveWeights` to 'loading', which is exactly the wait,
+   * so it pins the half that must KEEP reserving. The other half -- that it
+   * is conditioned on the state at all, rather than unconditional -- is
+   * pinned on the source in `convergence.test.ts`, because a settled state
+   * cannot be reached from this suite's module mock.
+   */
+  /*
+   * ── The heights moved to CSS, and the claim moved with them ────────────
+   *
+   * This read the Tailwind classes off the row. The reservation now has to
+   * follow a CONTAINER threshold, not a viewport one: this lens is drawn at
+   * full width and in a ~20rem rail beside an open workspace, and in the rail
+   * the panels carry no movers and no strip, so the full-width number would
+   * reserve space for content that is not coming.
+   *
+   * Tailwind 3.4 ships no container-query variants here, so the two heights
+   * live in `index.css` keyed off `data-waiting`. What this component is
+   * still responsible for -- and all it is responsible for -- is saying
+   * truthfully whether it is waiting, which is what is asserted here.
+   *
+   * Only the waiting half is reachable from this suite -- it mocks
+   * `useActiveWeights` to 'loading' at module scope, so a settled state
+   * cannot be rendered. The other half, that the attribute is CONDITIONAL
+   * rather than always present, is pinned on the source in
+   * `convergence.test.ts` along with the CSS that gives it its heights.
+   */
+  it('says it is waiting while the benchmark is in flight', () => {
+    held()
+    render(<PortfolioWorkspace selectedPortfolioId="p1" />)
+    expect(screen.getByTestId('book-header-panels').hasAttribute('data-waiting')).toBe(true)
   })
 })

@@ -170,24 +170,34 @@ export interface ThesisReference {
  * a reference list with no owner is exactly what made the column unattributable
  * in the first place.
  */
-export async function fetchThesisReferences(
+export async function fetchSectionReferences(
   assetId: string,
+  section: string,
   userId: string | undefined,
   organizationId: string | null | undefined,
 ): Promise<ThesisReference[]> {
-  if (!userId || !organizationId) return []
+  if (!userId || !organizationId || !section) return []
   const { data, error } = await supabase
     .from('asset_contributions')
     .select('attachments')
     .eq('organization_id', organizationId)
     .eq('asset_id', assetId)
-    .eq('section', 'thesis')
+    .eq('section', section)
     .eq('created_by', userId)
     .maybeSingle()
 
   if (error) throw error
   // The shared client is untyped, so a narrowed select resolves to `never`.
   return (((data as { attachments?: ThesisReference[] } | null)?.attachments ?? []) as ThesisReference[])
+}
+
+/** The thesis section, which had this first. */
+export async function fetchThesisReferences(
+  assetId: string,
+  userId: string | undefined,
+  organizationId: string | null | undefined,
+): Promise<ThesisReference[]> {
+  return fetchSectionReferences(assetId, 'thesis', userId, organizationId)
 }
 
 /**
@@ -198,32 +208,60 @@ export async function fetchThesisReferences(
  * teammate's view of the section, so an absent thesis is a no-op that reports
  * itself rather than a silent insert.
  */
-export async function saveThesisReferences(
+export async function saveSectionReferences(
   assetId: string,
+  section: string,
   userId: string | undefined,
   organizationId: string | null | undefined,
   references: ThesisReference[],
 ): Promise<{ saved: boolean }> {
-  if (!userId || !organizationId) return { saved: false }
+  if (!userId || !organizationId || !section) return { saved: false }
 
+  /*
+   * The row is found by the caller's OWN (asset, section) pair.
+   *
+   * `unique_user_asset_section` makes that exactly one row, and the
+   * author-only write policy on `asset_contributions` means a reader cannot
+   * attach evidence to somebody else's section even by guessing an id — the
+   * update simply matches nothing. No separate permission check is needed here
+   * and none is invented.
+   */
   const { data: existing, error: findError } = await supabase
     .from('asset_contributions')
     .select('id')
     .eq('organization_id', organizationId)
     .eq('asset_id', assetId)
-    .eq('section', 'thesis')
+    .eq('section', section)
     .eq('created_by', userId)
     .maybeSingle()
 
   if (findError) throw findError
   if (!existing) return { saved: false }
 
+  /*
+   * `updated_at` is deliberately NOT touched.
+   *
+   * It is the section's "last written" clock — the Snapshot and the staleness
+   * resolver both read it to decide what arrived after the case was written.
+   * Attaching a reference is not writing the case, and stamping it here would
+   * silently mark a stale thesis as fresh.
+   */
   const { error } = await (supabase.from('asset_contributions') as any)
-    .update({ attachments: references, updated_at: new Date().toISOString() })
+    .update({ attachments: references })
     .eq('id', (existing as { id: string }).id)
 
   if (error) throw error
   return { saved: true }
+}
+
+/** The thesis section, which had this first. */
+export async function saveThesisReferences(
+  assetId: string,
+  userId: string | undefined,
+  organizationId: string | null | undefined,
+  references: ThesisReference[],
+): Promise<{ saved: boolean }> {
+  return saveSectionReferences(assetId, 'thesis', userId, organizationId, references)
 }
 
 /** Human-facing label for the section a search hit landed in. */

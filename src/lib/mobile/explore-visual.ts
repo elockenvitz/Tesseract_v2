@@ -98,8 +98,20 @@ export type ExploreVisual =
    * "since your last contribution" rather than "overdue".
    */
   | { kind: 'timeline'; statedAt: string; dueAt?: string | null; overdueLabel?: string }
-  /** How much of a book rides on this, when the finding is about exposure. */
-  | { kind: 'exposure'; weightPct: number; portfolioName?: string }
+  /**
+   * How much of a book rides on this, when the finding is about exposure.
+   *
+   * `books` is the per-portfolio spread where the producer had it, heaviest
+   * first. A crowding finding is ABOUT the spread -- "held across five books"
+   * -- and the single largest weight was the one fact it was drawing. Where
+   * the spread is present the picture is the spread; `weightPct` stays the
+   * headline number either way, so a producer that has only the one weight
+   * degrades to exactly the bar it drew before.
+   */
+  | {
+      kind: 'exposure'; weightPct: number; portfolioName?: string
+      books?: { name: string; weightPct: number }[]
+    }
   /**
    * Two weights that disagree, both of them real.
    *
@@ -161,6 +173,14 @@ export interface ExploreVisualData {
   dueAt?: string | null
   /** The benchmark weight for this name in this book, where a file exists. */
   benchmarkPct?: number | null
+  /**
+   * The per-portfolio weight spread, heaviest first, where the producer had it.
+   *
+   * Never synthesised and never re-sorted here: it is `weightsByPortfolio` off
+   * the crowding row, which `usePortfolioLenses` already returns in weight
+   * order. Two entries or more is what makes it a spread; one is the bar.
+   */
+  books?: { name: string; weightPct: number }[]
   /** How far the price has moved since anybody reviewed it. */
   movePct?: number | null
   lastLookAt?: string | null
@@ -302,7 +322,45 @@ export function exploreVisualFor(
   if (v.currentPrice != null && Number.isFinite(v.currentPrice) && 'target' in v) {
     // `null` is the finding on a no-target card and must survive as null.
     const target = v.target != null && Number.isFinite(v.target) ? v.target : null
-    return { kind: 'target_compare', current: v.currentPrice, target }
+    /**
+     * A no-target card yields to the exposure bar, where there is a weight.
+     *
+     * ── What was being drawn ────────────────────────────────────────────
+     *
+     * `target_compare` with `target: null` draws a dashed amber run from the
+     * current price to a "NOT SET" chip. It was defended as the shape of the
+     * absence being the statement, and on a card whose headline is "JNJ has
+     * no price target on record" that statement has already been made in
+     * words directly above it. The picture restated the headline and then
+     * stopped.
+     *
+     * It is also the DOMINANT case in this corpus, not an edge: JNJ, PG,
+     * ROKU, SQ and ZOOM all surface this way, so most of the Decisions column
+     * was a line pointing at nothing.
+     *
+     * ── Why exposure, and not a chart ───────────────────────────────────
+     *
+     * The question a no-target position actually raises is how much rides on
+     * it while nobody has said what it is worth. That is `weightPct`, which
+     * the `untargeted` lens already carries on the row, and the exposure bar
+     * is a ruled measurement of exactly it. Nothing new is fetched and
+     * nothing is invented.
+     *
+     * Not the tape: the tile's own pager already offers Price beside the
+     * finding, so drawing a line here would be the second copy of a chart the
+     * reader can already reach, in the pane that is supposed to argue.
+     *
+     * Where there is NO weight, the stated absence is still the honest
+     * answer and the dashed run stays. A position whose size is unknown is a
+     * different card from one whose size is 4.2%.
+     */
+    const noTargetButSized = target == null
+      && item.portfolio?.weightPct != null
+      && Number.isFinite(item.portfolio.weightPct)
+      && item.portfolio.weightPct > 0
+    if (!noTargetButSized) {
+      return { kind: 'target_compare', current: v.currentPrice, target }
+    }
   }
 
   // ── Elapsed time, where the clock is the trigger ────────────────────────
@@ -417,7 +475,15 @@ export function exploreVisualFor(
     && item.subtype !== 'news'
     && exposureIsTheFinding
   ) {
-    return { kind: 'exposure', weightPct: weight, portfolioName: item.portfolio?.name }
+    // A single book is not a spread, so one entry is dropped rather than drawn
+    // as a one-row chart of the number already in the headline.
+    const books = item.visual?.books?.filter(b => Number.isFinite(b.weightPct))
+    return {
+      kind: 'exposure',
+      weightPct: weight,
+      portfolioName: item.portfolio?.name,
+      books: books && books.length > 1 ? books : undefined,
+    }
   }
 
   /**
@@ -583,4 +649,47 @@ export function visualRestatesContext(v: ExploreVisual, context: string | undefi
   if (!clause) return false
   const caption = norm(`${v.weightPct.toFixed(1)}% of ${v.portfolioName ?? 'the book'}`)
   return clause === caption
+}
+
+/* ------------------------------------------- scenario_range label collisions */
+
+/**
+ * Width of one character in the scenario label row, in CSS pixels.
+ *
+ * Measured off the live render, not guessed: the row is `text-[9px] font-bold
+ * uppercase tracking-wide tabular-nums`, and across twenty labels the widest
+ * came in at 5.40px a character ("$244", 21.6px over 4). 5.6 is deliberately
+ * generous, because being wrong in this direction costs one unnecessary merge
+ * and being wrong in the other costs an overlap.
+ */
+export const SCENARIO_LABEL_CHAR_PX = 5.6
+
+/**
+ * Do two labels in the scenario row touch?
+ *
+ * Each is centred on its own price (`-translate-x-1/2` over `left: pos%`), so
+ * two prices a few dollars apart put two whole labels in almost the same
+ * place. Nothing checked for that: the row drew them on top of each other.
+ *
+ * Measured on the Ideas lens at 1920, before: 2 of the 5 visible framework
+ * cards overlapping — "Bear $180" under "$179" by 21.6px, and "Bull $400"
+ * under "$403" by 19.8px, both across the labels' full 9px height. The 52-week
+ * row below already avoids this against the cases, and its comment says why:
+ * "a 52-week low and a bear case are often within a few dollars". The last
+ * price is in exactly the same relationship to a case and was never given the
+ * same treatment.
+ *
+ * Percent in, percent out, so this is independent of the row's width except
+ * through `rowPx` — the same label pair collides on a 340px phone that clears
+ * easily on an 889px card.
+ */
+export function scenarioLabelsCollide(
+  a: { centrePct: number; chars: number },
+  b: { centrePct: number; chars: number },
+  rowPx: number,
+): boolean {
+  if (!(rowPx > 0)) return false
+  const halfPct = (chars: number) =>
+    ((chars * SCENARIO_LABEL_CHAR_PX) / 2 / rowPx) * 100
+  return Math.abs(a.centrePct - b.centrePct) < halfPct(a.chars) + halfPct(b.chars)
 }

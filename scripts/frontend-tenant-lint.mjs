@@ -1,123 +1,49 @@
 #!/usr/bin/env node
 /**
- * Frontend Tenant Boundary Linter
+ * Frontend Tenant Boundary Lint
  *
- * Scans src/**‍/*.ts(x) for supabase.from('<ORG_SCOPED_TABLE>') calls that are
- * missing organization_id filters or are not wrapped in approved patterns.
+ * Finds frontend reads of organization-owned tables that carry no
+ * organization filter, and fails when one of them is not in the reviewed
+ * allowlist.
  *
- * Checks:
- *   1. supabase.from('org_scoped_table') must have .eq('organization_id', ...)
- *      or use an approved wrapper/hook pattern.
- *   2. RPC calls (supabase.rpc) are allowed (server enforces boundaries).
- *   3. Views that are already org-scoped are allowed.
+ *     node scripts/frontend-tenant-lint.mjs            full report
+ *     node scripts/frontend-tenant-lint.mjs --ci       summary only
+ *     node scripts/frontend-tenant-lint.mjs --rpcs     also list rpc names
  *
- * Usage:
- *   node scripts/frontend-tenant-lint.mjs [--report] [--ci]
+ * The scanning and classification live in `lib/tenant-scan.mjs` (parsed, not
+ * pattern-matched -- that file records why) and the accepted exceptions in
+ * `lib/tenant-allowlist.mjs` (one entry per site, each naming the database
+ * policy that enforces the boundary). This file only walks the tree,
+ * reconciles findings against the allowlist, and decides.
  *
- * Flags:
- *   --report   Show ranked table-by-table breakdown
- *   --ci       Output CI summary (total, P0, delta vs baseline)
+ * ── What "pass" means ────────────────────────────────────────────────────
  *
- * Exit code 0 = all checks pass, 1 = violations found.
+ * Every finding is accounted for by an entry somebody wrote a reason into.
+ * It does not mean there are no unfiltered queries -- there are 196 of them --
+ * and it does not mean the frontend is the boundary. The database is the
+ * boundary. This gate only ensures that no new unfiltered read arrives
+ * without a human having looked at the policy behind it.
  */
-
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative, extname } from 'node:path'
-
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
-
-/**
- * Tables that have organization_id and MUST be filtered by it in frontend code.
- * Sourced from the backend linter's categorization of tables with direct org_id.
- */
-const ORG_SCOPED_TABLES = new Set([
-  // Hub tables (Phase 2)
-  'workflows',
-  'projects',
-  'themes',
-  'conversations',
-  'calendar_events',
-  'calendar_deliverables',
-  'allocation_periods',
-  'target_date_funds',
-  'topics',
-  'captures',
-  'custom_notebooks',
-  'text_templates',
-
-  // Org-admin tables
-  'organization_memberships',
-  'organization_invites',
-  'organization_audit_log',
-  'organization_contacts',
-  'teams',
-  'org_chart_nodes',
-  // Membership view: org-filtered in its own definition, but frontend callers must STILL pass
-  // organization_id. It exposes member emails and was an anon-exposure target (containment A1),
-  // so it is NOT a free-pass view — treat it like an org-scoped table in frontend code.
-  'organization_members_v',
-
-  // Org-scoped config tables
-  'coverage_settings',
-  'research_fields',
-  'research_sections',
-  'rating_scales',
-  'user_role_definitions',
-  'asset_page_templates',
-  'investment_case_templates',
-  'model_templates',
-  'removal_requests',
-  'access_requests',
-  'coverage_roles',
-  'project_collections',
-  'project_tags',
-  'template_tags',
-
-  // Trade / allocation
-  'trade_ideas',
-  'workflow_branches',
-])
+import {
+  scanSource, severityOf, siteKey,
+  ORG_SCOPED_TABLES, P0_TABLES, NOT_ORG_SCOPED_BY_DESIGN,
+} from './lib/tenant-scan.mjs'
+import { SITES, TABLE_POLICY, REVIEWED_RPCS, registryProblems } from './lib/tenant-allowlist.mjs'
 
 /**
- * P0 tables — highest-risk for cross-org data leakage.
- * These are user-facing hub tables where unscoped SELECTs are most dangerous.
- */
-const P0_TABLES = new Set([
-  'workflows',
-  'projects',
-  'themes',
-  'conversations',
-  'calendar_events',
-  'topics',
-  'captures',
-])
-
-/**
- * Views that are already org-scoped via their definition — allowed without filter.
- */
-const ORG_SCOPED_VIEWS = new Set([
-  'org_workflows_v',
-  'org_themes_v',
-  'org_calendar_events_v',
-  'org_topics_v',
-  'org_captures_v',
-  'org_projects_v',
-  'org_org_chart_nodes_v',
-])
-
-/**
- * Approved wrapper patterns that handle org scoping internally.
- * If a file uses one of these hooks to fetch data, direct .from() calls are OK.
- */
-const APPROVED_WRAPPER_PATTERNS = [
-  /useOrganizationData/,
-  /useOrgQueryKey/,
-]
-
-/**
- * Files explicitly excluded from linting (e.g., the linter test fixtures).
+ * Paths not scanned, and why each one is defensible.
+ *
+ * `scripts/` and `src/test/` hold no product queries. The test and story
+ * globs are fixtures. `AdminConsolePage.tsx` queries across organizations on
+ * purpose and is gated by `is_platform_admin()` server-side.
+ *
+ * Note what is NOT here any more: the previous version skipped an entire FILE
+ * if the text `useOrganizationData` or `useOrgQueryKey` appeared anywhere in
+ * it, on the theory that the file used an org-scoped hook. One mention
+ * excused every query in the file, including ones that never went near the
+ * hook. That is removed.
  */
 const EXCLUDED_PATHS = [
   'scripts/',
@@ -126,130 +52,20 @@ const EXCLUDED_PATHS = [
   '.test.ts',
   '.test.tsx',
   '.stories.tsx',
-  // Platform admin console intentionally queries across orgs
   'AdminConsolePage.tsx',
 ]
 
-// ---------------------------------------------------------------------------
-// Baselines
-// ---------------------------------------------------------------------------
-
+const args = process.argv.slice(2)
+const ciMode = args.includes('--ci')
+const showRpcs = args.includes('--rpcs')
 /**
- * Legacy-finding inventory (replaces the old BASELINE_TOTAL / BASELINE_P0 count
- * thresholds). The inventory is an EXACT, reviewed record of every known
- * pre-existing finding, keyed by (file, table) with its severity and occurrence
- * count. It lives in scripts/tenant-lint-inventory.json and is the review
- * artifact — a count threshold is not. Enforcement (see runner):
- *   - a (file, table) not in the inventory, or a higher count than recorded, or a
- *     severity that worsened (P1 -> P0) => a NEW/WORSENED finding => CI fails;
- *   - a finding that no longer occurs (or occurs fewer times) => the inventory is
- *     STALE => CI fails until the inventory is updated in a reviewed commit, so a
- *     fix is acknowledged and a fixed finding cannot silently reappear later;
- *   - every P0 entry must carry a non-empty `ack`, and all P0 entries are echoed
- *     on each run, so a high-severity finding can never be silently grandfathered.
- * Regenerate the file from the current tree with `--write-inventory` (a reviewed,
- * deliberate action — never run it just to make CI green).
+ * `--emit` prints the registry as source, for pasting into the allowlist.
+ *
+ * Maintenance affordance, not a bypass: it emits the SITES counts and the rpc
+ * names, never a policy or a reason. Those are the parts a person has to
+ * write, and the registry check rejects an entry whose table has neither.
  */
-import { existsSync, writeFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname } from 'node:path'
-
-const INVENTORY_PATH = join(dirname(fileURLToPath(import.meta.url)), 'tenant-lint-inventory.json')
-
-function loadInventory() {
-  if (!existsSync(INVENTORY_PATH)) return { findings: {} }
-  return JSON.parse(readFileSync(INVENTORY_PATH, 'utf-8'))
-}
-
-/** Group a flat violation list into { "file\u0000table": {severity, count} }. */
-function groupFindings(violations) {
-  const g = new Map()
-  for (const v of violations) {
-    const key = `${v.file}\u0000${v.table}`
-    const cur = g.get(key) || { file: v.file, table: v.table, severity: v.isP0 ? 'P0' : 'P1', count: 0 }
-    cur.count++
-    if (v.isP0) cur.severity = 'P0'
-    g.set(key, cur)
-  }
-  return g
-}
-
-// ---------------------------------------------------------------------------
-// Scanner
-// ---------------------------------------------------------------------------
-
-/**
- * Regex to match supabase.from('table_name') calls.
- * Captures the table name in group 1.
- */
-const FROM_REGEX = /supabase\s*\.\s*from\(\s*['"`](\w+)['"`]\s*\)/g
-
-/**
- * Regex to check if a chain includes .eq('organization_id', ...)
- * We check a window of ~400 chars after the .from() call.
- */
-const ORG_FILTER_REGEX = /\.eq\(\s*['"`]organization_id['"`]/
-
-/**
- * Patterns that indicate the chain is NOT a bare select (mutations are safe due to RLS).
- * INSERT includes org_id in data; UPDATE/DELETE by ID are safe.
- */
-const MUTATION_REGEX = /\.(insert|update|upsert|delete)\s*\(/
-
-/**
- * Safe filter patterns — queries filtered by PK or FK are safe because RLS enforces boundaries.
- */
-const SAFE_FILTER_REGEX = /\.eq\(\s*['"`](id|workflow_id|team_id|project_id|conversation_id|theme_id|created_by|user_id|portfolio_id|node_id)['"`]/
-
-/**
- * Regex to check for RPC calls (always allowed).
- */
-const RPC_REGEX = /supabase\s*\.\s*rpc\(/
-
-function scanFile(filePath, content) {
-  const violations = []
-  const lines = content.split('\n')
-
-  // Build a flat string for multi-line chain scanning
-  let match
-  FROM_REGEX.lastIndex = 0
-
-  while ((match = FROM_REGEX.exec(content)) !== null) {
-    const tableName = match[1]
-
-    // Skip non-org-scoped tables
-    if (!ORG_SCOPED_TABLES.has(tableName)) continue
-
-    // Skip org-scoped views
-    if (ORG_SCOPED_VIEWS.has(tableName)) continue
-
-    // Check the chain after .from() for org_id filter (400 char window)
-    const afterFrom = content.slice(match.index, match.index + 400)
-
-    // Allow: has organization_id filter
-    if (ORG_FILTER_REGEX.test(afterFrom)) continue
-
-    // Allow: mutation chains (INSERT/UPDATE/DELETE/UPSERT) — RLS enforces boundary
-    if (MUTATION_REGEX.test(afterFrom)) continue
-
-    // Allow: filtered by PK or FK (inherits org scope through chain)
-    if (SAFE_FILTER_REGEX.test(afterFrom)) continue
-
-    // Find line number
-    const beforeMatch = content.slice(0, match.index)
-    const lineNum = beforeMatch.split('\n').length
-
-    violations.push({
-      file: filePath,
-      line: lineNum,
-      table: tableName,
-      isP0: P0_TABLES.has(tableName),
-      snippet: lines[lineNum - 1]?.trim() || '',
-    })
-  }
-
-  return violations
-}
+const emitMode = args.includes('--emit')
 
 function walkDir(dir, extensions) {
   const results = []
@@ -271,176 +87,224 @@ function walkDir(dir, extensions) {
   return results
 }
 
-// ---------------------------------------------------------------------------
-// Runner
-// ---------------------------------------------------------------------------
+/**
+ * Compare findings against the allowlist.
+ *
+ * Four ways to fail, and the third is the one a count baseline could never
+ * express: an accepted site that has GROWN. Fixing one query and adding a
+ * worse one in the same file used to net to zero.
+ */
+export function reconcile(findings, sites = SITES) {
+  const counted = new Map()
+  for (const f of findings) {
+    const key = siteKey(f)
+    if (!counted.has(key)) counted.set(key, [])
+    counted.get(key).push(f)
+  }
 
-const args = process.argv.slice(2)
-const showReport = args.includes('--report')
-const ciMode = args.includes('--ci')
+  const unreviewed = []
+  const grown = []
+  const shrunk = []
+  const stale = []
+
+  for (const [key, group] of counted) {
+    const allowed = sites[key]
+    if (allowed === undefined) {
+      unreviewed.push({ key, group })
+    } else if (group.length > allowed) {
+      grown.push({ key, group, allowed })
+    } else if (group.length < allowed) {
+      shrunk.push({ key, group, allowed })
+    }
+  }
+
+  for (const key of Object.keys(sites)) {
+    if (!counted.has(key)) stale.push(key)
+  }
+
+  return { counted, unreviewed, grown, shrunk, stale }
+}
 
 function run() {
+  const problems = emitMode ? [] : registryProblems({
+    orgScoped: ORG_SCOPED_TABLES,
+    notOrgScoped: NOT_ORG_SCOPED_BY_DESIGN,
+    p0Tables: P0_TABLES,
+  })
+  if (problems.length) {
+    console.error('\nFAIL: the tenant registry contradicts itself:')
+    problems.forEach((p) => console.error('  ' + p))
+    process.exit(1)
+  }
+
   const srcDir = join(process.cwd(), 'src')
   const files = walkDir(srcDir, ['.ts', '.tsx'])
-  let totalViolations = 0
+  const findings = []
+  const rpcs = []
   let filesScanned = 0
   let filesSkipped = 0
-  const allViolations = []
 
   for (const filePath of files) {
     const rel = relative(process.cwd(), filePath).replace(/\\/g, '/')
-
-    // Skip excluded paths
     if (EXCLUDED_PATHS.some((p) => rel.includes(p))) {
       filesSkipped++
       continue
     }
-
-    const content = readFileSync(filePath, 'utf-8')
-
-    // Skip files that use approved wrapper hooks
-    if (APPROVED_WRAPPER_PATTERNS.some((p) => p.test(content))) {
-      filesSkipped++
-      continue
-    }
-
     filesScanned++
-    const violations = scanFile(rel, content)
-    if (violations.length > 0) {
-      allViolations.push(...violations)
-      totalViolations += violations.length
-    }
+    const result = scanSource(rel, readFileSync(filePath, 'utf-8'))
+    findings.push(...result.findings)
+    rpcs.push(...result.rpcs)
   }
 
-  const p0Violations = allViolations.filter(v => v.isP0)
-  const p1Violations = allViolations.filter(v => !v.isP0)
-  const p0Count = p0Violations.length
-  const p1Count = p1Violations.length
+  const parseErrors = findings.filter((f) => f.kind === 'parse-error')
+  const real = findings.filter((f) => f.kind !== 'parse-error')
+  const { counted, unreviewed, grown, shrunk, stale } = reconcile(real)
 
-  // ── Report mode: ranked table-by-table breakdown ──────────────────────
-  if (showReport || !ciMode) {
-    console.log('\n=== Frontend Tenant Boundary Lint ===\n')
+  const p0 = real.filter((f) => severityOf(f) === 'P0').length
+  const byKind = new Map()
+  for (const f of real) byKind.set(f.kind, (byKind.get(f.kind) || 0) + 1)
 
-    if (allViolations.length === 0) {
-      console.log('PASS: No unfiltered org-scoped table access found.')
-    } else {
-      // Group by table with counts
-      const byTable = new Map()
-      for (const v of allViolations) {
-        if (!byTable.has(v.table)) byTable.set(v.table, [])
-        byTable.get(v.table).push(v)
-      }
-
-      // Sort tables: P0 first (by count desc), then P1 (by count desc)
-      const sortedTables = [...byTable.entries()].sort((a, b) => {
-        const aP0 = P0_TABLES.has(a[0]) ? 0 : 1
-        const bP0 = P0_TABLES.has(b[0]) ? 0 : 1
-        if (aP0 !== bP0) return aP0 - bP0
-        return b[1].length - a[1].length
-      })
-
-      for (const [table, violations] of sortedTables) {
-        const priority = P0_TABLES.has(table) ? 'P0' : 'P1'
-        console.log(`\n[${priority}] ${table} (${violations.length} violation${violations.length > 1 ? 's' : ''}):`)
-        for (const v of violations) {
-          console.log(`  ${v.file}:${v.line}`)
-          if (v.snippet) console.log(`    ${v.snippet}`)
-        }
-      }
+  if (emitMode) {
+    /* Grouped by table, because the policy is per table and that is the order
+       a reader checks them in. */
+    const keys = [...counted.keys()].sort((a, b) => {
+      const ta = a.split('::')[1]
+      const tb = b.split('::')[1]
+      return ta === tb ? a.localeCompare(b) : ta.localeCompare(tb)
+    })
+    console.log('export const SITES = {')
+    let table = null
+    for (const key of keys) {
+      const [, t] = key.split('::')
+      if (t !== table) { console.log(`  // ── ${t}`); table = t }
+      console.log(`  '${key}': ${counted.get(key).length},`)
     }
-  }
-
-  const current = groupFindings(allViolations)
-
-  // ── --write-inventory: regenerate the reviewed inventory from the tree ──
-  if (args.includes('--write-inventory')) {
-    const prior = loadInventory().findings || {}
-    const findings = {}
-    for (const { file, table, severity, count } of [...current.values()].sort(
-      (a, b) => a.file.localeCompare(b.file) || a.table.localeCompare(b.table))) {
-      const priorAck = prior[file]?.[table]?.ack
-      findings[file] = findings[file] || {}
-      findings[file][table] = {
-        severity, count,
-        ack: priorAck || (severity === 'P0'
-          ? 'LEGACY 2026-10-19: pre-existing; RLS-backstop UNVERIFIED — see project-security-followups'
-          : 'legacy 2026-10-19: pre-existing'),
-      }
+    console.log('}')
+    console.log('\nexport const REVIEWED_RPCS = new Set([')
+    for (const name of [...new Set(rpcs.map((r) => r.name))].sort()) {
+      console.log(`  '${name}',`)
     }
-    const out = {
-      $comment: 'Reviewed legacy-finding inventory for frontend-tenant-lint. Each (file -> table) is a known pre-existing finding with its severity and occurrence count. NEW/WORSENED findings fail CI; a fixed finding makes this STALE and must be removed here in a reviewed commit. P0 entries require a non-empty ack and are echoed every run. Do NOT regenerate this to silence a real finding.',
-      generatedAt: new Date().toISOString().slice(0, 10),
-      findings,
-    }
-    writeFileSync(INVENTORY_PATH, JSON.stringify(out, null, 2) + '\n')
-    console.log(`Wrote inventory: ${INVENTORY_PATH} (${current.size} file/table findings)`)
+    console.log('])')
     process.exit(0)
   }
 
-  // ── CI summary ────────────────────────────────────────────────────────
-  console.log(`\n--- Summary ---`)
-  console.log(`Files scanned:  ${filesScanned}`)
-  console.log(`Files skipped:  ${filesSkipped}`)
-  console.log(`Total:          ${totalViolations}   P0: ${p0Count}   P1: ${p1Count}`)
+  console.log('\n=== Frontend Tenant Boundary Lint ===\n')
 
-  // ── Enforcement: diff current findings against the reviewed inventory ───
-  const inv = loadInventory().findings || {}
-  const invGet = (file, table) => inv[file]?.[table]
-  const newOrWorse = []   // introduced or worsened -> fail
-  const stale = []        // fixed/reduced but still in inventory -> fail (needs reviewed removal)
-  const ungrounded = []   // P0 in inventory with no ack -> fail
-  const grandfathered = [] // P0 legacy still present (echoed, not a failure by itself)
-
-  // current vs inventory
-  for (const { file, table, severity, count } of current.values()) {
-    const rec = invGet(file, table)
-    if (!rec) { newOrWorse.push(`NEW ${severity} ${table} in ${file} (${count}×) — not in inventory`); continue }
-    if (count > rec.count) newOrWorse.push(`WORSENED ${table} in ${file}: ${rec.count}→${count} occurrence(s)`)
-    if (severity === 'P0' && rec.severity !== 'P0') newOrWorse.push(`WORSENED ${table} in ${file}: ${rec.severity}→P0`)
-  }
-  // inventory vs current (fixed or stale) + P0 acks
-  for (const [file, tables] of Object.entries(inv)) {
-    for (const [table, rec] of Object.entries(tables)) {
-      const cur = current.get(`${file}\u0000${table}`)
-      if (!cur) stale.push(`FIXED ${table} in ${file} (was ${rec.count}×) — remove it from the inventory (reviewed)`)
-      else if (cur.count < rec.count) stale.push(`REDUCED ${table} in ${file}: ${rec.count}→${cur.count} — update the inventory (reviewed)`)
-      if (rec.severity === 'P0') {
-        if (!rec.ack || !String(rec.ack).trim()) ungrounded.push(`${table} in ${file}`)
-        else if (cur) grandfathered.push(`P0 ${table} in ${file} (${rec.count}×) — ${rec.ack}`)
+  if (!ciMode) {
+    const groups = [...counted.entries()].sort((a, b) => {
+      const sev = (g) => (severityOf(g[1][0]) === 'P0' ? 0 : 1)
+      if (sev(a) !== sev(b)) return sev(a) - sev(b)
+      return a[0].localeCompare(b[0])
+    })
+    for (const [key, group] of groups) {
+      const policy = TABLE_POLICY[group[0].table]
+      const mark = SITES[key] === undefined
+        ? 'UNREVIEWED'
+        : policy ? policy.evidence : 'no policy recorded'
+      console.log(`[${severityOf(group[0])}] ${key}  x${group.length}  (${mark})`)
+      for (const f of group) {
+        console.log(`    ${f.file}:${f.line}${f.via ? `  embedded via ${f.via}` : ''}`)
       }
     }
   }
 
-  if (grandfathered.length > 0) {
-    console.log(`\nGrandfathered P0 legacy findings (visible, must shrink — not silenced):`)
-    for (const g of grandfathered) console.log(`  • ${g}`)
+  const newRpcs = [...new Set(rpcs.map((r) => r.name))]
+    .filter((name) => !REVIEWED_RPCS.has(name))
+    .sort()
+
+  if (showRpcs) {
+    console.log(`\n--- RPC names called from the frontend (${new Set(rpcs.map(r => r.name)).size}) ---`)
+    for (const name of [...new Set(rpcs.map((r) => r.name))].sort()) {
+      console.log(`  ${REVIEWED_RPCS.has(name) ? ' ' : '*'} ${name}`)
+    }
+    console.log('  * = not in the reviewed inventory')
   }
+
+  console.log('\n--- Summary ---')
+  console.log(`Files scanned:   ${filesScanned}`)
+  console.log(`Files skipped:   ${filesSkipped}`)
+  console.log(`Findings:        ${real.length} across ${counted.size} site(s)`)
+  console.log(`  P0:            ${p0}`)
+  for (const [kind, n] of [...byKind.entries()].sort()) {
+    console.log(`  ${kind.padEnd(14)} ${n}`)
+  }
+  const probed = [...counted.keys()].filter(
+    (k) => TABLE_POLICY[k.split('::')[1]]?.evidence === 'probed',
+  ).length
+  console.log(`Registered sites: ${Object.keys(SITES).length} (${probed} on tables probed under RLS)`)
+  console.log(`RPC names:       ${new Set(rpcs.map((r) => r.name)).size} (${newRpcs.length} outside the reviewed inventory)`)
 
   let failed = false
-  if (newOrWorse.length > 0) {
-    console.log(`\nFAILED: ${newOrWorse.length} new/worsened tenant-isolation finding(s):`)
-    for (const m of newOrWorse) console.log(`  ✗ ${m}`)
-    console.log(`Fix: add .eq('organization_id', orgId), an org-scoped view, or an org-scoped hook — do NOT add it to the inventory.`)
-    failed = true
-  }
-  if (ungrounded.length > 0) {
-    console.log(`\nFAILED: ${ungrounded.length} P0 inventory entr(ies) grandfathered without an ack:`)
-    for (const m of ungrounded) console.log(`  ✗ ${m}`)
-    failed = true
-  }
-  if (stale.length > 0) {
-    console.log(`\nFAILED: inventory is STALE (${stale.length}) — a finding was fixed/reduced:`)
-    for (const m of stale) console.log(`  ✗ ${m}`)
-    console.log(`Run: node scripts/frontend-tenant-lint.mjs --write-inventory, then commit the inventory so the fix is reviewed.`)
+
+  if (parseErrors.length) {
+    /* A file this gate cannot parse is a file it cannot check, and silently
+       counting it as clean is the failure mode that makes a gate decoration. */
+    console.log(`\nFAILED: ${parseErrors.length} file(s) could not be parsed:`)
+    parseErrors.forEach((f) => console.log(`  ${f.file}: ${f.detail}`))
     failed = true
   }
 
-  if (failed) { console.log(''); process.exit(1) }
-  console.log('\nPASS: current findings exactly match the reviewed inventory.\n')
+  if (unreviewed.length) {
+    console.log(`\nFAILED: ${unreviewed.length} site(s) are not in the reviewed allowlist:`)
+    for (const { key, group } of unreviewed) {
+      console.log(`  ${key}  x${group.length}`)
+      group.forEach((f) => console.log(`      ${f.file}:${f.line}`))
+    }
+    console.log(
+      '\n  Either scope the query (.eq or .in on organization_id, or an\n' +
+      '  org-scoped view), or add an entry to scripts/lib/tenant-allowlist.mjs\n' +
+      '  quoting the policy on that table that enforces the boundary.\n' +
+      '  An entry without a policy is rejected.',
+    )
+    failed = true
+  }
+
+  if (grown.length) {
+    console.log(`\nFAILED: ${grown.length} reviewed site(s) hold more findings than were accepted:`)
+    for (const { key, group, allowed } of grown) {
+      console.log(`  ${key}: ${group.length} now, ${allowed} reviewed`)
+      group.forEach((f) => console.log(`      ${f.file}:${f.line}`))
+    }
+    failed = true
+  }
+
+  if (stale.length) {
+    console.log(`\nFAILED: ${stale.length} reviewed site(s) no longer exist — remove them:`)
+    stale.forEach((key) => console.log(`  ${key}`))
+    failed = true
+  }
+
+  if (shrunk.length) {
+    /* Ground gained is held, the same way the type-error ceiling is. */
+    console.log(`\nFAILED: ${shrunk.length} reviewed site(s) hold fewer findings than recorded.`)
+    console.log('  Lower the count so the gain cannot be spent silently:')
+    for (const { key, group, allowed } of shrunk) {
+      console.log(`  ${key}: sites ${allowed} -> ${group.length}`)
+    }
+    failed = true
+  }
+
+  if (newRpcs.length) {
+    console.log(`\nFAILED: ${newRpcs.length} rpc name(s) are not in the reviewed inventory:`)
+    newRpcs.forEach((name) => console.log(`  ${name}`))
+    console.log(
+      '\n  An rpc runs server-side and this gate cannot see what it checks.\n' +
+      '  Read the function (SECURITY DEFINER? does it verify membership?) and\n' +
+      '  add the name to REVIEWED_RPCS in scripts/lib/tenant-allowlist.mjs.',
+    )
+    failed = true
+  }
+
+  if (failed) {
+    console.log('')
+    process.exit(1)
+  }
+
+  /* Deliberately not "no violations": there are 196 unfiltered reads. What
+     passes is that each one is registered against a policy somebody recorded,
+     at a stated evidence level. The database is the boundary, not this gate. */
+  console.log('\nPASS: every finding is registered against a recorded policy.\n')
   process.exit(0)
 }
-
-// Allow importing for tests
-export { ORG_SCOPED_TABLES, ORG_SCOPED_VIEWS, P0_TABLES, scanFile }
 
 run()

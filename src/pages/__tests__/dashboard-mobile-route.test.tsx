@@ -37,9 +37,22 @@ vi.mock('../../components/mobile/MobileDashboard', () => ({
 }))
 vi.mock('../../components/dashboard/DashboardShell', () => ({
   DashboardShell: ({ initialLens }: any) => (
-    <div data-testid="desktop-dashboard" data-lens={initialLens} />
+    <div data-testid="retired-dashboard-shell" data-lens={initialLens} />
   ),
   LENS_FOR_TAB: {},
+}))
+/*
+ * The desktop home is `DashboardNext` now.
+ *
+ * It was the Dashboard-as-feed trial in a tab of its own; that decided in its
+ * favour, so `today` renders it and `DashboardShell` is reachable only from a
+ * saved `research-v2` or `decisions-v2` tab. The sentinel moves with the
+ * surface, because this suite's subject is which of the two a viewport width
+ * selects -- and the shell keeps a sentinel of its own so "the home is the
+ * shell again" fails here rather than passing on a missing element.
+ */
+vi.mock('../../components/dashboard-next/DashboardNext', () => ({
+  DashboardNext: () => <div data-testid="desktop-dashboard" />,
 }))
 vi.mock('../../components/mobile/DesktopOnlyCard', () => ({
   DesktopOnlyCard: () => <div data-testid="desktop-only-card" />,
@@ -119,8 +132,13 @@ describe('/dashboard device resolution', () => {
     setViewportWidth(LAPTOP)
     render(<DashboardPage />)
 
-    const shell = screen.getByTestId('desktop-dashboard')
-    expect(shell).toHaveAttribute('data-lens', 'today')
+    /* `data-lens` was asserted here while the home was a lens shell on its
+       `today` lens. The home has no lens to be on now: the feed, Explore and
+       Portfolio are its three lenses and it restores the one the reader left.
+       What this case is for is unchanged -- a laptop gets the desktop home
+       and not the phone feed -- plus the shell it replaced staying gone. */
+    expect(screen.getByTestId('desktop-dashboard')).toBeInTheDocument()
+    expect(screen.queryByTestId('retired-dashboard-shell')).not.toBeInTheDocument()
     expect(screen.queryByTestId('mobile-ideas-feed')).not.toBeInTheDocument()
   })
 

@@ -81,9 +81,24 @@ const DETAILS = [
  * cases hold them there.
  */
 describe('a decision is never graded, though its price may be', () => {
-  /** The objects that depict the decision itself, not the market. */
+  /**
+   * The objects that depict the decision itself, not the market.
+   *
+   * `PriceSinceDecision` came OFF this list, and the reason is the list's own
+   * wording: it depicts the market. It was held neutral on the argument that
+   * a red line beside a stated rationale reads as a verdict on the call --
+   * sound in isolation, and not survivable in the lens it lives in, because
+   * the TILES of that same lens draw the graded shared chart. A reader saw a
+   * red NKE line in the gallery, clicked it, and landed on a grey line of the
+   * same series. Reported twice as "the chart is not the same as the other
+   * lenses", and the product owner called it, exactly as they called the same
+   * question for the tile charts one pass earlier.
+   *
+   * `DecisionPath` stays, and it is the case the rule was always about: it
+   * draws the LIFECYCLE -- proposed, decided, executed -- which is the
+   * decision, not the price.
+   */
   const NEVER_GRADED = [
-    ['components/decisions-v2/DecisionVisual.tsx', 'export function PriceSinceDecision'],
     ['components/decisions-v2/DecisionVisual.tsx', 'export function DecisionPath'],
   ] as const
 
@@ -103,6 +118,71 @@ describe('a decision is never graded, though its price may be', () => {
       expect(fn).not.toMatch(/up \? 'text-emerald/)
       expect(fn).not.toMatch(/up \? 'bg-emerald/)
     }
+  })
+
+  /*
+   * Rewritten, not deleted. It asserted `ink="neutral"` on the decision
+   * pane's chart, which was the rule until the gallery and the workspace of
+   * one lens were seen side by side: the tiles graded and the pane did not.
+   * What survives of its subject is that a price path is graded the SAME way
+   * wherever it is drawn -- which is now the thing worth pinning, because
+   * the way this went wrong was one surface opting out.
+   */
+  it('grades a price path the same way in the gallery and in the workspace', () => {
+    const lens = src('components/decisions-v2/DecisionVisual.tsx')
+    const at = lens.indexOf('export function PriceSinceDecision')
+    expect(at).toBeGreaterThan(-1)
+    // No opt-out: the detail chart takes the shared default, like Research.
+    expect(lens.slice(at, at + 1600)).not.toContain('ink="neutral"')
+    expect(src('components/research-v2/ResearchVisual.tsx')).not.toContain('ink=')
+
+    const chart = src('components/desktop/AnchoredPriceChart.tsx')
+    // `graded` is what every hue on the plot is keyed off -- the line and the
+    // figure's chip alike -- so the two can never disagree about which way
+    // the price went, and the default is the graded one.
+    expect(chart).toContain("const graded = ink === 'direction'")
+    expect(chart).toContain("ink = 'direction'")
+    expect(chart).toMatch(/up\s*\n?\s*\?\s*'text-emerald/)
+    // Neutral still EXISTS and still draws slate. The mode is not being
+    // deleted, only vacated -- a chart that could no longer draw one ink
+    // would pass the lines above by having nothing to opt out of.
+    expect(chart).toMatch(/!graded\s*\n?\s*\?\s*'text-slate-/)
+  })
+
+  it('draws every full-size price path from one geometry', () => {
+    /*
+     * Both lenses drew the same plot from two copies. Research's was fixed --
+     * measured box, 1:1 drawing, gridlines, a gutter, a dated axis, a scrub
+     * -- and Decisions' was not, so the detail pane went on rendering a
+     * 340x92 viewBox under `preserveAspectRatio="none"` at 636px wide: a
+     * 1.87x horizontal smear, 92px of plot against Research's 204.
+     */
+    const shared = src('components/desktop/AnchoredPriceChart.tsx')
+    // Every pattern here carries code punctuation or a line start, because
+    // the file's own header QUOTES the defect it replaced -- a guard a
+    // comment can break is a guard that will be loosened to shut it up.
+    expect(shared).toContain('useWidth<HTMLDivElement>')
+    expect(shared).toContain('viewBox={`0 0 ${W} ${H}`}')
+    expect(shared).toContain('width={W}')
+    expect(shared).not.toMatch(/^\s*preserveAspectRatio=/m)
+    for (const f of [
+      'components/research-v2/ResearchVisual.tsx',
+      'components/decisions-v2/DecisionVisual.tsx',
+    ]) {
+      const body = src(f)
+      expect(body).toContain("from '../desktop/AnchoredPriceChart'")
+      expect(body).toContain('<AnchoredPriceChart')
+    }
+    // And the lens no longer keeps a private copy of the slicing rule: the
+    // copy it kept still had the `Math.max(0, findIndex(...)) === 0` bug the
+    // shared one was fixed for, which claimed a since-decision window for a
+    // decision the price cache had not reached.
+    const lens = src('components/decisions-v2/DecisionVisual.tsx')
+    expect(lens).not.toContain('export function windowSinceDecision')
+    // Line-anchored: the retirement note quotes the broken slice verbatim,
+    // and a guard that its own explanation can break is worse than no guard.
+    expect(lens).not.toMatch(/^\s*const startIndex = reaches/m)
+    expect(lens).toContain('export { anchoredWindow }')
   })
 
   it('never grades with the severity palette, on any visual surface', () => {
@@ -148,7 +228,11 @@ describe('a decision is never graded, though its price may be', () => {
 
 describe('severity means one thing across surfaces', () => {
   it('calls a missing core thesis review, not critical, in both places', () => {
-    expect(src('components/research-v2/ResearchWorkspace.tsx'))
+    // `STATE_TONE` moved out of the workspace component into the Research
+    // model, because the detail HEADER now badges state too and a component
+    // cannot import a tone map from a sibling component without the two
+    // drifting. The rule is unchanged; only its home moved.
+    expect(src('lib/desktop-research/model.ts'))
       .toMatch(/'no-thesis':\s*'review'/)
     const pf = src('lib/desktop-portfolio/model.ts')
     const tone = pf.slice(pf.indexOf('export function toneForGap'), pf.indexOf('MATERIAL_PCT'))
@@ -319,11 +403,66 @@ describe('browse, then engage: one mode at a time', () => {
     // Reveal is opacity only, inside reserved height: no layout shift, and
     // nothing appears that was not already occupying its space.
     expect(shell).toMatch(/group-hover:/)
-    expect(shell).toMatch(/group-focus-within:/)
+    // Keyboard reveal is `:focus-visible`. `:focus-within` also matched a
+    // mouse click, which pinned the shelf open on every tile whose controls
+    // had been clicked.
+    expect(shell).toMatch(/group-has-\[:focus-visible\]:/)
+    expect(shell).not.toMatch(/group-focus-within:/)
     // The shell is not itself a button any more, which is what made nesting
     // one inside it invalid in the first place.
     expect(shell).toMatch(/role="group"/)
-    expect(shell).not.toMatch(/selected\s*\?:/)
+    /*
+     * ── The persistent ring, and why this assertion changed shape ─────────
+     *
+     * This read `expect(shell).not.toMatch(/selected\s*\?:/)` -- the shell may
+     * not have a `selected` prop at all. The reason was never that a ring is
+     * wrong; it was that nothing sits beneath these four galleries any more,
+     * so a ring would mark a tile against a pane that does not exist, and the
+     * moment a tile is opened its gallery is gone.
+     *
+     * That premise holds for the four workspace lenses and it does not hold
+     * everywhere. The Dashboard keeps Explore's field in the left column with
+     * the asset workspace open beside it, so "which tile is the pane about" is
+     * a real question there, and the tile is the only thing that can answer
+     * it. Banning the prop outright would have forced that lens to draw its
+     * own tile, which is the duplication this whole suite exists to end.
+     *
+     * So the ban moves from the PROP to the CALLERS, which is what it was
+     * always about: the four workspaces must not pass it, and the default must
+     * be off, so no lens acquires a ring by inheritance.
+     */
+    expect(shell).toMatch(/selected = false/)
+    /*
+     * ── And why the list of callers shrank by one ────────────────────────
+     *
+     * This looped over all four workspace lenses. The premise above is the
+     * test: a ring is wrong where "the moment a tile is opened its gallery is
+     * gone", because then it marks a tile against a pane that does not exist.
+     *
+     * That stopped being true of Portfolio. The Dashboard now holds the book
+     * in the left column with the asset workspace open beside it -- the same
+     * arrangement that always justified Explore's ring -- so "which line is
+     * the pane about" is a real question on this surface too, and it was
+     * reported as one: the rail did not say which tile had been opened and
+     * did not scroll to it.
+     *
+     * Research and Decisions are unchanged: both still replace their gallery
+     * with the workspace, so a ring there would still mark nothing. The ban
+     * holds for them, and the default stays off, so no lens acquires a ring
+     * by inheritance.
+     */
+    for (const f of ALL_BROWSE) {
+      if (f === 'components/portfolio-v2/PortfolioWorkspace.tsx') continue
+      /* The lookbehind keeps `aria-selected={...}` out of it: that is a
+         listbox option announcing itself, not a tile wearing a ring. */
+      expect(code(f)).not.toMatch(/(?<![\w-])selected=\{/)
+    }
+    /* Portfolio's ring is gated on the host having said a line is open
+       BESIDE the book, not on the lens's own selection -- which is the prop
+       that replaces the book with a detail pane. */
+    const bookCode = code('components/portfolio-v2/PortfolioWorkspace.tsx')
+    expect(bookCode).toMatch(/selected=\{!!openAssetId && /)
+    expect(bookCode).toMatch(/openAssetId\?: string \| null/)
   })
 })
 
@@ -506,13 +645,19 @@ describe('a detail page is not five white rectangles', () => {
     // Half-width modules auto-placed into a two-column grid stack down the
     // left and leave the right empty whenever the data is sparse, which is
     // what left these pages using a quarter of the canvas they were given.
-    for (const f of [
-      'components/ideas-v2/IdeaDetail.tsx',
-      'components/research-v2/ResearchDetail.tsx',
-      'components/portfolio-v2/PositionDetail.tsx',
-    ]) {
+    /*
+     * Decisions was left off this list and stayed on the raw grid for six
+     * passes. Measured on the live pane: `DeepLinks` auto-placed into a grid
+     * cell and drew 559px wide, and the whole region was capped at 1180px
+     * inside a 1605px surface -- 473px of empty canvas, 29% of it, beside a
+     * 92px chart. A list of the panes that converged is not a rule; the rule
+     * is every pane, so this iterates DETAILS.
+     */
+    for (const f of DETAILS) {
       expect(src(f)).toContain('<DesktopColumns')
       expect(src(f)).not.toMatch(/grid grid-cols-1 gap-3\.5 px-6 pt-4 xl:grid-cols-2/)
+      // The cap Decisions carried: a magic max-width instead of a column.
+      expect(src(f)).not.toContain('xl:max-w-[1180px]')
     }
     const shell = src('components/desktop/DesktopModule.tsx')
     // One column when there is no context to put beside it, so a sparse page
@@ -680,9 +825,16 @@ describe('a Dashboard action stays in the Dashboard', () => {
     const deck = src('components/dashboard/WorkDeck.tsx')
     expect(deck.indexOf('data-testid="work-rail"'))
       .toBeLessThan(deck.indexOf('data-testid="work-surface"'))
-    // Core to the interaction, not decoration: it narrows rather than hides.
-    expect(deck).toContain('lg:block')
-    expect(deck).not.toContain('2xl:block')
+    /*
+     * Core to the interaction, not decoration: it narrows rather than hides.
+     *
+     * Was `toContain('lg:block')` — the display utility, not the breakpoint,
+     * so it broke when the rail became a flex column to pin its back
+     * control. The breakpoint is the subject; how the column is laid out is
+     * not.
+     */
+    expect(deck).toMatch(/\blg:(block|flex|grid)\b/)
+    expect(deck).not.toMatch(/\b2xl:(block|flex|grid)\b/)
   })
 
   it('never shows the expanded card as a peer, and lets the last one back', () => {
@@ -711,6 +863,152 @@ describe('one Dashboard, five lenses', () => {
     }
   })
 
+  it('gives a lens no second door in the app menu', () => {
+    /*
+     * The app menu used to list Research, Portfolio and Decisions beside
+     * Dashboard, and each opened `DashboardShell` on its own lens -- the same
+     * component with the same props the lens bar already mounts, in a second
+     * tab. A reader had two controls for one screen and no way to tell them
+     * apart.
+     *
+     * Asserted on the launcher array rather than on the whole file: the three
+     * tab types legitimately appear elsewhere in the app (saved sessions, tab
+     * icons, deep links) and must keep working. What must not come back is a
+     * MENU ENTRY that mounts a lens the lens bar already offers.
+     */
+    const header = src('components/layout/Header.tsx')
+    /*
+     * Anchored on the "Decision OS" heading, not on the first Dashboard
+     * entry: the pilot menu above calls `onSearchResult({ id: 'today', title:
+     * 'Dashboard', ... })` directly, so that anchor matched the wrong menu and
+     * sliced to a `]` before this array even began.
+     */
+    const group = header.slice(header.indexOf('>Decision OS<'))
+    const launcher = group.slice(0, group.indexOf(']'))
+    /*
+     * `ideas` joined this list, and for exactly the stated reason. The two
+     * remaining entries were "two genuinely different surfaces: the Dashboard
+     * shell, and the standalone Ideas application" -- true while Dashboard
+     * opened `DashboardShell`. `DashboardNext` carries Ideas and Explore as
+     * its two lenses, and "Dashboard" opens it, so Ideas became a door onto a
+     * lens of the surface beside it. The subject of this case is unchanged;
+     * one more type now falls under it.
+     */
+    for (const t of ['research-v2', 'portfolio-v2', 'decisions-v2', 'ideas-v2', 'ideas']) {
+      expect(launcher).not.toContain(`type: '${t}'`)
+    }
+    // One door, onto the one surface that holds the lenses.
+    expect(launcher).toContain("type: 'today'")
+    expect(launcher.match(/type: '/g)).toHaveLength(1)
+  })
+
+  /*
+   * ── The other doors onto Ideas, which the menu's own note warned about ──
+   *
+   * The note above this group says the three lenses it removed were safe to
+   * remove because "global search never offered these three ... so this menu
+   * was the single duplicate door and there is no second one left behind".
+   * Ideas was not like that: it had THREE doors. Removing one and leaving the
+   * others is the half-fix that note describes, so each is asserted by name,
+   * following `priorities-removed`'s shape.
+   *
+   * The tab TYPE is deliberately not asserted absent anywhere. A saved
+   * session, a deep link, `legacy-tab-aliases` and `AttentionPage`'s thought
+   * link all still carry `type: 'ideas'` and must still render. What must not
+   * exist is a control that OFFERS it beside the Dashboard that contains it.
+   */
+  it('leaves no second door onto Ideas anywhere else either', () => {
+    // The command palette: its row is gone and its keywords moved onto the
+    // Dashboard row, so the terms that used to find it still find the surface.
+    const search = src('hooks/useObjectSearch.ts')
+    expect(search).not.toMatch(/\{ id: 'ideas', title: 'Ideas'/)
+    const home = search.slice(search.indexOf("title: 'Dashboard'"))
+    const row = home.slice(0, home.indexOf('},') + 1)
+    for (const k of ['ideas', 'explore', 'screening', 'attention', 'opportunities']) {
+      expect(row).toContain(`'${k}'`)
+    }
+
+    /*
+     * The new tab's "Go to" grid, which is RE-POINTED and not emptied. It has
+     * no Dashboard row of its own, so deleting the Ideas row would have left a
+     * new tab with no route to the feed -- a surface removed rather than a
+     * door, which is the opposite of the intent. The description is unchanged
+     * because it is still what the reader gets.
+     */
+    const blank = src('components/tabs/BlankTab.tsx')
+    /* Comments stripped: the re-pointed row names the type it moved away from,
+       so matching the raw file fails on the note rather than on the code --
+       the same shape `AnchoredPriceChart` and `DashboardPage` both paid for. */
+    const blankCode = blank.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    expect(blankCode).not.toMatch(/type: 'ideas'/)
+    expect(blankCode).toMatch(/type: 'today'/)
+    expect(blankCode).toContain('What deserves attention, and what to explore')
+
+    /* The phone was already right, and stays asserted so it cannot drift back:
+       its `ideas` surface is registered so a restored tab renders, and is
+       `inNav: false` because the drawer's Home row lands on the same feed. */
+    const mobile = src('lib/mobile/mobile-surfaces.ts')
+    const entry = mobile.slice(mobile.indexOf("type: 'ideas', title: 'Ideas'"))
+    expect(entry.slice(0, entry.indexOf('},'))).toContain('inNav: false')
+  })
+
+  /**
+   * ── The retired Dashboard is door-less ON PURPOSE, and stays mounted ────
+   *
+   * `DashboardShell` and `TodayPage` still work and nothing in the product
+   * offers them. That is the end state of retiring the old Dashboard, and it
+   * is an unstable one to leave unrecorded, because it looks like two
+   * different mistakes depending on which way a reader approaches it:
+   *
+   *   a surface with no door   looks like a door somebody forgot to wire, so
+   *                            a later pass helpfully adds a launcher entry
+   *                            and un-retires it
+   *   a surface nothing opens  looks like dead code, so a later pass deletes
+   *                            it and a saved tab or an old link stops
+   *                            resolving
+   *
+   * Both are wrong and this case says so in both directions. Asked for and
+   * agreed: leave them, gate them, decide deletion separately.
+   *
+   * What reaches them: four saved tab types, each mounting the shell on its
+   * own lens, and `TodayPage` only through the shell's own lens bar. No
+   * launcher entry, no palette row, no "Go to" tile.
+   */
+  it('keeps the retired Dashboard reachable only from a saved tab, and still mounted', () => {
+    const page = src('pages/DashboardPage.tsx')
+    /*
+     * Comments stripped up front, for both halves. The arms that moved name
+     * the component they moved away from, so the raw file holds a FIFTH
+     * `<DashboardShell` inside the note recording its removal -- the
+     * guard-breaks-on-its-own-comment shape this repo keeps paying for, and it
+     * broke this case on the first run.
+     */
+    const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    /* MOUNTED. Four arms, one per saved tab type, so a session saved before
+       the retirement still opens the surface it named. */
+    for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
+      expect(code).toContain(`case '${t}':`)
+    }
+    expect(code.match(/<DashboardShell/g)?.length).toBe(4)
+    /* And `TodayPage` still rendered by the shell's own lens bar, which is
+       the only thing left that can reach it. */
+    expect(src('components/dashboard/DashboardShell.tsx'))
+      .toContain("if (l === 'today') return <TodayPage />")
+
+    // DOOR-LESS. The home is the feed, so no arm opens the shell on `today`.
+    expect(code).not.toMatch(/<DashboardShell initialLens="today"/)
+    for (const file of [
+      'components/layout/Header.tsx',
+      'hooks/useObjectSearch.ts',
+      'components/tabs/BlankTab.tsx',
+    ]) {
+      const body = src(file).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+      for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
+        expect(body).not.toContain(`'${t}'`)
+      }
+    }
+  })
+
   it('keeps saved v2 sessions renderable, without migrating them', () => {
     // A session saved last week still holds `ideas-v2` etc. Each mounts the
     // same shell on its own lens, so nothing is rewritten on load and the
@@ -720,23 +1018,40 @@ describe('one Dashboard, five lenses', () => {
       expect(page).toContain(`case '${t}':`)
     }
     /*
-     * `today` mounts the shell on its own lens. Asserted as a mount rather
-     * than as the exact next line: a pilot now gets the same shell with the
-     * Get Started checklist and the first-session coverage prompt layered
-     * above it, so the case arm is a branch and the adjacency no longer holds.
-     * What matters is that both arms end at this shell and this lens.
+     * ── What `today` mounts, and why this case was re-pointed ─────────────
+     *
+     * This read `<DashboardShell initialLens="today" />`, exactly once, on
+     * the arm that is not the pilot first run. The subject was never that
+     * particular component: it was that the canonical home type mounts the
+     * HOME on the home lens, on one arm, with the pilot mission on the other
+     * INSTEAD of layered over it.
+     *
+     * The home is `DashboardNext` now. It was built in a tab of its own
+     * because deciding that the Dashboard is the feed is a large claim to
+     * make about somebody's home screen; that decided in its favour, so the
+     * launcher's "Dashboard (new)" door is gone and `dashboard-next` is a
+     * compatibility type. Re-pointed rather than dropped, because the two
+     * things that can still go wrong here are unchanged: two mounts on one
+     * arm, or the mission layered instead of substituted.
      */
     const todayArm = page.slice(page.indexOf("case 'today':"), page.indexOf("case 'ideas':"))
-    /*
-     * One mount, on the arm that is not the pilot first run. An incomplete
-     * pilot gets the mission INSTEAD of the Dashboard rather than on top of
-     * it — layering meant the lens bar and every lens query sat under the
-     * guidance — and `effectiveIsPilot` is already `hasGraduated ? false :
-     * isPilot`, so the shell returns the moment the mission completes.
-     */
-    expect(todayArm.match(/<DashboardShell initialLens="today" \/>/g)).toHaveLength(1)
+    expect(todayArm.match(/<DashboardNext \/>/g)).toHaveLength(1)
+    /* And the shell is GONE from this arm rather than merely outranked by a
+       branch above it, which is what "retired" has to mean. */
+    expect(todayArm).not.toMatch(/<DashboardShell/)
     expect(todayArm).toContain('pilotMode.effectiveIsPilot')
     expect(todayArm).toContain('PilotWelcomeBanner')
+    /*
+     * The launcher has ONE Dashboard door. A second entry opening the same
+     * surface is the duplication the note at the top of that menu removed
+     * three other entries for.
+     */
+    const header = src('components/layout/Header.tsx')
+    expect(header).not.toContain("type: 'dashboard-next'")
+    expect(header).toContain("title: 'Dashboard', type: 'today'")
+    /* The compatibility type still resolves, so a saved trial tab does not
+       land on the blank default. */
+    expect(page).toContain("case 'dashboard-next':")
     const tabs = src('components/layout/TabManager.tsx')
     for (const t of ['ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']) {
       expect(tabs).toContain(t)
@@ -783,7 +1098,27 @@ describe('size is importance, colour is condition', () => {
       'components/research-v2/ResearchWorkspace.tsx',
       'components/portfolio-v2/PortfolioWorkspace.tsx',
     ]) {
-      expect(src(f)).toMatch(/size=\{sizeByRank(WithRhythm)?\(i, /)
+      /*
+       * The regex gained a lead-in, and the reason is worth recording rather
+       * than widening quietly.
+       *
+       * It was anchored at `size={sizeByRank(i, `. Portfolio's call is now a
+       * conditional: a line the host has open BESIDE the book keeps the size
+       * its rank earned, and every other line drops to `compact` so the rail
+       * is a list the reader can scan instead of twenty-two full cards
+       * pushing the opened one off the screen.
+       *
+       * That is not the rule this case protects. The rule is that size comes
+       * from POSITION and never from what a card has to draw, and a
+       * selection is neither -- it is the reader pointing at a row. What must
+       * still hold is that the rank is what the size is computed from, which
+       * is what this now asserts.
+       */
+      expect(src(f)).toMatch(/size=\{[\s\S]{0,200}?sizeByRank(WithRhythm)?\(i, /)
+      /* And nothing about the item itself reaches the size. */
+      const call = src(f).slice(src(f).indexOf('size={'))
+      expect(call.slice(0, call.indexOf('}') + 1))
+        .not.toMatch(/tone|ladder|closes|chart|weightPct/)
     }
     // And the rhythm itself is positional: no item field reaches it.
     const shell = src('components/desktop/DesktopTile.tsx')
@@ -892,13 +1227,26 @@ describe('one module primitive', () => {
 describe('the launcher names the product, not the build', () => {
   const header = src('components/layout/Header.tsx')
 
-  it('shows the five canonical names', () => {
-    for (const label of [
-      "title: 'Dashboard'", "title: 'Ideas'", "title: 'Research'",
-      "title: 'Portfolio'", "title: 'Decisions'",
-    ]) {
-      expect(header).toContain(label)
-    }
+  /*
+   * SUPERSEDED, REWRITTEN, NOT DELETED.
+   *
+   * This asserted all five canonical names in the launcher, and it was right
+   * at the time: the point was that the menu reads as the product rather than
+   * as build stages ("Ideas V2", "Book"). Research, Portfolio and Decisions
+   * have since left the menu, because each entry mounted `DashboardShell` on
+   * a lens the lens bar inside Dashboard already offers -- a duplicate door,
+   * not a surface. Their lenses are named in `DashboardShell` and guarded by
+   * "offers all five lenses from one shell"; the duplicate's absence is
+   * guarded by "gives a lens no second door in the app menu".
+   *
+   * What survives of the original intent is the part about naming: whatever
+   * the menu does list, it lists under the product's name.
+   */
+  /* `title: 'Ideas'` dropped with the entry, for the reason recorded in
+     "gives a lens no second door in the app menu". The naming rule is what
+     this case is for, and the one entry left still obeys it. */
+  it('names what it lists after the product', () => {
+    expect(header).toContain("title: 'Dashboard'")
   })
 
   it('no longer shows build-stage labels', () => {
@@ -1092,28 +1440,54 @@ describe('a handoff never promises what is not there', () => {
     expect(hook).toContain('TERMINAL_STATUS.has')
   })
 
-  it('draws one card across every lens, and it is the Ideas card', () => {
+  it('draws one card across every lens, and it is the feed card', () => {
     /*
-     * ── The complaint this pins ──────────────────────────────────────────
+     * ── What this pinned, and why the values changed ─────────────────────
      *
-     * Ideas dropped its drop shadow and its large radius, and that was the
-     * single most-noticed change made to it: a shadow under every tile makes
-     * a field read as a stack of floating panels rather than one instrument,
-     * and a large radius reads friendly where this surface is meant to read
-     * precise. The other four lenses kept `rounded-xl` and `shadow-sm`, so
-     * they went on looking like a different product one tab away -- reported
-     * as "the other lenses don't look any different".
+     * It used to assert `rounded-[3px]` and no shadow anywhere near a card.
+     * The reasoning: a shadow under every tile makes a field read as a stack
+     * of floating panels rather than one instrument, a large radius reads
+     * friendly where this surface is meant to read precise, and a hairline
+     * over the page's own grey ground did the separating.
      *
-     * A hairline and the page's own ground do the work, and hover moves the
-     * border colour rather than lifting the card off the page.
+     * The founder removed the grey ground. The Dashboard puts the feed,
+     * Explore and Portfolio behind one bar, the feed was white and the other
+     * two were grey, and the instruction was to make the page white and give
+     * the tiles better contrast on all three. With the mat gone the card's
+     * own edge is the only separation left, so the border gains weight and
+     * one step of elevation -- the page's job, moved onto the card.
+     *
+     * ── Why the assertion is now about a CONSTANT ────────────────────────
+     *
+     * Both of this suite's convergence bugs were the same shape: literal
+     * class strings copied between files and then drifting. Naming the new
+     * literals here would reproduce that in the test. What is invariant is
+     * that every tile reads ONE definition, so that is what is asserted --
+     * and the feed card, which was outside the convergence and is half the
+     * reported complaint, is now inside it.
      */
-    // Comments stripped: this file explains the shadow it removed, and a
+    // Comments stripped: these files explain the look they replaced, and a
     // guard that reads its own prose would fail on the explanation.
-    const code = (f: string) => src(f).replace(/\/\*[\s\S]*?\*\//g, '')
-    for (const f of ['components/desktop/DesktopTile.tsx', 'components/today/TodayTile.tsx']) {
-      expect(code(f)).toContain('rounded-[3px]')
-      expect(code(f)).not.toContain('shadow-sm')
-      expect(code(f)).not.toContain('hover:shadow-md')
+    const code = (f: string) => src(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+    const TILES = [
+      'components/desktop/DesktopTile.tsx',
+      'components/today/TodayTile.tsx',
+      /* The feed's card. Not a `DesktopTile`, and that is exactly why it
+         has to be named: it drew its own skin and the Dashboard shows it
+         beside two galleries that drew theirs. */
+      'components/ideas-app/IdeasExplore.tsx',
+    ]
+    for (const f of TILES) {
+      const body = code(f)
+      expect(body).toContain('CARD_SURFACE')
+      expect(body).toMatch(/from '[^']*lib\/ui\/surface'/)
+      /*
+       * And no second answer beside the first. A file that imports the
+       * shared surface and then adds its own radius, fill or elevation to
+       * the card root is how the drift starts again.
+       */
+      expect(body).not.toContain('rounded-[3px]')
+      expect(body).not.toMatch(/\brounded-xl border bg-white\b/)
     }
 
     /*
@@ -1170,8 +1544,15 @@ describe('a handoff never promises what is not there', () => {
      * hand-rolling its own. The RULES are what matter and they are unchanged.
      */
     const hero = src('components/desktop/DesktopTile.tsx')
-    // Hero is 30px, and 44px -- louder than the ticker -- never comes back.
-    expect(hero).toMatch(/scale === 'hero' \? 'text-\[30px\]'/)
+    /*
+     * Hero is 30px, and 44px -- louder than the ticker -- never comes back.
+     *
+     * The size moved out of an inline ternary into `TILE_DISPLAY`, because
+     * the figure primitive and the hand-rolled spans below `large` were
+     * running two ladders a pixel or two apart at every step. The ladder is
+     * now one table; the value this guard exists for is its top rung.
+     */
+    expect(hero).toMatch(/const TILE_DISPLAY: Record<TileSize, string> = \{\s*\n\s*hero: 'text-\[30px\]'/)
     expect(hero).not.toMatch(/text-\[44px\]/)
     expect(hero).toContain("font-mono font-semibold leading-[0.95]")
     // Only a genuine break inks it. A due review is a calendar fact.
@@ -1252,7 +1633,11 @@ describe('a handoff never promises what is not there', () => {
      */
     const panel = src('components/portfolio-v2/ActiveWeights.tsx')
     expect(panel).toContain('Against the benchmark')
-    expect(panel).toContain('active share')
+    /* Case-insensitive: the label moved from a caption clause ("11.2% active
+       share") to a figure with a key under it ("Active share"), which is the
+       same claim said at a size a reader can see. The claim is that the panel
+       states active share at all, not how it capitalises it. */
+    expect(panel).toMatch(/active share/i)
 
     /*
      * ── The line it must never draw ──────────────────────────────────────
@@ -1290,7 +1675,20 @@ describe('a handoff never promises what is not there', () => {
      * them, and the strip looked interactive while being inert.
      */
     expect(panel).toContain('onClick={() => onOpen(r.assetId)}')
-    expect(panel).toContain('pointer-events-none absolute inset-x-0 top-1/2')
+    /*
+     * ── Why this no longer names `top-1/2` ───────────────────────────────
+     *
+     * The subject is `pointer-events-none`: the zero line was a sibling
+     * positioned to ride up over the bars and it intercepted every pointer
+     * event they had. The assertion pinned the whole class string, so when
+     * the axis stopped being welded to half height -- a five-position book
+     * drew all five underweights at the 2px floor and the lower half of the
+     * plot was permanently blank -- a guard about pointer events failed for
+     * a reason that had nothing to do with pointer events. It names the two
+     * properties it is actually about.
+     */
+    expect(panel).toContain('pointer-events-none absolute inset-x-0')
+    expect(panel).toMatch(/aria-hidden[\s\S]{0,200}pointer-events-none/)
 
     /*
      * Five each end, and nothing in between.
@@ -1428,9 +1826,19 @@ describe('a handoff never promises what is not there', () => {
      */
     expect(visual).toContain('data-testid="scenario-band"')
     expect(visual).toContain('data-testid="scenario-scrub"')
-    // Bear to bull, because that is what the axis IS. The old gradient ran
-    // through blue in the middle and said nothing about its own ends.
-    expect(visual).toContain('from-rose-500/[0.16] via-slate-400/[0.10] to-emerald-500/[0.16]')
+    /*
+     * Bear to bull, because that is what the axis IS. The old gradient ran
+     * through blue in the middle and said nothing about its own ends.
+     *
+     * The alphas were raised (0.16/0.10 → 0.30/0.18) when the band took the
+     * slot's spare height: at 16% a 34px hairline was invisible on a white
+     * card. The DIRECTION is the rule, so this pins the ends and the neutral
+     * middle and leaves the opacity to the eye.
+     */
+    expect(visual).toMatch(
+      /bg-gradient-to-r from-rose-500\/[^ ]+ via-slate-400\/[^ ]+ to-emerald-500\//,
+    )
+    expect(visual).not.toMatch(/via-(blue|indigo|sky)-/)
   })
 
   it('never renders chart labels as stretched SVG text', () => {
@@ -1467,14 +1875,24 @@ describe('a handoff never promises what is not there', () => {
      */
     const enrich = src('lib/today/enrich.ts')
     expect(enrich).toContain('function ageVisual')
-    expect(enrich).toContain('if (!e) return aged ? { ...item, visual: aged } : item')
+    // The tile now carries a panel carousel, so the chosen visual has to be
+    // written to `visuals` as well or the pager renders an empty first page.
+    expect(enrich).toContain('if (!e) return aged ? { ...item, visual: aged, visuals: [aged] } : item')
 
     // Scaled to a year, not to the longest item on the page: a review cycle
     // is what a reader measures against, and a floating scale would make
     // eighteen months look like twelve.
     const visual = src('components/today/TodayVisual.tsx')
     expect(visual).toContain('const YEAR = 365')
-    expect(visual).toContain('data-testid="aging-track"')
+    /*
+     * A dial now, not a track: the bar read as a progress indicator toward
+     * a deadline the product does not have, and the reader asked for it to
+     * go. The fixed scale is what this guard is for and it survives the
+     * change -- the ring's sweep is still `days / YEAR`, not days over the
+     * oldest item on the page.
+     */
+    expect(visual).toContain('data-testid="aging-dial"')
+    expect(visual).not.toContain('data-testid="aging-track"')
   })
 
   it('gives Decisions two visuals, and picks by what the record holds', () => {
@@ -1520,21 +1938,57 @@ describe('a handoff never promises what is not there', () => {
      * cannot carry ticks and both end labels.
      */
     /*
-     * Still a ladder, and still ungated on baseline or density -- it simply
-     * has a rung above it now (the price column at hero and large), so the
-     * explain branch is a continuation rather than the opening `{`.
+     * ── It is no longer a ladder, and the ladder was the defect ───────────
+     *
+     * This asserted the ladder's shape -- `work === 'explain' ? (` as a
+     * continuation rung -- and that assertion was pinning the thing in
+     * place. Mutually exclusive rungs mean a record with a price AND a
+     * record gap draws exactly one of them, with the other unreachable
+     * without opening the record, and which one you got was invisible from
+     * the outside. Measured on the live field of 26 cards: 11 drew gaps, 8
+     * drew a sparkline, 7 drew nothing, 0 drew the shared chart and 0
+     * offered a second visual.
+     *
+     * The rungs are pages of the shared pager now. What this case was
+     * actually about survives unchanged -- every card gets a visual, ungated
+     * on baseline weight and ungated on density -- and is asserted on the
+     * panel list instead of on the `?:` chain.
      */
-    expect(ws).toContain("work === 'explain' ? (")
+    expect(ws).toContain("key: 'gaps'")
+    expect(ws).toContain("key: 'size'")
+    expect(ws).toContain("key: 'price'")
+    expect(ws).toContain("key: 'path'")
+    expect(ws).toContain('<PanelCarousel')
     /*
      * One deliberate density gate, which is the opposite of the two this case
      * removed. Those suppressed a visual that had something to draw. This one
-     * chooses BETWEEN visuals on the smallest tile, where there is room for
-     * exactly one: the share-of-book bar is the object this product draws most
-     * -- every lens has one -- so at compact the price takes the slot, being
-     * the one object that differs from the tile above.
+     * chooses BETWEEN visuals on the smallest tile: the share-of-book bar is
+     * the object this product draws most -- every lens has one -- so at
+     * compact it does not take a page, and the price is the one object that
+     * differs from the tile above.
      */
     expect(ws).toContain("outcome === 'open' && size !== 'compact'")
-    expect(ws).toContain('drawsSpark')
+    /*
+     * And the price is the SHARED chart, not a second smaller drawing of the
+     * same data. `TileSparkline` had no price axis, no horizon chips, no
+     * anchor marker, its caption above the line rather than beside the
+     * percentage, an 11px readout against 18, and a stroke that scaled with
+     * the SVG so the line changed weight along its own path. Four lenses
+     * drew `TilePriceChart` and this one drew that, one tab away -- which is
+     * the exact complaint that made `TilePriceChart` shared in the first
+     * place, reported again about this lens.
+     */
+    expect(ws).toContain("import { TilePriceChart } from '../desktop/TilePriceChart'")
+    expect(ws).toContain('<TilePriceChart')
+    expect(ws).not.toContain('<TileSparkline')
+    /*
+     * The box is floored to the tallest page and the page is out of flow, so
+     * turning a page cannot resize the card. `overflow-hidden` is not enough
+     * and the Ideas grid measured why: clipping governs painting, not
+     * intrinsic sizing, and paging grew four of its cards by 39px.
+     */
+    expect(ws).toContain('style={{ minHeight: box }}')
+    expect(ws).toContain("className=\"absolute inset-0 flex min-h-0 flex-col justify-center overflow-hidden\"")
     const visual = src('components/decisions-v2/DecisionVisual.tsx')
     expect(visual).toContain('const known = from != null')
     expect(visual).toContain('compact?: boolean')
@@ -1603,9 +2057,113 @@ describe('a handoff never promises what is not there', () => {
      * when the second landed; above xl it was 15px short of the day panel and
      * the grid still stepped by that. Both were measured, not estimated, and
      * the second only after the first attempt had been declared done.
+     *
+     * ── Why it is no longer `min-h-[400px]` / `xl:min-h-[200px]` ─────────
+     *
+     * Those are VIEWPORT breakpoints, and the window is 1920 whether this
+     * lens is the page or the ~20rem rail beside an open workspace. So the
+     * placeholder promised the rail a two-panel row 200px tall and the page
+     * then drew one stacked column of figures -- the placeholder's one job,
+     * done backwards. It reserves through the same `.book-header-panels`
+     * contract the loaded header uses now, so the tracks and the heights
+     * cannot drift apart: the shared `data-waiting` reservation, plus a
+     * `book-panel-ghost` per panel whose height follows the container query
+     * (72px in the rail, 186px at full width).
      */
-    expect(body).toContain('min-h-[400px]')
-    expect(body).toContain('xl:min-h-[200px]')
+    expect(body).toContain('<div data-waiting className="book-header-panels')
+    expect(body).toMatch(/book-panel-ghost[\s\S]{0,200}book-panel-ghost/)
+    /*
+     * And the HEADER's copy of that reservation is conditioned on the wait,
+     * not unconditional. It was unconditional, and a book whose panels are
+     * shorter than the five-row maximum they are sized for -- which is most
+     * books -- held 51px of empty header open forever, directly above the
+     * line that says how much of the book has no framework.
+     *
+     * `BenchmarkComparison` is a state machine, which is why this can be
+     * written at all: "still fetching" and "this book has no benchmark file"
+     * are distinguishable, and only the first is a wait. A null check could
+     * not tell them apart and would have collapsed the row on every book
+     * that simply has no index, reintroducing the jump on book switch.
+     *
+     * The skeleton's own copy above stays unconditional: it IS the wait.
+     */
+    /*
+     * ── It became an attribute, and it had to ────────────────────────────
+     *
+     * This read the Tailwind classes directly. The reservation now has to
+     * follow a CONTAINER threshold rather than a viewport one -- the lens is
+     * drawn at full width and in a ~20rem rail, where the panels carry no
+     * movers and no strip, so the full-width figure would reserve space for
+     * content that is not coming.
+     *
+     * Tailwind 3.4 ships no container-query variants and this project adds
+     * no plugin, so `@[34rem]:min-h-[400px]` would have emitted nothing and
+     * the reservation would silently not exist -- a gate that cannot observe
+     * its own failure. The heights live in `index.css` beside the tracks they
+     * must agree with, and the component says only whether it is waiting.
+     *
+     * Both halves are pinned, because either alone is decoration.
+     */
+    expect(body).toContain("data-waiting={benchmark.state === 'loading' ? '' : undefined}")
+    const css = src('index.css')
+    expect(css).toContain('.book-header-panels[data-waiting]')
+    /* By the block, not by a character budget. A `[\s\S]{0,900}` slack
+       between the query and the selector asserts how much CSS happens to sit
+       between them, so it failed the moment the column-pinning rules were
+       added -- a gate that breaks on an unrelated edit teaches the next
+       reader to widen the number instead of reading the rule. */
+    const wide = css.slice(css.indexOf('@container (min-width: 34rem)'))
+    expect(wide).toMatch(/\.book-header-panels\[data-waiting\] \{\s*min-height: 200px/)
+    expect(wide).toMatch(/\.book-panel-ghost \{\s*height: 186px/)
+  })
+
+  /**
+   * The book summary is laid out by its COLUMN, not by the window.
+   *
+   * ── What a viewport breakpoint cost here ─────────────────────────────────
+   *
+   * This lens is drawn at full width AND in the ~20rem rail beside an open
+   * workspace, and the window is 1920 in both. So `xl:grid-cols-2` put two
+   * panels side by side in 352px: the mover lists collided with their own
+   * column keys, ten benchmark bars became a 26px smear with overlapping
+   * tickers, and the band ran past 460px so the Positions list it introduces
+   * was below the fold. Reported as "all messed up ... needs to be simplified
+   * and smaller".
+   *
+   * Moving only the TRACKS was not enough and the half-fix is worth pinning:
+   * the children still carried `xl:col-start-2`, so a panel claimed column
+   * two in a one-track grid, CSS created an implicit second track, and the
+   * two panels drew on top of each other -- "-0.81%" over "68.8%".
+   *
+   * So the rule is that nothing in this header decides its layout from the
+   * viewport. The threshold is 34rem, the same one `.gallery-host` and
+   * `.feed-tile` use, because it is the same question: is this surface a page
+   * or a rail.
+   */
+  it('lays the book header out by its own column, never by the window', () => {
+    const css = src('index.css')
+    expect(css).toMatch(/\.book-header \{\s*container-type: inline-size;/)
+    expect(css).toMatch(/@container \(max-width: 34rem\)[\s\S]{0,200}\.book-header-detail/)
+
+    const body = src('components/portfolio-v2/PortfolioWorkspace.tsx')
+    expect(body).toContain('book-header rounded-xl')
+    expect(body).toContain('book-header-panels')
+    /* The two that caused it. A viewport breakpoint anywhere in this header
+       is the defect, not a style preference.
+
+       Against the code with its comments stripped, because the comments that
+       record WHY those two classes are gone necessarily name them -- a
+       whole-file `not.toContain` would make the explanation the failure. */
+    const code = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    expect(code).not.toContain('xl:grid-cols-2')
+    expect(code).not.toMatch(/xl:col-start-\d/)
+
+    /* And the study material names itself, in both panels. Hidden rather
+       than reflowed: a ten-bar distribution and a two-column ranked list
+       have a width below which they stop being readable at all. */
+    expect(src('components/portfolio-v2/DayPanel.tsx')).toContain('book-header-detail mt-3 grid')
+    expect(src('components/portfolio-v2/ActiveWeights.tsx'))
+      .toContain('book-header-detail relative mt-2 flex h-[116px]')
     // And stands in for the list wait too, rather than a separate spinner.
     expect(body).toContain('if (listLoading) {')
     expect(body).not.toContain('function Loading()')
@@ -1616,16 +2174,921 @@ describe('a handoff never promises what is not there', () => {
      * falling through to it while one is in flight is the same class of
      * mistake told in words instead of pixels.
      */
-    expect(body).toContain('if (bookLoading || framesPending || !book) {')
+    /* The closes joined this gate, which is why the string changed. They
+       decide each line's framework verdict now and the verdict decides its
+       RANK, so painting before they land would order the book by the upload's
+       prices and re-order it under the reader's cursor. */
+    expect(body).toContain('if (bookLoading || framesPending || closesPending || !book) {')
 
     /*
      * And the panels carry no top margin of their own. A margin inside the
      * reserved row is height the row does not know about -- it was exactly
      * the 15px the grid kept stepping by.
+     *
+     * ── Why this stopped being a whole-tag match ─────────────────────────
+     *
+     * It asserted the literal `<section data-testid="day-panel">`, which
+     * tested the margin by testing that the tag had NOTHING else on it --
+     * so adding `data-day` to distinguish a priced panel from an unpriced
+     * one failed a guard about margins. The subject is the margin, so the
+     * assertion names the margin: every `<section>` in either file opens
+     * without an `mt-`/`my-`/`margin-top` of its own, whatever else it
+     * carries.
      */
-    expect(src('components/portfolio-v2/DayPanel.tsx'))
-      .toContain('<section data-testid="day-panel">')
-    expect(src('components/portfolio-v2/ActiveWeights.tsx'))
-      .toContain('<section data-testid="active-weights">')
+    for (const file of ['DayPanel', 'ActiveWeights'] as const) {
+      const body = src(`components/portfolio-v2/${file}.tsx`)
+      const tags = body.match(/<section[^>]*>/g) ?? []
+      expect(tags.length).toBeGreaterThan(0)
+      for (const tag of tags) {
+        expect(tag).not.toMatch(/\bm[ty]-\d|margin-?[Tt]op/)
+      }
+    }
+  })
+})
+
+/**
+ * Every lens draws its field on the same ground.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * A lens's scroll container is what sits behind its cards, and three of the
+ * five declared no background at all. Measured live, those three computed
+ * `rgba(0, 0, 0, 0)` and showed through to the shell's `bg-gray-50/60` --
+ * about #fcfcfd against a white card, which is a step small enough that a
+ * cheap monitor renders it as nothing. The field read as one undivided
+ * sheet; the cards had no edge.
+ *
+ * Today settled the pair first and Ideas took it verbatim rather than
+ * inventing a second answer. Research, Portfolio and Decisions had simply
+ * never been given it.
+ *
+ * ── Why this is asserted on the source ────────────────────────────────────
+ *
+ * The subject IS a static class string on a known element. Standing up five
+ * lenses with their queries, books and detail hooks to read one computed
+ * colour would be a far larger harness asserting the same fact less
+ * directly. What matters is that the rule is asserted over the whole SET --
+ * the bug was three lenses each missing it independently, so a test naming
+ * one lens would have left the other two broken.
+ */
+describe('the ground is the same on every lens', () => {
+  /*
+   * ── The value moved into a constant, and the reason it had to ──────────
+   *
+   * This read `['bg-gray-100', 'dark:bg-[#070a10]']`, asserted as literals on
+   * each lens root. That caught the original bug -- three lenses with no
+   * ground at all -- but it pinned the colour rather than the sharing, and
+   * the colour is exactly what changed: the founder had the grey removed,
+   * because the Dashboard's three sections disagreed about it.
+   *
+   * The invariant was never the colour. It was that one definition reaches
+   * every lens, so a card cannot look right on one surface and wrong on
+   * another. `GALLERY_GROUND` is that definition, and asserting the IMPORT
+   * is strictly stronger than asserting a string: a lens that hard-codes the
+   * same colour today drifts the next time it is edited.
+   */
+  const GROUND = ['GALLERY_GROUND']
+
+  /*
+   * The LENS ROOT's classes, not the file's first scroller.
+   *
+   * The first version of this helper took `className="…h-full
+   * overflow-y-auto…"` and matched whichever came first in the file.
+   * Portfolio and Decisions both have an inner scrolling panel above their
+   * lens root, so the guard read the wrong element and failed on two lenses
+   * that were in fact correct. Anchoring on `data-testid="<x>-lens"` and
+   * reading backwards is the only way to be sure of the element -- Today
+   * has no testid, so it is matched by its scroller as before.
+   */
+  const lensRoot = (file: string) => {
+    const body = src(file)
+    const at = body.search(/data-testid="[a-z-]+-lens"/)
+    if (at < 0) {
+      /* A `clsx` call now, not a quoted string: the ground is a constant and
+         the lens composes it with its own padding. Matched to the closing
+         brace of the className expression. */
+      const scroller = body.match(/className=\{[^}]*h-full overflow-y-auto[^}]*\}/)
+        ?? body.match(/className="[^"]*h-full overflow-y-auto[^"]*"/)
+      return scroller?.[0] ?? null
+    }
+    /* The opening tag this testid belongs to, back to its `<`. */
+    const open = body.lastIndexOf('<', at)
+    const tag = body.slice(open, at)
+    return /h-full overflow-y-auto/.test(tag) ? tag : null
+  }
+
+  it.each([
+    ['Today', 'components/today/TodayPage.tsx'],
+    ['Ideas', 'components/ideas-v2/IdeasWorkspace.tsx'],
+    ['Research', 'components/research-v2/ResearchWorkspace.tsx'],
+    ['Portfolio', 'components/portfolio-v2/PortfolioWorkspace.tsx'],
+    ['Decisions', 'components/decisions-v2/DecisionsWorkspace.tsx'],
+  ])('%s states it on its own scroll container', (_lens, file) => {
+    /* The scrolling element, not merely the file: a `bg-gray-100` on some
+       pill or hover state inside it would satisfy a naive substring check
+       while the field behind the cards stayed transparent. */
+    const root = lensRoot(file)
+    expect(root, 'no scrolling lens root found').toBeTruthy()
+    for (const token of GROUND) expect(root!).toContain(token)
+  })
+
+  it('gives no lens a contrast of its own', () => {
+    /* This shell draws the same cards on five surfaces, and a lens that tuned
+       its own ground would make the identical card look wrong on one of them.
+       A hard-coded `bg-gray-*` or `bg-white` on a lens root IS that tuning,
+       whatever colour it happens to be set to today. */
+    for (const file of ['components/today/TodayPage.tsx', ...WORKSPACES]) {
+      const root = lensRoot(file)!
+      expect(root, `${file} tunes its own ground`).not.toMatch(/\bbg-(gray|white|slate|zinc)\S*/)
+      expect(root).toContain('GALLERY_GROUND')
+    }
+  })
+
+  it('reaches the surfaces the lens tabs do not own', () => {
+    /*
+     * The three the Dashboard puts behind one bar. Explore and the shared
+     * skeleton are not lens roots and were therefore outside the rule above,
+     * which is how the Dashboard ended up with a white feed beside a grey
+     * Explore and a grey Portfolio -- the report that prompted all of this.
+     */
+    /*
+     * The USE, not the import. The first cut of this read the whole file for
+     * the word, and an injection that removed the ground from Explore's
+     * scroll host went on passing because the `import { GALLERY_GROUND }`
+     * line was still there. Imports are stripped, and the assertion is
+     * anchored on the scrolling element the same way `lensRoot` is.
+     */
+    const body = (f: string) => src(f).replace(/^import [\s\S]*?from '[^']*'$/gm, '')
+    /* Any scrolling element in the file, not `h-full overflow-y-auto`
+       specifically: the feed's list is `min-h-0 flex-1 overflow-y-auto`,
+       which is the same job expressed for a flex column. */
+    const scroller = (f: string) =>
+      body(f).match(/className=\{[^}]*overflow-y-auto[^}]*GALLERY_GROUND[^}]*\}/)?.[0]
+      ?? body(f).match(/className=[{"][^}"]*overflow-y-auto[^}"]*[}"]/)?.[0]
+      ?? null
+
+    for (const f of [
+      'components/ideas-app/IdeasExploreBrowse.tsx',
+      'components/desktop/DesktopTile.tsx',
+      /* The feed's own scroller, which declared no ground at all and took
+         whichever shell it was mounted in. */
+      'components/ideas-app/IdeasExplore.tsx',
+    ]) {
+      const el = scroller(f)
+      expect(el, `${f}: no scrolling host found`).toBeTruthy()
+      expect(el!).toContain('GALLERY_GROUND')
+    }
+  })
+})
+
+/**
+ * Every field reads its prices once, and every tile offers its actions.
+ *
+ * ── The two defects ───────────────────────────────────────────────────────
+ *
+ * ONE REQUEST PER TILE. Ideas called `useTileCloses(symbol)` on each card --
+ * 56 round trips at 1920x889, each resolving on its own schedule and each
+ * arrival changing its card's height as the chart appeared, so the grid
+ * reassembled under the cursor. It moved to a batched read. Research and
+ * Portfolio were left on the per-tile hook, which is the same defect at 13
+ * and at 5 tiles: smaller, and exactly as wrong.
+ *
+ * NO HOVER SHELF. Today, Ideas and Decisions offer Open / Ask AI / Discuss
+ * on a tile. Research and Portfolio drew the same card and offered nothing,
+ * though both lenses already had a `targetFor` their own detail surface was
+ * using -- the capability was present and simply never exposed.
+ *
+ * ── Why the source, and why over the set ──────────────────────────────────
+ *
+ * The subject is which HOOK a field calls, which is a fact about the module
+ * rather than about a rendered tree; a behavioural version would assert on a
+ * mock of the very hook in question. What matters is that both rules are
+ * asserted across every field at once, because both bugs were lenses each
+ * missing the same thing independently.
+ */
+describe('the fields converge on one read and one shelf', () => {
+  const FIELDS = [
+    ['Ideas', 'components/ideas-v2/OpportunityGrid.tsx'],
+    ['Research', 'components/research-v2/ResearchWorkspace.tsx'],
+    ['Portfolio', 'components/portfolio-v2/PortfolioWorkspace.tsx'],
+  ] as const
+
+  it.each(FIELDS)('%s reads every tile price in one batched call', (_lens, file) => {
+    expect(src(file)).toContain('useGalleryCloses(')
+  })
+
+  it.each(FIELDS)('%s hands the series down rather than refetching per tile', (_lens, file) => {
+    const body = src(file)
+    /* The solo hook survives as a fallback for a test that renders one tile
+       directly, so its PRESENCE is fine. What must not come back is calling
+       it unconditionally on the symbol -- that is the per-tile fetch. */
+    expect(body).toContain('closesIn')
+    expect(body).toMatch(/useTileCloses\(closesIn \? null : /)
+  })
+
+  it.each([
+    ['Ideas', 'components/ideas-v2/OpportunityGrid.tsx'],
+    ['Research', 'components/research-v2/ResearchWorkspace.tsx'],
+    ['Portfolio', 'components/portfolio-v2/PortfolioWorkspace.tsx'],
+    ['Decisions', 'components/decisions-v2/DecisionsWorkspace.tsx'],
+  ])('%s offers its tile actions on hover', (_lens, file) => {
+    expect(src(file)).toMatch(/actions=\{/)
+  })
+
+  it.each(FIELDS)('%s gates Discuss on the object being thread-able', (_lens, file) => {
+    /* `canDiscuss` is the gate. Offering Discuss on a subject with no
+       thread-able object is the dead control this shell has already shipped
+       once -- a button that is drawn, focusable, announced, and inert. */
+    const body = src(file)
+    expect(body).toContain('canDiscuss')
+    expect(body).toContain('discuss(')
+  })
+})
+
+/**
+ * A chart may not be measured through its own drawing.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * `TilePriceChart` measures its plot box with a ResizeObserver and uses that
+ * height as the viewBox height `H`. In fill mode the plot was sized
+ * `height: '100%'`, on the reasoning that a percentage is not content and so
+ * cannot feed back into the box it sits in.
+ *
+ * That holds only when the parent has a DEFINITE height. On the Research
+ * field the chain above the plot is `min-h-0 flex-1` the whole way up with
+ * nothing definite at the top, so `100%` resolved to `auto` -- and an SVG
+ * sized `auto` falls back to its viewBox ASPECT RATIO. The chart therefore
+ * drew itself at a height derived from the measurement, that height was
+ * content, the box grew, the observer fired, and `H` grew again.
+ *
+ * Measured by sampling every animation frame while switching into Research:
+ * the four fill-mode tiles grew +1px per frame for 22 consecutive frames,
+ * every time. Reported as "the charts slowly increase in size". After the
+ * fix: 0 frames with any change, 0px drift.
+ *
+ * ── Why the source ────────────────────────────────────────────────────────
+ *
+ * jsdom performs no layout, so the loop itself cannot be reproduced in a
+ * unit test -- every rect reads 0 and the observer does not exist. What can
+ * be pinned is the property that makes the loop impossible: in fill mode the
+ * drawing is OUT OF FLOW, so it contributes nothing to the box being
+ * measured, whatever the parent chain does.
+ */
+describe('the plot cannot inflate the box it is measured in', () => {
+  const body = () => src('components/desktop/TilePriceChart.tsx')
+
+  it('takes the drawing out of flow in fill mode', () => {
+    /* `absolute inset-0` is the whole fix: clipping and percentage heights
+       govern painting, not intrinsic sizing. Only removing the element from
+       flow removes it from its parent's measurement. */
+    expect(body()).toMatch(/fill \? 'absolute inset-0 h-full w-full'/)
+  })
+
+  it('gives the plot no pixel height of its own while filling', () => {
+    /* An explicit pixel height in fill mode is content inside the measured
+       box -- the original form of this same bug. */
+    expect(body()).toMatch(/style=\{fill \? \{ display: 'block' \} : \{ height: H/)
+  })
+
+  it('floors the whole block, not the plot inside it', () => {
+    /*
+     * ── Why this assertion was rewritten, and how it was passing ─────────
+     *
+     * It read `expect(body()).toMatch(/minHeight: 56/)` -- a bare string
+     * against the whole file. When the floor moved off the plot box, that
+     * assertion kept passing, because the COMMENT explaining why it moved
+     * still contains the words `minHeight: 56`. A guard that a prose
+     * paragraph can satisfy is not observing anything.
+     *
+     * ── And why the floor moved ──────────────────────────────────────────
+     *
+     * A minimum on the plot box cannot shrink, and the plot column is
+     * `plot + date axis`. A 56px floor therefore made the column 64px tall
+     * inside whatever slot the tile gave it -- and the Research tiles were
+     * giving it 47. The column overflowed, and the readout row, which is
+     * laid out after the ROW rather than after the overflowing content, was
+     * printed under the date axis: "May 3" at y=619 beneath a "+30.1%"
+     * starting at y=611.
+     *
+     * The floor belongs on the block, where the tile's own flex layout can
+     * satisfy it by giving the chart more room. And it scales with the
+     * height the caller asked for, because a flat constant made cutting a
+     * card's text shrink the CARD instead of growing the chart: the Research
+     * heroes went 452px -> 259px and their plots 56px -> 44px.
+     */
+    const src = body()
+    /* The floor is on the root, derived from the caller's height. */
+    expect(src).toMatch(/style=\{fill \? \{ minHeight: height \+ CHROME \} : undefined\}/)
+    expect(src).toMatch(/^const CHROME = \d+$/m)
+
+    /* And NOT on the measured box, which must stay free to shrink. The box's
+       own attributes are checked, not the file, so no comment can satisfy
+       this. */
+    const boxTag = src.match(/<div\s+ref=\{boxRef\}[\s\S]*?>/)?.[0]
+    expect(boxTag).toBeTruthy()
+    expect(boxTag).not.toMatch(/minHeight/)
+    /* It clips instead: out of flow, the drawing can exceed the window. */
+    expect(boxTag).toMatch(/overflow-hidden/)
+  })
+
+  it('still derives the viewBox from the measurement, which is the point', () => {
+    /* The fix must not quietly become "draw at a fixed height". The 1:1
+       scale that makes slopes true depends on the viewBox being the measured
+       pixel box. */
+    expect(body()).toContain('viewBox={`0 0 ${W} ${H}`}')
+    expect(body()).toMatch(/const H = fill/)
+  })
+})
+
+/**
+ * The Portfolio header's left half cannot silently go missing.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * Reported as "half is showing nothing". Measured live at 1920x889: the
+ * first column of `book-header-panels` was 909px wide and 0px TALL, inside
+ * a row that reserves 200px, while the benchmark strip filled the second
+ * column at 142px.
+ *
+ * Two faults, compounding:
+ *
+ *   1. `useDayPerformance` floored its price query at `Date.now() - 10 days`.
+ *      `price_history_cache` is a cache and it trails -- measured against
+ *      production on 2026-10-28, its newest close anywhere was 2026-10-01
+ *      and the floor was 2026-10-19, so the query matched ZERO rows for
+ *      every symbol and `movers` came out empty.
+ *   2. `DayPanel` returned null on an empty movers list, so there was no
+ *      figure, no empty state and no error. The panel was simply absent.
+ *
+ * These assertions are source-text, which cannot run a query or lay out a
+ * page. They hold the two properties that make the pair unrepeatable: the
+ * window is wide enough to survive a trailing cache and goes through the
+ * batched reader that checks the row cap, and nothing-to-price renders a
+ * statement rather than nothing.
+ */
+/**
+ * A research card says each thing once, and gives the rest to the price.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * Reported as "too much text ... some of it should be either removed or
+ * hidden". Measured on the PLTR hero at 923x452, the card carried: the
+ * note's title, then its date, then a line saying a note had arrived since
+ * the review, then a 62px timeline drawing those same two dates again, then
+ * a 30px bar drawing the weight already in the corner chip. 138px of
+ * restatement above a price chart squeezed to 56px.
+ *
+ * And a hero whose name has no price history -- COIN, which holds under two
+ * closes -- had no chart block at all, so the card stood as tall as its
+ * row-mate around a 154px hole.
+ */
+describe('a research card states each fact once', () => {
+  const body = () => src('components/research-v2/ResearchWorkspace.tsx')
+
+  it('draws neither the timeline nor the weight bar', () => {
+    /* Both restated something already on the card in words: the timeline the
+       eyebrow and the two dates, the bar the corner chip's percentage. */
+    expect(body()).not.toContain('<TileTimeline')
+    expect(body()).not.toContain('<TileBar')
+    /* And nothing is left importing them, which is how a removal stays
+       removed rather than becoming an unused branch somebody re-enables. */
+    expect(body()).not.toMatch(/^\s*(TileTimeline|TileBar|TileVisual)[,\s]*$/m)
+  })
+
+  it('leaves one line of prose on the single-note card: the note', () => {
+    /* The headline is the claim somebody wrote. The date line and the
+       "1 new note since ..." line were the corner panel and the eyebrow
+       said again. */
+    expect(body()).not.toContain('1 new note {age.sinceThe}')
+    expect(body()).toContain('{subject.newestEvidenceTitle}')
+  })
+
+  it('draws the price slot on a big card even with nothing to put in it', () => {
+    /* A hero's height is set by its row-mate, not its own content, so a
+       missing chart is a hole rather than a shorter card. */
+    expect(body()).toContain('const drawsSpark = !composesOwnChart && (drawsChart || big)')
+    expect(body()).toContain('data-testid="research-price-empty"')
+    /* It says which name and why, not "no data" -- the shorthand that sent
+       the Decisions column round three diagnosis passes. */
+    expect(body()).toContain('is not in the price cache yet')
+  })
+
+  it('lets the chart take the slack, not the claim', () => {
+    /*
+     * The claim block kept `flex-1` after its `mt-auto` footer was removed,
+     * so it stretched while the chart sat at its floor: 83px of nothing
+     * between COIN's headline and its price slot.
+     */
+    expect(body()).toContain('/* One note. The note IS the card. */')
+    const branch = body().slice(body().indexOf('/* One note. The note IS the card. */'))
+    expect(branch.slice(0, 900)).not.toMatch(/<div className="flex min-w-0 flex-1 flex-col">/)
+  })
+})
+
+/**
+ * A price path gets the room, on every lens that draws one.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * Reported as "in decisions lens, charts are too narrow. same in portfolio
+ * lens". Measured at 1920x889, every chart on the desktop was sitting on its
+ * own minimum:
+ *
+ *   Research   923x452 tile    869x56  plot
+ *   Portfolio  923x286 tile    861x56  plot
+ *   Decisions  923x233 tile    384px   price column; 429x22 sparkline
+ *
+ * Three separate causes with one shape: the chart was always the element
+ * that yielded. Portfolio's and Research's were fixed by the shared floor in
+ * `TilePriceChart`; these two are the lens's own numbers.
+ */
+describe('the chart is not the element that yields', () => {
+  const dec = () => src('components/decisions-v2/DecisionsWorkspace.tsx')
+
+  it('gives the decision price column the majority of the width', () => {
+    /*
+     * The record column was `basis-[55%] shrink-0`, so the price got the
+     * remainder: 489px against 384px on a 923px tile. The record is four
+     * short rows that gain nothing past ~370px; width is where a price
+     * path's time axis lives.
+     */
+    expect(dec()).not.toContain('basis-[55%]')
+    const basis = dec().match(/basis-\[(\d+)%\]/)
+    expect(basis).toBeTruthy()
+    expect(Number(basis![1])).toBeLessThanOrEqual(45)
+  })
+
+  it('draws a decision sparkline tall enough to read a move in', () => {
+    /* 22px across 429px is a hairline: no move is legible in it and the
+       anchor cannot be placed. */
+    expect(dec()).not.toMatch(/height=\{size === 'compact' \? 22 : 28\}/)
+    const h = dec().match(/height=\{size === 'compact' \? (\d+) : (\d+)\}/)
+    expect(h).toBeTruthy()
+    expect(Number(h![1])).toBeGreaterThanOrEqual(40)
+    expect(Number(h![2])).toBeGreaterThanOrEqual(40)
+  })
+
+  it('does not say "no thesis" twice on a position card', () => {
+    /*
+     * ── Rewritten, and the first version was half a guard ─────────────────
+     *
+     * It asserted two things: that "Nothing written" was gone, and that
+     * `THESIS_PARTS.map` -- the "no thesis, no where we differ, no risks"
+     * line -- had SURVIVED. The second half was wrong on its own terms. The
+     * eyebrow directly above reads "No thesis on file", and on a name with
+     * no case at all those three parts ARE the thesis, so that line was the
+     * eyebrow in longer words and this guard was pinning it in place.
+     *
+     * The subject was never which words state the absence. It is that the
+     * card states it ONCE, and the eyebrow is where. So the assertion is
+     * now that neither line is in the tile body, and both forms are named
+     * so a reinstatement of either is caught.
+     */
+    const body = src('components/portfolio-v2/PortfolioWorkspace.tsx')
+    /* The component is gone, so there is no slice to take -- the whole file
+       is the subject, and either string reappearing anywhere in it is the
+       regression. Rendered strings only: the notes recording the removal
+       necessarily discuss both, which is exactly how a previous guard in
+       this file came to pass on its own comment text. */
+    expect(body).not.toContain('>Nothing written<')
+    /*
+     * The JOINER, not the identifier. `not.toContain('THESIS_PARTS.map')`
+     * was the first version and an injection walked straight past it: the
+     * line was put back with an inline `['Thesis', …] as const` in place of
+     * the named constant, which renders the identical sentence. The guard
+     * has to name the rendered output, and `join(', no ')` is the piece
+     * that produces "no thesis, no where we differ, no risks" however the
+     * list reaching it is spelled.
+     */
+    expect(body).not.toContain("join(', no ')")
+    expect(body).not.toContain('function ThesisSkeleton()')
+    /* And the slot it sat in no longer admits an empty row. */
+    expect(body).not.toContain("|| gap === 'no-framework') && (")
+  })
+
+  it('leaves the Research card one statement of a missing case too', () => {
+    /*
+     * The same sentence, on the other lens: "No Thesis · no Where we differ
+     * · no Risks to thesis" under an eyebrow reading "No thesis on file".
+     * `MissingThesis` now returns null for a subject with nothing written
+     * and keeps the checklist only where some sections exist -- there it
+     * says what is LEFT, which the chip cannot.
+     */
+    const f = src('components/research-v2/ResearchWorkspace.tsx')
+    const fn = f.slice(f.indexOf('function MissingThesis('))
+    const nothingWritten = fn.slice(0, fn.indexOf('return (')) // the length-0 branch
+    expect(nothingWritten).toContain('present.length === 0')
+    expect(nothingWritten).toContain('return null')
+    /* The joined one-liner is gone from that branch. */
+    expect(nothingWritten).not.toContain("join(' · no ')")
+    /* The checklist, which is a different claim, is still drawn. */
+    expect(fn).toContain('CORE_SECTIONS.map(k => {')
+  })
+
+  it('states what is on file once, in the corner panel', () => {
+    /*
+     * "N research on file" appeared on the Research tile in three branches
+     * at once, while the weight chip's panel carries a "Research on file"
+     * row with the same count. The rendered copies go; the panel row stays.
+     */
+    const f = src('components/research-v2/ResearchWorkspace.tsx')
+    /*
+     * Every pattern here carries JSX punctuation, and that is deliberate: a
+     * bare `.not.toContain('Nothing on file yet')` failed the moment the
+     * note explaining the removal quoted the phrase it removed. That is the
+     * recurring defect in this file -- a guard a paragraph can satisfy, or
+     * in the negative case break -- and the fix is the same as last time:
+     * assert the rendered form, which prose cannot contain.
+     */
+    expect(f).not.toContain('research on file`}')
+    expect(f).not.toContain('} research on file</span>')
+    expect(f).not.toContain("'Nothing on file yet'}")
+    expect(f).not.toContain('} on file</span>')
+    /* The one home for it. */
+    expect(f).toContain("{ label: 'Research on file', value: String(subject.evidenceCount) }")
+  })
+
+  it('lets the chart take the room the footer gave up', () => {
+    /*
+     * The stale and moved branches were `flex-1` blocks with an `mt-auto`
+     * footer, so the text claimed the card's slack and the trailing chart --
+     * a `flex-1` sibling with a `minHeight` floor it cannot go below -- was
+     * pushed down and then spilled out. Measured at 1920x889: the chart
+     * started 164px into a 260px tile and ended 28px past its bottom edge,
+     * which is the "moved down and squished" in gallery rows three and four.
+     */
+    const f = src('components/research-v2/ResearchWorkspace.tsx')
+    /* No body in this file pins a footer to the bottom any more; `mt-auto`
+       was the mechanism in every one of them. */
+    expect(f).not.toContain('mt-auto pt-3')
+    /* And none of the four branches claims the slack the chart needs. */
+    expect(f).not.toContain('flex min-w-0 flex-1 flex-col"')
+  })
+
+  it('does not cap a filled plot at the size it asked for', () => {
+    /*
+     * `H = Math.min(height, …)` made `height` the floor AND the ceiling, so
+     * a compact tile handed more room than it asked for could not use it:
+     * measured on the Research field, the compacts sat pinned at 64px of
+     * plot while the `large` cards in the row above drew 85-100px from their
+     * own measured box -- same component, same 455px tile width.
+     *
+     * The bound is kept, because it is the second of two guards against the
+     * growth loop, and it is set clear of any height a tile can give.
+     */
+    const f = src('components/desktop/TilePriceChart.tsx')
+    expect(f).not.toContain('Math.min(height, Math.max(56')
+    expect(f).toContain('Math.min(height * CEILING')
+    const ceiling = Number(f.match(/^const CEILING = (\d+)$/m)?.[1] ?? 0)
+    expect(ceiling).toBeGreaterThanOrEqual(2)
+    /* The other guard is still the one doing the real work. */
+    expect(f).toContain("'absolute inset-0 h-full w-full'")
+  })
+})
+
+describe('the book’s P&L states itself or states why not', () => {
+  const hook = () => src('hooks/useDayPerformance.ts')
+  const panel = () => src('components/portfolio-v2/DayPanel.tsx')
+
+  it('does not anchor the price window on a ten-day clock', () => {
+    /* The old floor, which a four-week-stale cache always fell outside. */
+    expect(hook()).not.toMatch(/Date\.now\(\) - 10 \* 86_?400_?000/)
+    expect(hook()).toMatch(/export const DAY_WINDOW_DAYS = (\d{2,})/)
+    const days = Number(hook().match(/export const DAY_WINDOW_DAYS = (\d+)/)?.[1] ?? 0)
+    expect(days).toBeGreaterThanOrEqual(30)
+  })
+
+  it('reads closes through the batched reader that checks the row cap', () => {
+    /*
+     * The hand-rolled `.in('symbol', symbols)` was the shape that silently
+     * truncated Today's series: 137 symbols over the window, no ordering,
+     * no chunking, no cap check. `fetchDailyCloses` sizes each request so
+     * the 1000-row ceiling cannot be reached and throws if it is.
+     */
+    expect(hook()).toContain('fetchDailyCloses(symbols, { days: DAY_WINDOW_DAYS })')
+    expect(hook()).not.toMatch(/from\('price_history_cache'\)/)
+  })
+
+  it('renders a statement, not nothing, when no close can price the book', () => {
+    /* The exact line that made the half disappear. */
+    expect(panel()).not.toContain('if (!day || !day.movers.length) return null')
+    expect(panel()).toContain('data-testid="day-unpriced"')
+    expect(panel()).toMatch(/data-day="unpriced"/)
+  })
+
+  it('says how far behind the close is rather than implying it is today’s', () => {
+    /*
+     * A reader sees a 26px "+0.33%" and reads "we are up today". On a cache
+     * four weeks stale that is the wrong month, so the lag is printed.
+     */
+    expect(hook()).toMatch(/stale: lagDays != null && lagDays > STALE_AFTER_DAYS/)
+    expect(panel()).toContain('data-testid="day-stale"')
+    expect(panel()).toMatch(/\{day\.lagDays\}d behind/)
+  })
+
+  it('puts the exposure axis where the data divides, on one shared scale', () => {
+    /*
+     * ── The defect ────────────────────────────────────────────────────────
+     *
+     * The axis was pinned at `top-1/2` and bar heights were a flat
+     * `(|active| / ceiling) * 38`. A five-position book against a 483-name
+     * index has overweights in the tens of percent and underweights that are
+     * the index's own rounding, so measured live on Large Cap Core the top
+     * bar used its full 44px and ALL FIVE underweights came out at the 1.5%
+     * floor -- about 2px each. Half of a 116px plot drew nothing, every
+     * time. After: 60/37/36/35/17 above and 19/8/7/5/5 below.
+     *
+     * ── The line it must never cross ──────────────────────────────────────
+     *
+     * Scaling the two halves separately would fix the picture and break the
+     * instrument: a 0.4% underweight drawn the same height as a 28%
+     * overweight stops a reader weighing one bet against another, which is
+     * the only thing this strip is for. ONE scale, a moving axis.
+     */
+    const body = src('components/portfolio-v2/ActiveWeights.tsx')
+    expect(body).not.toContain('top-1/2')
+    expect(body).not.toMatch(/activePct\) \/ ceiling\) \* 38/)
+    expect(body).toMatch(/style=\{\{ top: `\$\{zeroPct\}%` \}\}/)
+
+    /* One `scale`, taken as the MINIMUM of what each side can afford --
+       not one per side. */
+    expect(body).toMatch(/const scale = Math\.min\(/)
+    expect(body).toContain('Math.abs(r.activePct) * scale')
+    expect(body).not.toMatch(/scaleUp|scaleDown|upCeiling|downCeiling/)
+
+    /* And the axis keeps label room at both ends whatever the data does. */
+    expect(body).toMatch(/Math\.min\(72, Math\.max\(28,/)
+  })
+
+  it('names the left half, on the same baseline as the right', () => {
+    /*
+     * The panel opened straight onto a 26px figure while the strip beside it
+     * opened with an 18px title line, so the two halves of one row started
+     * at different heights and read as two unrelated things. One `h-[18px]`
+     * heading each.
+     */
+    expect(panel()).toContain('Profit &amp; loss')
+    for (const body of [panel(), src('components/portfolio-v2/ActiveWeights.tsx')]) {
+      expect(body).toContain('flex h-[18px] items-baseline')
+    }
+  })
+})
+
+/*
+ * ── A control that answers a click with nothing ──────────────────────────
+ *
+ * Four lens panes each carried an identical `MoreHorizontal` button with no
+ * onClick, no menu state and no popover. It hovered, it focused, assistive
+ * technology announced it as "More actions", and pressing it did nothing.
+ * ResearchDetail had the same one, had it removed, and recorded why; the
+ * other four kept theirs for six passes because the guard that caught it was
+ * written against Research by name rather than against the family.
+ *
+ * So this iterates. Adding a fifth pane with a dead overflow icon fails here
+ * without anybody remembering to extend a list -- which is the lesson the
+ * DesktopColumns case at the top of this file already paid for once.
+ */
+describe('no lens pane offers an overflow control with nothing behind it', () => {
+  /* DETAILS plus the asset workspace, which is the same header grammar in a
+     different lens and carried the same button. */
+  const PANES = [...DETAILS, 'components/asset-v2/AssetWorkspace.tsx']
+
+  it.each(PANES)('%s draws no dead More-actions button', file => {
+    const body = src(file)
+    /*
+     * Matched on the ATTRIBUTE, not on the phrase. Every one of these files
+     * now explains the removal in a comment that quotes "More actions", so a
+     * bare `not.toContain` would fail on the explanation -- the recurring
+     * shape of a guard its own commentary can break.
+     */
+    expect(body).not.toMatch(/aria-label="More actions"/)
+    expect(body).not.toMatch(/<MoreHorizontal\b/)
+  })
+
+  /* Non-vacuity: a pane with no controls at all would satisfy the above.
+     Each one must still carry wired controls. */
+  it.each(PANES)('%s still carries controls that do something', file => {
+    const body = src(file)
+    expect(body.match(/onClick=\{/g)?.length ?? 0).toBeGreaterThan(2)
+  })
+})
+
+/**
+ * The type scale the asset workspace and the shared grammar are set on.
+ *
+ * ── What went wrong ──────────────────────────────────────────────────────
+ *
+ * MEASURED in the running app at 1920px, with one Ideas feed card open
+ * beside the asset workspace that card opens. Both already render in the
+ * same family, so nothing was wrong with the typeface. The scale was:
+ *
+ *   the card, in a 26rem column   30, 23, 15, 14, 13, 11   floor 11px
+ *   the pane, 1504px wide         32, 17, 14, 13, 12, 11, 10, 9
+ *
+ * 29 elements in the pane ran at 9 or 10px, below the card's floor, on a
+ * surface roughly six times wider -- so a reader moving from the card into
+ * the workspace moved from larger type to smaller as the column grew. The
+ * lead section title sat at 13px against the card's 23px headline.
+ *
+ * ── Why a gate and not just a pass ───────────────────────────────────────
+ *
+ * Nine sizes with no role attached is how it got there: each pass picked a
+ * number that looked right locally, and 9px existed because 10px already
+ * did. The subject here is therefore the SET, not a minimum -- a floor
+ * alone passes happily on eleven different sizes between 11 and 32.
+ *
+ * Four steps below the figures, one role each:
+ *
+ *   18  the section that IS the object (the case, the reason)
+ *   15  running text somebody wrote
+ *   13  rows, controls, secondary prose
+ *   11  eyebrows, small-caps labels, meta, captions
+ *
+ * ── Scope ────────────────────────────────────────────────────────────────
+ *
+ * Seven files: the asset workspace, which is what was reported, the grammar
+ * it shares, and the four sibling panes that inherit that grammar's
+ * primitives -- Ideas, Research, Portfolio and Decisions.
+ *
+ * The four arrived in two passes, and the split is worth keeping on the
+ * record because it is the shape this kind of work takes. They were held out
+ * of the first pass entirely, which is also how 25 sub-11px literals of
+ * their own survived a pass that fixed exactly that defect two files away: a
+ * reader moving from an Ideas card at an 11px floor into any of these four
+ * panes still met 9px and 10px type on a surface six times wider.
+ *
+ * The FLOOR was mechanical -- 9 and 10 both mean "smaller than the smallest
+ * role", and both become 11 -- so it went first, under a weaker gate that
+ * asserted only the minimum. The STEP set could not go with it: the four
+ * still set 11.5, 12, 12.5, 14, 21 and 26, and mapping 40 literals onto four
+ * named roles is a judgement per site rather than a substitution.
+ *
+ * ── The judgements, so the next reader is not re-deriving them ───────────
+ *
+ * Every one was read off the grammar in `DesktopModule.tsx`, not invented
+ * here, which is the only reason they are defensible:
+ *
+ *   12, 12.5  -> 13   30 of the 40. Every site is an action button, a `li`
+ *                     or `dl` row, or secondary prose. The grammar sets all
+ *                     three at 13: `DeepLink`, `Exists`, `DesktopNote`.
+ *   11.5      -> 11   The clamped preview line of a research row, whose own
+ *                     sibling author line was already 11. A caption.
+ *   14        -> 15   Twice: a thesis section's body and a decision's
+ *                     narrative sentence. Both are running text somebody
+ *                     wrote, at 80ch and 84ch respectively.
+ *   14        -> 13   Once, and the one that is NOT prose: Ideas' `Kv`
+ *                     value. 20 would have been `DesktopStat`'s figure step,
+ *                     but Kv restates figures the header already shows at
+ *                     20, so the context column would have shouted over the
+ *                     header it supports. A row value is 13.
+ *   21        -> 18   Portfolio's gap headline, and Decisions' two
+ *                     blockquotes. All three are the section that IS the
+ *                     object, each in a `lead` DesktopSection.
+ *   26        -> 30   Research's `Fact`, which is `Metric` by another name --
+ *                     a tabular figure over an 11px label. `Metric` is
+ *                     `lead ? 30 : 20`, so `Fact` is too, which also moved
+ *                     its non-lead arm off 18. 18 is a prose step; a figure
+ *                     drawn on it is how the scale got ambiguous.
+ */
+describe('the asset workspace and the grammar it shares are on one type scale', () => {
+  /*
+   * Every file on the scale, with the number of size literals it must still
+   * be setting for a claim about its sizes to mean anything.
+   *
+   * One table rather than the two lists this had while the panes were only
+   * at the floor, because all seven now make the SAME claim and a second
+   * list would read as a second, weaker standard. The per-file minimum is
+   * what the two lists were really carrying: the verdict bar legitimately
+   * sets three literals, the four panes set fifteen or more, and a single
+   * floor of 3 would let a pane that stopped setting sizes pass.
+   */
+  const SCALED: [string, number][] = [
+    ['components/asset-v2/AssetWorkspace.tsx', 3],
+    ['components/desktop/DesktopModule.tsx', 3],
+    /* The verdict bar rides this pane's context line and was the last 12px
+       step left on it: a question and its three answers, which are a row and
+       its controls, not captions. Its only other host is ResearchDetail,
+       the same width. */
+    ['components/desktop/ThesisVerdictBar.tsx', 3],
+    ['components/ideas-v2/IdeaDetail.tsx', 15],
+    ['components/research-v2/ResearchDetail.tsx', 15],
+    ['components/portfolio-v2/PositionDetail.tsx', 15],
+    ['components/decisions-v2/DecisionDetail.tsx', 15],
+  ]
+  /* Body steps plus the figures: DesktopStat and a supporting Metric at 20,
+     a lead Metric at 30, the ticker at 32. */
+  const STEPS = [11, 13, 15, 18, 20, 30, 32]
+
+  /*
+   * `[\d.]+`, not `\d+`. The floor gate the four panes were under used the
+   * fractional pattern and the step gate used the integer one, and the
+   * fractional one is simply correct for both: `text-[10.5px]` is below the
+   * floor and `text-[12.5px]` is off the steps, and an integer-only match
+   * passes both silently. Two of the 40 literals fixed above were 12.5 and
+   * 11.5, so this is not hypothetical.
+   */
+  const sizesIn = (file: string) =>
+    [...src(file).matchAll(/text-\[([\d.]+)px\]/g)].map(m => Number(m[1]))
+
+  it.each(SCALED)('%s sets nothing below the 11px floor', (file, min) => {
+    const sizes = sizesIn(file)
+    /* Non-vacuity: a file that sets no explicit size satisfies any claim
+       about the sizes it sets. */
+    expect(sizes.length).toBeGreaterThanOrEqual(min)
+    expect(sizes.filter(n => n < 11)).toEqual([])
+  })
+
+  it.each(SCALED)('%s draws every size from the agreed steps', (file, min) => {
+    const sizes = sizesIn(file)
+    expect(sizes.length).toBeGreaterThanOrEqual(min)
+    expect([...new Set(sizes)].filter(n => !STEPS.includes(n))).toEqual([])
+  })
+
+  /*
+   * And the roles themselves, read off the grammar rather than off a count.
+   *
+   * The two cases above are satisfied by a file that renames nothing: every
+   * eyebrow could still be the smallest thing on the page while sitting on
+   * an allowed step. These pin what the named primitives actually are, which
+   * is what the four sibling workspaces inherit.
+   */
+  /*
+   * The two visuals the asset workspace embeds, scoped to those two.
+   *
+   * After the pane's own scale was lifted, ten elements in it were still
+   * below the floor and every one came from `PortfolioVisual.tsx` -- 9px
+   * captions and 10px figures, as local literals in a file nobody reaches
+   * for when fixing the asset workspace.
+   *
+   * The whole FILE is not the subject: `BookMap` puts its label INSIDE a
+   * stacked-bar segment whose width is a weight, so its size is a fit
+   * constraint rather than a reading one, it does not render on this pane,
+   * and it is listed as its own item rather than quietly swept in here.
+   * Hence the two function bodies, sliced out by name.
+   */
+  it('lifts the embedded framework scale and weight bar off the floor', () => {
+    const vis = src('components/portfolio-v2/PortfolioVisual.tsx')
+    /* Taking the role from the grammar, not restating it -- which is what
+       let this file fall four steps behind the panes that embed it. */
+    expect(vis).toMatch(/import \{ LABEL \} from '\.\.\/desktop\/DesktopModule'/)
+
+    const bodyOf = (name: string) => {
+      const start = vis.indexOf(`export function ${name}(`)
+      expect(start).toBeGreaterThan(-1)
+      const next = vis.indexOf('\nexport function ', start + 1)
+      return vis.slice(start, next === -1 ? vis.length : next)
+    }
+    for (const name of ['FrameworkScale', 'WeightBar']) {
+      const body = bodyOf(name)
+      /* Non-vacuity: a body that sets no size satisfies any claim about the
+         sizes it sets, and both of these do set them. */
+      expect(body).toMatch(/\bLABEL\b/)
+      expect([...body.matchAll(/text-\[(\d+)px\]/g)].map(m => Number(m[1])).filter(n => n < 11))
+        .toEqual([])
+    }
+  })
+
+  /*
+   * The shared price chart, chrome only.
+   *
+   * It drew eleven of the pane's sub-floor elements and four off-scale sizes
+   * -- including a 22px readout that belonged to no role at all -- and it is
+   * drawn on four lenses, so it was that much type wrong in four places.
+   *
+   * The plot is not the subject. The anchor marker is an SVG `<text>` placed
+   * in user units 4px from a dashed rule it labels, where size is a fit
+   * constraint; this strips `<text>` elements out rather than pretending the
+   * rule reaches inside the drawing.
+   */
+  it('puts the price chart chrome on the scale, leaving the plot alone', () => {
+    const chart = src('components/desktop/AnchoredPriceChart.tsx')
+    expect(chart).toMatch(/import \{ LABEL \} from '\.\/DesktopModule'/)
+    /* `<text\s`, not `<text`: this file's own commentary names the element
+       as `<text>`, and matching that ran the strip from the comment to the
+       real closing tag and swallowed most of the chrome with it. The same
+       shape the overflow case above already paid for once. */
+    const chrome = chart.replace(/<text\s[\s\S]*?<\/text>/g, '')
+    const sizes = [...chrome.matchAll(/text-\[(\d+)px\]/g)].map(m => Number(m[1]))
+    /* Non-vacuity: the chrome does set sizes, and stripping must not have
+       taken them with it. */
+    expect(sizes.length).toBeGreaterThanOrEqual(5)
+    expect(sizes.filter(n => !STEPS.includes(n))).toEqual([])
+    /* And the carve-out is a carve-out, not a hole: the plot's own label is
+       still there to be excluded. */
+    expect(chart).toMatch(/<text\s[\s\S]*?text-\[9px\][\s\S]*?<\/text>/)
+  })
+
+  it('gives the label role the floor and the lead section the top body step', () => {
+    const grammar = src('components/desktop/DesktopModule.tsx')
+    const label = grammar.match(/export const LABEL = '([^']+)'/)?.[1]
+    expect(label).toBeTruthy()
+    expect(label).toContain('text-[11px]')
+    expect(label).toContain('uppercase')
+    /* The eyebrow is the same role, so it must be the same type and not a
+       second opinion about it. */
+    expect(grammar).toMatch(/export const EYEBROW = LABEL\b/)
+    /* The one section set in the page's dominant type. */
+    expect(grammar).toMatch(/lead\s*\n?\s*\?\s*'text-\[18px\]/)
   })
 })

@@ -5,18 +5,15 @@ import {
   Edit3,
   Check,
   X,
-  Trash2,
-  Pin,
-  PinOff,
   Building2,
-  Globe,
-  FileText,
 } from 'lucide-react'
 import { Button } from '../../ui/Button'
 import { RichTextEditor, type RichTextEditorRef } from '../../rich-text-editor/RichTextEditor'
 import { useIsMobile } from '../../../hooks/useMediaQuery'
 import { SmartInputRenderer } from '../../smart-input'
 import { useAuth } from '../../../hooks/useAuth'
+import { useOrgAudienceContext } from '../../../hooks/useOrgAudienceContext'
+import { describeAudience } from '../../contributions/AudiencePicker'
 import {
   useThemeContributionsV2,
   type ThemeContribution,
@@ -28,18 +25,26 @@ export type ThemeResearchActiveTab = 'aggregated' | string
 
 interface ThemeContributionSectionProps {
   themeId: string
-  themeIsPublic: boolean
   field: ThemeResearchField
   activeTab: ThemeResearchActiveTab
   hideWhenEmpty?: boolean
   onTabChange?: (tab: ThemeResearchActiveTab) => void
+  /**
+   * The audience chosen on the toolbar, which every save on this page writes.
+   *
+   * It is a page-level control, as on the asset page, so it is passed in
+   * rather than chosen here. A per-field select is what used to be here, and
+   * it offered two levels the database ignored.
+   */
+  sharedVisibility?: ThemeContributionVisibility
+  sharedTargetIds?: string[]
 }
 
 // Visual theme — matches asset ContributionSection styling
+// `iconBg` / `iconColor` are gone with the icon tile they coloured. Leaving
+// them would describe an element the card no longer has.
 const TILE_THEME = {
   accent: 'border-l-blue-400',
-  iconBg: 'bg-blue-50',
-  iconColor: 'text-blue-600',
   hoverBorder: 'hover:border-amber-200',
   hoverBg: 'hover:bg-amber-50/30',
 } as const
@@ -65,28 +70,34 @@ function hasText(html: string | null | undefined): boolean {
   return html.replace(/<[^>]*>/g, '').trim().length > 0
 }
 
-function VisibilityBadge({ visibility, isOwn }: { visibility: ThemeContributionVisibility; isOwn?: boolean }) {
-  const common = 'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium'
-  if (visibility === 'shared') {
-    return (
-      <span className={clsx(common, 'bg-violet-50 text-violet-700')}>
-        <Globe className="w-2.5 h-2.5" /> Shared
-      </span>
-    )
-  }
-  return (
-    <span className={clsx(common, isOwn ? 'bg-sky-50 text-sky-700' : 'bg-gray-100 text-gray-600 dark:text-gray-400 dark:bg-gray-800')}>
-      <Building2 className="w-2.5 h-2.5" /> Org
-    </span>
-  )
-}
+/*
+ * There is deliberately no per-field VisibilityBadge here any more.
+ *
+ * One lived at the top of every field and named that contribution's own
+ * audience. It is gone because the audience is a page-level choice on this
+ * page: the toolbar's `AudiencePicker` decides it and every save writes it,
+ * so the badge restated one setting once per field and implied each field
+ * could carry its own. The asset page passes `hideVisibility` to
+ * `ContributionSection` for exactly that reason.
+ *
+ * What it USED to say is worth recording, because the information has not
+ * gone anywhere and the toolbar is now its only home: a contribution whose
+ * `visibility` is outside the five levels is a row written under the old
+ * ('org','shared') vocabulary and reaches the whole firm, and a non-firm
+ * level naming no group is readable by its author alone. The toolbar's
+ * picker, and `describeAudience`, state both.
+ */
 
 // Component ----------------------------------------------------------------
 
 export function ThemeContributionSection({
-  themeId, themeIsPublic, field, activeTab, hideWhenEmpty = false, onTabChange,
+  themeId, field, activeTab, hideWhenEmpty = false, onTabChange,
+  sharedVisibility, sharedTargetIds = [],
 }: ThemeContributionSectionProps) {
   const { user } = useAuth()
+  /* The same react-query entry the toolbar picker reads, so N fields on a
+     theme share one org-chart fetch. See useOrgAudienceContext. */
+  const { nodeById: audienceNodeById } = useOrgAudienceContext()
   const {
     contributions,
     isLoading,
@@ -134,35 +145,57 @@ export function ThemeContributionSection({
   const isMobileViewport = useIsMobile()
   const [isEditing, setIsEditing] = useState(false)
   const [draft, setDraft] = useState<string>(ownContribution?.content || '')
-  const [visibility, setVisibility] = useState<ThemeContributionVisibility>(ownContribution?.visibility || 'org')
   const editorRef = useRef<RichTextEditorRef>(null)
+  /** What the server said when it refused an audience, shown in place. */
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isEditing) {
-      setDraft(ownContribution?.content || '')
-      setVisibility(ownContribution?.visibility || 'org')
-    }
-  }, [ownContribution?.id, ownContribution?.content, ownContribution?.visibility, isEditing])
+    if (!isEditing) setDraft(ownContribution?.content || '')
+  }, [ownContribution?.id, ownContribution?.content, isEditing])
 
   const startEdit = () => {
     setDraft(ownContribution?.content || '')
-    setVisibility(ownContribution?.visibility || 'org')
+    setSaveError(null)
     setIsEditing(true)
   }
   const cancelEdit = () => {
     setIsEditing(false)
+    setSaveError(null)
     setDraft(ownContribution?.content || '')
   }
   const commitEdit = async () => {
+    setSaveError(null)
     try {
       await upsertContribution({
         section: field.slug,
         content: draft,
-        visibility: themeIsPublic ? visibility : 'org',
+        /*
+         * The toolbar's choice is forwarded on every save, as the asset page
+         * does from its AssetTab host: the picker is the explicit audience
+         * control, so its value is deliberate and a save has to carry it.
+         * Omitting it would leave a first contribution at the 'firm' default
+         * while the toolbar showed a restriction.
+         *
+         * Omitted entirely when the page has not resolved an audience yet, in
+         * which case `undefined` means PRESERVE — never a silent 'firm'.
+         */
+        ...(sharedVisibility
+          ? { visibility: sharedVisibility, targetIds: sharedTargetIds }
+          : {}),
       })
       setIsEditing(false)
     } catch (e) {
+      /*
+       * Shown, not just logged. `set_theme_contribution_audience` refuses for
+       * reasons the analyst can act on -- "a team audience must name at least
+       * one group" -- and a console line the analyst never opens made a
+       * refused save look like a successful one. The editor stays OPEN so the
+       * prose survives.
+       */
       console.error('[theme research] failed to save', e)
+      setSaveError(
+        e instanceof Error && e.message ? e.message : 'Could not save this research.'
+      )
     }
   }
   const clearOwn = async () => {
@@ -202,10 +235,15 @@ export function ThemeContributionSection({
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-1.5 border-b border-gray-100 gap-2 dark:border-gray-800">
+        {/* No icon tile.
+
+            Every field on the theme page carried the same blue FileText
+            square, so the icon identified nothing: it was a 28px block of
+            colour repeated down the page, ahead of the one thing that does
+            identify the field, its name. The asset page's section takes an
+            `Icon` prop and the research surface passes none, for exactly
+            this reason. */}
         <div className="flex items-center gap-3 min-w-0">
-          <div className={clsx('p-1.5 rounded-lg shrink-0', TILE_THEME.iconBg)}>
-            <FileText className={clsx('w-4 h-4', TILE_THEME.iconColor)} />
-          </div>
           <div className="flex items-center gap-3 flex-wrap min-w-0">
             {/* Our View is read-only — title is static, no edit
                 affordance. Editing happens from the user's own view tab. */}
@@ -215,12 +253,14 @@ export function ThemeContributionSection({
                 Updated {formatDistanceToNow(new Date(lastUpdated), { addSuffix: true })}
               </span>
             )}
-            {!isAggregated && focusedContribution && (
-              <VisibilityBadge
-                visibility={focusedContribution.visibility}
-                isOwn={focusedContribution.created_by === user?.id}
-              />
-            )}
+            {/* No per-field audience badge.
+
+                The audience is a PAGE-level choice here, made once on the
+                toolbar and written by every save, so a "Firm" badge on each
+                field restated the toolbar's own setting once per field and
+                implied the field could differ from it. The asset page passes
+                `hideVisibility` for the same reason. The toolbar's picker
+                already says who can read this. */}
           </div>
         </div>
 
@@ -251,9 +291,10 @@ export function ThemeContributionSection({
             draft={draft}
             setDraft={setDraft}
             placeholder={field.placeholder || 'Share your take...'}
-            themeIsPublic={themeIsPublic}
-            visibility={visibility}
-            setVisibility={setVisibility}
+            audience={sharedVisibility
+              ? describeAudience({ visibility: sharedVisibility, targetIds: sharedTargetIds }, audienceNodeById)
+              : null}
+            error={saveError}
             onCancel={cancelEdit}
             onSave={commitEdit}
             isSaving={isUpserting}
@@ -273,9 +314,7 @@ export function ThemeContributionSection({
         ) : isOwnView ? (
           <FocusedOwn
             own={ownContribution}
-            placeholder={field.placeholder || 'Share your take...'}
             onStartEdit={startEdit}
-            onClear={clearOwn}
           />
         ) : (
           <FocusedOther contribution={focusedContribution} />
@@ -297,9 +336,11 @@ interface InlineEditorProps {
   draft: string
   setDraft: (v: string) => void
   placeholder: string
-  themeIsPublic: boolean
-  visibility: ThemeContributionVisibility
-  setVisibility: (v: ThemeContributionVisibility) => void
+  /** The audience this save will be written under, in words. Null before the
+   *  page has resolved one, in which case the save preserves what is stored. */
+  audience: string | null
+  /** The server's refusal, if the last save was refused. */
+  error: string | null
   onCancel: () => void
   onSave: () => Promise<void>
   isSaving: boolean
@@ -307,7 +348,7 @@ interface InlineEditorProps {
 }
 
 function InlineEditor({
-  draft, setDraft, placeholder, themeIsPublic, visibility, setVisibility,
+  draft, setDraft, placeholder, audience, error,
   onCancel, onSave, isSaving, editorRef,
 }: InlineEditorProps) {
   return (
@@ -319,29 +360,27 @@ function InlineEditor({
         placeholder={placeholder}
         minHeight="140px"
       />
-      {/* Visibility and the commit pair share a line at desktop width and
-          stack on a phone — "Visible to:" plus a select plus Cancel plus Save
-          is wider than 390px, and Save is not something to leave hanging off
-          the edge. */}
+      {error && (
+        /* In place, beside the prose it refused to save, and the editor stays
+           open. The message is the server's own. */
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert">{error}</p>
+      )}
+      {/* The audience and the commit pair share a line at desktop width and
+          stack on a phone — the statement plus Cancel plus Save is wider than
+          390px, and Save is not something to leave hanging off the edge. */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-          {themeIsPublic ? (
-            <>
-              <span className="shrink-0">Visible to:</span>
-              <select
-                value={visibility}
-                onChange={(e) => setVisibility(e.target.value as ThemeContributionVisibility)}
-                className="text-xs px-2 py-1 border border-gray-200 rounded bg-white dark:border-gray-700 dark:bg-gray-800"
-              >
-                <option value="org">Org only</option>
-                <option value="shared">Shared</option>
-              </select>
-            </>
-          ) : (
-            <span className="inline-flex items-center gap-1">
-              <Building2 className="w-3 h-3" /> Org only
+        <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 min-w-0">
+          {/* A statement, not a control. The audience is chosen once on the
+              toolbar for the whole page -- as on the asset page -- so a select
+              here would be a second control over one value. What used to sit
+              here offered "Org only" and "Shared", which named one reach
+              twice: the policy ignored the column entirely. */}
+          <span className="inline-flex items-center gap-1 min-w-0">
+            <Building2 className="w-3 h-3 shrink-0" />
+            <span className="truncate">
+              {audience ? `Visible to ${audience}` : 'Audience unchanged'}
             </span>
-          )}
+          </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button size="sm" variant="outline" onClick={onCancel} className="flex-1 sm:flex-none">
@@ -420,80 +459,61 @@ function AggregatedContent({
 // Focused views (single user)
 // ==========================================================================
 
-function FocusedOwn({ own, placeholder, onStartEdit, onClear }: {
+/**
+ * The reader's own view of one field.
+ *
+ * ── No hover overlay, and no Clear ───────────────────────────────────────
+ *
+ * This used to pin a pencil and a bin to the top-right of the prose on
+ * hover. Both are gone, because the asset page has neither and the reasons
+ * it has neither apply here:
+ *
+ *  - The pencil was a THIRD way to start the same edit. The header already
+ *    carries an Edit/Add pill, and the prose itself is click-to-edit. A
+ *    control that duplicates the surface it floats over is not an
+ *    affordance, it is a second thing to explain.
+ *  - The bin was a destructive action, unconfirmed, one pixel from the
+ *    pencil, over the user's own writing. Nothing else in the research
+ *    surface offers that. Clearing a field is an edit: select the text and
+ *    save it empty.
+ *
+ * The overlay also had to be special-cased for touch, where the base layer
+ * reveals `opacity-0` hover controls outright and the two buttons landed on
+ * top of the first line of the user's text. That case goes with it.
+ */
+function FocusedOwn({ own, onStartEdit }: {
   own: ThemeContribution | null
-  placeholder: string
   onStartEdit: () => void
-  onClear: () => void
 }) {
   const hasOwn = !!own && hasText(own.content)
-  const isMobileViewport = useIsMobile()
-
-  // Edit and Clear are a hover overlay pinned to the top-right of the prose on
-  // desktop. On touch there is no hover, and the app's base layer reveals
-  // opacity-0 hover controls outright — so these landed as two 44px buttons
-  // sitting on top of the first line of the user's own text. On a phone they
-  // become a normal labelled row underneath it instead.
-  const actions = (
-    <>
-      <button
-        onClick={(e) => { e.stopPropagation(); onStartEdit() }}
-        className={clsx(
-          'flex items-center gap-1.5 rounded transition-colors',
-          isMobileViewport
-            ? 'px-2.5 py-1.5 text-xs font-medium text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20'
-            : 'no-touch-target p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700',
-        )}
-        title="Edit"
-      >
-        <Edit3 className="w-3.5 h-3.5 shrink-0" />
-        {isMobileViewport && 'Edit'}
-      </button>
-      <button
-        onClick={(e) => { e.stopPropagation(); onClear() }}
-        className={clsx(
-          'flex items-center gap-1.5 rounded transition-colors',
-          isMobileViewport
-            ? 'px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:text-error-600 hover:bg-error-50 dark:text-gray-400'
-            : 'no-touch-target p-1 text-gray-400 hover:text-error-600 hover:bg-error-50',
-        )}
-        title="Clear"
-      >
-        <Trash2 className="w-3.5 h-3.5 shrink-0" />
-        {isMobileViewport && 'Clear'}
-      </button>
-    </>
-  )
 
   return (
     <div className="group cursor-text" onClick={onStartEdit}>
       {hasOwn ? (
-        <div className="relative">
-          <div
-            className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 dark:text-gray-300"
-            dangerouslySetInnerHTML={{ __html: own!.content }}
-          />
-          {isMobileViewport ? (
-            <div className="flex items-center gap-1 mt-2 -ml-2.5 border-t border-gray-100 pt-2 dark:border-gray-800">
-              {actions}
-            </div>
-          ) : (
-            <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5">
-              {actions}
-            </div>
-          )}
-        </div>
+        <div
+          className="text-sm text-gray-700 leading-relaxed prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 dark:text-gray-300"
+          dangerouslySetInnerHTML={{ __html: own!.content }}
+        />
       ) : (
-        /* The empty state is the prompt itself, left-aligned with the prose
-           that will replace it rather than centred — a centred button in an
-           otherwise left-aligned card reads as a separate element instead of
-           the absence of the content it stands in for. */
+        /* "Add your view", the asset page's words, not the field's own
+           question.
+
+           The question was the empty state here, which made the two pages
+           ask for the same thing in two different registers, and made the
+           absence of content look like content. The question is not lost:
+           it is the editor's placeholder, which is where it does its work,
+           at the moment the user is about to answer it.
+
+           Left-aligned with the prose that will replace it rather than
+           centred, because a centred button in an otherwise left-aligned
+           card reads as a separate element instead of the absence of the
+           thing it stands in for. */
         <button
           onClick={(e) => { e.stopPropagation(); onStartEdit() }}
-          className="w-full flex items-center gap-2 py-1.5 text-left text-sm text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+          className="inline-flex items-center gap-1.5 -ml-2 px-2 py-1 text-sm font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors dark:hover:bg-primary-900/20"
         >
           <Edit3 className="w-3.5 h-3.5 shrink-0" />
-          {placeholder}
+          Add your view
         </button>
       )}
     </div>

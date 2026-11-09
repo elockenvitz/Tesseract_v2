@@ -23,10 +23,24 @@
 import {
   DesktopModule, DesktopStat, DesktopSection, DesktopColumns, DeepLinks, DeepLink,
 } from '../desktop/DesktopModule'
-import { ArrowRight, ArrowUpRight, MoreHorizontal } from 'lucide-react'
+import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import { askAI, discuss, canDiscuss } from '../../lib/engagement'
 import { openAsset } from '../../lib/desktop-asset'
+import { pipelineTabFor } from '../../lib/desktop-ideas'
 import { useHasResearch } from '../../hooks/useDesktopResearch'
+
+/**
+ * Open the Pipeline on this idea's card.
+ *
+ * The descriptor comes from `pipelineTabFor` rather than being written out
+ * here, because writing it out here is how both call sites below ended up
+ * dispatching `data: null` and opening the workspace with nothing selected.
+ */
+function openPipeline(ideaId: string | null | undefined) {
+  const tab = pipelineTabFor(ideaId)
+  if (!tab) return
+  window.dispatchEvent(new CustomEvent('decision-engine-action', { detail: tab }))
+}
 
 /**
  * Ideas → Research.
@@ -126,7 +140,7 @@ export function IdeaDetail({
         rediscovery this rule exists to prevent.
       */}
       {arrivedFor && (
-        <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-[12px] text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
+        <div className="border-b border-blue-200 bg-blue-50 px-6 py-2 text-[13px] text-blue-900 dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-200">
           <span className="font-semibold">Opened from Today:</span> {arrivedFor}
         </div>
       )}
@@ -180,7 +194,7 @@ export function IdeaDetail({
             <button
               type="button"
               onClick={() => askAI(target)}
-              className="rounded-md px-3 py-2 text-[12px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
+              className="rounded-md px-3 py-2 text-[13px] text-amber-800 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-950/30"
             >
               Ask AI
             </button>
@@ -194,7 +208,7 @@ export function IdeaDetail({
             <button
               type="button"
               onClick={() => routeToResearch(idea.assetId!, idea.symbol, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+              className="inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
             >
               Check the evidence
               <ArrowUpRight className="h-3 w-3 opacity-70" />
@@ -206,19 +220,19 @@ export function IdeaDetail({
               <button
                 type="button"
                 onClick={() => discuss(target!)}
-                className="rounded-md px-3 py-2 text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
+                className="rounded-md px-3 py-2 text-[13px] text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]"
               >
                 Team
               </button>
             </>
           )}
-          <button
-            type="button"
-            aria-label="More actions"
-            className="ml-auto grid h-8 w-8 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-white/[0.06]"
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </button>
+          {/*
+            No overflow control. Same dead button as the other lens panes had:
+            no onClick, no menu state, no popover, announced to assistive tech
+            as "More actions" and doing nothing when pressed. ResearchDetail
+            carries the full reasoning; it is removed rather than filled
+            because there was no action waiting to go in it.
+          */}
         </div>
       </div>
 
@@ -371,11 +385,17 @@ export function IdeaDetail({
                 <p className="text-[13px] text-gray-800 dark:text-gray-200">
                   Add this idea to a portfolio before recording a decision.
                 </p>
+                {/*
+                  Was labelled "Open idea" and dispatched a `trade-queue` tab
+                  with `data: null` — so it opened the bare Pipeline WORKSPACE,
+                  not this idea, while the reader was already looking at the
+                  idea it claimed to open. The Pipeline is the right
+                  destination here (it is where a portfolio gets attached), so
+                  the label now says that and the card is actually focused.
+                */}
                 <DeepLink
-                  label="Open idea"
-                  onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
-                    detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
-                  }))}
+                  label="Open in Pipeline"
+                  onClick={() => openPipeline(idea.id)}
                 />
               </DesktopSection>
             )}
@@ -405,7 +425,7 @@ export function IdeaDetail({
                 />
               </div>
               {idea.proposedWeight != null && detail?.weightPct != null && (
-                <p className="mt-2.5 text-[12px] text-gray-600 dark:text-gray-400">
+                <p className="mt-2.5 text-[13px] text-gray-600 dark:text-gray-400">
                   {idea.proposedWeight > detail.weightPct
                     ? `Adds ${(idea.proposedWeight - detail.weightPct).toFixed(1)}% to the book.`
                     : idea.proposedWeight < detail.weightPct
@@ -426,7 +446,7 @@ export function IdeaDetail({
               */}
               {idea.proposedWeight == null && idea.assetId && (
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <p className="text-[12px] text-gray-500">
+                  <p className="text-[13px] text-gray-500">
                     No size proposed yet.
                   </p>
                   <button
@@ -435,7 +455,7 @@ export function IdeaDetail({
                     onClick={() => dispatchDecisionAction(
                       'OPEN_TRADE_LAB_SIMULATION', { assetId: idea.assetId },
                     )}
-                    className="rounded-md border border-gray-300 px-2.5 py-1 text-[12px] font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-[13px] font-semibold text-gray-700 hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-blue-600 dark:border-white/15 dark:text-gray-200 dark:hover:bg-white/5"
                   >
                     Size it in Trade Lab
                   </button>
@@ -473,7 +493,7 @@ export function IdeaDetail({
                     />
                   </div>
                 )}
-                <p className="mt-2.5 text-[10px] text-gray-500">
+                <p className="mt-2.5 text-[11px] text-gray-500">
                   {idea.portfolioName ? `${idea.portfolioName}. ` : ''}
                   No policy limit is recorded for this position.
                 </p>
@@ -483,7 +503,7 @@ export function IdeaDetail({
             {/* One number and one sentence. It was a bordered card. */}
             {detail?.researchCount ? (
               <DesktopSection title="Research">
-                <p className="text-[12px] text-gray-700 dark:text-gray-300">
+                <p className="text-[13px] text-gray-700 dark:text-gray-300">
                   <span className="font-mono text-[15px] font-semibold">{detail.researchCount}</span>
                   {' '}linked document{detail.researchCount === 1 ? '' : 's'} on this name.
                 </p>
@@ -514,11 +534,12 @@ export function IdeaDetail({
               onClick={() => routeToResearch(idea.assetId!, idea.symbol, `${idea.symbol ?? 'Idea'} — ${MATURITY_LABEL[idea.maturity]}`)}
             />
           )}
+          {/* Same defect as the Decision section above: "Open idea" opened
+              the Pipeline workspace with nothing selected, from inside the
+              idea itself. */}
           <DeepLink
-            label="Open idea"
-            onClick={() => window.dispatchEvent(new CustomEvent('decision-engine-action', {
-              detail: { id: 'trade-queue', title: 'Pipeline', type: 'trade-queue', data: null },
-            }))}
+            label="Open in Pipeline"
+            onClick={() => openPipeline(idea.id)}
           />
         </DeepLinks>
       </div>
@@ -533,8 +554,8 @@ export function IdeaDetail({
 function Kv({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[9px] font-semibold uppercase tracking-widest text-gray-500">{label}</div>
-      <div className="mt-0.5 font-mono text-[14px] font-semibold tabular-nums">{value}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">{label}</div>
+      <div className="mt-0.5 font-mono text-[13px] font-semibold tabular-nums">{value}</div>
     </div>
   )
 }

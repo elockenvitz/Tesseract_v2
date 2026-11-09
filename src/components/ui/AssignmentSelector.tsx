@@ -359,7 +359,23 @@ export function AssignmentSelector({
     <div className="space-y-2">
       {/* Only show assigned section if not auto-opening modal and not hidden */}
       {!autoOpenModal && !hideAssignedSection && (
-        <div className="space-y-2">
+        /*
+          ── Ownership and deadline on ONE row ──────────────────────────────
+
+          These stacked: "Assigned to" and its avatars, then the deadline
+          beneath. In the Process workbench that put a 56px block beside an
+          18px line of stage context, and the two facts a reader checks
+          together — who owns this, by when — were on separate rows at the far
+          right of the surface.
+
+          `flex-wrap` rather than a fixed row: on a narrow viewport the
+          deadline drops below the assignees instead of squeezing them, which
+          is the same two rows as before and no worse than the old layout.
+
+          This component has exactly one caller (the stage block in
+          `InvestmentTimeline`), so the change needs no opt-in prop.
+        */
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {/* Header with badges and Assign Button */}
           <div className="flex items-center gap-2">
             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide dark:text-gray-400">
@@ -417,7 +433,7 @@ export function AssignmentSelector({
             </button>
           </div>
 
-          {/* Set Deadline section - only for stage type */}
+          {/* Set Deadline — beside the owner now, not beneath. */}
           {type === 'stage' && children}
         </div>
       )}

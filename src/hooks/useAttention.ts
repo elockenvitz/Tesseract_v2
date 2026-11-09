@@ -468,6 +468,11 @@ async function collectTradeQueueItems(userId: string, orgId: string): Promise<At
       score: 0,
       context: {
         asset_id: t.asset_id,
+        /* The ticker the title above already printed. See `AttentionItem`.
+           `as any` because the whole row is inferred `never` here -- a
+           pre-existing condition of this file that the titles above already
+           work around, and not a licence this fix is taking for itself. */
+        symbol: (t as any).assets?.symbol ?? null,
         portfolio_id: t.portfolio_id,
       },
     })
@@ -539,6 +544,7 @@ async function collectListSuggestions(userId: string, orgId: string): Promise<At
       score: 0,
       context: {
         asset_id: s.asset_id,
+        symbol: (s as any).assets?.symbol ?? null,
         list_id: s.list_id,
       },
     })
@@ -565,6 +571,39 @@ async function filterNotificationsToOrg(rows: any[], orgId: string): Promise<any
     trade_queue_item: 'trade_queue_items',
     quick_thought: 'quick_thoughts',
     note: 'asset_notes',
+    /*
+     * NOT `price_target`, and the reason is measured rather than argued.
+     *
+     * ── What was tried ──────────────────────────────────────────────────
+     *
+     * `price_target: 'price_targets'` was added here alongside the
+     * `context_data` fallback below, on the reasoning that a notification
+     * which now names an asset should have its subject org-checked like every
+     * other entry in this map. `price_targets` does carry `organization_id`,
+     * so the lookup was well formed.
+     *
+     * ── Why it is wrong ─────────────────────────────────────────────────
+     *
+     * Queried in production: all 13 `Price Target Expired` notifications have
+     * a `context_id` that matches NO row in `price_targets`. The target they
+     * were raised about has since been deleted. This filter drops any row
+     * whose subject the lookup cannot find, so adding the entry deleted every
+     * one of those notifications from the queue -- confirmed on the live
+     * field, where the two unread tiles disappeared instead of becoming
+     * openable. Losing the row is strictly worse than the inert tile it was
+     * meant to fix.
+     *
+     * The scoping question for these rows is "may this user see this
+     * notification", and `.eq('user_id', userId)` above already answers it.
+     * The subject is a denormalised snapshot inside a row the user owns, and
+     * the asset page it links to does its own RLS-gated fetch, so no org-owned
+     * data is reached by the link that the title did not already print.
+     *
+     * `asset` is absent for a different and permanent reason: `assets` has no
+     * `organization_id` -- global reference data by design, the documented
+     * exception -- so a lookup keyed on one would filter every asset
+     * notification to nothing. Neither key belongs here.
+     */
   }
 
   const byTable = new Map<string, Set<string>>()
@@ -650,8 +689,40 @@ async function collectNotifications(userId: string, _windowStart: Date, orgId: s
       severity: 'low',
       score: 0,
       context: {
-        asset_id: n.context_type === 'asset' ? n.context_id : null,
-        project_id: n.context_type === 'project' ? n.context_id : null,
+        /*
+         * The asset, from `context_type` OR from the payload the row carries.
+         *
+         * ── The two tiles this was measured on ─────────────────────────────
+         *
+         * `context_type === 'asset'` is only one of the ways a notification
+         * is about a name. A price-target expiry writes
+         * `context_type: 'price_target'` and puts the subject in
+         * `context_data`: asset_id, asset_symbol and asset_name are all
+         * there, written by the producer. This read none of it, so two
+         * "Price Target Expired: AAPL" tiles on the live desktop field had a
+         * null asset, no destination, and rendered deliberately inert -- the
+         * last two dead tiles of the thirteen.
+         *
+         * No new query: `select('*')` already returns `context_data`, which
+         * this function reads two lines above for `changed_by`.
+         */
+        asset_id: n.context_type === 'asset'
+          ? n.context_id
+          : (n.context_data?.asset_id ?? null),
+        /*
+         * The ticker, where the payload states it, and null otherwise.
+         *
+         * This was unconditionally null with the reason recorded: the row is
+         * read with `select('*')` and joins nothing, so a notification whose
+         * subject is only an id does not know the symbol, and looking it up
+         * would be a query per row for a field the tile can do without. That
+         * reasoning is unchanged and still governs those rows. What was wrong
+         * was applying it to rows that DO carry the ticker already.
+         */
+        symbol: n.context_data?.asset_symbol ?? null,
+        project_id: n.context_type === 'project'
+          ? n.context_id
+          : (n.context_data?.project_id ?? null),
       },
     })
   }
@@ -766,6 +837,8 @@ async function collectQuickThoughts(userId: string, windowStart: Date, orgId: st
         score: 0,
         context: {
           asset_id: t.asset_id,
+          /* The same ticker `contextLabel` above already read off the row. */
+          symbol: (t as any).assets?.symbol ?? null,
           project_id: t.project_id,
           portfolio_id: t.portfolio_id,
         },
@@ -875,6 +948,7 @@ async function collectQuickThoughts(userId: string, windowStart: Date, orgId: st
           score: 0,
           context: {
             asset_id: t.asset_id,
+            symbol: (t as any).assets?.symbol ?? null,
             project_id: t.project_id,
             portfolio_id: t.portfolio_id,
           },
@@ -1095,7 +1169,7 @@ async function collectStaleTradeIdeas(userId: string, orgId: string): Promise<At
       next_action: 'Review: advance stage, update thesis, or archive',
       severity: daysSince > 14 ? 'high' : 'medium',
       score: 0,
-      context: { asset_id: asset?.id },
+      context: { asset_id: asset?.id, symbol: asset?.symbol ?? null },
     })
   }
   return items
@@ -1151,9 +1225,13 @@ async function collectNeglectedCoverage(userId: string, orgId: string): Promise<
       attention_type: 'action_required',
       reason_code: 'coverage_neglected',
       reason_text: lastUpdate
-        ? `No research update in ${daysSince} days — thesis may be stale`
+        ? `No research update in ${daysSince} days, so the thesis may be stale`
         : `Covering ${asset?.symbol} but no thesis or research on file`,
-      title: `${asset?.symbol} — Research stale`,
+      // Was "<SYM> — Research stale". The em dash is not this product's
+      // punctuation in user-visible copy, and on a compact tile the symbol
+      // already leads the card in its own type, so repeating it after a dash
+      // in the subtitle read as a second, decorative identity row.
+      title: `${asset?.symbol}: Research stale`,
       subtitle: asset?.company_name,
       tags: ['coverage', 'stale'],
       icon_key: 'TrendingUp',
@@ -1170,7 +1248,7 @@ async function collectNeglectedCoverage(userId: string, orgId: string): Promise<
       next_action: 'Update thesis, rating, or research for this covered name',
       severity: daysSince > 30 ? 'high' : 'medium',
       score: 0,
-      context: { asset_id: c.asset_id },
+      context: { asset_id: c.asset_id, symbol: asset?.symbol ?? null },
     })
   }
   return items
@@ -1231,7 +1309,7 @@ async function collectUpcomingEarnings(userId: string, orgId: string): Promise<A
       next_action: 'Review thesis and positioning before results',
       severity: daysUntil <= 3 ? 'high' : daysUntil <= 7 ? 'medium' : 'low',
       score: 0,
-      context: { asset_id: asset?.id },
+      context: { asset_id: asset?.id, symbol: asset?.symbol ?? null },
     })
   }
   return items

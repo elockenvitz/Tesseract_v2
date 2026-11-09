@@ -38,8 +38,8 @@
  */
 
 import { openAsset } from '../desktop-asset'
-import { openResearch } from '../desktop-research'
-import { openIdea } from '../desktop-ideas'
+import { openResearch, researchTabFor } from '../desktop-research'
+import { openIdeaDetail } from '../navigation/open-idea'
 import { discuss } from '../engagement'
 import type { EngagementTarget } from '../engagement'
 
@@ -454,6 +454,30 @@ function openTab(detail: { type: string; id: string; title: string; data?: unkno
 }
 
 /**
+ * Research, wherever the reader is: the lens in place, or a tab if no lens.
+ *
+ * `openResearch` used to return true for any well-formed request. It now
+ * returns whether a MOUNTED surface took the request, which is the right
+ * answer for a button inside the Dashboard and the wrong one here: the AI
+ * pane runs over every surface in the app, so on an Asset tab, the Pipeline,
+ * or anywhere else with no Research lens mounted, three of its actions
+ * reported "I could not do that" and did nothing at all.
+ *
+ * So the fallback the lens buttons have is spelled out here too. The return
+ * value means what `executeAiAction` has always used it to mean: the reader
+ * was sent somewhere.
+ */
+function openResearchAnywhere(
+  assetId: string,
+  focus: 'thesis' | 'price',
+  issue: string | null | undefined,
+): boolean {
+  const request = { assetId, focus, issue, origin: 'ai' }
+  if (openResearch(request)) return true
+  return openTab(researchTabFor(request))
+}
+
+/**
  * `AiObjectType` and `EngagementObjectType` overlap but are not the same set:
  * the seam has no `project`, and calls a trade idea `trade_idea`. Written as
  * an explicit map so adding a kind to either union forces this to be revisited
@@ -500,16 +524,24 @@ export function executeAiAction(action: AiAction): boolean {
       return t ? openAsset({ assetId: t.id, symbol: t.symbol ?? t.label ?? null, focus: 'overview', issue: action.reason ?? null, origin }) : false
 
     case 'open_research':
-      return t ? openResearch({ assetId: t.id, focus: 'thesis', issue: action.reason, origin }) : false
+      return t ? openResearchAnywhere(t.id, 'thesis', action.reason) : false
 
     case 'update_thesis':
-      return t ? openResearch({ assetId: t.id, focus: 'thesis', issue: action.reason, origin }) : false
+      return t ? openResearchAnywhere(t.id, 'thesis', action.reason) : false
 
     case 'review_target':
-      return t ? openResearch({ assetId: t.id, focus: 'price', issue: action.reason, origin }) : false
+      return t ? openResearchAnywhere(t.id, 'price', action.reason) : false
 
     case 'open_idea':
-      return t ? openIdea({ ideaId: t.id, focus: 'decision', issue: action.reason, origin }) : false
+      /*
+       * The Idea Pipeline with the idea's detail open, which is where an idea
+       * is worked. Not the Ideas lens: that is a gallery for finding work, and
+       * `openIdea` only reports success when such a lens happens to be
+       * mounted, so from anywhere else this action did nothing and said so.
+       */
+      if (!t) return false
+      openIdeaDetail(t.id)
+      return true
 
     case 'open_portfolio':
       return t ? openTab({ type: 'portfolio', id: t.id, title: t.label ?? 'Portfolio', data: { id: t.id, name: t.label } }) : false

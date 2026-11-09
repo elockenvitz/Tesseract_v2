@@ -12,6 +12,7 @@ import { TODAY_FOCUS_ACTIONS } from '../../lib/dashboard/focus'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { DecisionItem } from '../../engine/decisionEngine/types'
+import { TODAY_LIMIT } from '../../lib/today'
 
 const engine = { action: [] as DecisionItem[], intel: [] as DecisionItem[] }
 let suppressed = new Set<string>()
@@ -41,7 +42,9 @@ const enrichedWith: string[][] = []
 vi.mock('../../hooks/useTodayEnrichment', () => ({
   useTodayEnrichment: (items: { ticker: string | null }[]) => {
     enrichedWith.push(items.map(i => i.ticker ?? '?'))
-    return {}
+    // `{ map, pending }`: a tile cannot reserve room for a chart that is still
+    // loading unless the hook distinguishes "nothing is coming" from "not yet".
+    return { map: {}, pending: false }
   },
 }))
 
@@ -127,12 +130,38 @@ describe('TodayPage', () => {
   })
 
   it('stays finite and reports what it chose not to show', () => {
-    engine.action = Array.from({ length: 7 }, (_, i) => stale(i))
+    // Sized off TODAY_LIMIT, not off the number it happened to be: the point
+    // is that the surface is FINITE and says what it left out, which holds at
+    // four tiles or at eight.
+    engine.action = Array.from({ length: TODAY_LIMIT + 3 }, (_, i) => stale(i))
     renderPage()
 
-    expect(screen.getAllByTestId('today-tile')).toHaveLength(4)
+    expect(screen.getAllByTestId('today-tile')).toHaveLength(TODAY_LIMIT)
     expect(screen.getByText(/3 more, lower priority/)).toBeInTheDocument()
     expect(screen.getByText(/deliberately did not interrupt you/)).toBeInTheDocument()
+  })
+
+  it('gives one name one tile, on the page and not just in the selector', () => {
+    /*
+     * NKE reached the live field twice -- #5 and #7, same ticker, same fund,
+     * same sentence -- from two open ideas, while `selectToday`'s own tests
+     * were green. The page does not call `selectToday`: it expands rollups,
+     * diversifies, and then sliced. A rule that lives only in the selector is
+     * a rule the production surface does not have, so this asserts it HERE.
+     */
+    const idea = (n: number) => stale(n, {
+      id: `nke-${n}`, titleKey: 'IDEA_NOT_SIMULATED',
+      chips: [{ label: 'Ticker', value: 'NKE' }, { label: 'Open', value: '228d' }],
+      context: { assetId: 'a-nke', assetTicker: 'NKE', tradeIdeaId: `t${n}` },
+    })
+    engine.action = [idea(1), idea(2), stale(3)]
+    renderPage()
+
+    const tickers = screen.getAllByTestId('today-tile')
+      .map(t => t.querySelector('.font-black')?.textContent)
+    expect(tickers.filter(t => t === 'NKE')).toHaveLength(1)
+    // Nothing is hidden -- the one that yielded is reported.
+    expect(screen.getByText(/1 more, lower priority/)).toBeInTheDocument()
   })
 
   it('shows a single item without reserving the space beside it', () => {
@@ -159,11 +188,11 @@ describe('TodayPage', () => {
   })
 
   it('suppresses before the cut, so a dismissal does not waste a slot', () => {
-    engine.action = Array.from({ length: 5 }, (_, i) => stale(i))
+    engine.action = Array.from({ length: TODAY_LIMIT + 1 }, (_, i) => stale(i))
     suppressed = new Set(['decision:thesis-stale-0'])
     renderPage()
 
-    expect(screen.getAllByTestId('today-tile')).toHaveLength(4)
+    expect(screen.getAllByTestId('today-tile')).toHaveLength(TODAY_LIMIT)
     expect(screen.queryByText('TCK0')).not.toBeInTheDocument()
     expect(screen.getByText(/1 dismissed or snoozed by you/)).toBeInTheDocument()
   })
@@ -187,10 +216,10 @@ describe('TodayPage', () => {
   })
 
   it('enriches only what surfaced, never the whole candidate pool', () => {
-    engine.action = Array.from({ length: 9 }, (_, i) => stale(i))
+    engine.action = Array.from({ length: TODAY_LIMIT + 5 }, (_, i) => stale(i))
     renderPage()
-    // 9 candidates, 4 slots -- the hook must see 4.
-    expect(enrichedWith[enrichedWith.length - 1]).toHaveLength(4)
+    // The property is SCOPE: the hook sees what surfaced, never the pool.
+    expect(enrichedWith[enrichedWith.length - 1]).toHaveLength(TODAY_LIMIT)
   })
 
   it('diversifies the supporting slots when a comparable alternative exists', () => {
@@ -207,8 +236,12 @@ describe('TodayPage', () => {
     const tickers = screen.getAllByTestId('today-tile')
       .map(t => t.querySelector('.font-black')?.textContent)
     // #1 is still the highest-ranked stale thesis; CLOV breaks the saturation.
+    // With eight slots and five candidates everything surfaces, so the claim
+    // is about ORDER: CLOV is pulled up among the supporting tiles rather
+    // than left behind four identical stale theses.
     expect(tickers).toContain('CLOV')
-    expect(tickers.filter(t => t?.startsWith('TCK'))).toHaveLength(3)
+    expect(tickers[0]).toMatch(/^TCK/)
+    expect(tickers.indexOf('CLOV')).toBeLessThan(4)
   })
 
   it('mixes intel into the same ranked surface rather than a second list', () => {

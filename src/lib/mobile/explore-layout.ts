@@ -216,13 +216,38 @@ function earnsCompact(item: ExploreItem, visual: string): boolean {
  */
 export function exploreCardSize(item: ExploreItem): ExploreSizeDecision {
   /**
-   * An aggregate stands for several things, so it is several things wide.
+   * An aggregate is a SIGNPOST, and a signpost is small.
    *
-   * It is also the only card whose tap does not open a surface — it narrows the
-   * grid — and width is how a reader tells those apart before spending the tap.
+   * ── What the old rule did, measured ──────────────────────────────────────
+   *
+   * It returned `feature`, on the reasoning that an aggregate stands for
+   * several things so it is several things wide, and that width is how a
+   * reader tells a filtering tile from an opening one before spending the tap.
+   *
+   * Measured live at 1920x889: the Ideas aggregate was the SECOND tile on the
+   * page at 915x356 -- larger than every real finding except the lead -- to
+   * say "5 new ideas this week" and offer one button. `exploreVisualFor`
+   * resolves `none` for it, correctly, because a count has no picture. So the
+   * largest card in the field was a sentence, a number and a filter.
+   *
+   * And it is the one tile whose tap does NOT open anything, which is how it
+   * was reported: a reader clicked the biggest Ideas card expecting the
+   * workspace and the grid merely narrowed. Width did not distinguish the
+   * filtering tile; it advertised it as the most important thing present.
+   *
+   * ── Why width was the wrong signal for this ──────────────────────────────
+   *
+   * Size on this surface means "this one has more to show" -- that is the
+   * contract `opportunitySize` states. An aggregate has strictly LESS to show
+   * than any member it stands for: it is those members with their content
+   * removed. The verb already distinguishes it ("Show these", not "Open"), and
+   * a verb is a promise about what happens; width is not.
+   *
+   * So it takes the smallest cell. It is still there, still first-class, still
+   * filters. It no longer outranks the findings it is a shortcut to.
    */
   if (item.subtype === 'aggregate') {
-    return { size: 'feature', reason: 'aggregate: stands for several items' }
+    return { size: 'compact', reason: 'aggregate: a signpost to other cards, not a finding' }
   }
 
   /**
