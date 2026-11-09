@@ -84,7 +84,11 @@ describe('a signed-in reader', () => {
   })
 
   it('is admitted whatever case the scheme is written in', async () => {
-    for (const header of [`Bearer ${TOKEN}`, `bearer ${TOKEN}`, `BEARER ${TOKEN}`, TOKEN]) {
+    // `bearer` and `Bearer` both occur in the wild, so the scheme is matched
+    // case-insensitively. A SCHEMELESS header used to be in this list and is
+    // now asserted to be REFUSED instead -- see "a bare token with no scheme"
+    // below for why that changed.
+    for (const header of [`Bearer ${TOKEN}`, `bearer ${TOKEN}`, `BEARER ${TOKEN}`]) {
       const { client } = clientOf(admits)
       const r = await authorizeVerifiedUser(header, client)
       expect(r.ok, header).toBe(true)
@@ -113,6 +117,41 @@ describe('a caller who is not a signed-in user', () => {
       expect(r.ok, JSON.stringify(header)).toBe(false)
       if (!r.ok) expect(r.status).toBe(401)
       expect(seen, JSON.stringify(header)).toEqual([])
+    }
+  })
+
+  it('is refused when it is a bare token with no scheme', async () => {
+    // This case USED to be admitted, on the reasoning that some clients send
+    // the token without a scheme and the token is what the gate verifies
+    // anyway. That is the wrong trade, and it is a security property rather
+    // than a style choice: accepting a schemeless header means a caller
+    // sending `Authorization: Basic am9lOnBhc3M=` has that credential
+    // forwarded verbatim to the auth server as if it were a JWT. Rejecting it
+    // costs a real client one corrected header and costs this gate nothing.
+    //
+    // A valid token is used deliberately: the refusal must come from the
+    // MISSING SCHEME, not from the token being bad. `seen` proves the auth
+    // server was never asked, so nothing leaves the function.
+    const { client, seen } = clientOf(admits)
+    const r = await authorizeVerifiedUser(TOKEN, client)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.status).toBe(401)
+      // Not "Missing authorization header": a header WAS sent, it just is not
+      // a bearer credential.
+      expect(r.error).toBe('Unauthorized')
+    }
+    expect(seen).toEqual([])
+  })
+
+  it('is refused when the scheme is not Bearer', async () => {
+    // The concrete leak the rule above prevents.
+    for (const header of ['Basic am9lOnBhc3M=', `Digest ${TOKEN}`, `Token ${TOKEN}`]) {
+      const { client, seen } = clientOf(admits)
+      const r = await authorizeVerifiedUser(header, client)
+      expect(r.ok, header).toBe(false)
+      if (!r.ok) expect(r.status, header).toBe(401)
+      expect(seen, header).toEqual([])
     }
   })
 
