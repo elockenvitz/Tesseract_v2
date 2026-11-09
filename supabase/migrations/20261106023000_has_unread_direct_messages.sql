@@ -80,4 +80,16 @@ comment on function public.has_unread_direct_messages() is
   'True when the calling user has any direct message from someone else newer than their last_read_at. SECURITY INVOKER: the caller''s RLS on conversation_participants and conversation_messages applies. Replaces a 1+N client loop in Header.tsx.';
 
 revoke all on function public.has_unread_direct_messages() from public;
+-- `from public` is NOT sufficient on its own, and the comment above overstated
+-- it. Supabase's ALTER DEFAULT PRIVILEGES grants `anon` EXECUTE DIRECTLY on
+-- every function created in `public`; revoking the PUBLIC pseudo-role does not
+-- touch a direct grant. This was measured on
+-- `set_theme_contribution_audience` the same day, which came out of its own
+-- `revoke ... from public` still executable by anon.
+--
+-- It is harmless here -- SECURITY INVOKER, and `auth.uid()` is NULL for an
+-- anonymous caller so the EXISTS matches nothing and the answer is false --
+-- but "harmless because of what the body does" is the reasoning CLAUDE.md
+-- Rule 6 rejects, so the reachability is removed rather than reasoned about.
+revoke all on function public.has_unread_direct_messages() from anon;
 grant execute on function public.has_unread_direct_messages() to authenticated;

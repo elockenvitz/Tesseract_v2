@@ -144,10 +144,35 @@ BEGIN
 END $function$;
 
 -- Ownership is the security boundary, not a detail. See the note above.
+--
+-- ALTER FUNCTION ... OWNER TO requires the INCOMING owner to hold CREATE on the
+-- schema, and `tesseract_audience_writer` deliberately does NOT have it. That
+-- is the point of the role -- it can touch two tables and create nothing -- so
+-- the privilege is borrowed for exactly one statement and handed back inside
+-- the same transaction. Measured on the first production apply, 2026-11-09:
+--
+--   ERROR 42501: permission denied for schema public
+--   has_schema_privilege('tesseract_audience_writer','public','create') = false
+--   has_schema_privilege('tesseract_audience_writer','public','usage')  = true
+--
+-- Without the bracket this migration cannot apply at all. It rolled back whole
+-- (Postgres DDL is transactional), so nothing partial was left behind.
+grant create on schema public to tesseract_audience_writer;
+
 alter function public.set_theme_contribution_audience(uuid, text, uuid[])
   owner to tesseract_audience_writer;
 
+revoke create on schema public from tesseract_audience_writer;
+
 revoke all on function public.set_theme_contribution_audience(uuid, text, uuid[]) from public;
+-- `from public` does NOT remove anon's grant. Supabase's ALTER DEFAULT
+-- PRIVILEGES gives `anon` EXECUTE directly on every function created in
+-- `public`, and revoking the PUBLIC pseudo-role leaves a direct grant intact.
+-- Measured right after the first successful apply: anon EXECUTE was still
+-- true here while the asset twin `set_contribution_audience` had it false.
+-- A SECURITY DEFINER function owned by a privileged role must not be
+-- reachable by anon, regardless of the 28000 guard in its own first statement.
+revoke all on function public.set_theme_contribution_audience(uuid, text, uuid[]) from anon;
 grant execute on function public.set_theme_contribution_audience(uuid, text, uuid[])
   to authenticated, service_role, tesseract_audience_writer;
 

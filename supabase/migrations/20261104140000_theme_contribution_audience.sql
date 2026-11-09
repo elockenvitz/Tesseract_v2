@@ -125,14 +125,36 @@ grant select, insert, delete on public.theme_contribution_visibility_targets
 
 -- ── 2. The vocabulary ─────────────────────────────────────────────────────
 
--- Data before the constraint, or the UPDATE fails its own new CHECK.
+-- THE OLD CONSTRAINT COMES OFF FIRST. This ordering is not cosmetic, and the
+-- original was wrong in a way that only a real apply could reveal.
+--
+-- The previous version ran the UPDATEs first, reasoning "data before the
+-- constraint, or the UPDATE fails its own new CHECK". That has it backwards:
+-- the new CHECK is not in force yet during those UPDATEs -- the OLD one is,
+-- and the old one admits only ('org','shared'). So writing 'firm' violates the
+-- constraint that is still attached. Measured on the first production apply,
+-- 2026-11-09:
+--
+--   ERROR 23514: new row for relation "theme_contributions_v2" violates check
+--   constraint "theme_contributions_v2_visibility_check"
+--   DETAIL: Failing row contains (73109446-..., thesis, ..., firm, ...)
+--
+-- The failing value is `firm`, which is proof the old constraint rejected it.
+-- The whole migration is one transaction, so production rolled back untouched
+-- (verified: table absent, old CHECK, default 'org', 6 rows still 'org', 4
+-- original policies). Nothing had ever applied this file, which is why a
+-- migration that cannot run sat in the tree looking finished.
+--
+-- Correct order: drop the old CHECK, migrate the data into the new vocabulary,
+-- then add the new CHECK over data that already satisfies it.
+alter table public.theme_contributions_v2
+  drop constraint if exists theme_contributions_v2_visibility_check;
+
 update public.theme_contributions_v2 set visibility = 'firm' where visibility = 'org';
 -- Nothing holds 'shared' (verified: 0 rows). Belt and braces for other envs:
 -- 'shared' meant org-wide too, so it lands in the same place.
 update public.theme_contributions_v2 set visibility = 'firm' where visibility = 'shared';
 
-alter table public.theme_contributions_v2
-  drop constraint if exists theme_contributions_v2_visibility_check;
 alter table public.theme_contributions_v2
   add constraint theme_contributions_v2_visibility_check
   check (visibility = any (array['firm','division','department','team','portfolio']));

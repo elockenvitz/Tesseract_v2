@@ -1,0 +1,87 @@
+-- F-2: drop save_asset_content, an unguarded arbitrary-table primitive.
+--
+-- ── What it was ───────────────────────────────────────────────────────────
+--
+--   save_asset_content(p_asset_id uuid, p_table_name text, p_content text)
+--     SECURITY DEFINER, owner postgres, no SET search_path,
+--     EXECUTE granted to authenticated.
+--
+--   EXECUTE format('SELECT * FROM %I WHERE asset_id = $1 AND is_current = true', p_table_name)
+--   EXECUTE format('UPDATE %I SET is_current = false WHERE id = $1', p_table_name)
+--   EXECUTE format('INSERT INTO %I (asset_id, content, version, is_current,
+--                   created_by, updated_by, created_at, updated_at) ...', p_table_name)
+--
+-- It has NO authorization check of any kind. `auth.uid()` appears in it only
+-- to populate `created_by` and `updated_by`, never to decide whether the
+-- caller may write. The table name comes straight from the caller with no
+-- allow-list -- unlike all three `update_asset_content` overloads, which each
+-- RAISE on an unrecognised name. Running as `postgres` means every statement
+-- inside bypasses RLS.
+--
+-- ── Why it is being dropped rather than repaired ──────────────────────────
+--
+-- It cannot work. Measured against the live schema 2026-11-09:
+--
+--   columns named is_current in schema public ........ 0
+--   columns named asset_id   in schema public ........ 60
+--
+-- With no `is_current` column anywhere, the first statement raises 42703 on
+-- every possible call, so the function has never been able to do anything.
+--
+-- That is also exactly why it is dangerous enough to remove rather than
+-- leave. `is_current` is an ordinary versioning column. The day anyone adds
+-- one to a table that also has `asset_id`, this function silently becomes a
+-- cross-organization read/write primitive that runs as postgres with RLS
+-- bypassed, reachable by any authenticated user in any tenant. The exposure
+-- would arrive with a routine schema change, in a function nobody was
+-- looking at.
+--
+-- ── Dependency proof, as required before dropping ─────────────────────────
+--
+-- Checked, all empty:
+--
+--   RLS policies referencing it ................... 0  (scanned every policy
+--                                                      predicate in public)
+--   database functions referencing it ............. 0  (scanned every
+--                                                      pg_get_functiondef in public)
+--   triggers using it ............................. 0
+--   hard catalog dependents (pg_depend, deptype<>'n') 0
+--   dependent views (pg_rewrite) .................. none
+--   column defaults referencing it ................ none
+--   pg_cron jobs referencing it ................... none
+--   references in src/ ............................ 0
+--   references anywhere in the repo ............... 3, none of them callers:
+--       supabase/migrations/20250830015730_warm_delta.sql  (created it)
+--       docs/security/privilege-audit.md                   (prior audit)
+--       docs/audit/platform-readiness-2026-08.md           (prior audit)
+--
+-- Exactly one overload exists, so the signature below is unambiguous.
+--
+-- ── Siblings, deliberately NOT touched here ───────────────────────────────
+--
+-- Five functions share this family. Current grants, measured today -- and
+-- note that docs/security/privilege-audit.md records all six as
+-- anon-executable, which is now STALE; none of them is:
+--
+--   save_asset_content(uuid,text,text)                 authenticated  <- this file
+--   update_asset_content(uuid,text,text,uuid,uuid)     authenticated   allow-listed
+--   update_asset_content(text,uuid,text,uuid)          nobody
+--   update_asset_content(uuid,text,text,uuid)          nobody
+--   update_asset_content_reliable(text,uuid,text,uuid) nobody
+--   update_current_content(text,uuid,text,uuid)        nobody
+--
+-- The four reachable by nobody are dead weight, not exposure. The one
+-- remaining authenticated overload has an allow-list naming tables that do
+-- not exist, so it is inert too -- but it also has no authorization check,
+-- and it is tracked for the Phase 3 sweep rather than bundled into a
+-- security fix for a different function.
+
+begin;
+
+drop function if exists public.save_asset_content(uuid, text, text);
+
+commit;
+
+-- Verify after running:
+--   select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+--    where n.nspname = 'public' and p.proname = 'save_asset_content';   -- 0
