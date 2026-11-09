@@ -20,9 +20,9 @@
  */
 import { describe, it, expect } from 'vitest'
 // @ts-expect-error — plain .mjs script, no type declarations by design
-import { classify, resolvedEntries, staleAllowlistEntries } from '../../../../scripts/unconditional-policy-guard.mjs'
+import { classify, coverage, resolvedEntries, staleAllowlistEntries } from '../../../../scripts/unconditional-policy-guard.mjs'
 // @ts-expect-error — plain .mjs script, no type declarations by design
-import { classifyPredicateText } from '../../../../scripts/lib/policy-predicate.mjs'
+import { branchBindsCaller, callerBindingProfile, classifyPredicateText } from '../../../../scripts/lib/policy-predicate.mjs'
 
 const inv = (policies: unknown[], tables: unknown[] = []) => ({
   tables, policies,
@@ -352,5 +352,223 @@ describe('analyst_performance_snapshots (found by the sibling detector)', () => 
     // ...and the moment one branch stops being scoped, it is AUTH_ONLY again.
     const regressed = '((user_id = auth.uid()) OR (auth.uid() IS NOT NULL))'
     expect(classifyPredicateText(regressed)).toBe('AUTH_ONLY')
+  })
+})
+
+/**
+ * ── The layout vulnerability, as the regression fixture ───────────────────
+ *
+ * `layout_collaborations.layout_collab_view_own` in production on 2026-11-09,
+ * verbatim from `pg_policies.qual`, before and after PR #276. Every assertion
+ * here asks the same question twice: would the guard have caught it, and does
+ * it stay quiet once fixed.
+ *
+ * It was reachable by `anon` — anyone holding the publishable key that ships in
+ * the browser bundle, with no account at all — because the fourth branch is how
+ * an org-wide share is recorded, and it asks nothing about the caller.
+ *
+ * All three detectors that existed at the time missed it, and the tests below
+ * pin WHY, so none of them is "simplified" back:
+ *   1. `unconditional` is `qual = 'true'` exactly, and this is not that.
+ *   2. the sibling detector needs a broad sibling POLICY; here the broad part
+ *      is a branch inside the scoped policy.
+ *   3. the predicate class was a truthful UNKNOWN, and UNKNOWN exits 0.
+ */
+describe('caller-free OR branches (the layout vulnerability)', () => {
+  const inv2 = (policies: unknown[], tables: unknown[] = []) => ({ tables, policies })
+  const t = (name: string, anon = '') => ({ name, rls: true, anon, auth: 'SELECT' })
+
+  const BEFORE = '((user_id = auth.uid()) OR (EXISTS ( SELECT 1\n   FROM team_memberships tm\n'
+    + '  WHERE ((tm.team_id = layout_collaborations.team_id) AND (tm.user_id = auth.uid()))))'
+    + ' OR (EXISTS ( SELECT 1\n   FROM org_chart_node_members ocnm\n'
+    + '  WHERE ((ocnm.node_id = layout_collaborations.org_node_id) AND (ocnm.user_id = auth.uid()))))'
+    + ' OR ((user_id IS NULL) AND (team_id IS NULL) AND (org_node_id IS NULL)))'
+
+  const AFTER = BEFORE.replace(
+    'OR ((user_id IS NULL) AND (team_id IS NULL) AND (org_node_id IS NULL)))',
+    'OR ((user_id IS NULL) AND (team_id IS NULL) AND (org_node_id IS NULL)'
+      + ' AND user_has_layout_access(layout_id, auth.uid(), \'view\'::text)))')
+
+  const pol = (qual: string) => ({
+    table: 'layout_collaborations', name: 'layout_collab_view_own',
+    cmd: 'SELECT', roles: 'public', permissive: 'PERMISSIVE',
+    unconditional: false, qual, with_check: null,
+  })
+
+  it('REPORTS the predicate as it shipped, at SEV1 because anon held SELECT', () => {
+    const f = classify(inv2([pol(BEFORE)], [t('layout_collaborations', 'SELECT,INSERT,UPDATE,DELETE')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('SEV1_ANON_OPEN_BRANCH')
+    expect(f[0].detail).toContain('1 of 4 top-level OR branches')
+  })
+
+  it('reports NOTHING for the predicate as fixed', () => {
+    expect(classify(inv2([pol(AFTER)], [t('layout_collaborations', 'SELECT')]))).toEqual([])
+  })
+
+  /**
+   * The fix was two things, and this pins the second: the function that branch
+   * now calls was itself returning true for a NULL caller. A caller-bound
+   * branch is only as sound as what it calls, and this guard cannot see inside
+   * a helper — so this assertion is a signpost to the runtime test, never a
+   * substitute for it. See supabase/tests/layout-access-anon-exposure.sql.
+   */
+  it('counts a branch as caller-bound on the helper NAME, which is a known limit', () => {
+    const helperOnly = 'user_has_layout_access(layout_id, p_user_id, \'view\'::text)'
+    expect(branchBindsCaller(helperOnly)).toBe(true)
+  })
+
+  it('does not fire on a single caller-free branch, which the class system owns', () => {
+    // A reference table: one branch, no caller condition, entirely correct.
+    const f = classify(inv2([{
+      table: 'fixture_reference', name: 'ref_select', cmd: 'SELECT', roles: 'authenticated',
+      permissive: 'PERMISSIVE', unconditional: false, qual: '(is_system = true)', with_check: null,
+    }], [t('fixture_reference')]))
+    expect(f).toEqual([])
+  })
+
+  it('does not fire on the correct pattern, where the broad OR is nested under an AND', () => {
+    // `theme_contributions_v2_select`, the shape to copy: the audience OR can
+    // only be reached after the org gate, so it is one scoped branch.
+    const nested = '((is_active_member_of_current_org() AND (organization_id = current_org_id()))'
+      + ' AND ((author_id = auth.uid()) OR (visibility = \'firm\'::text) OR (visibility IS NULL)))'
+    const f = classify(inv2([{
+      table: 'fixture_nested', name: 'nested_select', cmd: 'SELECT', roles: 'authenticated',
+      permissive: 'PERMISSIVE', unconditional: false, qual: nested, with_check: null,
+    }], [t('fixture_nested')]))
+    expect(f).toEqual([])
+    expect(callerBindingProfile(nested)).toEqual({ branches: 1, open: 0 })
+  })
+
+  it('declines to report when a RESTRICTIVE policy could be the real boundary', () => {
+    const f = classify(inv2([
+      pol(BEFORE),
+      { table: 'layout_collaborations', name: 'tenant fence', cmd: 'SELECT', roles: 'public',
+        permissive: 'RESTRICTIVE', unconditional: false,
+        qual: '(organization_id = current_org_id())', with_check: null },
+    ], [t('layout_collaborations', 'SELECT')]))
+    expect(f).toEqual([])
+  })
+
+  /**
+   * The counts are what a sanitized inventory carries. Predicate text is dropped
+   * at capture time, so a detector that could only read text would be blind in
+   * CI — which is the one place this has to work.
+   */
+  it('works from the capture-time counts alone, with no predicate text', () => {
+    const counted = {
+      table: 'layout_collaborations', name: 'layout_collab_view_own',
+      cmd: 'SELECT', roles: 'public', permissive: 'PERMISSIVE', unconditional: false,
+      qual_class: 'UNKNOWN', check_class: 'EMPTY',
+      qual_branches: 4, qual_open: 1, check_branches: 0, check_open: 0,
+    }
+    const f = classify(inv2([counted], [t('layout_collaborations', 'SELECT')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('SEV1_ANON_OPEN_BRANCH')
+  })
+
+  it('reports an inventory with neither counts nor text as unanalysed, not clean', () => {
+    const legacy = {
+      table: 'layout_collaborations', name: 'layout_collab_view_own',
+      cmd: 'SELECT', roles: 'public', permissive: 'PERMISSIVE', unconditional: false,
+      qual_hash: 'abcdef0123456789', check_hash: 'e3b0c44298fc1c14',
+    }
+    const cov = coverage(inv2([legacy], [t('layout_collaborations', 'SELECT')]))
+    expect(cov.branches_analysed).toBe(0)
+    expect(cov.branches_unanalysed).toBe(1)
+    // ...and the run must not read as a clean one. `coverage` is printed on
+    // every run precisely so this cannot pass unnoticed.
+    expect(classify(inv2([legacy], [t('layout_collaborations', 'SELECT')]))).toEqual([])
+  })
+})
+
+/**
+ * ── A broad branch inside a compound predicate ────────────────────────────
+ *
+ * `unconditional` is `qual = 'true'` exactly. Both shapes below are as open as
+ * `USING (true)` and both leave it false, which is how the guard walked past
+ * six real policies on four production tables until it read the class instead.
+ */
+describe('broad class, not the unconditional boolean', () => {
+  const inv2 = (policies: unknown[], tables: unknown[] = []) => ({ tables, policies })
+  const t = (name: string, anon = '') => ({ name, rls: true, anon, auth: 'SELECT' })
+  const pol = (qual: string, over: Record<string, unknown> = {}) => ({
+    table: 'fixture_tenant_rows', name: 'p', cmd: 'SELECT', roles: 'authenticated',
+    permissive: 'PERMISSIVE', unconditional: false, qual, with_check: null, ...over,
+  })
+
+  /**
+   * One defect, one finding. A literal `true` branch is both the broadest
+   * possible class AND a caller-free branch, so the open-branch detector stands
+   * down and lets the class check report it — which it does more precisely.
+   */
+  it('flags a scoped predicate with a literal true OR-ed onto it, exactly once', () => {
+    const f = classify(inv2([pol('((organization_id = current_org_id()) OR true)')],
+      [t('fixture_tenant_rows')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('SEV2_CROSS_TENANT_READ')
+    expect(f[0].detail).toContain('unconditional')
+  })
+
+  it('flags a scoped predicate with an auth-only branch OR-ed onto it', () => {
+    const f = classify(inv2([pol('((organization_id = current_org_id()) OR (auth.uid() IS NOT NULL))')],
+      [t('fixture_tenant_rows')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].detail).toContain('AUTH_ONLY')
+  })
+
+  it('does not escalate an auth-only predicate to SEV1, since it needs a session', () => {
+    const f = classify(inv2([pol('(auth.uid() IS NOT NULL)', { roles: 'public' })],
+      [t('fixture_tenant_rows', 'SELECT')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('SEV2_CROSS_TENANT_READ')
+  })
+
+  it('escalates a literally unconditional TO public predicate to SEV1', () => {
+    const f = classify(inv2([pol('true', { roles: 'public' })], [t('fixture_tenant_rows', 'SELECT')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('SEV1_ANON_READ')
+  })
+})
+
+/**
+ * ── Suppressing a role nothing can become ─────────────────────────────────
+ *
+ * `tesseract_audience_writer` holds six unconditional write policies and is
+ * NOLOGIN with no members but `postgres`, so not one of them is reachable
+ * through PostgREST. Suppressing them is correct; suppressing them by NAME
+ * would not be, because a single GRANT makes all six live. These pin that the
+ * suppression comes from the capture and disappears with it.
+ */
+describe('unreachable roles', () => {
+  const inv2 = (policies: unknown[], roles: unknown[] | undefined, tables: unknown[] = []) =>
+    ({ tables, policies, ...(roles ? { roles } : {}) })
+  const t = (name: string) => ({ name, rls: true, anon: '', auth: 'SELECT' })
+  const writer = {
+    table: 'fixture_tenant_rows', name: 'writer_update', cmd: 'UPDATE',
+    roles: 'tesseract_audience_writer', permissive: 'PERMISSIVE', unconditional: true,
+  }
+  const REACHABLE = [
+    { name: 'anon', can_login: false, bypass_rls: false, api_reachable: true },
+    { name: 'authenticated', can_login: false, bypass_rls: false, api_reachable: true },
+    { name: 'tesseract_audience_writer', can_login: false, bypass_rls: false, api_reachable: true },
+  ]
+  const UNREACHABLE = REACHABLE.map(r =>
+    r.name === 'tesseract_audience_writer' ? { ...r, api_reachable: false } : r)
+
+  it('suppresses an unconditional write to a role no API caller can assume', () => {
+    expect(classify(inv2([writer], UNREACHABLE, [t('fixture_tenant_rows')]))).toEqual([])
+  })
+
+  it('reports it the moment the capture says the role became reachable', () => {
+    const f = classify(inv2([writer], REACHABLE, [t('fixture_tenant_rows')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('SEV2_UNCONDITIONAL_WRITE')
+  })
+
+  it('suppresses nothing when the inventory carries no roles map', () => {
+    const noRoles = inv2([writer], undefined, [t('fixture_tenant_rows')])
+    expect(classify(noRoles)).toHaveLength(1)
+    expect(coverage(noRoles).roles_captured).toBe(false)
   })
 })

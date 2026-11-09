@@ -18,6 +18,12 @@
  *   HASHED     policy USING / WITH CHECK expressions, function bodies,
  *              trigger definitions — a change is visible, the content is not
  *
+ *   COUNTED    per policy side, the number of top-level OR branches and how
+ *              many of them place no condition on the caller. Two integers
+ *              cannot be read back into an expression, and they are the only
+ *              thing that would have caught `layout_collab_view_own`, whose
+ *              class was a truthful UNKNOWN.
+ *
  *   CLASSIFIED policy predicates, as UNCONDITIONAL / AUTH_ONLY / SCOPED /
  *              DENY / EMPTY / UNKNOWN. Enough for the guard to tell a real
  *              boundary from one that only looks like one; not enough to
@@ -53,7 +59,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { classifyPredicateText } from '../lib/policy-predicate.mjs'
+import { classifyPredicateText, callerBindingProfile } from '../lib/policy-predicate.mjs'
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -77,7 +83,9 @@ const SUMMARY_ONLY = argv.includes('--summary')
  *             hash, the server version, the project-ref prefix
  *   kept      per table: name, RLS flags, anon/authenticated privilege sets
  *             per policy: table, name, command, roles, permissive, whether
- *             the predicate is unconditional, and the two predicate CLASSES
+ *             the predicate is unconditional, the two predicate CLASSES, and
+ *             the per-side OR-branch / caller-free-branch counts
+ *             per role:  name, can-login, bypass-RLS, API-reachable
  *
  * What remains is still a policy map, which is why it is a separate file under
  * a separate name — a reader should not be able to confuse it with a full
@@ -189,6 +197,37 @@ const Q = {
     order by n.nspname, c.relname, t.tgname`,
 
   buckets: `select id, public, file_size_limit from storage.buckets order by id`,
+
+  /**
+   * Every role a policy can name, and whether an API caller can actually be it.
+   *
+   * `tesseract_audience_writer` carries six unconditional write policies and is
+   * NOLOGIN with no members but `postgres`, so none of them is reachable. That
+   * is a legitimate suppression and it is also exactly the kind of fact that
+   * rots: one `GRANT tesseract_audience_writer TO authenticated` turns six inert
+   * policies into six live ones, and a guard that hardcoded the role name would
+   * stay silent through it. So the fact is captured, not assumed.
+   *
+   * Reachable means: the role can log in, OR it is reachable (transitively)
+   * from `anon`, `authenticated`, `authenticator` or `service_role` — the roles
+   * PostgREST sets per request.
+   */
+  roles: `
+    with recursive entry(oid) as (
+      select oid from pg_roles
+       where rolname in ('anon','authenticated','authenticator','service_role')
+      union
+      select am.roleid from pg_auth_members am join entry e on e.oid = am.member
+    )
+    select r.rolname as name,
+           r.rolcanlogin as can_login,
+           r.rolbypassrls as bypass_rls,
+           (r.oid in (select oid from entry)) as api_reachable
+    from pg_roles r
+    where r.oid in (select oid from entry)
+       or r.rolname in (select distinct unnest(roles) from pg_policies
+                         where schemaname in ('public','storage'))
+    order by r.rolname`,
 }
 
 /**
@@ -209,6 +248,18 @@ function classifyPolicies(policies) {
   for (const p of policies) {
     p.qual_class = classifyPredicateText(p.qual)
     p.check_class = classifyPredicateText(p.with_check)
+
+    // Two integers per side: how many top-level OR branches the predicate has,
+    // and how many of those place no condition on the caller. A count cannot
+    // be read back into an expression, and it is the only thing that would have
+    // exposed `layout_collab_view_own` — whose class was a truthful UNKNOWN.
+    const q = callerBindingProfile(p.qual)
+    const c = callerBindingProfile(p.with_check)
+    p.qual_branches = q.branches
+    p.qual_open = q.open
+    p.check_branches = c.branches
+    p.check_open = c.open
+
     delete p.qual
     delete p.with_check
   }
@@ -230,6 +281,10 @@ function summarize(b) {
     policies_unconditional_tables: new Set(perm.map(p => p.table)).size,
     policies_auth_only: b.policies.filter(p => p.qual_class === 'AUTH_ONLY' || p.check_class === 'AUTH_ONLY').length,
     policies_predicate_unknown: b.policies.filter(p => p.qual_class === 'UNKNOWN').length,
+    // A predicate that tests the caller in some branches and not in others.
+    policies_mixed_caller_binding: b.policies.filter(p =>
+      (p.qual_open > 0 && p.qual_open < p.qual_branches) ||
+      (p.check_open > 0 && p.check_open < p.check_branches)).length,
     policies_public_role: b.policies.filter(p => p.roles.split(',').includes('public')).length,
     functions: b.functions.length,
     functions_security_definer: b.functions.filter(f => f.definer).length,
@@ -242,21 +297,25 @@ function summarize(b) {
 }
 
 const creds = await credentials()
-const [meta, tables, policies, functions, triggers, buckets] = await Promise.all(
-  ['meta', 'tables', 'policies', 'functions', 'triggers', 'buckets'].map(k => query(creds, Q[k]))
+const [meta, tables, policies, functions, triggers, buckets, roles] = await Promise.all(
+  ['meta', 'tables', 'policies', 'functions', 'triggers', 'buckets', 'roles'].map(k => query(creds, Q[k]))
 )
 
 classifyPolicies(policies)
 
 const baseline = {
   // 2 — policies carry `qual_class`/`check_class` alongside the hashes, so the
-  // unconditional-policy guard can reason about predicate shape offline.
-  schema_version: 2,
+  //     unconditional-policy guard can reason about predicate shape offline.
+  // 3 — policies also carry `*_branches`/`*_open`: the top-level OR branch count
+  //     and how many of those branches place no condition on the caller. Plus a
+  //     `roles` map, so a policy naming an unreachable role can be suppressed
+  //     from the captured fact rather than from a hardcoded name.
+  schema_version: 3,
   captured_at: new Date().toISOString(),
   source_project_ref_prefix: `${creds.ref.slice(0, 6)}…`,
   server_version: meta[0].server_version,
   counts: {},
-  tables, policies, functions, triggers, buckets,
+  tables, policies, functions, triggers, buckets, roles,
 }
 baseline.counts = summarize(baseline)
 
@@ -282,6 +341,9 @@ function minimal(b) {
     counts: { tables: b.counts.tables, policies: b.counts.policies },
     tables: b.tables.map(t => drop(t, ['policy_hashes'])),
     policies: b.policies.map(p => drop(p, ['qual_hash', 'check_hash'])),
+    // Role names and reachability flags only. No membership graph, no password
+    // state — and the guard cannot judge a policy's role without them.
+    roles: b.roles,
   }
 }
 
