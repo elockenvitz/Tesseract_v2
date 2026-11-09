@@ -17,9 +17,20 @@ import { Card } from '../../ui/Card'
  * `ResearchSectionCard` is the section band and the alternating shade;
  * `ArrangeableFieldGrid` / `ArrangeableField` are the twelve-column grid the
  * Asset page lays its fields out in. Both degrade to a plain div with no
- * arrange provider mounted, which is exactly what this page is today, so the
- * theme case gets the Asset page's layout from the Asset page's code and will
- * get Arrange itself the moment a theme can save a span.
+ * arrange provider mounted, which is exactly what this page is today.
+ *
+ * ── Why `ResearchArrangeProvider` is NOT mounted here yet ────────────────
+ *
+ * It takes a `ResearchSubject` as of this change, so it would compile and
+ * drag. It must not be mounted while this page still renders
+ * `useThemeResearchLayout()`, which is the RAW org catalogue: it reads
+ * `theme_research_sections` and `theme_research_fields` directly and never
+ * looks at `user_theme_layout_selections`. The provider feeds the grid
+ * `sectionsForArranging` from the RESOLVED stack instead. Two field lists
+ * from two sources agree only while no theme has a template or an override
+ * — which is true today, and stops being true the moment one is saved, at
+ * which point the page would draw one list and arrange would reorder
+ * another. The body has to read the resolved stack first.
  */
 import {
   ResearchSectionCard, ArrangeableFieldGrid, ArrangeableField,

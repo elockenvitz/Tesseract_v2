@@ -237,7 +237,11 @@ describe('the layout is arranged on the page, not above it', () => {
     /* The provider sits around the SAME `displayedFieldsBySection` map the
        page always rendered. An `arrangingLayout ? <Canvas/> : <sections/>`
        branch would be the second renderer again. */
-    expect(TAB).toMatch(/<ResearchArrangeProvider assetId=\{asset\.id\} active=\{arrangingLayout\}>/)
+    /* `assetId={asset.id}` until the arrange stack was parameterized over
+       `ResearchSubject` so a theme could use it. The gate is unchanged in
+       what it guards — that the provider WRAPS the real page and is handed
+       this asset — only in how the asset is named. */
+    expect(TAB).toMatch(/<ResearchArrangeProvider subject=\{assetSubject\(asset\.id\)\} active=\{arrangingLayout\}>/)
     expect(TAB).toMatch(/<ArrangeableField\b/)
     expect(TAB).toMatch(/<ArrangeableFieldGrid\b/)
     expect(TAB).not.toMatch(/ResearchLayoutEditor|ResearchArrangeCanvas/)
@@ -416,10 +420,23 @@ describe('the layout is arranged on the page, not above it', () => {
        stock uses — which is the one thing it does not do. The scope note
        in the bar says so too, but three lines above the button; the
        label is what is read at the moment of the press. */
-    expect(CANVAS).toMatch(/`Save to \$\{assetName \?\? 'this stock'\}`/)
+    /*
+     * `assetName ?? 'this stock'` was spelled out at each of the three
+     * places it appears until the bar was parameterized over
+     * `ResearchSubject`; it is now `subjectLabel`, derived once from
+     * `subjectName` and `subjectNoun`. The gate is unchanged in what it
+     * guards — the button names the SUBJECT and never the layout — and
+     * the derivation is pinned too, so the label cannot quietly become
+     * something other than this subject's name.
+     */
+    expect(CANVAS).toMatch(/const subjectLabel = subjectName \?\? `this \$\{subjectNoun\}`/)
+    expect(CANVAS).toMatch(/`Save to \$\{subjectLabel\}`/)
     expect(CANVAS).not.toMatch(/'Save layout'/)
     expect(CANVAS).toMatch(/data-testid="arrange-scope-note"/)
-    expect(CANVAS).toMatch(/Saves to \{assetName \?\? 'this stock'\} only/)
+    expect(CANVAS).toMatch(/Saves to \{subjectLabel\} only/)
+    /* The default keeps the asset page's own words, so parameterizing the
+       bar did not quietly reword the surface that already shipped. */
+    expect(CANVAS).toMatch(/subjectNoun = 'stock'/)
   })
 
   it('still stores sections per asset, now that templates are not written here', () => {
@@ -716,10 +733,15 @@ describe('an override that says nothing is not an override', () => {
        nothing in it. */
     const at = CANVAS.indexOf('if (kept.length === 0')
     expect(at).toBeGreaterThan(-1)
-    expect(CANVAS.slice(at, at + 300)).toMatch(/clearAssetOverrides\.mutateAsync\(draft\.assetId\)/)
+    /* The id comes off the draft's SUBJECT now, not a bare `assetId`
+       field. The window is wider than the 300 it was because the line
+       carries a note on why the mutation's parameter is still named
+       `assetId`; the assertion itself is the same one. */
+    expect(CANVAS.slice(at, at + 700))
+      .toMatch(/clearAssetOverrides\.mutateAsync\(draft\.subject\.id\)/)
     /* Only when no template was deliberately chosen — otherwise the
        reset would also throw away which template the stock follows. */
-    expect(CANVAS.slice(at, at + 300)).toMatch(/&& !activeLayout\?\.id/)
+    expect(CANVAS.slice(at, at + 700)).toMatch(/&& !activeLayout\?\.id/)
   })
 })
 
@@ -992,5 +1014,86 @@ describe('arranging manages sections, not only fields', () => {
     const block = TAB.slice(at, at + 500)
     expect(block).toMatch(/if \(!arrangingLayout\) return null/)
     expect(block).toMatch(/arrangeSectionHeader\(section, sectionIdx\)/)
+  })
+})
+
+/*
+ * Arranging is parameterized over the SUBJECT, not written against assets.
+ *
+ * ── Why this needs a gate ─────────────────────────────────────────────────
+ *
+ * The arrange stack reads and writes seven things — the section catalogue,
+ * the field catalogue, the selection row, the active template, the template
+ * list, the per-subject overrides and the save RPC — and every one of them
+ * is a DIFFERENT TABLE on a theme page. The failure mode of getting one
+ * wrong is not a crash: `useUserAssetPagePreferences` left behind anywhere
+ * in here would read the ASSET catalogue while the save wrote the THEME's
+ * selection row, so the bar would offer an asset's fields and persist them
+ * against a theme id. Nothing type-checks that (`src/types/database.ts`
+ * holds none of these tables), so it is checked here.
+ *
+ * Every assertion below was confirmed to fail with its change reverted.
+ */
+describe('the arrange bar follows the subject it is handed', () => {
+  it('reaches the layout stack through the subject-aware hooks only', () => {
+    expect(CANVAS).toMatch(/useResearchPagePreferences\(subject\)/)
+    expect(CANVAS).toMatch(/useResearchPageLayouts\(subject\)/)
+    /*
+     * The asset-shaped wrappers are the whole defect this guards against.
+     * They take an id and pin the subject to `asset` internally, so one
+     * left behind is an asset query on a theme page that reports no error.
+     */
+    /* The CALL, not the name: the hooks still live in a module spelled
+       `hooks/useUserAssetPagePreferences`, and the import path is not the
+       thing being guarded. */
+    expect(CANVAS).not.toMatch(/useUserAssetPagePreferences\(/)
+    expect(CANVAS).not.toMatch(/useUserAssetPageLayouts\(/)
+  })
+
+  it('takes a subject rather than an id, so it knows which tables to read', () => {
+    expect(CANVAS).toMatch(/subject: ResearchSubject\n {2}active: boolean/)
+    /* An `assetId` prop on either component would be an id with no way to
+       say which kind of thing it identifies — asset ids and theme ids are
+       both uuids, so nothing downstream could tell them apart. */
+    expect(CANVAS).not.toMatch(/assetId: string/)
+    expect(CANVAS).not.toMatch(/assetName\?: string/)
+  })
+
+  it('reads that subject from the draft, so there is exactly one source', () => {
+    /*
+     * The bar could equally have taken its own `subject` prop. It must
+     * not: two props naming the same thing is how a bar comes to read one
+     * subject's catalogue while saving to another's tables, and that
+     * disagreement is invisible until data lands in the wrong table.
+     */
+    expect(CANVAS).toMatch(/const subject = draft\?\.subject \?\? EMPTY_SUBJECT/)
+    expect(CANVAS).toMatch(/^const EMPTY_SUBJECT = assetSubject\(undefined\)$/m)
+  })
+
+  it('identifies the subject by kind and id, not by object identity', () => {
+    /*
+     * Hosts write `subject={assetSubject(asset.id)}` inline, which is a new
+     * object every render. The draft is a `useMemo` keyed on the subject,
+     * so keying on the object would rebuild the draft — and re-render the
+     * bar and every wrapped field — on each parent render, in the middle
+     * of a drag.
+     */
+    const at = CANVAS.indexOf('const subject = useMemo(')
+    expect(at, 'the provider stopped normalizing its subject prop')
+      .toBeGreaterThan(-1)
+    expect(CANVAS.slice(at, at + 300))
+      .toMatch(/\[subjectProp\.descriptor\.kind, subjectProp\.id\]/)
+  })
+
+  it('still carries the subject id into the two mutations named for assets', () => {
+    /*
+     * `selectLayoutForAsset` and `clearAssetOverrides` keep a parameter
+     * spelled `assetId` while being subject-aware inside — they write
+     * `S.tables.selections` keyed on `S.subjectColumn`. That mismatch is
+     * deliberate and recorded, and this pins the value handed over so a
+     * future rename cannot quietly drop back to an asset-only field.
+     */
+    expect(CANVAS).toMatch(/assetId: draft!\.subject\.id!/)
+    expect(CANVAS).not.toMatch(/draft!\.assetId|draft\?\.assetId|draft\.assetId/)
   })
 })

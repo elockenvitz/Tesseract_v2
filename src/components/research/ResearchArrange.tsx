@@ -67,10 +67,11 @@ import {
 } from '@dnd-kit/sortable'
 import { GripVertical, Plus, RotateCcw, X } from 'lucide-react'
 import {
-  useUserAssetPagePreferences,
-  useUserAssetPageLayouts,
+  useResearchPagePreferences,
+  useResearchPageLayouts,
   type FieldOverride,
 } from '../../hooks/useUserAssetPagePreferences'
+import { assetSubject, type ResearchSubject } from '../../lib/research/subject'
 import {
   SELF_ARRANGED_SECTIONS,
   SPAN_CLASS,
@@ -112,15 +113,38 @@ function useArrange(): ArrangeState | null {
 }
 
 export interface ResearchArrangeProviderProps {
-  assetId: string
+  /**
+   * What is being arranged: an asset's research page or a theme's.
+   *
+   * A `ResearchSubject`, not an id, because arranging reads and writes the
+   * whole layout stack — the section catalogue, the field catalogue, the
+   * selection row, the active template and the save RPC — and every one of
+   * those is a different table per subject. An id alone cannot say which.
+   */
+  subject: ResearchSubject
   active: boolean
   children: ReactNode
 }
 
 /** Draft state, shared by the bar and every wrapped field. */
 export function ResearchArrangeProvider({
-  assetId, active, children,
+  subject: subjectProp, active, children,
 }: ResearchArrangeProviderProps) {
+  /*
+   * A stable subject, because hosts build theirs inline.
+   *
+   * `<ResearchArrangeProvider subject={assetSubject(asset.id)}>` hands a
+   * NEW object every render, and the draft below is a `useMemo` keyed on
+   * it, so an unmemoized prop would rebuild the draft — and re-render the
+   * bar and every wrapped field — on each parent render. Keyed on the two
+   * things that identify a subject rather than on the object, so a caller
+   * cannot cause that by writing the obvious thing.
+   */
+  const subject = useMemo(
+    () => subjectProp,
+    [subjectProp.descriptor.kind, subjectProp.id], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+
   const [spans, setSpans] = useState<Map<string, FieldSpan>>(new Map())
   const [order, setOrder] = useState<Map<string, string[]>>(new Map())
   const [visible, setVisibleMap] = useState<Map<string, boolean>>(new Map())
@@ -131,7 +155,7 @@ export function ResearchArrangeProvider({
      cache rather than fetching twice. The provider needs it because a
      cross-section drag has to know what is where, and only it sees every
      section at once. */
-  const { sectionsForArranging: displayedFieldsBySection } = useUserAssetPagePreferences(assetId)
+  const { sectionsForArranging: displayedFieldsBySection } = useResearchPagePreferences(subject)
 
   const setSpan = useCallback((fieldId: string, span: FieldSpan) => {
     setSpans(prev => new Map(prev).set(fieldId, span))
@@ -250,8 +274,8 @@ export function ResearchArrangeProvider({
   }), [active, spans, layout, visible, setSpan, setVisible])
 
   const draft = useMemo<ArrangeDraft>(
-    () => ({ assetId, spans, order, visible, moved, layout, clear }),
-    [assetId, spans, order, visible, moved, layout, clear],
+    () => ({ subject, spans, order, visible, moved, layout, clear }),
+    [subject, spans, order, visible, moved, layout, clear],
   )
 
   const body = (
@@ -289,7 +313,8 @@ const SECTION_DROP_PREFIX = 'section:'
  * false.
  */
 interface ArrangeDraft {
-  assetId: string
+  /** Which research page this draft belongs to. See the provider's props. */
+  subject: ResearchSubject
   spans: Map<string, FieldSpan>
   order: Map<string, string[]>
   /** Fields added to or removed from the page, not yet saved. */
@@ -303,6 +328,16 @@ interface ArrangeDraft {
 const ArrangeDraftContext = createContext<ArrangeDraft | null>(null)
 
 /**
+ * The subject a bar with no draft reads, which is no subject at all.
+ *
+ * Module-level so it is one object: the hooks below take a subject and
+ * build query keys from it, and a fresh `assetSubject(undefined)` per
+ * render would be a new dependency every time. An undefined id means
+ * "library only, no per-subject row", which the hooks already handle.
+ */
+const EMPTY_SUBJECT = assetSubject(undefined)
+
+/**
  * Where an arrangement is written.
  *
  *  - `asset`    this stock only, as per-asset overrides
@@ -313,7 +348,18 @@ const ArrangeDraftContext = createContext<ArrangeDraft | null>(null)
 export type SaveTarget = 'asset' | 'template' | 'new'
 
 export interface ResearchArrangeBarProps {
-  assetName?: string | null
+  /** The name shown in the bar and on the Save button: a ticker, a theme. */
+  subjectName?: string | null
+  /**
+   * What to call the subject when it has no name yet.
+   *
+   * Only the fallback wording, never a substitute for `subjectName`: "this
+   * stock" on an asset page and "this theme" on a theme page. A single
+   * noun rather than a sentence per surface, because the three places this
+   * appears are the scope note, the new-section note and the Save button,
+   * and they have to agree.
+   */
+  subjectNoun?: string
   onClose: () => void
 }
 
@@ -323,8 +369,21 @@ export interface ResearchArrangeBarProps {
  * It is sticky rather than fixed, so it belongs to the page it is editing
  * rather than floating over it.
  */
-export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarProps) {
+export function ResearchArrangeBar({
+  subjectName, subjectNoun = 'stock', onClose,
+}: ResearchArrangeBarProps) {
   const draft = useContext(ArrangeDraftContext)
+  /*
+   * The subject comes from the DRAFT, not from a prop of this bar.
+   *
+   * One source, so the bar cannot read one subject's catalogue while
+   * saving to another's tables — which is exactly the shape of bug that
+   * two props naming the same thing produce. The fallback only covers a
+   * bar rendered outside the provider, which is a wiring mistake, not a
+   * state: with no draft every value below is empty and nothing saves, so
+   * the fallback's job is to keep the hook count stable, not to work.
+   */
+  const subject = draft?.subject ?? EMPTY_SUBJECT
   const {
     displayedFieldsBySection,
     assetFieldOverrides,
@@ -336,12 +395,28 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
     templateBaselineFields,
     overridesTemplate,
     createSection,
-  } = useUserAssetPagePreferences(draft?.assetId)
+  } = useResearchPagePreferences(subject)
   /* Templates are a different hook. Only the LIST is needed here, to fill
      the picker — arrange mode chooses which template this stock follows,
      and never writes one. */
-  const { layouts } = useUserAssetPageLayouts()
+  const { layouts } = useResearchPageLayouts(subject)
   const { canAuthorCatalog } = useIsOrgAdmin()
+
+  /*
+   * How the bar names what it is saving to, in one place.
+   *
+   * The name appears in the scope note, the new-section note and on the
+   * Save button, and those three have to agree: a button reading "Save to
+   * NKE" above a note reading "Saves to this theme only" is the kind of
+   * disagreement that makes a reader distrust the scope promise, which is
+   * the only thing telling them the save is narrow.
+   *
+   * `subjectNoun` is pluralised by adding an "s", which is correct for the
+   * only two values there are ("stock", "theme"). A third subject with an
+   * irregular plural needs a second prop, not a pluralisation library.
+   */
+  const subjectLabel = subjectName ?? `this ${subjectNoun}`
+  const subjectPlural = `${subjectNoun}s`
 
   const arrange = useArrange()
   const [adding, setAdding] = useState(false)
@@ -499,7 +574,12 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
      * sitting on an empty override that still counts as one.
      */
     if (kept.length === 0 && assetSectionOverrides.length === 0 && !activeLayout?.id) {
-      if (draft?.assetId) await clearAssetOverrides.mutateAsync(draft.assetId)
+      /* `clearAssetOverrides` and `selectLayoutForAsset` below still spell
+         their parameter `assetId`. They are already subject-aware inside —
+         both write `S.tables.selections` keyed on `S.subjectColumn` — so a
+         theme id is the right value to hand them under the wrong name.
+         Renaming the two mutation parameters is a separate change. */
+      if (draft?.subject.id) await clearAssetOverrides.mutateAsync(draft.subject.id)
       return
     }
 
@@ -567,7 +647,7 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <p className="text-[13px] font-semibold text-primary-900 dark:text-primary-100">
-            Arranging {assetName ? `${assetName}'s ` : ''}Research page
+            Arranging {subjectName ? `${subjectName}'s ` : ''}Research page
           </p>
           <p className="mt-0.5 text-[11px] text-primary-700/90 dark:text-primary-300/90">
             Drag a field to move it. Drag its right edge, or use ← and →, to
@@ -584,7 +664,7 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
             data-testid="arrange-scope-note"
             className="mt-0.5 text-[11px] font-medium text-primary-800 dark:text-primary-200"
           >
-            Saves to {assetName ?? 'this stock'} only. To change every stock,
+            Saves to {subjectLabel} only. To change every {subjectNoun},
             edit the layout template.
           </p>
         </div>
@@ -622,13 +702,13 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
               <span className="sr-only">Template for this stock</span>
               <select
                 value={activeLayout?.id ?? ''}
-                disabled={saving || !draft?.assetId}
+                disabled={saving || !draft?.subject.id}
                 data-testid="arrange-template-picker"
                 onChange={async e => {
                   const layoutId = e.target.value || null
                   setError(null)
                   try {
-                    await selectLayoutForAsset.mutateAsync({ assetId: draft!.assetId, layoutId })
+                    await selectLayoutForAsset.mutateAsync({ assetId: draft!.subject.id!, layoutId })
                   } catch (err) {
                     setError(err instanceof Error ? err.message : 'Could not switch template.')
                   }
@@ -734,7 +814,7 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
               type="button"
               onClick={() => setAddingSection(s => !s)}
               aria-expanded={addingSection}
-              disabled={saving || !draft?.assetId}
+              disabled={saving || !draft?.subject.id}
               title="Add a new section to this page"
               data-testid="arrange-add-section"
               className="inline-flex items-center gap-1 rounded-md border border-primary-300 bg-white px-2 py-1.5 text-[11px] font-semibold text-primary-800 hover:bg-primary-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-primary-700 dark:bg-gray-900 dark:text-primary-200"
@@ -765,8 +845,8 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
                   stock.
                 */}
                 <span className="mt-1.5 block text-[10px] text-gray-500 dark:text-gray-400">
-                  Added to {assetName ?? 'this stock'}. The section itself joins your
-                  organisation's list, so you can add it to other stocks too.
+                  Added to {subjectLabel}. The section itself joins your
+                  organisation's list, so you can add it to other {subjectPlural} too.
                 </span>
                 <span className="mt-2 flex items-center justify-end gap-1.5">
                   <button
@@ -832,7 +912,7 @@ export function ResearchArrangeBar({ assetName, onClose }: ResearchArrangeBarPro
               place to say so, because it is read at the moment of the
               decision rather than three lines above it.
             */}
-            {saving ? 'Saving…' : dirty ? `Save to ${assetName ?? 'this stock'}` : 'Done'}
+            {saving ? 'Saving…' : dirty ? `Save to ${subjectLabel}` : 'Done'}
           </button>
         </div>
       </div>

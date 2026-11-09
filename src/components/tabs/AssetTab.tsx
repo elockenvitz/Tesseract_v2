@@ -138,6 +138,7 @@ import { useAssetHeaderContext } from '../../hooks/useAssetHeaderContext'
 import { OutcomesContainer, AnalystRatingsSection, AnalystEstimatesSection, FirmConsensusPanel, PriceTargetsSummary, ViewWarningIndicator } from '../outcomes'
 import type { ViewScope } from '../../hooks/useExpectedValue'
 import { useViewWarnings } from '../../hooks/useViewWarnings'
+import { assetSubject } from '../../lib/research/subject'
 import {
   UserWidgetRenderer, AssetPageFieldCustomizer, InvestmentCaseBuilder,
   ResearchArrangeProvider, ResearchArrangeBar, ArrangeableFieldGrid, ArrangeableField,
@@ -4650,10 +4651,10 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
                  thesis. A separate canvas drawing named blocks could not
                  show that, and was a second renderer free to disagree with
                  this one about what the layout looks like. */
-              <ResearchArrangeProvider assetId={asset.id} active={arrangingLayout}>
+              <ResearchArrangeProvider subject={assetSubject(asset.id)} active={arrangingLayout}>
                 {arrangingLayout && (
                   <ResearchArrangeBar
-                    assetName={asset.symbol || asset.name}
+                    subjectName={asset.symbol || asset.name}
                     onClose={() => setArrangingLayout(false)}
                   />
                 )}
