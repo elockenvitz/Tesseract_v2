@@ -161,6 +161,14 @@ if (ref === PROD_REF) {
     // everyone, so denial assertions alone read as green. Only a role-context
     // allow assertion can tell a boundary from a dead end.
     'trade-delete-paths',
+    // Provider key custody. Here rather than tier 1 because the property is a
+    // GRANT, not a predicate: `resolve_org_ai_config` has no auth.uid() check
+    // by design -- service_role carries no user identity, so the EXECUTE grant
+    // IS the authorization. Static predicate analysis sees a definer function
+    // with no caller check and cannot tell that from a hole. Only a role-context
+    // run can show the member and the admin both getting 42501 while
+    // service_role succeeds.
+    'ai-byok-key-vault',
   ]) {
     if (run('node', ['scripts/security-suite.mjs', suite, ref], { SUPABASE_ACCESS_TOKEN: mgmtToken })) failed++
   }

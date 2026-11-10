@@ -273,7 +273,15 @@ const MAX_ERRORS = 0
 //     moves the figure not at all, which independently confirms the two
 //     independently-written modules are type-equivalent.
 // Every one of the 15 files resolved by hand carries zero diagnostics.
-const MAX_REPO_ERRORS = 8582
+//
+// 8582 -> 8581 (sec/ai-byok-vault): the BYOK key column is gone from
+// `organization_ai_config`, so the write that set `byok_api_key: null`
+// against an untyped table is gone with it. The two `set_org_ai_api_key`
+// calls that replaced it pass through one documented helper in
+// `useAIConfig.ts`, because `rpc()` in this repo resolves `Fn['Args']` to
+// `never` for every declared function -- a pre-existing defect that roughly
+// thirty call sites already pay for inside this ceiling.
+const MAX_REPO_ERRORS = 8581
 
 /**
  * A floor on real source files, now that they are counted as source files.

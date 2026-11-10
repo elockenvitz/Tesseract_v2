@@ -89,15 +89,29 @@ export function evaluateAuthz(functions, registry, testEvidence) {
   return { errors, warnings }
 }
 
-/** A real service-role client needs the service key; match its env var (and the minor alt spelling). */
+/**
+ * A real service-role client needs the secret key; match how a function can
+ * reach one.
+ *
+ * The first two patterns are the env var read directly. The third is the
+ * `_shared/secret-key.ts` seam: `requireSecretKey`/`resolveSecretKey` resolve
+ * the new `SUPABASE_SECRET_KEYS` dictionary and fall back to the legacy
+ * `SUPABASE_SERVICE_ROLE_KEY`, so a function that calls one of them holds a
+ * service-role credential while naming no env var of its own. Without this
+ * third pattern the guard reads such a function as unprivileged and waves it
+ * through -- exactly the blind spot the registry exists to close.
+ */
 export function sourceUsesServiceRole(src) {
-  return /SUPABASE_SERVICE_ROLE_KEY/.test(src) || /\bSERVICE_ROLE_KEY\b/.test(src)
+  return /SUPABASE_SERVICE_ROLE_KEY/.test(src)
+    || /\bSERVICE_ROLE_KEY\b/.test(src)
+    || /\b(?:require|resolve)SecretKey\s*\(/.test(src)
+    || /SUPABASE_SECRET_KEYS/.test(src)
 }
 
 /** Flag a client built from neither the publishable/anon key nor the service-role env — review how it authorizes. */
 export function sourceHasUnrecognizedClient(src) {
   if (!/createClient\s*\(/.test(src)) return false
-  const recognized = /requirePublishableKey|resolvePublishableKey|PUBLISHABLE|ANON_KEY|supabaseAnonKey|SUPABASE_SERVICE_ROLE_KEY|SERVICE_ROLE_KEY/
+  const recognized = /requirePublishableKey|resolvePublishableKey|PUBLISHABLE|ANON_KEY|supabaseAnonKey|SUPABASE_SERVICE_ROLE_KEY|SERVICE_ROLE_KEY|requireSecretKey|resolveSecretKey|SUPABASE_SECRET_KEYS/
   return !recognized.test(src)
 }
 

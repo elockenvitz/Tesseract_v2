@@ -37,6 +37,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { requirePublishableKey } from "../_shared/publishable-key.ts";
+import { requireSecretKey } from "../_shared/secret-key.ts";
+import { authorizeVerifiedUser } from "../_shared/verified-user.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,12 +51,52 @@ type Purpose    = 'chat' | 'column' | 'snippet' | 'analysis';
 // ─── Pricing table (USD per 1M tokens) ────────────────────────────────────
 interface ModelPricing { in: number; out: number; cache_write?: number; cache_read?: number; }
 
+/*
+ * Verified against https://platform.claude.com/docs/en/about-claude/pricing.md
+ * on 2026-11-09. Every Anthropic row below is quoted from that page, including
+ * the 5-minute cache-write and cache-hit columns, which are per-model and not
+ * derivable from the input rate.
+ *
+ * Three things that check turned up, and each was a live defect:
+ *
+ *   1. `claude-3-5-sonnet-20241022` RETIRED 2025-10-28 and
+ *      `claude-3-5-haiku-20241022` RETIRED 2026-02-19. Neither appears on the
+ *      pricing page at all. The first was this function's hardcoded fallback
+ *      model AND the value of `platform_ai_config.platform_model` in
+ *      production, so switching platform AI on would have sent every request
+ *      to a model that no longer exists. Both are gone from here and from the
+ *      picker in src/hooks/useAIConfig.ts.
+ *
+ *   2. Opus 4.7 was priced at $15/$75. It is $5/$25. The table was
+ *      over-reporting its cost by 3x, which inflates `estimated_cost`, and
+ *      `monthly_budget_usd_per_user` is enforced against that number -- so the
+ *      error did not just mis-report, it would have cut users off early.
+ *
+ *   3. The whole lineup was a generation behind, and the current generation is
+ *      CHEAPER at every tier: Sonnet 5.5 is $2/$10 against Sonnet 4.6's
+ *      $3/$15, Opus 5.5 is $4/$20 against Opus 4.7's $5/$25, and Haiku 5.5 is
+ *      $0.10/$0.50 against Haiku 4.5's $1/$5 -- a tenth of the price for the
+ *      column and snippet traffic that routing already sends to Haiku.
+ *
+ * Previous-generation rows are KEPT, deliberately. They are what the existing
+ * org config and the nine historical `ai_usage_log` rows name, and dropping a
+ * row silently re-prices history at the provider default.
+ *
+ * Haiku 5.5 is the one model with tiered pricing: these are the rates for
+ * prompts of 100,000 tokens or fewer. Above that every number is 5x. Tesseract
+ * clamps `max_tokens_per_request` to 4096 and its largest prompt is a few
+ * thousand tokens, so the lower tier always applies here; if that ever stops
+ * being true this row under-reports by 5x.
+ */
 const PRICING: Record<string, ModelPricing> = {
-  'claude-opus-4-7':               { in: 15,   out: 75,  cache_write: 18.75, cache_read: 1.50 },
+  // Current generation.
+  'claude-opus-5-5':               { in: 4,    out: 20,  cache_write: 5,     cache_read: 0.20 },
+  'claude-sonnet-5-5':            { in: 2,    out: 10,  cache_write: 2.50,  cache_read: 0.10 },
+  'claude-haiku-5-5':              { in: 0.10, out: 0.50, cache_write: 0.125, cache_read: 0.01 },
+  // Previous generation, still served and still named by existing config.
+  'claude-opus-4-7':               { in: 5,    out: 25,  cache_write: 6.25,  cache_read: 0.50 },
   'claude-sonnet-4-6':             { in: 3,    out: 15,  cache_write: 3.75,  cache_read: 0.30 },
   'claude-haiku-4-5-20251001':     { in: 1,    out: 5,   cache_write: 1.25,  cache_read: 0.10 },
-  'claude-3-5-sonnet-20241022':    { in: 3,    out: 15,  cache_write: 3.75,  cache_read: 0.30 },
-  'claude-3-5-haiku-20241022':     { in: 0.80, out: 4,   cache_write: 1.00,  cache_read: 0.08 },
   'gpt-4o':                        { in: 2.50, out: 10 },
   'gpt-4o-mini':                   { in: 0.15, out: 0.60 },
   'gpt-4-turbo':                   { in: 10,   out: 30 },
@@ -70,6 +112,22 @@ const PROVIDER_DEFAULT_PRICING: Record<AIProvider, ModelPricing> = {
   openai:     { in: 2.50, out: 10 },
   google:     { in: 1.25, out: 5 },
   perplexity: { in: 1,    out: 1 },
+};
+
+/*
+ * The model used when nothing else names one.
+ *
+ * This replaces `"claude-3-5-sonnet-20241022"` written inline in four places,
+ * which was a model retired on 2025-10-28. One constant means the next
+ * generation is one edit, and it means a stale default cannot survive in a
+ * branch nobody reads. Sonnet is the right tier for a default: current, the
+ * cheapest of the three general models, and the one the picker recommends.
+ */
+const DEFAULT_MODEL: Record<AIProvider, string> = {
+  anthropic:  'claude-sonnet-5-5',
+  openai:     'gpt-4o',
+  google:     'gemini-1.5-pro',
+  perplexity: 'llama-3.1-sonar-large-128k-online',
 };
 
 function getPricing(provider: AIProvider, model: string | null | undefined): ModelPricing {
@@ -105,7 +163,7 @@ function pickModelForPurpose(
 ): string {
   if (!purpose || purpose === 'chat' || purpose === 'analysis') return configuredModel;
   if (purpose === 'column' || purpose === 'snippet') {
-    if (provider === 'anthropic') return 'claude-haiku-4-5-20251001';
+    if (provider === 'anthropic') return 'claude-haiku-5-5';
     if (provider === 'openai')    return 'gpt-4o-mini';
     if (provider === 'google')    return 'gemini-1.5-flash';
     if (provider === 'perplexity') return 'llama-3.1-sonar-small-128k-online';
@@ -191,8 +249,37 @@ Deno.serve(async (req) => {
 
     if (!message || typeof message !== "string") throw new Error("Message is required");
 
-    const { data: { user }, error: authError } = await phase("auth", () => supabase.auth.getUser());
-    if (authError || !user) throw new Error("Unauthorized");
+    /*
+     * The shared gate, with the JWT passed EXPLICITLY.
+     *
+     * This used to be a bare `supabase.auth.getUser()`, which reads the auth
+     * client's own session store rather than the forwarded Authorization
+     * header. An Edge Function never has a session store. It worked here only
+     * because this bundle's `@supabase/supabase-js@2` resolved to a version
+     * that sets `hasCustomAuthorizationHeader`, while market-news and
+     * market-events -- pinned to 2.39.0, which predates that flag -- answered
+     * 401 to every caller for two weeks. yahoo-chart-proxy v10 then refused
+     * every caller for the same reason after a redeploy moved its transitive
+     * gotrue-js. See _shared/verified-user.ts for both measurements.
+     *
+     * In other words this function was one redeploy away from the same
+     * outage, and nothing about its own source would have changed. The
+     * explicit form depends on no flag, no stored session and no library
+     * version.
+     *
+     * It also separates "you are not signed in" (401) from "this function's
+     * own key is disabled" (503), which were both spelled 401 before and are
+     * the reason that outage took two weeks to find.
+     */
+    const auth = await phase("auth", () => authorizeVerifiedUser(authHeader, supabase));
+    if (!auth.ok) {
+      if (auth.status === 503) console.error("ai-chat auth misconfigured:", auth.reason);
+      return new Response(
+        JSON.stringify({ error: auth.error }),
+        { status: auth.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const user = auth.user;
 
     // ─── Pre-flight fan-out ────────────────────────────────────────────
     // Attribution, config and usage were five serial round-trips against the
@@ -202,9 +289,36 @@ Deno.serve(async (req) => {
     // other two run alongside it.
     const attribution = await phase("attribution", () => resolveAttribution(supabase, user.id));
 
+    /*
+     * The ONLY privileged client in this function, and it is constructed here
+     * on purpose: after the caller is verified and after their organization
+     * has been derived from server-side data. A denied request returns above
+     * and never reaches this line, so it causes zero privileged side effects
+     * (Standing Rule 6, "authorize BEFORE constructing any service_role
+     * client").
+     *
+     * It exists for exactly one call: `resolve_org_ai_config`, which reads the
+     * org's provider key out of `vault.secrets`. That function is granted to
+     * `service_role` and to nothing else, which is the whole point -- the key
+     * used to sit in a column an org admin could SELECT and behind an RPC any
+     * org MEMBER could execute. Everything else in this function, including
+     * every read the model's tools make, still goes through `supabase`, the
+     * caller's own RLS-scoped client.
+     *
+     * The org id passed in is `attribution.organizationId`, never anything
+     * from the request body. A client-supplied org id here would hand any
+     * signed-in user any firm's key.
+     */
+    const adminClient = createClient(
+      supabaseUrl,
+      requireSecretKey((n) => Deno.env.get(n)),
+      { auth: { persistSession: false } },
+    );
+
     const [configResult, usage] = await phase("preflight", () => Promise.all([
       getEffectiveAIConfig(
         supabase,
+        adminClient,
         user.id,
         attribution.organizationId,
         { anthropic: platformApiKey, openai: platformOpenAIKey, google: platformGoogleKey, perplexity: platformPerplexityKey }
@@ -526,6 +640,12 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
 
 async function getEffectiveAIConfig(
   supabase: any,
+  /**
+   * A `service_role` client, and the only thing in this function that uses
+   * one. Required because `resolve_org_ai_config` is granted to service_role
+   * alone; the caller's own client gets 42501 there, which is the fix.
+   */
+  adminClient: any,
   userId: string,
   organizationId: string | null,
   platformKeys: { anthropic?: string, openai?: string, google?: string, perplexity?: string }
@@ -548,8 +668,13 @@ async function getEffectiveAIConfig(
   let orgConfig: { byok_provider?: string | null; byok_api_key?: string | null;
                    byok_model?: string | null; byok_enabled?: boolean } | null = null;
   if (organizationId) {
-    const { data: rows } = await supabase
-      .rpc("get_org_ai_config_for_resolution", { p_org_id: organizationId });
+    const { data: rows, error: resolveError } = await adminClient
+      .rpc("resolve_org_ai_config", { p_org_id: organizationId });
+    // A refused resolution must not read as "this org has no key": that would
+    // silently fall through to the unconfigured branch and tell the user to go
+    // add a key they already added. Log it and let isConfigured stay false,
+    // which produces the configuration error below rather than a wrong one.
+    if (resolveError) console.error("ai-chat: resolve_org_ai_config failed:", resolveError.message);
     orgConfig = (rows && rows[0]) ? rows[0] : null;
   }
 
@@ -560,27 +685,54 @@ async function getEffectiveAIConfig(
     includeDiscussions: userConfig?.include_discussions ?? false
   };
 
+  /*
+   * ── Resolution ORDER, not a mutually exclusive ladder ─────────────────
+   *
+   * This used to read `if (platform_ai_enabled) ... else if (byok) ...`, and
+   * that shape held two defects that only appear the day platform AI is
+   * switched on:
+   *
+   *   1. Turning the platform flag on SILENTLY DISABLED every org's own key.
+   *      An org paying for its own Anthropic account would have been moved
+   *      onto the platform's bill without being asked.
+   *   2. Turning the flag on with no platform key deployed produced
+   *      `mode: "platform", apiKey: null, isConfigured: false` and stopped
+   *      consulting BYOK at all -- so a tenant whose key worked a minute ago
+   *      got "AI not configured. Please add your API key" about a key that is
+   *      sitting right there. Measured as the live state on 2026-11-09: the
+   *      flag is false AND no ANTHROPIC_API_KEY secret exists, so flipping
+   *      the flag alone would have produced exactly this.
+   *
+   * So it is now an order with fallback. An org that has configured its own
+   * key keeps using it; everyone else gets the platform; a platform that is
+   * enabled but unconfigured falls through instead of stranding the tenant.
+   * That is "platform by default, BYOK as an optional override" with no
+   * second code path and nothing enabled here.
+   */
+  const platformProvider = platformConfig?.platform_provider || "anthropic";
+  const platformKey = platformConfig?.platform_ai_enabled
+    ? platformKeys[platformProvider as keyof typeof platformKeys]
+    : undefined;
+
   let aiConfig: any;
-  if (platformConfig?.platform_ai_enabled) {
-    const provider = platformConfig.platform_provider || "anthropic";
-    const apiKey = platformKeys[provider as keyof typeof platformKeys];
-    aiConfig = {
-      mode: "platform",
-      provider,
-      model: platformConfig.platform_model || "claude-3-5-sonnet-20241022",
-      apiKey: apiKey || null,
-      isConfigured: !!apiKey,
-      ...preferences
-    };
-  } else if (platformConfig?.allow_byok && orgConfig?.byok_enabled && orgConfig?.byok_api_key) {
+  if (platformConfig?.allow_byok && orgConfig?.byok_enabled && orgConfig?.byok_api_key) {
     // Model resolution: user preference → org default → hardcoded fallback.
     // Per-user override lets one user pick Opus while another picks Haiku
     // against the same org BYOK key.
     aiConfig = {
       mode: "byok",
       provider: orgConfig.byok_provider || "anthropic",
-      model: userConfig?.preferred_model || orgConfig.byok_model || "claude-3-5-sonnet-20241022",
+      model: userConfig?.preferred_model || orgConfig.byok_model || DEFAULT_MODEL.anthropic,
       apiKey: orgConfig.byok_api_key,
+      isConfigured: true,
+      ...preferences
+    };
+  } else if (platformKey) {
+    aiConfig = {
+      mode: "platform",
+      provider: platformProvider,
+      model: userConfig?.preferred_model || platformConfig.platform_model || DEFAULT_MODEL.anthropic,
+      apiKey: platformKey,
       isConfigured: true,
       ...preferences
     };
@@ -1684,7 +1836,7 @@ async function callAnthropicWithLoop(opts: {
 
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     const body: any = {
-      model: model || "claude-3-5-sonnet-20241022",
+      model: model || DEFAULT_MODEL.anthropic,
       max_tokens: maxTokens,
       metadata: { user_id: userId },
       system: systemBlocks,
