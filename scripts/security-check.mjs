@@ -146,7 +146,17 @@ if (ref === PROD_REF) {
   // Positive proof of execution. A suite that ran and asserted nothing is the failure mode these
   // tiers exist to prevent, so each one must report the assertion counts the runner prints; a
   // zero-assertion run is a failure, not a pass. See scripts/security-suite.mjs.
-  for (const suite of ['asset-workspace-tenant-isolation', 'platform-rls-baseline', 'tenant-boundary-p0-verify']) {
+  for (const suite of [
+    'asset-workspace-tenant-isolation',
+    'platform-rls-baseline',
+    'tenant-boundary-p0-verify',
+    // Writer-controlled publication. Belongs here rather than in tier 1 because
+    // the thing it proves -- that no client can write a row into a caller-free
+    // read branch -- is invisible to predicate analysis. The guard reports the
+    // shape and defers to this suite for the verdict.
+    'system-flag-publication',
+    'transitive-policy-boundaries',
+  ]) {
     if (run('node', ['scripts/security-suite.mjs', suite, ref], { SUPABASE_ACCESS_TOKEN: mgmtToken })) failed++
   }
 }

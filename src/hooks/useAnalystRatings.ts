@@ -270,8 +270,16 @@ export function useAnalystRatings({ assetId, userId }: UseAnalystRatingsOptions)
 
 // Hook for fetching rating scales
 export function useRatingScales() {
+  // Gated on the session because `anon` no longer holds any grant on
+  // rating_scales (migration 20261110000000). Ungated, this query can fire
+  // before the session is restored, go out on the publishable key, and come
+  // back 42501 rather than simply waiting. It never returned correct data in
+  // that window anyway: with no session the old policy matched only the four
+  // system scales and never the organization's own.
+  const { user } = useAuth()
   const { data: scales, isLoading, error } = useQuery({
-    queryKey: ['rating-scales'],
+    queryKey: ['rating-scales', user?.id],
+    enabled: !!user?.id,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('rating_scales')
