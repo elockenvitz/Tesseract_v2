@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 /**
  * decision_reviews tenant isolation — the half that can be tested here.
@@ -25,6 +26,8 @@ const MIGRATION = resolve(
 const sql = existsSync(MIGRATION) ? readFileSync(MIGRATION, 'utf8') : ''
 const hook = readFileSync(resolve(ROOT, 'src/hooks/useDecisionReview.ts'), 'utf8')
 const guard = readFileSync(resolve(ROOT, 'scripts/unconditional-policy-guard.mjs'), 'utf8')
+/** A path that cannot exist, so the guard's no-inventory branch is the one taken. */
+const NO_SUCH_INVENTORY = 'docs/audit/baselines/__no_such_inventory__.json'
 
 /** Comments must not satisfy a security assertion. */
 const code = (s: string) =>
@@ -208,7 +211,17 @@ describe('the guard that should have caught this can run', () => {
   it('still fails closed when it has no inventory', () => {
     // A security gate that skips on missing input is the documented defect
     // class. This asserts the existing behaviour is not softened.
-    expect(guard).toMatch(/FAIL: could not read a security inventory/)
-    expect(guard).toMatch(/return 2/)
+    //
+    // RUN IT, rather than grepping for `return 2`. The literal was the
+    // original assertion and it broke the moment the exit codes were given
+    // names (EXIT.BROKEN), which changed nothing about the behaviour it was
+    // supposed to protect. A source grep for a magic number asserts the
+    // spelling, not the gate; spawning the guard asserts the gate.
+    const r = spawnSync('node', ['scripts/unconditional-policy-guard.mjs', NO_SUCH_INVENTORY],
+      { cwd: ROOT, encoding: 'utf8' })
+    expect(r.status).toBe(2)
+    expect(`${r.stdout}${r.stderr}`).toMatch(/could not read a security inventory/)
+    // And it must not be mistakable for a pass in either direction.
+    expect(`${r.stdout}${r.stderr}`).not.toMatch(/^PASS:/m)
   })
 })

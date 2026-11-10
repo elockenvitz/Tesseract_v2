@@ -1,0 +1,7 @@
+#!/bin/sh
+# Shared git hooks. Enable with: npm run hooks:install
+#
+# Keeps the committed policy inventory fresh so the required `static` gate never
+# turns red on an unrelated PR. See scripts/hooks/pre-push-inventory.mjs for why
+# this is a local hook rather than a scheduled workflow holding a prod token.
+exec node scripts/hooks/pre-push-inventory.mjs

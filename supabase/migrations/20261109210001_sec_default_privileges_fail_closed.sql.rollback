@@ -1,0 +1,45 @@
+-- Rollback for 20261109210001_sec_default_privileges_fail_closed.sql
+--
+-- WARNING: running this restores the state in which every table created in
+-- `public` is born TRUNCATE-able by `anon`. That is the generator of the entire
+-- P3-2 finding. It is recorded so the change is provably reversible, not
+-- because reverting is advisable.
+--
+-- This one IS byte-exact, unlike the P3-2 rollback: a default-privilege entry
+-- is a single ACL per (role, schema, object type), and the pre-fix value was
+-- uniform -- `GRANT ALL` to anon, authenticated and service_role, which is what
+-- Supabase's bootstrap sets.
+--
+-- Nothing here affects tables that already exist. Default privileges apply only
+-- at CREATE time, so reverting re-arms future tables and changes no current one.
+
+begin;
+
+alter default privileges for role postgres in schema public
+  grant all on tables to anon;
+
+alter default privileges for role postgres in schema public
+  grant all on tables to authenticated;
+
+alter default privileges for role postgres in schema public
+  grant all on sequences to anon;
+
+commit;
+
+-- NOT RESTORED, on purpose:
+--
+--   alter default privileges for role postgres in schema public
+--     grant all on tables to public;
+--   alter default privileges for role postgres in schema public
+--     grant all on sequences to public;
+--
+-- No PUBLIC default entry existed before the forward migration. Those two
+-- revokes were pre-emptive, so granting now would not restore a prior state,
+-- it would create a new and worse one.
+--
+-- Confirms the revert:
+--   begin;
+--     create table public.__probe (id uuid primary key default gen_random_uuid());
+--     select has_table_privilege('anon','public.__probe','TRUNCATE');  -- t again
+--     drop table public.__probe;
+--   rollback;

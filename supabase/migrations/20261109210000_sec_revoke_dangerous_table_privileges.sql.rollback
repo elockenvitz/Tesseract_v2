@@ -1,0 +1,45 @@
+-- Rollback for 20261109210000_sec_revoke_dangerous_table_privileges.sql
+--
+-- WARNING: running this restores TRUNCATE on every table in `public` to both
+-- `anon` and `authenticated`, which is the finding, not a feature. It exists so
+-- the change is provably reversible.
+--
+-- ── Read this before running it ───────────────────────────────────────────
+--
+-- This rollback is NOT byte-exact, and it cannot be. The forward migration's
+-- three schema-wide REVOKEs do not record which tables held which privilege,
+-- and the pre-fix state was RAGGED, not uniform:
+--
+--   authenticated   279 tables, but TRUNCATE on 261, REFERENCES on 262,
+--                   TRIGGER on 262, MAINTAIN on 279
+--   anon            185 tables, all four on all 185
+--
+-- A `GRANT ... ON ALL TABLES` restores a SUPERSET: `authenticated` would gain
+-- TRUNCATE on 295 tables rather than the 261 it held, and `anon` on 295 rather
+-- than 185. That is strictly worse than the state this migration replaced.
+--
+-- So the grants below are commented out ON PURPOSE. If a revert is genuinely
+-- needed, the correct source is the raw pre-fix snapshot in
+-- %USERPROFILE%\.tesseract\schema-baselines\, which records the ACL per table,
+-- or the per-grantee counts in the forward migration's header. Restore only
+-- the tables that actually held the privilege.
+--
+-- The narrow, exact revert of the earnings-calendar table is a separate file:
+-- 20261109200000_sec_earnings_dates_revoke_dangerous_grants.sql.rollback.
+
+-- begin;
+--
+-- -- DELIBERATELY COMMENTED. Uncommenting these over-grants: see above.
+-- -- grant truncate, references, trigger, maintain
+-- --   on all tables in schema public to anon;
+-- -- grant truncate, references, trigger, maintain
+-- --   on all tables in schema public to authenticated;
+--
+-- commit;
+
+-- Confirms the current (fixed) state:
+--   select count(*) from pg_class c, aclexplode(c.relacl) a
+--    where c.relnamespace='public'::regnamespace and c.relkind in ('r','p')
+--      and a.grantee::regrole::text in ('anon','authenticated')
+--      and a.privilege_type in ('TRUNCATE','REFERENCES','TRIGGER','MAINTAIN');
+--   -- expected: 0

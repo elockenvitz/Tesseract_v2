@@ -1,0 +1,61 @@
+-- Rollback for 20261109190000_sec_portfolio_universe_org_scope.sql
+--
+-- WARNING: running this RESTORES cross-organization read AND write of every
+-- portfolio's investable universe and screening filters. The policies below
+-- are the verbatim production state captured before the fix applied, on
+-- 2026-11-09. They are recorded so the change is provably reversible, not
+-- because reverting is advisable.
+--
+-- The anon grant revokes are deliberately NOT undone -- see the foot of this
+-- file.
+
+begin;
+
+drop policy if exists "portfolio_universe_assets_select" on public.portfolio_universe_assets;
+drop policy if exists "portfolio_universe_assets_insert" on public.portfolio_universe_assets;
+drop policy if exists "portfolio_universe_assets_update" on public.portfolio_universe_assets;
+drop policy if exists "portfolio_universe_assets_delete" on public.portfolio_universe_assets;
+
+create policy "Users can view portfolio universe assets"
+  on public.portfolio_universe_assets
+  for select
+  using ((auth.role() = 'authenticated'::text));
+
+create policy "Users can manage portfolio universe assets"
+  on public.portfolio_universe_assets
+  for all
+  using ((auth.role() = 'authenticated'::text));
+
+drop policy if exists "portfolio_universe_filters_select" on public.portfolio_universe_filters;
+drop policy if exists "portfolio_universe_filters_insert" on public.portfolio_universe_filters;
+drop policy if exists "portfolio_universe_filters_update" on public.portfolio_universe_filters;
+drop policy if exists "portfolio_universe_filters_delete" on public.portfolio_universe_filters;
+
+create policy "Users can view portfolio universe filters"
+  on public.portfolio_universe_filters
+  for select
+  using ((auth.role() = 'authenticated'::text));
+
+create policy "Users can manage portfolio universe filters"
+  on public.portfolio_universe_filters
+  for all
+  using ((auth.role() = 'authenticated'::text));
+
+-- authenticated's prior grants. The forward migration reduced these to the
+-- four DML verbs; the default-privilege set also included TRUNCATE,
+-- REFERENCES, TRIGGER and MAINTAIN.
+grant all on public.portfolio_universe_assets  to authenticated;
+grant all on public.portfolio_universe_filters to authenticated;
+
+commit;
+
+-- NOT RESTORED, on purpose:
+--
+--   grant all on public.portfolio_universe_assets  to anon;
+--   grant all on public.portfolio_universe_filters to anon;
+--
+-- These were never intentional -- they are Supabase's ALTER DEFAULT PRIVILEGES
+-- grants, which land on every object created in `public`. Nothing in the
+-- application reads a portfolio universe without an account, so re-granting
+-- them would restore exposure without restoring any behaviour. Uncomment only
+-- if a specific anonymous read path is identified, and say which.

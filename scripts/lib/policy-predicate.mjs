@@ -241,43 +241,98 @@ export function branchBindsCaller(branch) {
 }
 
 /**
- * Count a predicate's top-level OR branches, and how many of them bind no
- * caller.
+ * Does this branch read ANOTHER relation, rather than only its own table's
+ * columns?
  *
- * `{ branches: 4, open: 1 }` is the layout defect: three branches test the
- * caller and a fourth does not, so the three are decoration. `{ branches: 1,
- * open: 1 }` is an ordinary caller-free predicate — a reference table, a public
- * feed — and is left to the class system and its allowlist, because a single
- * branch carries no contradiction to report.
+ * This is the distinction that cost two wrong answers in one run, in opposite
+ * directions, and neither was visible from the branch's caller-binding alone:
+ *
+ *   model_template_collaborations
+ *     (user_id IS NULL AND team_id IS NULL AND org_node_id IS NULL)
+ *   A caller-free branch over its OWN columns. Row content alone satisfies it,
+ *   so it admits every matching row to everyone with a grant. A real hole, and
+ *   it escaped detection entirely.
+ *
+ *   workflow_stakeholders
+ *     EXISTS (select 1 from workflows w where w.id = ... and w.is_public)
+ *   Also caller-free textually. But a policy subquery is evaluated under the
+ *   CALLER's RLS on the table it reads, so the branch inherits `workflows`'
+ *   boundary. Measured: anon reads zero rows, and so does a foreign-org member.
+ *   Reported as live exposure for a day; it was not.
+ *
+ * `SELECT` inside a policy branch is the signal: a predicate over the policy's
+ * own row needs no subquery, so one present means another relation is being
+ * consulted. Conservative in the correct direction -- failing to notice a
+ * subquery counts the branch as self-only, which produces a finding rather
+ * than a pass.
+ *
+ * What this does NOT establish: that the other table's RLS is sound, or even
+ * enabled. A branch joining an unprotected table is as open as a self-only
+ * one. That question is not answerable from a predicate and belongs to a
+ * role-context test; the guard says so in its own output rather than implying
+ * the join is a defence.
+ */
+export function branchReadsAnotherRelation(branch) {
+  return /\bselect\b/i.test(String(branch ?? ''))
+}
+
+/**
+ * Count a predicate's top-level OR branches, how many bind no caller, and how
+ * many of THOSE read only the policy's own table.
+ *
+ * `{ branches: 4, open: 1, openSelf: 1 }` is the layout defect: three branches
+ * test the caller and a fourth does not, so the three are decoration.
+ *
+ * `{ branches: 1, open: 1, openSelf: 1 }` is a wholly caller-free predicate
+ * over its own columns. This used to be left entirely to the class system,
+ * on the reasoning that a single branch carries no internal contradiction to
+ * report -- and `model_template_collaborations` fell straight through the gap.
+ * `openSelf` is what lets the guard report it while still telling it apart
+ * from the two cases that are not the same defect: a branch constrained by
+ * another table's RLS (`openSelf < open`), and intentional global reference
+ * data (the guard's OPEN_BRANCH_ALLOWLIST, which carries a measurement).
  *
  * `false` branches are excluded: a disjunct that grants nothing is not a hatch.
  */
 export function callerBindingProfile(expr) {
-  if (expr === null || expr === undefined) return { branches: 0, open: 0 }
+  if (expr === null || expr === undefined) return { branches: 0, open: 0, openSelf: 0 }
   const e = String(expr).replace(/\s+/g, ' ').trim()
-  if (e === '') return { branches: 0, open: 0 }
+  if (e === '') return { branches: 0, open: 0, openSelf: 0 }
 
   const branches = splitTopLevelOr(unwrap(e))
   let open = 0
+  let openSelf = 0
   for (const b of branches) {
     if (/^false$/i.test(unwrap(b))) continue
-    if (!branchBindsCaller(b)) open++
+    if (branchBindsCaller(b)) continue
+    open++
+    if (!branchReadsAnotherRelation(b)) openSelf++
   }
-  return { branches: branches.length, open }
+  return { branches: branches.length, open, openSelf }
 }
 
 /**
  * Read the profile back out of an inventory, from whatever it carries.
  *
- * Recorded at capture time as two integers per side, so the committed inventory
- * gains this analysis without gaining a single predicate. An inventory captured
- * before `schema_version` 3 carries neither the counts nor the text, and is
- * reported as unanalysed rather than clean — see `coverage` in the guard.
+ * Recorded at capture time as three integers per side, so the committed
+ * inventory gains this analysis without gaining a single predicate. An
+ * inventory captured before `schema_version` 3 carries neither the counts nor
+ * the text, and is reported as unanalysed rather than clean — see `coverage` in
+ * the guard.
+ *
+ * `openSelf` arrived in `schema_version` 4. A version-3 capture has `branches`
+ * and `open` but not `openSelf`, so it CANNOT answer the wholly-caller-free
+ * question, and this returns `openSelf: null` rather than 0 for it. Zero would
+ * read as "no self-only branches here", which is the clean answer, from a file
+ * that never looked. The guard treats null as unanalysed and says so.
  */
 export function resolveBindingProfile(policy, which) {
   const branches = policy[`${which}_branches`]
   const open = policy[`${which}_open`]
-  if (Number.isInteger(branches) && Number.isInteger(open)) return { branches, open }
+  const openSelf = policy[`${which}_open_self`]
+  if (Number.isInteger(branches) && Number.isInteger(open)) {
+    return { branches, open, openSelf: Number.isInteger(openSelf) ? openSelf : null }
+  }
 
   const text = which === 'qual' ? policy.qual : policy.with_check
   if (text !== undefined) return callerBindingProfile(text)

@@ -22,17 +22,48 @@
  * the production ref (they write fixtures). CI must point them at staging, never prod, never with fixture
  * writes against prod.
  *
- * Exit non-zero if any tier fails. Not yet a required branch-protection check: tier 1 is intended to go
- * required first (once green + proven non-vacuous); tiers 2/3 follow once a staging project is wired.
- * See SECURITY-STAGING.md for the exact secrets and project-security-followups for the open debt.
+ * ── Exit codes: "not a pass" is three different facts ──────────────────────────────────────────────
+ *
+ *   0  PASS         every tier that ran, ran clean, and nothing was skipped
+ *   1  FAILED       a check found a problem. Something is wrong.
+ *   3  UNVERIFIED   no check found a problem, but at least one could not run — absent staging
+ *                   credentials, or a policy capture too stale to speak for production. NOT a pass.
+ *
+ * The distinction exists because the two have opposite remedies and the same colour. A reader seeing
+ * red needs to know whether to fix a policy or wire a secret, and a reader seeing green must never be
+ * looking at a tier that was skipped. Both 1 and 3 are red to CI; only 0 is green.
+ *
+ * Not yet a required branch-protection check: tier 1 is intended to go required first (once green +
+ * proven non-vacuous); tiers 2/3 follow once a staging project is wired. See SECURITY-STAGING.md for
+ * the exact secrets and project-security-followups for the open debt.
  */
 import { spawnSync } from 'node:child_process'
+import { appendFileSync } from 'node:fs'
 
 const run = (cmd, args, env = {}) =>
   spawnSync(cmd, args, { stdio: 'inherit', shell: false, env: { ...process.env, ...env } }).status ?? 1
 
+// The policy guard's own exit 3: it ran, found nothing new, and refuses to claim its capture speaks
+// for production. Propagated as unverified rather than collapsed into a failure.
+const GUARD_EXIT_UNVERIFIED = 3
+
 let failed = 0
+const unverified = []
 const section = (name) => console.log(`\n=== ${name} ===`)
+
+/**
+ * Write a line to the GitHub step summary as well as stdout.
+ *
+ * A job's log is read only by someone who already suspects something; the summary is on the PR. The
+ * UNVERIFIED case in particular has to be visible without opening the log, because its whole failure
+ * mode is being mistaken for a check that ran.
+ */
+const summary = (line) => {
+  console.log(line)
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    try { appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${line}\n`) } catch { /* never fail the gate on this */ }
+  }
+}
 
 const PROD_REF = 'wfcebeagznzgeuyysbnt'
 const ref = process.env.SECURITY_SUPABASE_REF
@@ -45,13 +76,42 @@ const staticOnly = process.argv.includes('--static')
 section('tier1 static: frontend tenant lint')
 if (run('node', ['scripts/frontend-tenant-lint.mjs'])) failed++
 section('tier1 static: unconditional-policy guard')
-if (run('node', ['scripts/unconditional-policy-guard.mjs'])) failed++
+// Exit 3 means the guard ran, found nothing new, and its capture is too stale (or too old a schema)
+// to stand for production. That is not a failing policy and it is not a pass.
+const guardStatus = run('node', ['scripts/unconditional-policy-guard.mjs'])
+if (guardStatus === GUARD_EXIT_UNVERIFIED) {
+  unverified.push('unconditional-policy guard: the committed policy capture is stale — it does not speak for production')
+} else if (guardStatus) {
+  failed++
+}
+
 section('tier1 static: edge-function authorization guard')
 if (run('node', ['scripts/edge-authz-guard.mjs'])) failed++
 
+/** One verdict, three outcomes, printed the same way for both entry points. */
+function verdict(label) {
+  console.log('')
+  if (failed) {
+    summary(`### ${label}: FAILED`)
+    summary(`${failed} check(s) found a problem. This is a real finding, not missing infrastructure.`)
+    for (const u of unverified) summary(`- also UNVERIFIED: ${u}`)
+    return 1
+  }
+  if (unverified.length) {
+    summary(`### ${label}: UNVERIFIED — not a pass`)
+    summary('No check found a problem, but at least one could not actually run, so this result does')
+    summary('NOT establish that production is clean:')
+    for (const u of unverified) summary(`- ${u}`)
+    summary('')
+    summary('Treat this exactly as red. A green security gate must mean every tier ran.')
+    return 3
+  }
+  summary(`### ${label}: PASSED`)
+  return 0
+}
+
 if (staticOnly) {
-  console.log(`\n=== security:check --static ${failed ? 'FAILED (' + failed + ' check[s])' : 'PASSED'} ===`)
-  process.exit(failed ? 1 : 0)
+  process.exit(verdict('security:check --static'))
 }
 
 // ---- TIER 2: DB STRUCTURAL LINT (tenant-boundary-lint) ----
@@ -60,9 +120,12 @@ if (ref === PROD_REF) {
   console.error('REFUSED: SECURITY_SUPABASE_REF points at PRODUCTION. The structural lint must run against staging.')
   failed++
 } else if (!ref || !serviceKey) {
-  console.error('FAIL-CLOSED: tenant-boundary-lint requires SECURITY_SUPABASE_REF + SECURITY_SUPABASE_SERVICE_KEY')
-  console.error('(a NON-production project). None configured — not skipping.')
-  failed++
+  // UNVERIFIED, not FAILED. No policy is broken; the tier did not run. Collapsing the two would
+  // mean a wired-up staging project and a missing secret look identical in the check list, and the
+  // second one is the state that quietly persists for weeks.
+  console.error('UNVERIFIED: tenant-boundary-lint requires SECURITY_SUPABASE_REF + SECURITY_SUPABASE_SERVICE_KEY')
+  console.error('(a NON-production project). None configured — not skipping, not passing.')
+  unverified.push('tier2 tenant-boundary structural lint: no staging credentials (SECURITY_SUPABASE_REF + SECURITY_SUPABASE_SERVICE_KEY)')
 } else {
   if (run('node', ['scripts/tenant-boundary-lint.mjs'], {
     SUPABASE_URL: `https://${ref}.supabase.co`,
@@ -76,14 +139,39 @@ if (ref === PROD_REF) {
   console.error('REFUSED: SECURITY_SUPABASE_REF points at PRODUCTION. These suites write fixtures; never run against prod.')
   failed++
 } else if (!ref || !mgmtToken) {
-  console.error('FAIL-CLOSED: DB-backed security suites require SECURITY_SUPABASE_REF + SECURITY_SUPABASE_TOKEN')
-  console.error('(a non-production staging project with synthetic data). None configured — not skipping.')
-  failed++
+  console.error('UNVERIFIED: DB-backed security suites require SECURITY_SUPABASE_REF + SECURITY_SUPABASE_TOKEN')
+  console.error('(a non-production staging project with synthetic data). None configured — not skipping, not passing.')
+  unverified.push('tier3 tenant-isolation suites: no staging credentials (SECURITY_SUPABASE_REF + SECURITY_SUPABASE_TOKEN)')
 } else {
-  for (const suite of ['asset-workspace-tenant-isolation', 'platform-rls-baseline']) {
+  // Positive proof of execution. A suite that ran and asserted nothing is the failure mode these
+  // tiers exist to prevent, so each one must report the assertion counts the runner prints; a
+  // zero-assertion run is a failure, not a pass. See scripts/security-suite.mjs.
+  for (const suite of [
+    'asset-workspace-tenant-isolation',
+    'platform-rls-baseline',
+    'tenant-boundary-p0-verify',
+    // Writer-controlled publication. Belongs here rather than in tier 1 because
+    // the thing it proves -- that no client can write a row into a caller-free
+    // read branch -- is invisible to predicate analysis. The guard reports the
+    // shape and defers to this suite for the verdict.
+    'system-flag-publication',
+    'transitive-policy-boundaries',
+    // Delete paths. Here rather than tier 1 because the thing it pins is that a
+    // legitimate delete SUCCEEDS -- and "RLS on, no DELETE policy" denies
+    // everyone, so denial assertions alone read as green. Only a role-context
+    // allow assertion can tell a boundary from a dead end.
+    'trade-delete-paths',
+    // Provider key custody. Here rather than tier 1 because the property is a
+    // GRANT, not a predicate: `resolve_org_ai_config` has no auth.uid() check
+    // by design -- service_role carries no user identity, so the EXECUTE grant
+    // IS the authorization. Static predicate analysis sees a definer function
+    // with no caller check and cannot tell that from a hole. Only a role-context
+    // run can show the member and the admin both getting 42501 while
+    // service_role succeeds.
+    'ai-byok-key-vault',
+  ]) {
     if (run('node', ['scripts/security-suite.mjs', suite, ref], { SUPABASE_ACCESS_TOKEN: mgmtToken })) failed++
   }
 }
 
-console.log(`\n=== security:check ${failed ? 'FAILED (' + failed + ' tier[s]/suite[s])' : 'PASSED'} ===`)
-process.exit(failed ? 1 : 0)
+process.exit(verdict('security:check'))

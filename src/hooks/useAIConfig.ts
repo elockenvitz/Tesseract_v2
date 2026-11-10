@@ -2,6 +2,33 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
+/**
+ * Store (or replace) the organization's provider API key.
+ *
+ * The cast works around a pre-existing, repo-wide typing defect rather than
+ * hiding one of ours. In this project's `Database` type, `rpc()` resolves
+ * `Fn['Args']` to `never` for EVERY declared function, so the args parameter
+ * becomes `undefined` and any call that passes arguments fails to compile.
+ * Roughly thirty existing call sites (`mark_messages_read`,
+ * `set_message_pinned`, `delete_organization`, the whole organization
+ * settings surface) already fail this way and are counted in the repo's type
+ * ceiling. Rather than add two more, the cast is localized here.
+ * `set_org_ai_api_key` is declared in `src/types/database.ts` with its real
+ * signature, so once the root cause is fixed this helper drops the cast and
+ * keeps compiling.
+ *
+ * There is deliberately no counterpart that reads a key back. The only
+ * reader is `resolve_org_ai_config`, which is granted to `service_role`
+ * alone and is therefore unreachable from this client.
+ */
+async function storeOrgApiKey(key: string): Promise<void> {
+  const { error } = await supabase.rpc(
+    'set_org_ai_api_key',
+    { p_key: key } as never
+  )
+  if (error) throw error
+}
+
 // Types
 // Available providers
 export const AI_PROVIDERS = [
@@ -78,11 +105,12 @@ export interface AIConfigUpdate {
 // back to the provider's default rates.
 export const AI_MODELS: Record<AIProvider, Array<{ id: string; name: string; description: string; recommended?: boolean }>> = {
   anthropic: [
-    { id: 'claude-sonnet-4-6',          name: 'Claude Sonnet 4.6',  description: 'Best balance of speed and capability', recommended: true },
-    { id: 'claude-opus-4-7',            name: 'Claude Opus 4.7',    description: 'Most capable model — premium pricing' },
-    { id: 'claude-haiku-4-5-20251001',  name: 'Claude Haiku 4.5',   description: 'Fast and cost-effective' },
-    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet',  description: 'Legacy — previous generation' },
-    { id: 'claude-3-5-haiku-20241022',  name: 'Claude 3.5 Haiku',   description: 'Legacy — previous generation' },
+    { id: 'claude-sonnet-5-5',          name: 'Claude Sonnet 5.5',  description: 'Best balance of speed and capability', recommended: true },
+    { id: 'claude-opus-5-5',            name: 'Claude Opus 5.5',    description: 'Most capable, for the hardest analysis' },
+    { id: 'claude-haiku-5-5',           name: 'Claude Haiku 5.5',   description: 'Fastest and lowest cost' },
+    { id: 'claude-sonnet-4-6',          name: 'Claude Sonnet 4.6',  description: 'Previous generation' },
+    { id: 'claude-opus-4-7',            name: 'Claude Opus 4.7',    description: 'Previous generation' },
+    { id: 'claude-haiku-4-5-20251001',  name: 'Claude Haiku 4.5',   description: 'Previous generation' },
   ],
   openai: [
     { id: 'gpt-4o',         name: 'GPT-4o',      description: 'Multimodal, fast', recommended: true },
@@ -190,18 +218,27 @@ export function useAIConfig() {
       includeDiscussions: userConfig?.include_discussions ?? false,
     }
 
-    // Platform AI enabled
-    if (platformConfig?.platform_ai_enabled) {
-      return {
-        mode: 'platform' as const,
-        provider: platformConfig.platform_provider,
-        model: platformConfig.platform_model,
-        isConfigured: true, // Assume platform has keys configured
-        isPlatformEnabled: true,
-        allowByok: platformConfig.allow_byok,
-        ...preferences,
-      }
-    }
+    /*
+     * Resolution ORDER, and it must match the edge function's.
+     *
+     * Two changes from the previous version, both of which only showed up the
+     * day platform AI gets switched on:
+     *
+     *   - The order is now BYOK first. Platform-on used to take precedence and
+     *     silently stop using an org's own key, moving a firm that pays for
+     *     its own Anthropic account onto the platform's bill unasked. An org
+     *     that configured a key keeps using it; the platform is what everyone
+     *     else gets. That is "platform by default, BYOK optional".
+     *
+     *   - `isConfigured: true // Assume platform has keys configured` is gone.
+     *     It was false on 2026-11-09: the flag was off AND no ANTHROPIC_API_KEY
+     *     secret existed, so a UI built on that assumption would have told
+     *     every user AI was ready while every request failed. The browser
+     *     cannot see whether a platform secret is deployed, so this now
+     *     reports what it can actually establish and leaves the authoritative
+     *     answer to the edge function, which returns a configuration error
+     *     naming the problem.
+     */
 
     // BYOK allowed and configured at the org level. Model resolution:
     // user's preferred_model overrides the org default if set.
@@ -211,8 +248,24 @@ export function useAIConfig() {
         provider: orgConfig.byok_provider,
         model: userConfig?.preferred_model || orgConfig.byok_model,
         isConfigured: true,
-        isPlatformEnabled: false,
+        isPlatformEnabled: !!platformConfig?.platform_ai_enabled,
         allowByok: true,
+        ...preferences,
+      }
+    }
+
+    // Platform AI enabled. Whether a platform key is actually deployed is not
+    // visible from the browser, so isConfigured is optimistic here by
+    // necessity; the edge function is the authority and says so explicitly
+    // when it is not.
+    if (platformConfig?.platform_ai_enabled) {
+      return {
+        mode: 'platform' as const,
+        provider: platformConfig.platform_provider,
+        model: userConfig?.preferred_model || platformConfig.platform_model,
+        isConfigured: true,
+        isPlatformEnabled: true,
+        allowByok: platformConfig.allow_byok,
         ...preferences,
       }
     }
@@ -242,24 +295,30 @@ export function useAIConfig() {
     }
   })()
 
-  // Update org BYOK config. RLS rejects non-admins.
+  /*
+   * Update org BYOK config.
+   *
+   * The key and the rest of the row take DIFFERENT paths now, and that split
+   * is the security fix.
+   *
+   * The key goes to `set_org_ai_api_key`, a SECURITY DEFINER function that
+   * checks org-admin itself and writes into Supabase Vault. It returns void.
+   * There is no companion function that returns a key to a browser role, and
+   * `byok_api_key` is no longer a column, so there is nothing to read back.
+   *
+   * Everything else (provider, model, enabled) is an ordinary RLS-gated write.
+   * Note the explicit column list on `.select()`: the previous version called
+   * a bare `.select()` after the upsert, which asked the database for every
+   * column of the row it had just written -- including, at the time, the
+   * plaintext key. So saving a key echoed it straight back into the browser's
+   * network response and into the react-query cache. Naming columns is what
+   * stops that from coming back by accident.
+   */
   const updateConfigMutation = useMutation({
     mutationFn: async (updates: AIConfigUpdate) => {
       if (!user?.id) throw new Error('Not authenticated')
 
-      // Sanity-check the api_key on save too — catches the case where the
-      // user skipped Test Connection and went straight to Save with a
-      // non-ASCII paste.
-      if (updates.byok_api_key) {
-        const cleaned = sanitizeApiKey(updates.byok_api_key)
-        if (cleaned !== updates.byok_api_key.trim()) {
-          throw new Error(
-            'Your API key contains invisible or non-ASCII characters. ' +
-            'Re-copy it directly from the provider\'s console.'
-          )
-        }
-        updates = { ...updates, byok_api_key: cleaned }
-      }
+      const { byok_api_key, ...rowUpdates } = updates
 
       // Resolve the current org. The RPC returns NULL if there's no
       // current org, in which case there's no scope to write into.
@@ -272,16 +331,34 @@ export function useAIConfig() {
       // tightened SELECT to admins-only — a non-admin somehow reaching this
       // code path used to get a confusing empty SELECT then an INSERT
       // failure. Upsert lets RLS reject in one clean step.
-      const { data, error } = await supabase
-        .from('organization_ai_config')
-        .upsert(
-          { organization_id: orgId, ...updates },
-          { onConflict: 'organization_id' }
-        )
-        .select()
-        .single()
-      if (error) throw error
-      return data
+      if (Object.keys(rowUpdates).length > 0) {
+        const { error } = await supabase
+          .from('organization_ai_config')
+          .upsert(
+            { organization_id: orgId, ...rowUpdates },
+            { onConflict: 'organization_id' }
+          )
+          .select('organization_id, byok_provider, byok_model, byok_enabled')
+          .single()
+        if (error) throw error
+      }
+
+      // The key last, so a rejected row update does not leave a key stored
+      // against settings that failed to save. The ASCII and length checks
+      // live in the function as well, so a caller that skips this one still
+      // cannot store an unusable key.
+      if (byok_api_key) {
+        const cleaned = sanitizeApiKey(byok_api_key)
+        if (cleaned !== byok_api_key.trim()) {
+          throw new Error(
+            'Your API key contains invisible or non-ASCII characters. ' +
+            'Re-copy it directly from the provider\'s console.'
+          )
+        }
+        await storeOrgApiKey(cleaned)
+      }
+
+      return { organization_id: orgId }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['org-ai-config'] })
@@ -304,101 +381,62 @@ export function useAIConfig() {
       }
       if (!apiKey) throw new Error('API key is empty')
 
-      // Simple test call to verify the key works
-      if (provider === 'anthropic') {
-        // Anthropic blocks browser-origin calls by default ("failed to fetch"
-        // CORS error). The dangerous-direct-browser-access header opts in —
-        // safe here because the key being tested is the user's own (BYOK
-        // entered in this session), not a developer key being exposed.
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
+      /*
+       * Store the key, then verify it through Tesseract's own pipeline.
+       *
+       * This used to POST the key straight from the browser to
+       * api.anthropic.com with `anthropic-dangerous-direct-browser-access`,
+       * and to the other three providers' endpoints besides. The argument for
+       * it was that the key is the admin's own, which is true and is not the
+       * whole picture: it put a live provider credential through the browser,
+       * every extension loaded in it, and any corporate TLS-inspecting proxy
+       * on the way out, for no gain over doing it server-side.
+       *
+       * It also tested the wrong thing. "Anthropic accepts this key" is not
+       * "Tesseract AI works" -- the key was valid throughout the five months
+       * ai-chat served no traffic. So the probe now goes through ai-chat with
+       * `purpose: 'snippet'` (which routes to Haiku, the cheapest model) and a
+       * two-word prompt, which exercises the real path end to end: the edge
+       * function's auth gate, the Vault key resolution, the rate-limit gate,
+       * the provider call, and the usage log. It costs a fraction of a cent.
+       *
+       * The key is stored first because resolution happens server-side out of
+       * Vault; there is no longer any way to hand a candidate key to the
+       * provider without storing it. That makes this "save and verify" rather
+       * than "test then save", which is why the button says so.
+       */
+      await storeOrgApiKey(apiKey)
+      await queryClient.invalidateQueries({ queryKey: ['org-ai-config'] })
+
+      const { data: session } = await supabase.auth.getSession()
+      const token = session?.session?.access_token
+      if (!token) throw new Error('Your session has expired. Sign in again and retry.')
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`,
+        {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01',
-            'anthropic-dangerous-direct-browser-access': 'true',
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 10,
-            messages: [{ role: 'user', content: 'Hi' }],
+            message: 'Reply with the single word OK.',
+            purpose: 'snippet',
+            verbosity: 'brief',
           }),
-        })
+        },
+      )
 
-        if (!response.ok) {
-          const error = await response.json().catch(() => ({}))
-          throw new Error(error.error?.message || `Invalid API key (HTTP ${response.status})`)
-        }
-
-        return { success: true }
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(
+          payload?.error ||
+          `The key was saved but the test request failed (HTTP ${response.status}).`
+        )
       }
 
-      if (provider === 'openai') {
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'gpt-3.5-turbo',
-            max_tokens: 10,
-            messages: [{ role: 'user', content: 'Hi' }],
-          }),
-        })
-
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.error?.message || 'Invalid API key')
-        }
-
-        return { success: true }
-      }
-
-      if (provider === 'google') {
-        // Google AI Studio API test
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: 'Hi' }] }],
-            generationConfig: { maxOutputTokens: 10 },
-          }),
-        })
-
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.error?.message || 'Invalid API key')
-        }
-
-        return { success: true }
-      }
-
-      if (provider === 'perplexity') {
-        const response = await fetch('https://api.perplexity.ai/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify({
-            model: 'llama-3.1-sonar-small-128k-online',
-            max_tokens: 10,
-            messages: [{ role: 'user', content: 'Hi' }],
-          }),
-        })
-
-        if (!response.ok) {
-          const error = await response.json()
-          throw new Error(error.error?.message || 'Invalid API key')
-        }
-
-        return { success: true }
-      }
-
-      throw new Error('Unsupported provider')
+      return { success: true, model: payload?.model ?? null, provider }
     },
   })
 
@@ -427,19 +465,13 @@ export function useAIConfig() {
     mutationFn: async () => {
       if (!user?.id) throw new Error('Not authenticated')
 
-      const { data: orgIdData, error: orgIdErr } = await supabase.rpc('current_org_id')
-      if (orgIdErr) throw orgIdErr
-      const orgId = orgIdData as string | null
-      if (!orgId) throw new Error('No active organization')
-
-      const { error } = await supabase
-        .from('organization_ai_config')
-        .update({
-          byok_api_key: null,
-          byok_enabled: false,
-        })
-        .eq('organization_id', orgId)
-
+      // One function call rather than a table update that nulls a column.
+      // The column is gone; the secret lives in Vault, and only
+      // `clear_org_ai_api_key` can destroy it. It resolves the org itself,
+      // re-checks org-admin, deletes the vault row and sets byok_enabled to
+      // false in one transaction -- so a half-cleared state (enabled, with no
+      // key behind it) is not reachable from here.
+      const { error } = await supabase.rpc('clear_org_ai_api_key')
       if (error) throw error
     },
     onSuccess: () => {

@@ -36,6 +36,7 @@ export function AIConfigurationSection() {
     effectiveConfig,
     isLoading,
     updateConfig,
+    updateConfigAsync,
     isUpdating,
     testApiKeyAsync,
     isTesting,
@@ -61,13 +62,34 @@ export function AIConfigurationSection() {
     }
   }, [orgConfig])
 
-  const handleTestConnection = async () => {
+  /*
+   * Save and verify.
+   *
+   * This used to be "Test Connection", and it posted the key from this browser
+   * straight to the provider. Verification is server-side now: the key goes
+   * into Vault and the probe runs through ai-chat, so what gets tested is the
+   * path a user's question actually takes rather than just whether the
+   * provider recognises the string.
+   *
+   * Provider and model are written first so the probe runs against the
+   * settings on screen, not the ones from last time.
+   */
+  const handleVerify = async () => {
     if (!apiKey) return
 
     try {
+      await updateConfigAsync({
+        byok_provider: provider,
+        byok_enabled: true,
+        byok_model: orgConfig?.byok_model || getDefaultModel(provider),
+      })
       await testApiKeyAsync({ provider, apiKey })
-    } catch (e) {
-      // Error handled by mutation
+      setApiKey('')
+    } catch {
+      // Deliberately swallowed. Both mutations expose their own error state,
+      // which the panel below renders, so rethrowing would surface an
+      // unhandled rejection for a failure the user can already see. The key
+      // input is left populated on failure so it can be retried.
     }
   }
 
@@ -432,7 +454,7 @@ export function AIConfigurationSection() {
                     <div className="flex items-center space-x-2">
                       <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
                       <span className="text-sm text-green-700 dark:text-green-300">
-                        Connection successful! Your API key is valid.
+                        Saved and verified. A test question reached the provider and came back through Tesseract.
                       </span>
                     </div>
                   </div>
@@ -444,16 +466,16 @@ export function AIConfigurationSection() {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={handleTestConnection}
-                      disabled={!apiKey || isTesting}
+                      onClick={handleVerify}
+                      disabled={!apiKey || isTesting || isUpdating}
                     >
-                      {isTesting ? (
+                      {isTesting || isUpdating ? (
                         <>
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Testing...
+                          Verifying...
                         </>
                       ) : (
-                        'Test Connection'
+                        'Save and verify'
                       )}
                     </Button>
                     <Button

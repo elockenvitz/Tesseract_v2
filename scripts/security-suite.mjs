@@ -85,18 +85,47 @@ if (!Array.isArray(rows) || rows.length === 0) {
   process.exit(2)
 }
 
-const failed = rows.filter(r => r.result !== 'PASS')
+// Three row kinds, and the distinction is the point of this runner:
+//
+//   PASS / FAIL   a scored assertion. FAIL fails the suite.
+//   INFO          a reported measurement that is deliberately NOT scored — an
+//                 operational count where a non-zero value is a fact to see
+//                 before a deploy, not a test failure (the stranded-user counts
+//                 in tenant-boundary-p0-verify, the unfixable supabase_admin
+//                 default-privilege gap in default-privileges-fail-closed).
+//
+// INFO must not fail the suite, and it must not be able to carry one either: a
+// suite whose rows are ALL informational has asserted nothing, and "0 failures"
+// over zero assertions is exactly the green-on-nothing result this runner
+// exists to prevent. So a scored assertion is required, separately from a row
+// being present at all.
+const SCORED = new Set(['PASS', 'FAIL'])
+const scored = rows.filter(r => SCORED.has(String(r.result).toUpperCase()))
+const failed = rows.filter(r => String(r.result).toUpperCase() === 'FAIL')
+const info = rows.filter(r => !SCORED.has(String(r.result).toUpperCase()))
 
 console.log(`\n${suite} — project ${ref}\n`)
 for (const r of rows) {
   // Detail is printed for passes too: "it refused" is only reassuring once you
   // can see WHY it refused. A check that passes because a function is missing
   // looks identical to one that passes because the grant is gone.
-  console.log(`  ${r.result.padEnd(4)}  [${String(r.n).padStart(2)}] ${r.detail}`)
+  console.log(`  ${String(r.result).padEnd(4)}  [${String(r.n).padStart(2)}] ${r.detail}`)
 }
+
+if (scored.length === 0) {
+  console.error(
+    `\n  ${suite} produced ${rows.length} row(s) but NOT ONE scored assertion.` +
+    '\n  Every row was informational, so nothing was actually checked.' +
+    '\n  Refusing to report a pass.\n'
+  )
+  process.exit(2)
+}
+
 console.log(
-  `\n  ${rows.length - failed.length}/${rows.length} passed` +
-    (failed.length ? `, ${failed.length} FAILED\n` : '\n')
+  `\n  ${scored.length - failed.length}/${scored.length} assertions passed` +
+    (failed.length ? `, ${failed.length} FAILED` : '') +
+    (info.length ? ` · ${info.length} informational row(s), not scored` : '') +
+    '\n'
 )
 
 process.exit(failed.length ? 1 : 0)
