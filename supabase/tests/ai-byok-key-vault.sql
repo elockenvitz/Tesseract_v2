@@ -67,12 +67,53 @@
 -- No real key is used. The fixtures are literal fakes, and no secret VALUE is
 -- ever emitted: the details carry lengths and booleans only.
 --
--- Self-cleaning. Every write carries a random suffix and every row is removed
--- at the end regardless of outcome. Safe to run against production.
+-- TRANSACTION SAFETY
+--
+-- The whole file runs inside BEGIN ... ROLLBACK, so nothing it writes can
+-- persist by any exit path: normal completion, a failed assertion, or an
+-- unhandled error. The ROLLBACK is the guarantee and must never be replaced
+-- with COMMIT.
+--
+-- It replaced an explicit cleanup block for a measured reason rather than a
+-- stylistic one. Deleting the three fixture auth users cost 74.9s of the
+-- suite's 86.5s, because 338 foreign keys reference the users tables and 196
+-- of them have no supporting index, so each delete sequentially scans those
+-- 196 tables. That left under 15s for the 17 assertions inside the Management
+-- API's ~100s ceiling, and the suite died with a Cloudflare 524 on every run
+-- while still executing server-side to completion. A rollback discards the
+-- same rows without firing a single cascade check. Those unindexed foreign
+-- keys are a real pre-existing property of this database, recorded here and
+-- deliberately not fixed here.
+--
+-- It touches no real customer record: every row is one it created, in two
+-- throwaway organizations with random slugs. The single production
+-- organization_ai_config row and its vault secret are read by no assertion
+-- and written by none.
+--
+-- Trigger-generated rows are covered as well: inserting an auth user fires
+-- handle_new_user(), which mirrors it into public.users and creates default
+-- asset_lists and list_statuses the fixture never asked for. The rollback
+-- takes those with it.
 -- =============================================================================
+
+BEGIN;
 
 DROP TABLE IF EXISTS _byok_results;
 CREATE TEMP TABLE _byok_results(n int, result text, detail text);
+-- Several assertions switch into `authenticated` or `anon` and record their
+-- outcome from inside that role, so both need write access to the scratch
+-- table. Without this the first role-switched INSERT fails 42501 and the
+-- suite reports nothing at all.
+GRANT ALL ON _byok_results TO authenticated, anon;
+
+-- PROOF THAT ASSERTIONS 6 AND 7 ARE NOT VACUOUS (Standing Rule 3).
+-- Adding this line here, which is the exact grant the migration revokes,
+-- flips 6 and 7 to FAIL ("non-admin member resolved the key, 82 chars" /
+-- "org admin resolved the key, 82 chars") and the runner to exit 1. Verified
+-- 2026-11-10. It is safe to repeat: the grant rolls back with everything else
+-- in the transaction, so the live privilege is never widened.
+--
+--   GRANT EXECUTE ON FUNCTION public.resolve_org_ai_config(uuid) TO authenticated;
 
 DO $$
 DECLARE
@@ -437,23 +478,21 @@ BEGIN
   END IF;
 
   -- ===========================================================================
-  -- CLEANUP. Unconditional, so a failed assertion cannot leave a fixture or a
-  -- test secret behind.
+  -- No CLEANUP block. The ROLLBACK at the end of the file is the guarantee,
+  -- and it is both stronger and ~75x cheaper than the DELETEs that used to be
+  -- here: it cannot be defeated by an assertion raising before cleanup is
+  -- reached, and it fires none of the 338 foreign key checks that deleting an
+  -- auth user does. See TRANSACTION SAFETY in the header.
+  --
+  -- Worth recording, because the old cleanup block had to work around it and a
+  -- future reader may reintroduce one: deleting a fixture user directly fails
+  -- 23503. handle_new_user() gives every new auth user a default asset_list,
+  -- whose list_statuses carry created_by -> users(id) ON DELETE SET NULL
+  -- beside list_id -> asset_lists ON DELETE CASCADE; the SET NULL
+  -- re-validates list_id against the row that just cascaded away. Deleting
+  -- list_statuses, then asset_lists, then the user makes each cascade
+  -- single-sided. A real production defect, recorded and not fixed here.
   -- ===========================================================================
-  DELETE FROM organization_ai_config WHERE organization_id IN (v_org_a, v_org_b);
-  DELETE FROM vault.secrets
-   WHERE name IN ('org_ai_key:' || v_org_a::text, 'org_ai_key:' || v_org_b::text);
-  DELETE FROM organization_memberships WHERE organization_id IN (v_org_a, v_org_b);
-  DELETE FROM organizations WHERE id IN (v_org_a, v_org_b);
-  -- handle_new_user() gives every new auth user a default asset_list, whose
-  -- list_statuses carry created_by -> users(id) ON DELETE SET NULL beside
-  -- list_id -> asset_lists ON DELETE CASCADE. Deleting the user fires both and
-  -- the SET NULL re-validates list_id against the row that just cascaded away,
-  -- so the whole DELETE fails 23503. Dropping the lists first makes the
-  -- cascade single-sided. A real production defect, recorded and not fixed here.
-  DELETE FROM list_statuses WHERE created_by IN (v_admin_a, v_member_a, v_admin_b);
-  DELETE FROM asset_lists   WHERE created_by IN (v_admin_a, v_member_a, v_admin_b);
-  DELETE FROM auth.users    WHERE id IN (v_admin_a, v_member_a, v_admin_b);
 
   RAISE NOTICE '';
   RAISE NOTICE '=== RESULTS: % passed, % failed out of 17 assertions ===', v_pass, v_fail;
@@ -461,3 +500,6 @@ END;
 $$;
 
 SELECT n, result, detail FROM _byok_results ORDER BY n, result;
+
+-- The guarantee. Do not replace this with COMMIT.
+ROLLBACK;
