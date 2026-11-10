@@ -13,6 +13,7 @@
   },
   "license": "UNLICENSED",
   "scripts": {
+    "hooks:install": "git config core.hooksPath .githooks && echo core.hooksPath=.githooks",
     "dev": "vite",
     "dev:mobile": "vite --config vite.mobile.config.ts",
     "preview:mobile": "vite build && vite preview --config vite.mobile.config.ts",
