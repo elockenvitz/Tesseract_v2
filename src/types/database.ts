@@ -1069,6 +1069,35 @@ export interface Database {
         Returns: string
       }
       /**
+       * Organization provider API key custody. Declared here for the same
+       * reason as the three above: an undeclared RPC falls through to an
+       * overload whose Args is `undefined`, so a call that passes arguments
+       * does not typecheck.
+       *
+       * Note what is NOT here and cannot be: there is no RPC that returns a
+       * key. `set_org_ai_api_key` writes into Vault and returns void;
+       * `resolve_org_ai_config` is the only reader and is granted to
+       * `service_role` alone, so it is unreachable from this client by design.
+       * `get_org_ai_config_summary` reports `is_configured` instead.
+       */
+      set_org_ai_api_key: {
+        /** The provider key, as typed by an org admin. Never read back. */
+        Args: { p_key: string }
+        /**
+         * void. PostgREST sends `null` as the body; `unknown` rather than
+         * `undefined` because postgrest-js reads `Returns` back out into the
+         * builder's row type, and an `undefined` there makes the whole entry
+         * fail to match `GenericFunction` -- at which point the call falls
+         * through to the untyped overload whose args parameter is `undefined`,
+         * and rejects the very argument this entry exists to describe.
+         */
+        Returns: unknown
+      }
+      clear_org_ai_api_key: {
+        Args: Record<string, never>
+        Returns: null
+      }
+      /**
        * Replaces the ops portal's two-statement delete, which removed
        * memberships and the organization in separate PostgREST transactions
        * and so destroyed the memberships whenever the second statement failed.

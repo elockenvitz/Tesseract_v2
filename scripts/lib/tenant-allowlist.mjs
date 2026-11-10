@@ -442,6 +442,40 @@ export const REVIEWED_RPCS = new Set([
    */
   'set_theme_contribution_audience',
 
+  /*
+   * Organization provider API key custody. Read from the live database on
+   * 2026-11-10, immediately after migration 20261110020000 applied, and
+   * covered by role-context assertions rather than by this note alone:
+   * supabase/tests/ai-byok-key-vault.sql, 17/17.
+   *
+   * Both are SECURITY DEFINER, `search_path=public`, EXECUTE revoked from
+   * public and anon and granted to authenticated, and both authorize before
+   * touching anything:
+   *   set_org_ai_api_key    v_org := current_org_id()
+   *                           -> raises 'No active organization' if null
+   *                         is_active_org_admin_of_current_org()
+   *                           -> raises unless the caller is an admin of
+   *                              that org, so a plain member cannot store
+   *                              (assertion 3) and anon cannot either
+   *                              (assertion 9)
+   *   clear_org_ai_api_key  the same two checks, in the same order
+   *                           (assertions 16 and 17)
+   *
+   * Neither takes an organization id. The org is derived server-side from
+   * current_org_id(), which reads users.current_organization_id and re-checks
+   * an active unexpired membership, so a caller cannot name another firm's
+   * org: assertions 13 and 14 pin that org B's admin writes org B only and
+   * leaves org A's key untouched.
+   *
+   * Neither RETURNS anything. That is the point of the pair. The only
+   * function that can read a key back is resolve_org_ai_config(uuid), which
+   * is granted to service_role alone and is deliberately NOT in this
+   * inventory, because no frontend may call it. Assertions 6, 7 and 8 pin
+   * that a member, an org admin and anon all get 42501 from it.
+   */
+  'set_org_ai_api_key',
+  'clear_org_ai_api_key',
+
   // Read from the live database on 2026-11-06 — see the note above.
   'current_org_id',
   'end_morph_session',

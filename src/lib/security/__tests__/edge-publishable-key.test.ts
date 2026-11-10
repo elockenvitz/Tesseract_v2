@@ -186,8 +186,19 @@ describe('ai-chat builds its user client from the publishable key', () => {
     expect(src()).toContain('if (!authHeader) throw new Error("Missing authorization header")')
   })
 
-  it('still identifies the caller with auth.getUser()', () => {
-    expect(src()).toContain('auth.getUser()')
+  it('identifies the caller through the shared verified-user gate', () => {
+    // Was `expect(src()).toContain('auth.getUser()')`. Rewritten, not
+    // relaxed. The bare `auth.getUser()` form is the exact shape that took
+    // market-news down for two weeks and broke yahoo-chart-proxy v10:
+    // supabase-js declares a RANGE on gotrue, so the headerless overload
+    // stops reading the forwarded header depending on deploy date. ai-chat
+    // now goes through `authorizeVerifiedUser`, which passes the token
+    // explicitly, so this asserts the gate is present AND that the outage
+    // shape is gone.
+    const s = src()
+    expect(s).toContain('authorizeVerifiedUser')
+    expect(s).toContain('_shared/verified-user.ts')
+    expect(s).not.toMatch(/\.auth\.getUser\(\s*\)/)
   })
 
   it('does not fall back to an empty key', () => {
@@ -196,12 +207,30 @@ describe('ai-chat builds its user client from the publishable key', () => {
     expect(src()).not.toMatch(/createClient\(\s*supabaseUrl\s*,\s*""/)
   })
 
-  it('introduces no service-role client', () => {
-    // ai-chat never had one, and this migration must not add privilege:
-    // its only client is the caller-scoped one. An earlier version of this
-    // assertion compared a count against itself and was vacuous.
-    expect(src()).not.toContain('SUPABASE_SERVICE_ROLE_KEY')
-    expect(src().match(/createClient\(/g) ?? []).toHaveLength(1)
+  it('has exactly two clients: the caller-scoped one and the audited privileged one', () => {
+    // This assertion used to read "introduces no service-role client", and
+    // ai-chat genuinely had none. Provider key custody changed that: the
+    // organization's key now lives in vault.secrets, and
+    // `public.resolve_org_ai_config(uuid)` -- the only thing that can read it
+    // back -- is granted to service_role and to nothing else, precisely so no
+    // browser role can retrieve a key. One privileged client is therefore
+    // required.
+    //
+    // So this is tightened rather than dropped. It still fails on the thing
+    // the original was protecting: an unaudited THIRD client, or a privileged
+    // client built from a raw env read instead of the reviewed shared seam.
+    // The ordering property -- authorize, derive the org id server-side, and
+    // only then construct the privileged client -- is behavioural and is
+    // pinned in ai-chat-auth.test.ts, which counts constructions on each deny
+    // path. Registry entry: supabase/functions/authz-registry.json, authClass
+    // user-jwt.
+    const s = src()
+    expect(s.match(/createClient\(/g) ?? []).toHaveLength(2)
+    expect(s).toContain('requireSecretKey')
+    expect(s).toContain('_shared/secret-key.ts')
+    // The legacy variable is read inside the shared module, as a fallback, not
+    // here. A raw read in the handler would bypass the reviewed seam.
+    expect(s).not.toContain('SUPABASE_SERVICE_ROLE_KEY')
   })
 })
 

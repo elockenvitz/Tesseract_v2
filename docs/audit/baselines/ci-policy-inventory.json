@@ -1,6 +1,6 @@
 {
   "schema_version": 4,
-  "captured_at": "2026-11-10T02:30:48.289Z",
+  "captured_at": "2026-11-10T23:12:08.784Z",
   "ci_minimal": true,
   "counts": {
     "tables": 295,
@@ -1108,7 +1108,7 @@
       "rls": true,
       "rls_forced": false,
       "policies": 4,
-      "anon": "DELETE,INSERT,SELECT,UPDATE",
+      "anon": "",
       "auth": "DELETE,INSERT,SELECT,UPDATE"
     },
     {
@@ -8771,9 +8771,9 @@
     },
     {
       "table": "organization_ai_config",
-      "name": "Org admins can delete ai config",
+      "name": "organization_ai_config_delete",
       "cmd": "DELETE",
-      "roles": "public",
+      "roles": "authenticated",
       "permissive": "PERMISSIVE",
       "unconditional": false,
       "qual_class": "SCOPED",
@@ -8787,9 +8787,9 @@
     },
     {
       "table": "organization_ai_config",
-      "name": "Org admins can insert ai config",
+      "name": "organization_ai_config_insert",
       "cmd": "INSERT",
-      "roles": "public",
+      "roles": "authenticated",
       "permissive": "PERMISSIVE",
       "unconditional": false,
       "qual_class": "EMPTY",
@@ -8803,9 +8803,9 @@
     },
     {
       "table": "organization_ai_config",
-      "name": "Org admins can view ai config",
+      "name": "organization_ai_config_select",
       "cmd": "SELECT",
-      "roles": "public",
+      "roles": "authenticated",
       "permissive": "PERMISSIVE",
       "unconditional": false,
       "qual_class": "SCOPED",
@@ -8819,9 +8819,9 @@
     },
     {
       "table": "organization_ai_config",
-      "name": "Org admins can update ai config",
+      "name": "organization_ai_config_update",
       "cmd": "UPDATE",
-      "roles": "public",
+      "roles": "authenticated",
       "permissive": "PERMISSIVE",
       "unconditional": false,
       "qual_class": "SCOPED",
