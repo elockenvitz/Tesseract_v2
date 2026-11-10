@@ -1,6 +1,6 @@
 {
   "schema_version": 4,
-  "captured_at": "2026-11-10T00:13:22.713Z",
+  "captured_at": "2026-11-10T01:52:03.878Z",
   "ci_minimal": true,
   "counts": {
     "tables": 295,
@@ -60,7 +60,7 @@
       "rls": true,
       "rls_forced": false,
       "policies": 2,
-      "anon": "DELETE,INSERT,SELECT,UPDATE",
+      "anon": "",
       "auth": "DELETE,INSERT,SELECT,UPDATE"
     },
     {
@@ -1532,7 +1532,7 @@
       "rls": true,
       "rls_forced": false,
       "policies": 2,
-      "anon": "DELETE,INSERT,SELECT,UPDATE",
+      "anon": "",
       "auth": "DELETE,INSERT,SELECT,UPDATE"
     },
     {
@@ -2611,9 +2611,9 @@
     },
     {
       "table": "ai_column_library",
-      "name": "Users can manage their own columns",
+      "name": "ai_column_library_own_write",
       "cmd": "ALL",
-      "roles": "public",
+      "roles": "authenticated",
       "permissive": "PERMISSIVE",
       "unconditional": false,
       "qual_class": "SCOPED",
@@ -2627,9 +2627,9 @@
     },
     {
       "table": "ai_column_library",
-      "name": "Users can view system columns",
+      "name": "ai_column_library_select",
       "cmd": "SELECT",
-      "roles": "public",
+      "roles": "authenticated",
       "permissive": "PERMISSIVE",
       "unconditional": false,
       "qual_class": "UNKNOWN",
@@ -11731,32 +11731,32 @@
     },
     {
       "table": "rating_scales",
-      "name": "Org admins can manage rating scales in current org",
+      "name": "rating_scales_write",
       "cmd": "ALL",
-      "roles": "public",
+      "roles": "authenticated",
       "permissive": "PERMISSIVE",
       "unconditional": false,
       "qual_class": "SCOPED",
-      "check_class": "EMPTY",
-      "qual_branches": 2,
+      "check_class": "SCOPED",
+      "qual_branches": 1,
       "qual_open": 0,
       "qual_open_self": 0,
-      "check_branches": 0,
+      "check_branches": 1,
       "check_open": 0,
       "check_open_self": 0
     },
     {
       "table": "rating_scales",
-      "name": "Users can view rating scales in current org",
+      "name": "rating_scales_select",
       "cmd": "SELECT",
-      "roles": "public",
+      "roles": "authenticated",
       "permissive": "PERMISSIVE",
       "unconditional": false,
       "qual_class": "UNKNOWN",
       "check_class": "EMPTY",
-      "qual_branches": 3,
-      "qual_open": 2,
-      "qual_open_self": 2,
+      "qual_branches": 2,
+      "qual_open": 1,
+      "qual_open_self": 1,
       "check_branches": 0,
       "check_open": 0,
       "check_open_self": 0
