@@ -418,15 +418,60 @@ export const KNOWN_UNRESOLVED_OPEN_BRANCH = new Set([
 ])
 
 /**
+ * Tables whose policy is caller-free in EVERY branch, but whose branches consult
+ * another relation — so the boundary is that table's RLS, not this policy.
+ *
+ * Reported by detector 4 as SEV3_TRANSITIVE_ONLY, seeded the day that detector
+ * was written. These are NOT holes and they are NOT passes, which is the whole
+ * reason they have their own set rather than being exempted or fixed.
+ *
+ * A policy subquery is evaluated under the CALLER's RLS on the relation it
+ * reads, so each of these inherits its parent's org boundary. Static analysis
+ * cannot establish that: it cannot tell whether the parent has RLS enabled at
+ * all, let alone whether the parent's own predicate is sound. So each entry here
+ * is backed by a ROLE-CONTEXT MEASUREMENT, not by reading the parent's
+ * predicate, and the measurement is reproducible as a suite rather than a note:
+ *
+ *   supabase/tests/transitive-policy-boundaries.sql
+ *   measured 2026-11-10 against production, 5 passed / 0 failed:
+ *     a foreign-org member reads 0 rows from all three children
+ *     anon reads 0, though it holds a SELECT grant on two of them
+ *     the owning org still reads all three of its own children
+ *
+ * Each parent was confirmed to have RLS enabled with an org-scoped predicate:
+ *
+ *   analyst_price_target_history -> analyst_price_targets
+ *       (is_active_member_of_current_org() AND organization_id = current_org_id())
+ *   calendar_event_reminders     -> calendar_events
+ *       (organization_id = current_org_id())
+ *   model_versions               -> asset_models
+ *       (organization_id = current_org_id() AND (is_shared OR created_by = auth.uid()))
+ *
+ * They stay in the ratchet because the shape is one migration away from being a
+ * hole: drop RLS on a parent, widen a parent's policy, or read the child through
+ * a SECURITY DEFINER path, and the child's own policy defends nothing. Removing
+ * an entry means giving the child a predicate of its own, not re-measuring the
+ * parent.
+ *
+ * Same rule as the other sets: removal only.
+ */
+export const KNOWN_UNRESOLVED_TRANSITIVE = new Set([
+  'analyst_price_target_history',
+  'calendar_event_reminders',
+  'model_versions',
+])
+
+/**
  * Every ratcheted table, in one set — what `classify` treats as already known.
  *
- * The four seeded sets stay separate above because each records a different
+ * The five seeded sets stay separate above because each records a different
  * reason for existing and each must shrink on its own, which is the ratchet's
  * whole discipline. Only the lookup is merged.
  */
 export const RATCHETED = new Set([
   ...KNOWN_UNRESOLVED, ...KNOWN_UNRESOLVED_SIBLING,
   ...KNOWN_UNRESOLVED_OPEN_BRANCH, ...KNOWN_UNRESOLVED_BROAD_CLASS,
+  ...KNOWN_UNRESOLVED_TRANSITIVE,
 ])
 
 /** Roles that already bypass RLS; a policy naming them changes no access path. */
@@ -576,7 +621,7 @@ export function classify(inventory, knownTables = RATCHETED) {
       if (BROAD.has(accessClass(p, p.cmd))) break
       const prof = resolveBindingProfile(p, which)
       if (!prof || prof.branches < 2 || prof.open === 0) continue
-      if (prof.open === prof.branches) continue   // wholly caller-free: the class system's case
+      if (prof.open === prof.branches) continue   // wholly caller-free: detector 4
       const cmd = which === 'check' ? (p.cmd === 'SELECT' ? null : p.cmd) : p.cmd
       if (!cmd) continue
       const priv = which === 'check' ? (cmd === 'ALL' ? 'INSERT' : cmd) : 'SELECT'
@@ -594,6 +639,96 @@ export function classify(inventory, knownTables = RATCHETED) {
                 `${prof.branches} top-level OR branches that place no condition on the ` +
                 `caller — the caller-bound branches cannot narrow what those admit` +
                 (anonOpen ? ` (and anon holds ${priv})` : ''),
+      })
+    }
+
+    // ── 4. A WHOLLY caller-free predicate ───────────────────────────────────
+    // Detector 3 reports a predicate that MIXES caller-bound and caller-free
+    // branches, and used to fall silent when every branch was caller-free. The
+    // reasoning was that a single branch carries no internal contradiction to
+    // report, and that `(is_system = true)` on a reference table is correct.
+    // `model_template_collaborations` then shipped
+    //
+    //   USING (user_id IS NULL AND team_id IS NULL AND org_node_id IS NULL)
+    //
+    // as its whole predicate, TO public, with an anon SELECT grant — the same
+    // defect PR #276 fixed on layouts and PR #278 fixed on text templates, as
+    // one branch instead of four. It was found by hand. No detector saw it.
+    //
+    // The exemption was not wrong about reference data; it was wrong to treat
+    // "one branch" as the thing that makes a predicate safe. What matters is
+    // what the branch READS, and the three cases are genuinely different:
+    //
+    //   openSelf === branches   row content alone admits the row. Nothing else
+    //                           is consulted, so every caller with a grant
+    //                           gets every matching row. A real hole, unless
+    //                           the rows belong to nobody — which is what
+    //                           OPEN_BRANCH_ALLOWLIST asserts, with a
+    //                           measurement, per table.
+    //   openSelf <  branches    at least one branch consults another relation,
+    //                           so its boundary is THAT table's RLS. Reported
+    //                           as TRANSITIVE_ONLY, not as a pass and not as
+    //                           an anon hole: a policy subquery runs under the
+    //                           caller's RLS, which measured zero rows for
+    //                           `workflow_stakeholders`. But static analysis
+    //                           cannot tell whether the other table is
+    //                           protected AT ALL, so this is a demand for a
+    //                           role-context test, not a clean bill.
+    //   openSelf === null       a pre-version-4 capture. Unanalysed, not clean.
+    //
+    // Deliberately NOT folded into detector 3: same remedy, different evidence,
+    // and a reader needs to know which one they are looking at.
+    for (const which of ['qual', 'check']) {
+      if (isFenced(p)) break
+      if (BROAD.has(accessClass(p, p.cmd))) break
+      // Per-ARM, not only per-policy. `accessClass(p, p.cmd)` above folds the
+      // governing class for the COMMAND, which for an UPDATE with a scoped
+      // USING is SCOPED even when its WITH CHECK is literally `true`. Without
+      // this line, `USING (scoped) WITH CHECK (true)` produced TWO findings
+      // about one defect: SEV2_UPDATE_CHECK_WEAKER, which names the actual
+      // problem, and a wholly-open report on the check arm, which only
+      // restates it. A predicate whose CLASS is already broad belongs to the
+      // class detectors; detector 4 is for the ones class analysis calls clean.
+      if (BROAD.has(resolveClass(p, which))) continue
+      const prof = resolveBindingProfile(p, which)
+      if (!prof || prof.branches === 0) continue
+      if (prof.open !== prof.branches) continue          // mixed: detector 3's case
+      if (prof.openSelf === null || prof.openSelf === undefined) continue  // reported by `coverage`
+      const cmd = which === 'check' ? (p.cmd === 'SELECT' ? null : p.cmd) : p.cmd
+      if (!cmd) continue
+      const priv = which === 'check' ? (cmd === 'ALL' ? 'INSERT' : cmd) : 'SELECT'
+      const anonOpen = named.includes('anon') && hasGrant(table, priv)
+      if (Object.hasOwn(OPEN_BRANCH_ALLOWLIST, p.table) &&
+          (!anonOpen || Object.hasOwn(ANON_READ_ALLOWLIST, p.table))) continue
+      // Intentionally public reference data, on the SAME terms the class
+      // detector grants it: rows that belong to nobody, documented per table
+      // with a measurement, and global-to-customers is still not
+      // public-to-everyone, so anon needs the second list too. Without this,
+      // rewriting an allowlisted table's `USING (true)` as `(is_system = true)`
+      // would move it from exempt to reported while making it strictly
+      // narrower — a guard that punishes a tightening teaches people to ignore
+      // it. The allowlists are the place that decision belongs; "one branch"
+      // was not, which is the whole lesson of detector 4.
+      if (which === 'qual' && p.cmd === 'SELECT' &&
+          Object.hasOwn(GLOBAL_READ_ALLOWLIST, p.table) &&
+          (!anonOpen || Object.hasOwn(ANON_READ_ALLOWLIST, p.table))) continue
+
+      const selfOnly = prof.openSelf === prof.branches
+      findings.push({
+        table: p.table, policy: p.name, cmd: p.cmd, roles: p.roles,
+        severity: selfOnly
+          ? (anonOpen ? 'SEV1_ANON_WHOLLY_OPEN' : 'SEV2_WHOLLY_OPEN')
+          : 'SEV3_TRANSITIVE_ONLY',
+        known,
+        detail: selfOnly
+          ? `${which === 'check' ? 'WITH CHECK' : 'USING'} is caller-free in all ` +
+            `${prof.branches} branch(es) and reads only this table — row content ` +
+            `alone admits the row` +
+            (anonOpen ? ` (and anon holds ${priv})` : '')
+          : `${which === 'check' ? 'WITH CHECK' : 'USING'} is caller-free in all ` +
+            `${prof.branches} branch(es); ${prof.branches - prof.openSelf} consult ` +
+            `another relation, so the boundary is that table's RLS — static analysis ` +
+            `cannot confirm it, needs a role-context test`,
       })
     }
 
@@ -762,6 +897,91 @@ export function resolvedEntries(findings, seeded = RATCHETED) {
 }
 
 /**
+ * How old a committed capture may be before this gate refuses to speak for
+ * production.
+ *
+ * This guard reads a FILE. It never connects to a database, which is what lets
+ * it run on every PR with no credentials — and it is also the reason a passing
+ * run has never meant "production is clean". It meant "the last capture
+ * somebody took was clean". Those diverge the moment a policy is applied
+ * without a recapture, and on 2026-11-09 the committed capture was four weeks
+ * old while three migrations had landed.
+ *
+ * So freshness is now a requirement rather than a printed number. Over the
+ * limit, the gate returns EXIT_UNVERIFIED instead of a pass: not an assertion
+ * that something is wrong, an explicit refusal to claim anything is right.
+ *
+ * 7 days is chosen to be shorter than any plausible release cadence here and
+ * long enough that an ordinary branch does not have to recapture. Override
+ * downward for a stricter gate; the env var cannot push it past the hard
+ * ceiling, because a gate whose own staleness tolerance is unbounded is not a
+ * gate.
+ */
+export const MAX_INVENTORY_AGE_DAYS = 7
+const MAX_INVENTORY_AGE_CEILING_DAYS = 30
+
+/** Required so a wholly-caller-free predicate can be told from an unanalysed one. */
+export const MIN_SCHEMA_VERSION = 4
+
+/**
+ * Exit codes, because "did not pass" is three different facts.
+ *
+ *   0  PASS         findings are all ratcheted, against a capture young enough
+ *                   to speak for production
+ *   1  FAIL         a new finding. Something is wrong.
+ *   2  BROKEN       no inventory, a truncated one, or one too old a schema to
+ *                   analyse. The gate could not run.
+ *   3  UNVERIFIED   the gate ran and found nothing new, but its input is too
+ *                   stale to stand for production. NOT a pass, and distinct
+ *                   from FAIL so a reader can tell "we checked and it is bad"
+ *                   from "we did not really check".
+ *
+ * CI must treat 1, 2 and 3 as red. The distinction is for the human reading the
+ * log, and for the step summary.
+ */
+export const EXIT = { PASS: 0, FAIL: 1, BROKEN: 2, UNVERIFIED: 3 }
+
+/** Age of a capture in days, or null when it carries no usable timestamp. */
+export function inventoryAgeDays(inventory, now = Date.now()) {
+  const raw = inventory?.captured_at
+  if (typeof raw !== 'string') return null
+  const t = Date.parse(raw)
+  if (!Number.isFinite(t)) return null
+  return (now - t) / 86_400_000
+}
+
+/**
+ * The freshness verdict, separated from printing so it is directly testable.
+ *
+ * `maxAgeDays` comes from POLICY_INVENTORY_MAX_AGE_DAYS when set, clamped to
+ * the ceiling. A capture with no parseable `captured_at` is unverifiable, not
+ * fresh: an inventory that will not say when it was taken cannot be trusted to
+ * describe now.
+ */
+export function freshness(inventory, { now = Date.now(), env = process.env } = {}) {
+  const requested = Number(env.POLICY_INVENTORY_MAX_AGE_DAYS)
+  const maxAgeDays = Number.isFinite(requested) && requested > 0
+    ? Math.min(requested, MAX_INVENTORY_AGE_CEILING_DAYS)
+    : MAX_INVENTORY_AGE_DAYS
+
+  const version = Number(inventory?.schema_version)
+  const schemaOk = Number.isFinite(version) && version >= MIN_SCHEMA_VERSION
+
+  const ageDays = inventoryAgeDays(inventory, now)
+  if (ageDays === null) {
+    return { ok: false, reason: 'no parseable captured_at', ageDays: null, maxAgeDays, schemaOk, version }
+  }
+  if (ageDays > maxAgeDays) {
+    return {
+      ok: false,
+      reason: `capture is ${ageDays.toFixed(1)} days old, limit is ${maxAgeDays}`,
+      ageDays, maxAgeDays, schemaOk, version,
+    }
+  }
+  return { ok: true, reason: null, ageDays, maxAgeDays, schemaOk, version }
+}
+
+/**
  * How much of the inventory this run could actually reason about.
  *
  * A sanitized inventory carries hashes, and only predicates matching the known
@@ -769,7 +989,7 @@ export function resolvedEntries(findings, seeded = RATCHETED) {
  * that fraction stops a mostly-blind run from reading like a clean one.
  */
 export function coverage(inventory) {
-  let classified = 0, unknown = 0, analysed = 0, unanalysed = 0
+  let classified = 0, unknown = 0, analysed = 0, unanalysed = 0, selfBlind = 0
   for (const p of inventory.policies ?? []) {
     if (OWNER_ROLES.has(p.roles)) continue
     for (const cmd of expandCmds(p.cmd)) {
@@ -779,12 +999,19 @@ export function coverage(inventory) {
     // Branch analysis is separate: it needs the per-side counts a
     // `schema_version` 3 capture records, or the predicate text. An older
     // inventory is reported as unanalysed, never as clean.
-    if (resolveBindingProfile(p, p.cmd === 'INSERT' ? 'check' : 'qual')) analysed++
+    const prof = resolveBindingProfile(p, p.cmd === 'INSERT' ? 'check' : 'qual')
+    if (prof) analysed++
     else unanalysed++
+    // Separate from `unanalysed`: a version-3 capture HAS branch counts, so it
+    // is analysed for detector 3 and blind to detector 4. Counting those as
+    // analysed and leaving it there is how the wholly-caller-free class stayed
+    // invisible, so the blindness gets its own number.
+    if (prof && (prof.openSelf === null || prof.openSelf === undefined)) selfBlind++
   }
   return {
     classified, unknown, total: classified + unknown,
     branches_analysed: analysed, branches_unanalysed: unanalysed,
+    self_branch_unanalysed: selfBlind,
     roles_captured: Array.isArray(inventory.roles) && inventory.roles.length > 0,
   }
 }
@@ -829,7 +1056,7 @@ function main(argv) {
     for (const e of errors) console.error(`      ${e}`)
     console.error('      Generate one with: node scripts/audit/schema-baseline.mjs')
     console.error('      ...or the committed CI subset:  --ci-minimal')
-    return 2
+    return EXIT.BROKEN
   }
 
   // Positive proof of work — an empty inventory must not read as a pass.
@@ -838,7 +1065,7 @@ function main(argv) {
   if (nTables < MIN_TABLES || nPolicies < MIN_POLICIES) {
     console.error(`FAIL: inventory looks truncated — ${nTables} tables, ${nPolicies} policies.`)
     console.error(`      Expected at least ${MIN_TABLES} / ${MIN_POLICIES}. Refusing to report a pass.`)
-    return 2
+    return EXIT.BROKEN
   }
 
   const findings = classify(inventory)
@@ -846,17 +1073,28 @@ function main(argv) {
   const stale = [...staleAllowlistEntries(inventory), ...staleOpenBranchEntries(inventory)]
   const resolved = resolvedEntries(findings)
   const cov = coverage(inventory)
+  const fr = freshness(inventory)
 
   if (asJson) {
-    console.log(JSON.stringify({ findings, fresh, stale, resolved, coverage: cov }, null, 2))
-    return fresh.length > 0 ? 1 : 0
+    console.log(JSON.stringify({ findings, fresh, stale, resolved, coverage: cov, freshness: fr }, null, 2))
+    if (fresh.length > 0) return EXIT.FAIL
+    if (!fr.schemaOk) return EXIT.BROKEN
+    if (!fr.ok) return EXIT.UNVERIFIED
+    return EXIT.PASS
   }
 
   console.log(`Unconditional-policy guard — ${path}`)
   console.log(`  captured ${inventory.captured_at ?? 'unknown'} · ${nTables} tables · ${nPolicies} policies`)
+  console.log(`  capture age:        ${fr.ageDays === null ? 'UNKNOWN' : fr.ageDays.toFixed(1) + ' days'}` +
+              ` (limit ${fr.maxAgeDays}) · schema_version ${Number.isFinite(fr.version) ? fr.version : 'absent'}` +
+              ` (need >= ${MIN_SCHEMA_VERSION})`)
   console.log(`  predicate coverage: ${cov.classified}/${cov.total} classified, ${cov.unknown} UNKNOWN (unread, not safe)`)
   console.log(`  branch analysis:    ${cov.branches_analysed} policies analysed, ` +
               `${cov.branches_unanalysed} without branch counts (needs a schema_version 3 capture)`)
+  if (cov.self_branch_unanalysed > 0) {
+    console.log(`  wholly-open check:  ${cov.self_branch_unanalysed} policies BLIND — ` +
+                `no *_open_self counts (needs a schema_version ${MIN_SCHEMA_VERSION} capture)`)
+  }
   if (!cov.roles_captured) {
     console.log('  roles:              NOT CAPTURED — no policy is suppressed as unreachable')
   }
@@ -884,12 +1122,39 @@ function main(argv) {
     console.log(`FAIL: ${fresh.length} finding(s) not in KNOWN_UNRESOLVED.`)
     console.log('      Either fix the policy, or — if the table is genuinely global')
     console.log('      reference data — add it to GLOBAL_READ_ALLOWLIST with a reason.')
-    return 1
+    return EXIT.FAIL
+  }
+
+  // A capture too old a schema to analyse is a broken gate, not a stale one:
+  // detector 4 cannot run at all, so the run has not asked the question.
+  if (!fr.schemaOk) {
+    console.log(`BROKEN: inventory is schema_version ${Number.isFinite(fr.version) ? fr.version : 'absent'},`)
+    console.log(`        and this guard needs >= ${MIN_SCHEMA_VERSION} to tell a wholly caller-free`)
+    console.log('        predicate from an unanalysed one. Recapture:')
+    console.log('        node scripts/audit/schema-baseline.mjs --ci-minimal')
+    return EXIT.BROKEN
+  }
+
+  if (!fr.ok) {
+    console.log(`UNVERIFIED: ${findings.length} known finding(s), 0 new — but ${fr.reason}.`)
+    console.log('            This gate reads a committed FILE; it never connects to the')
+    console.log('            database. A clean result against an old capture says the last')
+    console.log('            capture was clean, NOT that production is. Recapture:')
+    console.log('            node scripts/audit/schema-baseline.mjs --ci-minimal')
+    console.log('            This is not a pass. It is a refusal to claim one.')
+    return EXIT.UNVERIFIED
   }
 
   console.log(`PASS: ${findings.length} known finding(s), 0 new.`)
+  console.log(`      Against a capture ${fr.ageDays.toFixed(1)} days old (limit ${fr.maxAgeDays}).`)
+  console.log('      STATIC ONLY: this is a predicate-shape and grant analysis of a')
+  console.log('      committed capture. It does not establish effective authorization —')
+  console.log('      a caller-free branch joining another table, a SECURITY DEFINER read')
+  console.log('      path, and an unsound auth helper all pass this gate. Cross-org and')
+  console.log('      anon denial are proven only by the role-context suites in')
+  console.log('      supabase/tests/.')
   console.log('      KNOWN_UNRESOLVED is a ratchet, not a baseline. It must shrink.')
-  return 0
+  return EXIT.PASS
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

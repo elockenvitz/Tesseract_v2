@@ -7,11 +7,31 @@ name: security
 #             green and proven non-vacuous (the tenant-lint baseline debt must be reconciled first — see
 #             project-security-followups). Currently informational.
 #
-#   db      — tiers 2+3 (tenant-boundary structural lint + SQL isolation suites). FAIL-CLOSED: requires a
+#   db      — tiers 2+3 (tenant-boundary structural lint + SQL isolation suites), the only tiers that prove
+#             anything about effective authorization, because they assume a real role and read. Requires a
 #             NON-production staging project via SECURITY_SUPABASE_REF + SECURITY_SUPABASE_SERVICE_KEY +
-#             SECURITY_SUPABASE_TOKEN. Absent secrets => the job FAILS (never silently skipped). Both DB tiers
-#             refuse the production ref. Until staging is wired this job runs only on demand / on the harness
-#             branch, so it does not block PRs while red. See SECURITY-STAGING.md for the exact secrets.
+#             SECURITY_SUPABASE_TOKEN. Both DB tiers refuse the production ref. See SECURITY-STAGING.md.
+#
+# ── Why `db` said "skipping" on every PR, and what changed ──────────────────────────────────────────────
+#
+# It carried `if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'`. A
+# `pull_request` event matches neither, so on every PR the job was SKIPPED — and a skipped job reports as
+# a grey/neutral check that does not fail the run and is indistinguishable, in the check list, from a db
+# job that ran and passed. The reasoning was sound at the time ("would block PRs while red pre-staging");
+# the effect was that three security releases merged showing a `db` entry that had never executed.
+#
+# The `if:` is gone. The job now runs on pull_request and, with no staging secrets, exits 3 — UNVERIFIED —
+# which is RED and which states in the step summary that no database was contacted. Three outcomes:
+#
+#   green         every tier ran and was clean
+#   red, exit 1   a check found a problem
+#   red, exit 3   a tier could not run. Not a pass, and not a finding either.
+#
+# It is deliberately NOT a required status check, so a red UNVERIFIED does not block merges while staging
+# is unwired. Making it required is the step that follows wiring the secrets.
+#
+# CREDENTIALS: every value arrives from `secrets.*` as a step env var. Nothing is written to a file in the
+# repository, echoed, or interpolated into a `run:` line where it would land in the log.
 
 on:
   pull_request:
@@ -37,8 +57,10 @@ jobs:
         run: npm run security:check:static
 
   db:
-    # Fail-closed DB tiers. Not run on PRs (would block while red pre-staging); on demand or on the harness branch.
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    name: db (live role-context verification)
+    # No `if:`. See the header: an event filter here made this job skip on every PR, and a skipped job is
+    # green-adjacent grey in the check list. It runs on every trigger now and reports UNVERIFIED when it
+    # cannot reach a database.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +70,35 @@ jobs:
           cache: npm
       # The lockfile has known peer-dependency drift, so `npm ci` fails (EUSAGE); match ci.yml.
       - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
+
+      # Says whether this run will actually contact a database BEFORE the gate runs, so a reader of the PR
+      # knows which of the two red states to expect. Prints only PRESENCE — never a value, a length or a
+      # prefix — and reads each secret from the environment rather than interpolating it into the script.
+      - name: Report verification capability
+        env:
+          SECURITY_SUPABASE_REF: ${{ secrets.SECURITY_SUPABASE_REF }}
+          SECURITY_SUPABASE_SERVICE_KEY: ${{ secrets.SECURITY_SUPABASE_SERVICE_KEY }}
+          SECURITY_SUPABASE_TOKEN: ${{ secrets.SECURITY_SUPABASE_TOKEN }}
+        run: |
+          present() { if [ -n "$1" ]; then echo yes; else echo no; fi; }
+          {
+            echo "### security / db — verification capability"
+            echo ""
+            echo "| secret | present |"
+            echo "| --- | --- |"
+            echo "| SECURITY_SUPABASE_REF | $(present "$SECURITY_SUPABASE_REF") |"
+            echo "| SECURITY_SUPABASE_SERVICE_KEY | $(present "$SECURITY_SUPABASE_SERVICE_KEY") |"
+            echo "| SECURITY_SUPABASE_TOKEN | $(present "$SECURITY_SUPABASE_TOKEN") |"
+            echo ""
+            if [ -n "$SECURITY_SUPABASE_REF" ] && [ -n "$SECURITY_SUPABASE_TOKEN" ] && [ -n "$SECURITY_SUPABASE_SERVICE_KEY" ]; then
+              echo "Staging credentials present. The DB tiers will run against a live project."
+            else
+              echo "**No staging credentials.** The DB tiers CANNOT run, so this job reports UNVERIFIED"
+              echo "(exit 3) and goes red. That is not a finding and it is not a pass: no database was"
+              echo "contacted, so nothing in this job speaks for production."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: security:check (all tiers, fail-closed)
         env:
           SECURITY_SUPABASE_REF: ${{ secrets.SECURITY_SUPABASE_REF }}
