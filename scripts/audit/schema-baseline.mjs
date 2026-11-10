@@ -249,16 +249,27 @@ function classifyPolicies(policies) {
     p.qual_class = classifyPredicateText(p.qual)
     p.check_class = classifyPredicateText(p.with_check)
 
-    // Two integers per side: how many top-level OR branches the predicate has,
-    // and how many of those place no condition on the caller. A count cannot
-    // be read back into an expression, and it is the only thing that would have
+    // Three integers per side: how many top-level OR branches the predicate
+    // has, how many of those place no condition on the caller, and how many of
+    // THOSE read only the policy's own table. A count cannot be read back into
+    // an expression, and the first two are the only thing that would have
     // exposed `layout_collab_view_own` — whose class was a truthful UNKNOWN.
+    //
+    // The third, `*_open_self`, is what tells a wholly caller-free predicate
+    // over its own columns (`model_template_collaborations`, a real hole that
+    // escaped every detector) apart from one whose single branch EXISTS-joins
+    // another RLS-protected table (`workflow_stakeholders`, reported as live
+    // exposure for a day and measured at zero rows). Same predicate shape, same
+    // branch counts, different defect — and nothing already in the capture
+    // separated them.
     const q = callerBindingProfile(p.qual)
     const c = callerBindingProfile(p.with_check)
     p.qual_branches = q.branches
     p.qual_open = q.open
+    p.qual_open_self = q.openSelf
     p.check_branches = c.branches
     p.check_open = c.open
+    p.check_open_self = c.openSelf
 
     delete p.qual
     delete p.with_check
@@ -285,6 +296,18 @@ function summarize(b) {
     policies_mixed_caller_binding: b.policies.filter(p =>
       (p.qual_open > 0 && p.qual_open < p.qual_branches) ||
       (p.check_open > 0 && p.check_open < p.check_branches)).length,
+    // A predicate where EVERY branch is caller-free and every one of those reads
+    // only its own table: row content alone admits the row. The class this
+    // capture could not previously express.
+    policies_wholly_open_self: b.policies.filter(p =>
+      (p.qual_branches > 0 && p.qual_open === p.qual_branches && p.qual_open_self === p.qual_branches) ||
+      (p.check_branches > 0 && p.check_open === p.check_branches && p.check_open_self === p.check_branches)).length,
+    // Caller-free throughout, but at least one branch consults another relation,
+    // so its boundary is that table's RLS. Not a pass: static analysis cannot
+    // confirm the other table is protected. Needs a role-context test.
+    policies_transitive_only: b.policies.filter(p =>
+      (p.qual_branches > 0 && p.qual_open === p.qual_branches && p.qual_open_self < p.qual_branches) ||
+      (p.check_branches > 0 && p.check_open === p.check_branches && p.check_open_self < p.check_branches)).length,
     policies_public_role: b.policies.filter(p => p.roles.split(',').includes('public')).length,
     functions: b.functions.length,
     functions_security_definer: b.functions.filter(f => f.definer).length,
@@ -310,7 +333,12 @@ const baseline = {
   //     and how many of those branches place no condition on the caller. Plus a
   //     `roles` map, so a policy naming an unreachable role can be suppressed
   //     from the captured fact rather than from a hardcoded name.
-  schema_version: 3,
+  // 4 — policies carry `*_open_self` as well: of the caller-free branches, how
+  //     many read ONLY the policy's own table. A version-3 capture cannot answer
+  //     the wholly-caller-free question at all, and the guard reports it as
+  //     unanalysed rather than clean, because 0 would read as the clean answer
+  //     from a file that never looked.
+  schema_version: 4,
   captured_at: new Date().toISOString(),
   source_project_ref_prefix: `${creds.ref.slice(0, 6)}…`,
   server_version: meta[0].server_version,

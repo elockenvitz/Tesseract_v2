@@ -20,7 +20,7 @@
  */
 import { describe, it, expect } from 'vitest'
 // @ts-expect-error — plain .mjs script, no type declarations by design
-import { classify, coverage, resolvedEntries, staleAllowlistEntries } from '../../../../scripts/unconditional-policy-guard.mjs'
+import { classify, coverage, resolvedEntries, staleAllowlistEntries, GLOBAL_READ_ALLOWLIST } from '../../../../scripts/unconditional-policy-guard.mjs'
 // @ts-expect-error — plain .mjs script, no type declarations by design
 import { branchBindsCaller, callerBindingProfile, classifyPredicateText } from '../../../../scripts/lib/policy-predicate.mjs'
 
@@ -418,14 +418,62 @@ describe('caller-free OR branches (the layout vulnerability)', () => {
     expect(branchBindsCaller(helperOnly)).toBe(true)
   })
 
-  it('does not fire on a single caller-free branch, which the class system owns', () => {
-    // A reference table: one branch, no caller condition, entirely correct.
+  /**
+   * REWRITTEN 2026-11-09, and the reason matters more than the assertion.
+   *
+   * This test used to assert the opposite: that a single caller-free branch
+   * produced NO finding, on the reasoning that `(is_system = true)` is correct
+   * on a reference table and that one branch carries no internal contradiction.
+   *
+   * `model_template_collaborations` then shipped
+   *
+   *   USING (user_id IS NULL AND team_id IS NULL AND org_node_id IS NULL)
+   *
+   * as its whole predicate, TO public, with an anon SELECT grant. It was the
+   * same defect PR #276 fixed on layouts, written as one branch instead of
+   * four, and this exemption is why no detector saw it. It was found by hand.
+   *
+   * The exemption was not wrong about reference data; it was wrong about what
+   * makes a predicate safe. "One branch" is not the property. What the branch
+   * READS is. So the finding now fires on shape, and the reference-data case is
+   * carried by the allowlists, which are per-table and carry a measurement,
+   * rather than by a blanket rule that also covered the hole. See detector 4 in
+   * scripts/unconditional-policy-guard.mjs.
+   */
+  it('DOES fire on a wholly caller-free predicate, which once escaped detection', () => {
     const f = classify(inv2([{
       table: 'fixture_reference', name: 'ref_select', cmd: 'SELECT', roles: 'authenticated',
       permissive: 'PERMISSIVE', unconditional: false, qual: '(is_system = true)', with_check: null,
     }], [t('fixture_reference')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('SEV2_WHOLLY_OPEN')
+    // Not SEV1: the table carries no anon grant in this fixture. The anon grant
+    // is what made the real one a live anonymous read.
+    expect(f[0].detail).toMatch(/reads only this table/)
+  })
+
+  it('reports the wholly caller-free predicate at SEV1 once anon holds the grant', () => {
+    // The real pre-fix shape, with the grant that made it reachable.
+    const f = classify(inv2([{
+      table: 'fixture_reference', name: 'ref_select', cmd: 'SELECT', roles: 'public',
+      permissive: 'PERMISSIVE', unconditional: false,
+      qual: '((user_id IS NULL) AND (team_id IS NULL) AND (org_node_id IS NULL))', with_check: null,
+    }], [t('fixture_reference', 'SELECT')]))
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('SEV1_ANON_WHOLLY_OPEN')
+  })
+
+  it('still exempts a caller-free predicate on an allowlisted reference table', () => {
+    // The part of the old exemption that was correct: this is reference data by
+    // design, and the allowlist says so per table, with a measurement.
+    const table = Object.keys(GLOBAL_READ_ALLOWLIST)[0]
+    const f = classify(inv2([{
+      table, name: 'ref_select', cmd: 'SELECT', roles: 'authenticated',
+      permissive: 'PERMISSIVE', unconditional: false, qual: '(is_system = true)', with_check: null,
+    }], [t(table)]))
     expect(f).toEqual([])
   })
+
 
   it('does not fire on the correct pattern, where the broad OR is nested under an AND', () => {
     // `theme_contributions_v2_select`, the shape to copy: the audience OR can
@@ -437,7 +485,10 @@ describe('caller-free OR branches (the layout vulnerability)', () => {
       permissive: 'PERMISSIVE', unconditional: false, qual: nested, with_check: null,
     }], [t('fixture_nested')]))
     expect(f).toEqual([])
-    expect(callerBindingProfile(nested)).toEqual({ branches: 1, open: 0 })
+    // One branch, caller-bound, so nothing is open and nothing is open-on-self.
+    // `openSelf` was added for detector 4 (wholly caller-free predicates); it
+    // counts the subset of open branches that read only the policy's own table.
+    expect(callerBindingProfile(nested)).toEqual({ branches: 1, open: 0, openSelf: 0 })
   })
 
   it('declines to report when a RESTRICTIVE policy could be the real boundary', () => {
