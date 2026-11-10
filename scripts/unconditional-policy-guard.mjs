@@ -398,11 +398,29 @@ export const KNOWN_UNRESOLVED_OPEN_BRANCH = new Set([
   // own policy widens, but it is NOT live exposure today.
   'workflow_stakeholders',
 
-  // `(is_system = true)` / `(organization_id IS NULL)`, both TO public with an
-  // anon SELECT grant: 4 rows each, none org-owned. The branches are correct
-  // reference-data branches; the anon GRANT is the defect, and these are the
-  // only two of 189 anon-granted tables from which anon can actually read a
-  // row. Queued for the anon-grant stage, not a policy change.
+  // `(is_system = true)` SELECT, with `user_id = auth.uid()` (columns) or the
+  // org-member branch (scales) beside it.
+  //
+  // CORRECTED 2026-11-10. This entry used to read "the branches are correct
+  // reference-data branches; the anon GRANT is the defect ... not a policy
+  // change." That was wrong, and wrong in the direction that matters: it judged
+  // the branch by the rows that happened to be in it. `is_system` is a column
+  // the CLIENT could write, and no write rule constrained it, so any
+  // authenticated user could insert or update a row of their own into the
+  // caller-free branch and publish it -- to every tenant, and (via the anon
+  // grant) to no session at all. Measured: 8 of 8 attack channels succeeded.
+  // Fixed by migration 20261110000000, which adds `is_system IS NOT TRUE` to
+  // both write checks, forces rating_scales writes into `current_org_id()`,
+  // drops the redundant `organization_id IS NULL` read branch, and revokes
+  // anon entirely. See the migration header for the narrowing it accepts.
+  //
+  // STILL RATCHETED, at the lower severity the fix leaves behind: `is_system =
+  // true` remains a caller-free branch, so detector 3 still reports the shape.
+  // It is now safe for a reason this guard cannot see -- no client can get a
+  // row into it. That reason is proven by role-context test, not by reading the
+  // predicate: supabase/tests/system-flag-publication.sql, 15/15, having
+  // measured 7/15 against the pre-fix policies. The residual work is to stop
+  // deciding readership from a row's own column at all.
   'ai_column_library', 'rating_scales',
 
   // `(portfolio_id IS NULL)` SELECT — every activity event not tied to a
