@@ -657,14 +657,25 @@ async function getEffectiveAIConfig(
     supabase.from("user_ai_config").select("*").eq("user_id", userId).single(),
   ]);
 
-  // BYOK is org-scoped: each firm has at most one config, only org admins
-  // can write it, all members can use it. We resolve via the user's
-  // organization_id (already computed for attribution). The api_key is no
-  // longer SELECT-able from the table by non-admins — we go through a
-  // SECURITY DEFINER RPC that checks active membership and returns the
-  // full row including the key. This keeps the key out of any client-side
-  // network response while still letting the edge function mint provider
-  // calls on behalf of any active org member.
+  // BYOK is org-scoped: each firm has at most one config, only org admins can
+  // write it, all members can use it. The org id comes from `organizationId`,
+  // which the caller-scoped client derived from this verified user's active
+  // organization_memberships row -- never from the request body.
+  //
+  // The key is not on this table at all any more; it is in vault.secrets, and
+  // `resolve_org_ai_config` is the only thing that can read it back.
+  //
+  // That RPC does NOT check membership, and must not be described as if it
+  // did. It takes an org id and returns that org's key to whoever can execute
+  // it, which is `service_role` and nothing else -- revoked from public, anon
+  // AND authenticated. The grant IS the authorization. The predecessor,
+  // `get_org_ai_config_for_resolution`, was EXECUTE-granted to
+  // `authenticated`, which is exactly how every active member of an org could
+  // retrieve their firm's plaintext Anthropic key from the browser.
+  //
+  // So the caller check that matters happens HERE, above: authorizeVerifiedUser
+  // first, then attribution, and only then the privileged client. Changing
+  // that order reopens the hole even though the SQL is unchanged.
   let orgConfig: { byok_provider?: string | null; byok_api_key?: string | null;
                    byok_model?: string | null; byok_enabled?: boolean } | null = null;
   if (organizationId) {
