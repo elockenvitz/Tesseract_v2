@@ -156,6 +156,11 @@ if (ref === PROD_REF) {
     // shape and defers to this suite for the verdict.
     'system-flag-publication',
     'transitive-policy-boundaries',
+    // Delete paths. Here rather than tier 1 because the thing it pins is that a
+    // legitimate delete SUCCEEDS -- and "RLS on, no DELETE policy" denies
+    // everyone, so denial assertions alone read as green. Only a role-context
+    // allow assertion can tell a boundary from a dead end.
+    'trade-delete-paths',
   ]) {
     if (run('node', ['scripts/security-suite.mjs', suite, ref], { SUPABASE_ACCESS_TOKEN: mgmtToken })) failed++
   }

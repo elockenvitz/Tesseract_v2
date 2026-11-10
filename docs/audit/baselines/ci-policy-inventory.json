@@ -1,10 +1,10 @@
 {
   "schema_version": 4,
-  "captured_at": "2026-11-10T01:52:03.878Z",
+  "captured_at": "2026-11-10T02:30:48.289Z",
   "ci_minimal": true,
   "counts": {
     "tables": 295,
-    "policies": 949
+    "policies": 951
   },
   "tables": [
     {
@@ -1939,7 +1939,7 @@
       "name": "trade_batches",
       "rls": true,
       "rls_forced": false,
-      "policies": 3,
+      "policies": 4,
       "anon": "DELETE,INSERT,SELECT,UPDATE",
       "auth": "DELETE,INSERT,SELECT,UPDATE"
     },
@@ -2075,7 +2075,7 @@
       "name": "trade_sheets",
       "rls": true,
       "rls_forced": false,
-      "policies": 3,
+      "policies": 4,
       "anon": "DELETE,INSERT,SELECT,UPDATE",
       "auth": "DELETE,INSERT,SELECT,UPDATE"
     },
@@ -14307,6 +14307,22 @@
     },
     {
       "table": "trade_batches",
+      "name": "trade_batches_delete_empty_only",
+      "cmd": "DELETE",
+      "roles": "authenticated",
+      "permissive": "PERMISSIVE",
+      "unconditional": false,
+      "qual_class": "SCOPED",
+      "check_class": "EMPTY",
+      "qual_branches": 1,
+      "qual_open": 0,
+      "qual_open_self": 0,
+      "check_branches": 0,
+      "check_open": 0,
+      "check_open_self": 0
+    },
+    {
+      "table": "trade_batches",
       "name": "Trade batches: members or org admins insert",
       "cmd": "INSERT",
       "roles": "public",
@@ -15246,6 +15262,22 @@
       "qual_open": 0,
       "qual_open_self": 0,
       "check_branches": 1,
+      "check_open": 0,
+      "check_open_self": 0
+    },
+    {
+      "table": "trade_sheets",
+      "name": "trade_sheets_delete",
+      "cmd": "DELETE",
+      "roles": "authenticated",
+      "permissive": "PERMISSIVE",
+      "unconditional": false,
+      "qual_class": "UNKNOWN",
+      "check_class": "EMPTY",
+      "qual_branches": 1,
+      "qual_open": 0,
+      "qual_open_self": 0,
+      "check_branches": 0,
       "check_open": 0,
       "check_open_self": 0
     },
