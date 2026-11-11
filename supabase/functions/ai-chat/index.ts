@@ -39,6 +39,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { requirePublishableKey } from "../_shared/publishable-key.ts";
 import { requireSecretKey } from "../_shared/secret-key.ts";
 import { authorizeVerifiedUser } from "../_shared/verified-user.ts";
+import { resolveOrgForRequest } from "../_shared/attribution-org.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -2180,15 +2181,16 @@ interface Attribution {
 
 async function resolveAttribution(supabase: any, userId: string): Promise<Attribution> {
   try {
-    const [{ data: orgRow }, { data: teamRow }] = await Promise.all([
-      supabase
-        .from("organization_memberships")
-        .select("organization_id, joined_at, status")
-        .eq("user_id", userId)
-        .is("suspended_at", null)
-        .order("joined_at", { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle(),
+    // The org comes from `current_org_id()` -- the same answer Settings and
+    // `set_org_ai_api_key` use -- with the old newest-membership rule kept as
+    // a fallback inside `resolveOrgForRequest`. Reading it any other way
+    // means a user in two orgs writes the key into one and resolves from the
+    // other. See _shared/attribution-org.ts for the measured failure.
+    //
+    // `supabase` here is the CALLER-SCOPED client, which is what makes
+    // auth.uid() the verified user inside that function.
+    const [organizationId, { data: teamRow }] = await Promise.all([
+      resolveOrgForRequest(supabase, userId),
       supabase
         .from("team_memberships")
         .select("team_id, joined_at")
@@ -2199,8 +2201,8 @@ async function resolveAttribution(supabase: any, userId: string): Promise<Attrib
     ]);
 
     return {
-      organizationId: orgRow?.organization_id ?? null,
-      teamId:         teamRow?.team_id        ?? null,
+      organizationId: organizationId ?? null,
+      teamId:         teamRow?.team_id ?? null,
     };
   } catch (e) {
     // Attribution failure must not block AI requests — log and degrade.
