@@ -27,6 +27,7 @@ import {
   type TagRef, type AiSourceRef, type MessageToolCall, type MessageCitation,
 } from '../../hooks/useAI'
 import { openAsset, type AssetFocus } from '../../lib/desktop-asset'
+import { focusForSourceKind } from '../../lib/ai/source-focus'
 import { useAIConfig, AI_MODELS, AI_PROVIDERS, type AIProvider } from '../../hooks/useAIConfig'
 import { Button } from '../ui/Button'
 import { clsx } from 'clsx'
@@ -856,24 +857,10 @@ function SourceLink({ source }: { source: AiSourceRef }) {
     checklist_item: 'Requirement',
   }
 
-  // Where each kind is actually read. The asset page already has the tabs;
-  // this is a routing table, not a new surface.
-  const FOCUS_BY_KIND: Record<AiSourceRef['kind'], AssetFocus> = {
-    asset: 'overview',
-    note: 'research',
-    contribution: 'research',
-    price_target: 'overview',
-    portfolio: 'overview',
-    theme: 'overview',
-    recommendation: 'decisions',
-    decision_request: 'decisions',
-    decision_review: 'decisions',
-    outcome: 'decisions',
-    accepted_trade: 'position',
-    workflow: 'framework',
-    checklist_item: 'framework',
-  }
-  const focus: AssetFocus = FOCUS_BY_KIND[source.kind] ?? 'overview'
+  /* Where each kind is read. The routing table lives in lib/ai/source-focus
+     so a kind pointed at a focus the asset page does not land on can be
+     caught by a test rather than by a reader who clicks and goes nowhere. */
+  const focus: AssetFocus = focusForSourceKind(source.kind)
 
   const when = source.timestamp
     ? new Date(source.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
