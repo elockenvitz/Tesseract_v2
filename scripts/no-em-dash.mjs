@@ -94,7 +94,7 @@ const SRC = join(ROOT, 'src')
 // 343 -> 342: the AI setup notice, rewritten as it moved to the top of the
 // Firm section. It also lost a second button that dispatched the same
 // `openSettings` event as the first.
-const MAX_PROSE_DASHES = 342
+const MAX_PROSE_DASHES = 339
 
 /**
  * The floor on how much this scan must actually look at.

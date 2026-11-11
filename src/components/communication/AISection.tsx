@@ -4,34 +4,29 @@ import type { EngagementTarget } from '../../lib/engagement'
 import {
   Bot,
   Send,
-  X,
   Settings,
   Loader2,
-  AlertCircle,
   Sparkles,
-  MessageSquare,
-  Trash2,
-  Info,
   ChevronDown,
-  Copy,
-  Check,
   PanelLeftOpen,
   PanelLeftClose,
   ArrowLeft,
-  BookOpen,
-  ChevronRight,
-  Search
 } from 'lucide-react'
-import {
-  useAI, useAISuggestions,
-  type TagRef, type AiSourceRef, type MessageToolCall, type MessageCitation,
-} from '../../hooks/useAI'
-import { openAsset, type AssetFocus } from '../../lib/desktop-asset'
-import { focusForSourceKind } from '../../lib/ai/source-focus'
+import { useAI, useAISuggestions, type TagRef } from '../../hooks/useAI'
 import { useAIConfig, AI_MODELS, AI_PROVIDERS, type AIProvider } from '../../hooks/useAIConfig'
 import { Button } from '../ui/Button'
 import { clsx } from 'clsx'
-import { AIMessageContent } from './AIMessageContent'
+/*
+ * The presentation layer, shared with the contextual asset briefing.
+ *
+ * The message bubble, the research trail, the citations footer and the three
+ * non-answer states used to be module-local functions in this file. They are
+ * in `components/ai` now for one reason: a second surface has to say the same
+ * things in the same words, and a copied research trail is how "the lookup
+ * failed" starts rendering as "no records found" on one surface and not the
+ * other.
+ */
+import { AiMessage, AiThinking, AiErrorNotice, AiPrompts } from '../ai'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
@@ -291,14 +286,35 @@ export function AISection({
     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
   }
 
+  /*
+   * What was last sent, so a failed turn can be sent again.
+   *
+   * The hook POPS the message that failed, so after an error the text is gone
+   * from the thread as well as from the composer: the reader's only move was
+   * to retype what they had just typed. A ref rather than state because it is
+   * never rendered and must not re-render the pane on every send.
+   */
+  const lastSentRef = useRef<string | null>(null)
+
+  const send = (text: string) => {
+    lastSentRef.current = text
+    sendMessage(text)
+  }
+
   const handleSend = () => {
     if (!input.trim() || isLoading) return
-    sendMessage(input.trim())
+    send(input.trim())
     setInput('')
     if (inputRef.current) {
       inputRef.current.style.height = 'auto'
     }
   }
+
+  /* Offered only while we still hold the exact text. A Retry that sends
+     something else, or nothing, would be worse than no Retry. */
+  const retryLastSend = lastSentRef.current && !isLoading
+    ? () => send(lastSentRef.current as string)
+    : undefined
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -317,7 +333,22 @@ export function AISection({
   }
 
   const handleSuggestionClick = (suggestion: string) => {
-    sendMessage(suggestion)
+    send(suggestion)
+  }
+
+  /*
+   * The model's display name, from the catalogue.
+   *
+   * Falls back to the raw id for a model logged before the catalogue knew
+   * about it — a stale label is worse than an honest identifier.
+   */
+  const modelLabelFor = (model?: string | null): string | null => {
+    if (!model) return null
+    for (const list of Object.values(AI_MODELS)) {
+      const found = list.find(m => m.id === model)
+      if (found) return found.name
+    }
+    return model
   }
 
   // Not configured state
@@ -500,52 +531,29 @@ export function AISection({
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-primary-100 to-purple-100 dark:from-primary-900/30 dark:to-purple-900/30 rounded-full flex items-center justify-center mb-3">
-              <Sparkles className="h-5 w-5 text-primary-500" />
-            </div>
-            {/* If the prior message failed and got popped, show the error
-                here so the user knows what happened — otherwise it just
-                looks like nothing happened. */}
-            {error && (
-              <div className="w-full max-w-sm mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-left">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
-                  <div className="text-sm text-red-700 dark:text-red-300">
-                    <div className="font-medium">Couldn't get a response</div>
-                    <div className="text-[11px] mt-0.5 opacity-80">
-                      {error.message || 'Try again, or rephrase your question.'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-            {/* No header text — the suggestions themselves convey what
-                this conversation can be about. Keeps the surface clean. */}
-            <div className="space-y-2 w-full max-w-sm">
-              {suggestions.map((suggestion, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleSuggestionClick(suggestion)}
-                  // Fixed height + 2-line clamp keeps every prompt button
-                  // the same size whether the text is short ("Key risks?")
-                  // or long ("Compare AAPL vs MSFT…"). Stops the layout
-                  // jumping around when switching between asset tabs.
-                  className="w-full h-[56px] flex items-center text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
-                  title={suggestion}
-                >
-                  <span className="line-clamp-2 leading-tight">{suggestion}</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          /* An empty thread. The prompts carry the explanation; if the prior
+             message failed and got popped, the error rides above them so it
+             does not just look as though nothing happened. */
+          <AiPrompts
+            suggestions={suggestions}
+            onPick={handleSuggestionClick}
+            header={<AiErrorNotice error={error} onRetry={retryLastSend} />}
+          />
         ) : (
           <>
             {messages.map((message) => (
-              <AIMessageBubble
+              <AiMessage
                 key={message.id}
                 message={message}
+                modelLabel={modelLabelFor(message.model)}
                 onTickerClick={handleTickerClick}
+                /* Structured recommendations arrive already validated against
+                   the action catalogue and against this conversation's own
+                   context. The pane never reads the prose to find them, and
+                   the presentation layer never renders an action of its own. */
+                footer={message.actions && message.actions.length > 0
+                  ? <AISuggestedActions actions={message.actions} />
+                  : null}
               />
             ))}
 
@@ -555,37 +563,13 @@ export function AISection({
                 says nothing the reader cannot already see. The label is a
                 grounded activity from the stream, never model text. */}
             {isLoading && !messages.some(m => m.streaming && m.content) && (
-              <div className="flex justify-start">
-                <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-4 py-3">
-                  <div className="flex items-center space-x-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-primary-500" />
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                      {status ?? 'Working…'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={cancelGeneration}
-                      className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400
-                                 dark:hover:text-gray-200 underline underline-offset-2"
-                    >
-                      Stop
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <AiThinking status={status} onStop={cancelGeneration} />
             )}
 
             {/* Error message */}
             {error && (
               <div className="flex justify-center">
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-4 py-3 max-w-[85%]">
-                  <div className="flex items-center space-x-2">
-                    <AlertCircle className="h-4 w-4 text-red-500" />
-                    <span className="text-sm text-red-700 dark:text-red-300">
-                      {error.message || 'Something went wrong. Please try again.'}
-                    </span>
-                  </div>
-                </div>
+                <AiErrorNotice error={error} onRetry={retryLastSend} className="max-w-[85%]" />
               </div>
             )}
 
@@ -713,388 +697,3 @@ export function AISection({
   )
 }
 
-// ─── Research trail (tool calls) ───────────────────────────────────────────
-// Shows what the AI looked up while answering — collapsed by default so
-// it doesn't clutter the bubble. Each tool call shows a friendly label
-// + the input it used.
-function ToolCallsFooter({
-  toolCalls,
-}: {
-  toolCalls: MessageToolCall[]
-}) {
-  const [open, setOpen] = useState(false)
-
-  const friendlyLabel = (name: string, input: Record<string, unknown>): string => {
-    if (name === 'get_asset')         return `Looked up ${String(input.symbol || '').toUpperCase()}`
-    if (name === 'search_assets')     return `Searched assets for "${String(input.query || '')}"`
-    if (name === 'get_portfolio')     return `Pulled portfolio: ${String(input.name_or_id || '')}`
-    if (name === 'get_theme')         return `Pulled theme: ${String(input.name_or_id || '')}`
-    if (name === 'search_team_notes') return `Searched notes for "${String(input.query || '')}"`
-    if (name === 'get_decisions')     return `Checked the decision record for ${String(input.symbol || '').toUpperCase()}`
-    if (name === 'get_workflows')     return `Checked open work on ${String(input.symbol || '').toUpperCase()}`
-    return name
-  }
-
-  /*
-   * One sentence per lookup, and the three statuses must read differently.
-   *
-   * This used to print `result_summary` -- the tool's raw JSON cut to 160
-   * characters -- so a search that found nothing showed the user the literal
-   * text `{"results":[]}`, and a search that FAILED showed something equally
-   * cryptic that looked identical in spirit. The whole point of the status
-   * field is that "we looked and found none" and "we could not look" are not
-   * the same thing and must never render the same way.
-   */
-  const outcome = (tc: MessageToolCall): { text: string; tone: string } => {
-    const n = tc.result_count ?? tc.sources?.length ?? 0
-    if (tc.status === 'error') {
-      return {
-        text: 'This lookup failed, so the answer may be incomplete.',
-        tone: 'text-red-600 dark:text-red-400',
-      }
-    }
-    if (tc.status === 'empty') {
-      return {
-        text: tc.searched ? `No matches for ${tc.searched}.` : 'No matching records.',
-        tone: 'text-amber-700 dark:text-amber-500',
-      }
-    }
-    if (tc.status === 'ok') {
-      return {
-        text: n > 0
-          ? `${n} ${n === 1 ? 'record' : 'records'} found.`
-          : 'Found, with nothing linked to it.',
-        tone: 'text-gray-500 dark:text-gray-400',
-      }
-    }
-    // A message produced before statuses existed. Say nothing rather than
-    // invent an outcome for it.
-    return { text: '', tone: '' }
-  }
-
-  const borderFor = (status?: string) =>
-    status === 'error' ? 'border-red-300 dark:border-red-700'
-      : status === 'empty' ? 'border-amber-300 dark:border-amber-700'
-      : 'border-emerald-300 dark:border-emerald-700'
-
-  const anyFailed = toolCalls.some(tc => tc.status === 'error')
-
-  return (
-    <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700/60">
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[11px] font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
-        title={open ? 'Hide research' : 'Show research'}
-      >
-        <Search className="w-3 h-3" />
-        Research ({toolCalls.length})
-        {anyFailed && (
-          <span className="text-red-600 dark:text-red-400" title="A lookup failed">
-            <AlertCircle className="w-3 h-3" />
-          </span>
-        )}
-        <ChevronRight className={clsx('w-3 h-3 transition-transform', open && 'rotate-90')} />
-      </button>
-      {open && (
-        <ul className="mt-1.5 space-y-1.5">
-          {toolCalls.map((tc, i) => {
-            const o = outcome(tc)
-            return (
-              <li
-                key={i}
-                className={clsx(
-                  'text-[11px] text-gray-700 dark:text-gray-300 pl-1.5 border-l-2',
-                  borderFor(tc.status),
-                )}
-              >
-                <div className="font-medium">{friendlyLabel(tc.name, tc.input)}</div>
-                {o.text && <div className={o.tone}>{o.text}</div>}
-                {tc.sources && tc.sources.length > 0 && (
-                  <ul className="mt-0.5 space-y-0.5">
-                    {tc.sources.map(s => (
-                      <li key={`${s.kind}:${s.id}`}>
-                        <SourceLink source={s} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-/**
- * One consulted record, as a link where we can open it.
- *
- * Uses the shell's existing `openAsset` channel rather than a new route: the
- * asset page is where notes, contributions and price targets are read, and
- * `focus` already accepts 'research' for the note and thesis surfaces. A
- * source we cannot open renders as plain text, not a dead link.
- */
-function SourceLink({ source }: { source: AiSourceRef }) {
-  const openable = Boolean(source.asset_id)
-
-  const kindLabel: Record<AiSourceRef['kind'], string> = {
-    asset: 'Asset',
-    note: 'Note',
-    contribution: 'Thesis',
-    price_target: 'Target',
-    portfolio: 'Portfolio',
-    theme: 'Theme',
-    // Four separate words for four separate records. Calling them all
-    // "Decision" would undo in the label exactly what the tool keeps apart.
-    recommendation: 'Recommendation',
-    decision_request: 'PM ruling',
-    accepted_trade: 'Committed trade',
-    decision_review: 'Review',
-    outcome: 'Outcome',
-    workflow: 'Process',
-    checklist_item: 'Requirement',
-  }
-
-  /* Where each kind is read. The routing table lives in lib/ai/source-focus
-     so a kind pointed at a focus the asset page does not land on can be
-     caught by a test rather than by a reader who clicks and goes nowhere. */
-  const focus: AssetFocus = focusForSourceKind(source.kind)
-
-  const when = source.timestamp
-    ? new Date(source.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-    : null
-
-  const body = (
-    <>
-      <span className="inline-block px-1 mr-1 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-[10px] uppercase tracking-wide">
-        {kindLabel[source.kind]}
-      </span>
-      <span className="font-medium">{source.title}</span>
-      {when && <span className="text-gray-400 dark:text-gray-500 ml-1">{when}</span>}
-    </>
-  )
-
-  if (!openable) {
-    return <span className="text-gray-500 dark:text-gray-400">{body}</span>
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        // No focusRequestId here: assetTabFor stamps one per call, which is
-        // what lets the receiver tell a new intent from a remounted tab.
-        openAsset({
-          assetId: source.asset_id as string,
-          symbol: source.symbol ?? null,
-          focus,
-          origin: 'ai-research-trail',
-        })
-      }}
-      className="text-left text-primary-600 dark:text-primary-400 hover:underline"
-      title={`Open ${source.title}`}
-    >
-      {body}
-    </button>
-  )
-}
-
-// ─── Citations footer ──────────────────────────────────────────────────────
-// Shown beneath an assistant message that included Anthropic citations.
-// Groups citations by document and shows the verbatim snippets the model
-// drew from. Collapsed by default to keep messages compact.
-function CitationsFooter({
-  citations,
-}: {
-  citations: MessageCitation[]
-}) {
-  const [open, setOpen] = useState(false)
-
-  /*
-   * Group snippets by document, keeping the document's provenance.
-   *
-   * Keyed by id where there is one, falling back to the title, because two
-   * notes can share a title and must not merge into one source. The ref is
-   * kept alongside the snippets so a quoted document can be opened, not just
-   * read.
-   */
-  const grouped = useMemo(() => {
-    const m = new Map<string, { ref: AiSourceRef | null; title: string; snippets: string[] }>()
-    for (const c of citations) {
-      const key = c.document_id || c.document_title
-      const entry = m.get(key) || {
-        title: c.document_title,
-        ref: c.document_id && c.kind
-          ? {
-              kind: c.kind, id: c.document_id, asset_id: c.asset_id ?? null,
-              symbol: c.symbol ?? null, title: c.document_title, timestamp: c.timestamp ?? null,
-            }
-          : null,
-        snippets: [] as string[],
-      }
-      entry.snippets.push(c.cited_text)
-      m.set(key, entry)
-    }
-    return [...m.values()]
-  }, [citations])
-
-  return (
-    <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700/60">
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[11px] font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
-        // "Quoted" not "sources": these are the documents the model quoted for
-        // a specific claim, which is a stronger statement than the Research
-        // trail's "consulted" and must not be conflated with it.
-        title={open ? 'Hide quoted sources' : 'Show quoted sources'}
-      >
-        <BookOpen className="w-3 h-3" />
-        {grouped.length} quoted source{grouped.length === 1 ? '' : 's'}
-        <ChevronRight className={clsx('w-3 h-3 transition-transform', open && 'rotate-90')} />
-      </button>
-      {open && (
-        <ul className="mt-1.5 space-y-1.5">
-          {grouped.map((g, gi) => (
-            <li key={g.ref?.id ?? `${g.title}-${gi}`} className="text-[11px]">
-              {g.ref
-                ? <SourceLink source={g.ref} />
-                : <span className="font-semibold text-gray-700 dark:text-gray-300">{g.title}</span>}
-              <ul className="ml-3 space-y-0.5 mt-0.5">
-                {g.snippets.map((s, i) => (
-                  <li key={i} className="text-gray-600 dark:text-gray-400 italic border-l-2 border-gray-300 dark:border-gray-600 pl-2">
-                    "{s.length > 200 ? s.slice(0, 200) + '…' : s}"
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-// ─── Message bubble with copy + clickable $TICKERs + model badge ───────────
-function AIMessageBubble({
-  message,
-  onTickerClick,
-}: {
-  message: {
-    id: string
-    role: 'user' | 'assistant'
-    content: string
-    timestamp: Date
-    model?: string | null
-    citations?: MessageCitation[]
-    tool_calls?: MessageToolCall[]
-    actions?: AiAction[]
-    streaming?: boolean
-    truncated?: boolean
-  }
-  onTickerClick: (symbol: string) => void
-}) {
-  const [copied, setCopied] = useState(false)
-  const isAssistant = message.role === 'assistant'
-
-  const handleCopyMessage = async () => {
-    try {
-      await navigator.clipboard.writeText(message.content)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1200)
-    } catch {
-      // ignore clipboard errors (iframe / permission)
-    }
-  }
-
-  // Look up the model's display name from the AI_MODELS catalog. Falls
-  // back to the raw id if the model isn't in the catalog (e.g., legacy
-  // model logged before the catalog was updated).
-  const modelLabel = (() => {
-    if (!message.model) return null
-    for (const list of Object.values(AI_MODELS)) {
-      const found = list.find(m => m.id === message.model)
-      if (found) return found.name
-    }
-    return message.model
-  })()
-
-  return (
-    <div className={clsx('flex group', isAssistant ? 'justify-start' : 'justify-end')}>
-      <div
-        className={clsx(
-          'relative max-w-[85%] rounded-lg px-4 py-3',
-          isAssistant
-            ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
-            : 'bg-primary-600 text-white'
-        )}
-      >
-        {isAssistant ? (
-          <AIMessageContent content={message.content} onTickerClick={onTickerClick} />
-        ) : (
-          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-        )}
-
-        {/* Research trail — tool calls the model made while answering.
-            Shows the user "what did the AI go look up to give me this?". */}
-        {isAssistant && message.tool_calls && message.tool_calls.length > 0 && (
-          <ToolCallsFooter toolCalls={message.tool_calls} />
-        )}
-
-        {/* Sources footer — only assistant messages with citations.
-            Shows which context documents the model drew from, with the
-            specific text it cited. Group by document so the same doc
-            cited 4 times collapses into one entry with multiple snippets. */}
-        {isAssistant && message.citations && message.citations.length > 0 && (
-          <CitationsFooter citations={message.citations} />
-        )}
-
-        {/* Structured recommendations. These arrive already validated
-            against the action catalogue and against this conversation's own
-            context — the pane never reads the prose to find them. */}
-        {isAssistant && message.actions && message.actions.length > 0 && (
-          <AISuggestedActions actions={message.actions} />
-        )}
-
-        <div className="flex items-center justify-between gap-2 mt-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <p
-              className={clsx(
-                'text-[11px] shrink-0',
-                isAssistant ? 'text-gray-500 dark:text-gray-400' : 'text-primary-200'
-              )}
-            >
-              {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </p>
-            {isAssistant && modelLabel && (
-              <span
-                className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 truncate"
-                title={message.model || undefined}
-              >
-                {modelLabel}
-              </span>
-            )}
-          </div>
-          {isAssistant && (
-            <button
-              type="button"
-              onClick={handleCopyMessage}
-              className={clsx(
-                'inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded shrink-0',
-                'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200',
-                'hover:bg-gray-200 dark:hover:bg-gray-700',
-                'opacity-0 group-hover:opacity-100 transition-opacity'
-              )}
-              title="Copy response"
-            >
-              {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
