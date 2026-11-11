@@ -281,7 +281,7 @@ const MAX_ERRORS = 0
 // `useAIConfig.ts`, because `rpc()` in this repo resolves `Fn['Args']` to
 // `never` for every declared function -- a pre-existing defect that roughly
 // thirty call sites already pay for inside this ceiling.
-const MAX_REPO_ERRORS = 8581
+const MAX_REPO_ERRORS = 8579
 
 /**
  * A floor on real source files, now that they are counted as source files.

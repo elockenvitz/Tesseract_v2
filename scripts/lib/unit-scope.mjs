@@ -250,6 +250,19 @@ export const GATED_DIRS = [
    */
   'src/components/asset/__tests__',
   /*
+   * The AI presentation layer: the prose renderer, the research trail, the
+   * message shell and the three non-answer states.
+   *
+   * Gated because every failure mode here is a false claim about evidence. A
+   * failed lookup that renders like an empty one tells a reader the firm holds
+   * no research on a name when the query fell over. A level toned as a change
+   * asserts a direction the model never stated. A truncated answer with no
+   * marker reads as a complete one. None of those crash, and all three are
+   * claims about the firm's own record, which is the same reason
+   * `src/components/asset/__tests__` is gated above.
+   */
+  'src/components/ai/__tests__',
+  /*
    * The Research layout surfaces: Supporting Research, the layout status
    * chip and the section controls inside arrange mode.
    *

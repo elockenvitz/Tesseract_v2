@@ -1,0 +1,137 @@
+/**
+ * One turn in a conversation, or one briefing.
+ *
+ * ── Why the model name arrives as a prop ─────────────────────────────────
+ *
+ * The bubble used to look the display name up in `AI_MODELS`, which lives in
+ * `useAIConfig` — a module that builds a Supabase client on import. A
+ * presentation component that cannot be rendered without auth cannot be
+ * tested, and that is the reason this and the trail spent their lives inside
+ * `AISection.tsx`. The caller resolves the label; this renders it.
+ *
+ * `footer` is the same idea for suggested actions: those arrive pre-validated
+ * against the action catalogue and the conversation's own context, and the
+ * component that renders them belongs to the chat, not to the presentation
+ * layer. A briefing passes nothing and gets no actions, which is correct.
+ */
+import { useState } from 'react'
+import type { ReactNode } from 'react'
+import { Check, Copy } from 'lucide-react'
+import { clsx } from 'clsx'
+import { AiProse } from './AiProse'
+import { ResearchTrail } from './ResearchTrail'
+import { Citations } from './Citations'
+import type { AiRenderableMessage, AiSourceRef } from '../../lib/ai/presentation'
+
+interface AiMessageProps {
+  message: AiRenderableMessage
+  /** Display name for `message.model`, resolved by the caller. */
+  modelLabel?: string | null
+  onTickerClick?: (symbol: string) => void
+  onOpenSource?: (source: AiSourceRef) => void
+  /** Suggested actions, or anything else the chat wants under the body. */
+  footer?: ReactNode
+  /** A briefing opens its evidence; a chat reply folds it away. */
+  evidenceOpen?: boolean
+}
+
+export function AiMessage({
+  message, modelLabel, onTickerClick, onOpenSource, footer, evidenceOpen = false,
+}: AiMessageProps) {
+  const [copied, setCopied] = useState(false)
+  const isAssistant = message.role === 'assistant'
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch {
+      /* The clipboard can be refused. Never claim a copy that did not happen. */
+    }
+  }
+
+  return (
+    <div className={clsx('flex group', isAssistant ? 'justify-start' : 'justify-end')}>
+      <div
+        className={clsx(
+          'relative max-w-[85%] rounded-lg px-4 py-3',
+          isAssistant
+            ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
+            : 'bg-primary-600 text-white',
+        )}
+      >
+        {isAssistant ? (
+          <AiProse content={message.content} onTickerClick={onTickerClick} />
+        ) : (
+          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+        )}
+
+        {isAssistant && message.tool_calls && message.tool_calls.length > 0 && (
+          <ResearchTrail
+            toolCalls={message.tool_calls}
+            defaultOpen={evidenceOpen}
+            onOpenSource={onOpenSource}
+          />
+        )}
+
+        {isAssistant && message.citations && message.citations.length > 0 && (
+          <Citations
+            citations={message.citations}
+            defaultOpen={evidenceOpen}
+            onOpenSource={onOpenSource}
+          />
+        )}
+
+        {isAssistant && footer}
+
+        <div className="flex items-center justify-between gap-2 mt-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <p
+              className={clsx(
+                'text-[11px] shrink-0 tabular-nums',
+                isAssistant ? 'text-gray-500 dark:text-gray-400' : 'text-primary-200',
+              )}
+            >
+              {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+            {isAssistant && modelLabel && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded bg-gray-200 dark:bg-gray-700
+                           text-gray-600 dark:text-gray-300 truncate"
+                title={message.model || undefined}
+              >
+                {modelLabel}
+              </span>
+            )}
+            {isAssistant && message.truncated && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30
+                           text-amber-800 dark:text-amber-300 shrink-0"
+                title="The connection ended before the answer finished."
+              >
+                Incomplete
+              </span>
+            )}
+          </div>
+          {isAssistant && !message.streaming && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className={clsx(
+                'inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded shrink-0',
+                'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200',
+                'hover:bg-gray-200 dark:hover:bg-gray-700',
+                'opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity',
+              )}
+              title="Copy response"
+            >
+              {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
