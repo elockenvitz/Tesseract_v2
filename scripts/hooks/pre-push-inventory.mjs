@@ -154,6 +154,27 @@ const commit = `
 `
 
 if (!contentChangedBeyondTimestamp()) {
+  /*
+   * A migration triggered the recapture, the capture turned out to be accurate,
+   * and it is not close to expiring. There is nothing to commit.
+   *
+   * Blocking here was a deadlock. A push carrying a migration recaptures every
+   * attempt; a recapture always rewrites `captured_at`; so the tree was dirty
+   * again the instant the previous timestamp was committed, and the next push
+   * blocked on the next timestamp. Observed live on 2026-11-11: two commits of
+   * nothing but `captured_at`, 33 seconds apart, and the push still refused.
+   *
+   * The migration trigger exists to CHECK whether production moved, not to
+   * force a timestamp bump. The check just passed, so restore the committed
+   * file and let the push through. The staleness trigger below still blocks,
+   * because there the new timestamp is the whole point.
+   */
+  if (migrations && !stale) {
+    git('checkout', '--', INVENTORY)
+    console.error('[inventory] migration pushed; production policies are unchanged and the capture is current. Pushing.\n')
+    process.exit(EXIT.OK)
+  }
+
   console.error(`
 [inventory] PUSH BLOCKED -- the capture was still accurate, but about to expire.
 
