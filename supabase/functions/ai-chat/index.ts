@@ -40,6 +40,18 @@ import { requirePublishableKey } from "../_shared/publishable-key.ts";
 import { requireSecretKey } from "../_shared/secret-key.ts";
 import { authorizeVerifiedUser } from "../_shared/verified-user.ts";
 import { resolveOrgForRequest } from "../_shared/attribution-org.ts";
+import {
+  type ToolStatus,
+  type ToolSourceRef,
+  SECTION_LABELS,
+  runQuery,
+  toolOk,
+  toolEmpty,
+  toolError,
+  buildNoteSearchTerms,
+  escapeLike,
+  summarizeToolResult,
+} from "../_shared/research-results.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1012,7 +1024,14 @@ Research tools:
 - Don't call tools for objects you already have rich context on (the user's currently-tagged objects are already provided as documents).
 - Prefer specific lookups (get_asset, get_portfolio) over broad searches when you know the name. Cap yourself to the minimum set of tool calls needed.
 - Every tool call costs the reader several seconds. Call none when the context already answers the question.
-- After calling tools, weave the findings into a single coherent answer rather than dumping raw tool output.`;
+- After calling tools, weave the findings into a single coherent answer rather than dumping raw tool output.
+
+Every tool result carries a "status". Honour it exactly:
+- status "ok" — records were returned. You may cite them. Refer only to records actually present in the result.
+- status "empty" — the search RAN and matched nothing. Say that no MATCHING records were found, and say what was searched (the result's "searched" field tells you). Never widen this into "the firm has no research on X" or "nothing has been written" — you only know that this query matched nothing.
+- status "error" — the search DID NOT RUN. You do not know whether records exist. Say the lookup failed and that the answer is therefore incomplete. NEVER report an error as an absence of records, and never silently omit it.
+
+Never state or imply that you have reviewed everything available. You have seen only what these results contain. If a question needs a record type you have no tool for (decisions, workflows, meeting notes), say so plainly rather than answering from the records you do have.`;
 
   if (!opts.structured) return base;
   return `${base}\n\n${buildActionDirective(opts.maxActions, opts.maxEvidence, opts.allowDeep)}`;
@@ -1100,7 +1119,7 @@ async function buildContextDocuments(
     aiConfig.includeThesis
       ? supabase
           .from("asset_contributions")
-          .select("section, content, supporting_detail")
+          .select("id, section, content, supporting_detail, updated_at, created_at")
           .eq("asset_id", context.id)
           .eq("is_archived", false)
           .in("section", ["thesis", "business_model", "where_different", "risks_to_thesis", "key_catalysts"])
@@ -1116,7 +1135,7 @@ async function buildContextDocuments(
     aiConfig.includeNotes
       ? supabase
           .from("asset_notes")
-          .select("title, content, created_at, created_by, is_shared")
+          .select("id, title, content, created_at, updated_at, created_by, is_shared")
           .eq("asset_id", context.id)
           .eq("is_deleted", false)
           .or(`created_by.eq.${userId},is_shared.eq.true`)
@@ -1133,28 +1152,28 @@ async function buildContextDocuments(
       `Asset: ${asset.symbol} - ${asset.company_name || ""}\n` +
       `Sector: ${asset.sector || "N/A"}\n` +
       `Industry: ${asset.industry || "N/A"}`;
-    docs.push({ title: `${symbol} overview`, text: overview });
+    docs.push({
+      title: `${symbol} overview`, text: overview,
+      kind: "asset", id: context.id, asset_id: context.id, symbol: asset.symbol,
+    });
   }
 
   if (aiConfig.includeThesis) {
-    const labelMap: Record<string, string> = {
-      thesis:           "Thesis",
-      business_model:   "Business model",
-      where_different:  "Where differentiated",
-      key_catalysts:    "Key catalysts",
-      risks_to_thesis:  "Risks to thesis",
-    };
     const bySection = new Map<string, any>();
     for (const c of (contributions || [])) {
       if (!bySection.has(c.section)) bySection.set(c.section, c);
     }
-    for (const [sec, label] of Object.entries(labelMap)) {
+    for (const [sec, label] of Object.entries(SECTION_LABELS)) {
       const c = bySection.get(sec);
       if (!c?.content) continue;
       const text = c.supporting_detail
         ? `${truncate(c.content, MAX_THESIS_CHARS)}\n\n${truncate(c.supporting_detail, 600)}`
         : truncate(c.content, MAX_THESIS_CHARS);
-      docs.push({ title: `${symbol} — ${label}`, text });
+      docs.push({
+        title: `${symbol} · ${label}`, text,
+        kind: "contribution", id: c.id, asset_id: context.id, symbol: asset?.symbol ?? null,
+        timestamp: c.updated_at ?? c.created_at ?? null,
+      });
     }
   }
 
@@ -1165,7 +1184,13 @@ async function buildContextDocuments(
         (t.timeframe ? ` (${t.timeframe})` : "") +
         (t.reasoning ? ` — ${truncate(t.reasoning, 200)}` : "")
       ).join("\n");
-      docs.push({ title: `${symbol} — Price targets`, text: lines });
+      // One document for the set: a price target is a few numbers, and the
+      // reader opens the asset's targets view, not an individual row.
+      docs.push({
+        title: `${symbol} · Price targets`, text: lines,
+        kind: "price_target", id: context.id, asset_id: context.id,
+        symbol: asset?.symbol ?? null,
+      });
     }
   }
 
@@ -1181,7 +1206,11 @@ async function buildContextDocuments(
         const title = n.title
           ? `${symbol} note: ${n.title} (${date})`
           : `${symbol} note (${date}, by ${owner})`;
-        docs.push({ title, text: truncate(body, MAX_NOTE_CHARS * 4) });
+        docs.push({
+          title, text: truncate(body, MAX_NOTE_CHARS * 4),
+          kind: "note", id: n.id, asset_id: context.id, symbol: asset?.symbol ?? null,
+          timestamp: n.updated_at ?? n.created_at ?? null,
+        });
       }
     }
   }
@@ -1385,12 +1414,27 @@ async function buildContextPrompt(
 interface MessageCitation {
   document_title: string;
   cited_text:     string;
+  /** Provenance copied from the cited document, so the UI can link to it. */
+  kind?:       ToolSourceRef["kind"];
+  document_id?: string;
+  asset_id?:   string | null;
+  symbol?:     string | null;
+  timestamp?:  string | null;
 }
 
 interface ToolCall {
   name:   string;
   input:  Record<string, unknown>;
-  result_summary?: string;  // short human-readable preview
+  /**
+   * Was this a hit, a genuine miss, or a search that never ran? The browser
+   * renders three different sentences and must not guess between them.
+   */
+  status?: ToolStatus;
+  /** What was looked at, in words, for the "no matches" case. */
+  searched?: string;
+  result_count?: number;
+  /** The records consulted, with ids so the panel can link to them. */
+  sources?: ToolSourceRef[];
 }
 
 interface CallResult {
@@ -1404,6 +1448,18 @@ interface CallResult {
 interface SourceDocument {
   title: string;
   text:  string;
+  /*
+   * Provenance, so a citation can be opened rather than only read.
+   *
+   * These documents are what Anthropic's citation feature cites, and a
+   * citation carried only a title -- enough to print, not enough to navigate
+   * to. The id travels with the document and back out through the citation.
+   */
+  kind?: ToolSourceRef["kind"];
+  id?: string;
+  asset_id?: string | null;
+  symbol?: string | null;
+  timestamp?: string | null;
 }
 
 // ─── Research tools (Anthropic tool use) ─────────────────────────────────
@@ -1485,6 +1541,14 @@ const RESEARCH_TOOLS = [
   },
 ] as const;
 
+/*
+ * The result contract -- three outcomes, never two -- lives in
+ * `_shared/research-results.ts`, with the reasoning for why a failed query
+ * must never render as an empty one. It is kept out of this file so the unit
+ * suite can drive it: the property that matters here is behavioural, and the
+ * old shape passed every static check while telling users the firm had no
+ * research.
+ */
 async function executeResearchTool(
   supabase: any,
   userId: string,
@@ -1494,30 +1558,58 @@ async function executeResearchTool(
   try {
     if (name === "get_asset") {
       const sym = String(input.symbol || "").trim().toUpperCase();
-      if (!sym) return JSON.stringify({ error: "symbol is required" });
+      if (!sym) return toolError("get_asset", "missing_symbol");
 
-      const { data: asset } = await supabase
-        .from("assets").select("id, symbol, company_name, sector, industry, current_price, market_cap")
-        .ilike("symbol", sym).maybeSingle();
-      if (!asset) return JSON.stringify({ error: `No asset found for ${sym}` });
+      const found = await runQuery<any>("get_asset", "asset",
+        supabase
+          .from("assets").select("id, symbol, company_name, sector, industry, current_price, market_cap")
+          .ilike("symbol", sym).maybeSingle());
+      if (found.failed) return toolError("get_asset", "asset");
+      const asset = found.data;
+      if (!asset) return toolEmpty("get_asset", { symbol: sym, looked_in: "assets" });
 
       const [contribs, targets, notes] = await Promise.all([
-        supabase.from("asset_contributions").select("section, content")
-          .eq("asset_id", asset.id).eq("is_archived", false)
-          .in("section", ["thesis", "business_model", "where_different", "risks_to_thesis", "key_catalysts"]),
-        supabase.from("price_targets").select("type, price, timeframe, reasoning")
-          .eq("asset_id", asset.id).limit(5),
-        supabase.from("asset_notes").select("title, content, created_at")
-          .eq("asset_id", asset.id).eq("is_deleted", false)
-          .or(`created_by.eq.${userId},is_shared.eq.true`)
-          .order("created_at", { ascending: false }).limit(5),
+        runQuery<any[]>("get_asset", "contributions",
+          supabase.from("asset_contributions").select("id, section, content, updated_at, created_at")
+            .eq("asset_id", asset.id).eq("is_archived", false)
+            .in("section", ["thesis", "business_model", "where_different", "risks_to_thesis", "key_catalysts"])),
+        runQuery<any[]>("get_asset", "price_targets",
+          supabase.from("price_targets").select("id, type, price, timeframe, reasoning, created_at")
+            .eq("asset_id", asset.id).limit(5)),
+        // `content_excerpt` is a COMPUTED COLUMN (migration 20261111090000):
+        // Postgres truncates, we receive the excerpt. PostgREST does not allow
+        // an expression in `select`, and selecting `content` pulled a
+        // 2,020,708-character note on every AAPL lookup to print 400 of it.
+        // A computed column is evaluated per returned row, so it sees exactly
+        // the rows RLS already allowed -- it widens nothing.
+        runQuery<any[]>("get_asset", "notes",
+          supabase.from("asset_notes")
+            .select("id, title, created_at, updated_at, is_shared, content_excerpt")
+            .eq("asset_id", asset.id).eq("is_deleted", false)
+            .or(`created_by.eq.${userId},is_shared.eq.true`)
+            .order("created_at", { ascending: false }).limit(5)),
       ]);
 
-      const sections: Record<string, string> = {};
+      // Any failed stage makes the whole answer untrustworthy. Naming the
+      // stage beats returning three quarters of an answer as if it were whole.
+      const badStage = contribs.failed ? "contributions"
+        : targets.failed ? "price_targets"
+        : notes.failed ? "notes"
+        : null;
+      if (badStage) return toolError("get_asset", badStage);
+
+      const sections: Record<string, { id: string; text: string; updated_at: string | null }> = {};
       for (const c of (contribs.data || [])) {
-        if (!sections[c.section]) sections[c.section] = truncate(c.content, 1500);
+        if (!sections[c.section]) {
+          sections[c.section] = {
+            id: c.id,
+            text: truncate(c.content, 1500),
+            updated_at: c.updated_at ?? c.created_at ?? null,
+          };
+        }
       }
-      return JSON.stringify({
+      return toolOk("get_asset", {
+        asset_id: asset.id,
         symbol: asset.symbol,
         company: asset.company_name,
         sector: asset.sector,
@@ -1525,27 +1617,34 @@ async function executeResearchTool(
         current_price: asset.current_price,
         sections,
         price_targets: (targets.data || []).map((t: any) => ({
-          type: t.type, price: t.price, timeframe: t.timeframe,
-          reasoning: truncate(t.reasoning, 200),
+          id: t.id, type: t.type, price: t.price, timeframe: t.timeframe,
+          reasoning: truncate(t.reasoning, 200), created_at: t.created_at ?? null,
         })),
         recent_notes: (notes.data || []).map((n: any) => ({
+          id: n.id, asset_id: asset.id, symbol: asset.symbol,
           date: n.created_at?.slice(0, 10), title: n.title,
-          excerpt: truncate(n.content, 200),
+          excerpt: n.content_excerpt ?? "", is_shared: !!n.is_shared,
+          updated_at: n.updated_at ?? n.created_at ?? null,
         })),
       });
     }
 
     if (name === "search_assets") {
       const q = String(input.query || "").trim();
-      if (!q) return JSON.stringify({ error: "query is required" });
+      if (!q) return toolError("search_assets", "missing_query");
       const escaped = q.replace(/%/g, "\\%").replace(/_/g, "\\_");
-      const { data } = await supabase
-        .from("assets").select("symbol, company_name, sector, industry")
-        .or(`symbol.ilike.%${escaped}%,company_name.ilike.%${escaped}%,sector.ilike.%${escaped}%`)
-        .limit(10);
-      return JSON.stringify({
-        results: (data || []).map((a: any) => ({
-          symbol: a.symbol, company: a.company_name,
+      const got = await runQuery<any[]>("search_assets", "search",
+        supabase
+          .from("assets").select("id, symbol, company_name, sector, industry")
+          .or(`symbol.ilike.%${escaped}%,company_name.ilike.%${escaped}%,sector.ilike.%${escaped}%`)
+          .limit(10));
+      if (got.failed) return toolError("search_assets", "search");
+      const rows = got.data || [];
+      if (rows.length === 0) return toolEmpty("search_assets", { query: q, looked_in: "assets" });
+      return toolOk("search_assets", {
+        query: q,
+        results: rows.map((a: any) => ({
+          asset_id: a.id, symbol: a.symbol, company: a.company_name,
           sector: a.sector, industry: a.industry,
         })),
       });
@@ -1553,30 +1652,37 @@ async function executeResearchTool(
 
     if (name === "get_portfolio") {
       const ref = String(input.name_or_id || "").trim();
-      if (!ref) return JSON.stringify({ error: "name_or_id is required" });
+      if (!ref) return toolError("get_portfolio", "missing_name_or_id");
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
-      const q = supabase.from("portfolios").select("id, name, description");
-      const { data: pf } = isUuid
-        ? await q.eq("id", ref).maybeSingle()
-        : await q.ilike("name", ref).limit(1).maybeSingle();
-      if (!pf) return JSON.stringify({ error: `No portfolio found for "${ref}"` });
+      const q = supabase.from("portfolios").select("id, name, description, updated_at, created_at");
+      const found = await runQuery<any>("get_portfolio", "portfolio",
+        isUuid ? q.eq("id", ref).maybeSingle() : q.ilike("name", ref).limit(1).maybeSingle());
+      if (found.failed) return toolError("get_portfolio", "portfolio");
+      const pf = found.data;
+      if (!pf) return toolEmpty("get_portfolio", { name_or_id: ref, looked_in: "portfolios" });
 
-      const { data: holdings } = await supabase
-        .from("portfolio_holdings")
-        .select("weight, asset:assets(symbol, company_name, sector)")
-        .eq("portfolio_id", pf.id)
-        .order("weight", { ascending: false }).limit(15);
+      const held = await runQuery<any[]>("get_portfolio", "holdings",
+        supabase
+          .from("portfolio_holdings")
+          .select("id, weight, asset:assets(id, symbol, company_name, sector)")
+          .eq("portfolio_id", pf.id)
+          .order("weight", { ascending: false }).limit(15));
+      if (held.failed) return toolError("get_portfolio", "holdings");
+      const holdings = held.data || [];
 
       const sectorMap: Record<string, number> = {};
-      for (const h of (holdings || []) as any[]) {
+      for (const h of holdings as any[]) {
         const sec = h.asset?.sector || "Unknown";
         sectorMap[sec] = (sectorMap[sec] || 0) + (Number(h.weight) || 0);
       }
-      return JSON.stringify({
+      return toolOk("get_portfolio", {
+        portfolio_id: pf.id,
         name: pf.name,
         description: pf.description,
-        top_holdings: (holdings || []).map((h: any) => ({
-          symbol: h.asset?.symbol, company: h.asset?.company_name,
+        updated_at: pf.updated_at ?? pf.created_at ?? null,
+        holdings_returned: holdings.length,
+        top_holdings: holdings.map((h: any) => ({
+          asset_id: h.asset?.id, symbol: h.asset?.symbol, company: h.asset?.company_name,
           sector: h.asset?.sector, weight_pct: h.weight,
         })),
         sector_breakdown: Object.entries(sectorMap)
@@ -1587,23 +1693,35 @@ async function executeResearchTool(
 
     if (name === "get_theme") {
       const ref = String(input.name_or_id || "").trim();
-      if (!ref) return JSON.stringify({ error: "name_or_id is required" });
+      if (!ref) return toolError("get_theme", "missing_name_or_id");
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ref);
-      const q = supabase.from("themes").select("id, name, description");
-      const { data: th } = isUuid
-        ? await q.eq("id", ref).maybeSingle()
-        : await q.ilike("name", ref).limit(1).maybeSingle();
-      if (!th) return JSON.stringify({ error: `No theme found for "${ref}"` });
+      const q = supabase.from("themes").select("id, name, description, updated_at, created_at");
+      const found = await runQuery<any>("get_theme", "theme",
+        isUuid ? q.eq("id", ref).maybeSingle() : q.ilike("name", ref).limit(1).maybeSingle());
+      if (found.failed) return toolError("get_theme", "theme");
+      const th = found.data;
+      if (!th) return toolEmpty("get_theme", { name_or_id: ref, looked_in: "themes" });
 
-      const { data: constituents } = await supabase
-        .from("asset_themes").select("asset:assets(symbol, company_name, sector)")
-        .eq("theme_id", th.id).limit(25);
+      // `theme_assets`, not `asset_themes`. The latter does not exist
+      // (`to_regclass` returns NULL), and because the error was discarded this
+      // tool reported "no constituents" for every theme ever looked up while
+      // 20 rows sat in the real table.
+      const members = await runQuery<any[]>("get_theme", "constituents",
+        supabase
+          .from("theme_assets").select("id, asset:assets(id, symbol, company_name, sector)")
+          .eq("theme_id", th.id).limit(25));
+      if (members.failed) return toolError("get_theme", "constituents");
+      const constituents = members.data || [];
 
-      return JSON.stringify({
+      return toolOk("get_theme", {
+        theme_id: th.id,
         name: th.name,
         description: th.description,
-        constituents: (constituents || []).map((c: any) => ({
-          symbol: c.asset?.symbol, company: c.asset?.company_name, sector: c.asset?.sector,
+        updated_at: th.updated_at ?? th.created_at ?? null,
+        constituents_returned: constituents.length,
+        constituents: constituents.map((c: any) => ({
+          asset_id: c.asset?.id, symbol: c.asset?.symbol,
+          company: c.asset?.company_name, sector: c.asset?.sector,
         })),
       });
     }
@@ -1611,34 +1729,106 @@ async function executeResearchTool(
     if (name === "search_team_notes") {
       const q = String(input.query || "").trim();
       const sym = String(input.asset_symbol || "").trim().toUpperCase();
-      if (!q) return JSON.stringify({ error: "query is required" });
-      const escaped = q.replace(/%/g, "\\%").replace(/_/g, "\\_");
+      if (!q) return toolError("search_team_notes", "missing_query");
+
+      /*
+       * ── Why this is not one ILIKE ────────────────────────────────────────
+       *
+       * It used to be: `title.ilike.%<the entire query>%`. The model writes
+       * keyword-ish queries, so the live failure was a search for
+       * "AAPL Apple thesis risk decision" asking for notes containing that
+       * exact 31-character phrase. Zero notes matched; the user was told the
+       * firm had written nothing about AAPL while seven notes sat on it.
+       *
+       * The opposite extreme is as bad: ORing every word returns every note
+       * containing "the". So: try the PHRASE first, which is precise and is
+       * what a quoted search should do, and only fall back to terms. Terms
+       * are stopword-filtered, deduped, and capped by `buildNoteSearchTerms`
+       * (tested in `_shared/research-results.ts`), and each row reports WHICH
+       * terms it matched so the model can weigh relevance rather than treat
+       * ten loose hits as ten findings.
+       */
+      const terms = buildNoteSearchTerms(q);
 
       let assetId: string | null = null;
       if (sym) {
-        const { data: a } = await supabase.from("assets").select("id").ilike("symbol", sym).maybeSingle();
-        assetId = a?.id ?? null;
+        const a = await runQuery<any>("search_team_notes", "asset_scope",
+          supabase.from("assets").select("id").ilike("symbol", sym).maybeSingle());
+        if (a.failed) return toolError("search_team_notes", "asset_scope");
+        assetId = a.data?.id ?? null;
+        // A symbol that resolves to nothing is an empty scope, not a reason to
+        // silently search every asset -- that would answer a different question.
+        if (!assetId) return toolEmpty("search_team_notes", { query: q, asset_symbol: sym, looked_in: "assets" });
       }
-      let qb = supabase.from("asset_notes")
-        .select("title, content, created_at, asset:assets(symbol)")
-        .eq("is_deleted", false)
-        .or(`created_by.eq.${userId},is_shared.eq.true`)
-        .or(`title.ilike.%${escaped}%,content.ilike.%${escaped}%`)
-        .order("created_at", { ascending: false }).limit(10);
-      if (assetId) qb = qb.eq("asset_id", assetId);
-      const { data } = await qb;
 
-      return JSON.stringify({
-        results: (data || []).map((n: any) => ({
-          symbol: n.asset?.symbol, date: n.created_at?.slice(0, 10),
-          title: n.title, excerpt: truncate(n.content, 200),
-        })),
+      // Visibility stays exactly as it was: own notes, plus notes explicitly
+      // shared. RLS scopes the organization on top of this; the two or= params
+      // are ANDed by PostgREST, so neither replaces the other.
+      const base = () => {
+        let qb = supabase.from("asset_notes")
+          .select("id, asset_id, title, created_at, updated_at, is_shared, content_excerpt, asset:assets(id, symbol)")
+          .eq("is_deleted", false)
+          .or(`created_by.eq.${userId},is_shared.eq.true`);
+        if (assetId) qb = qb.eq("asset_id", assetId);
+        return qb.order("created_at", { ascending: false }).limit(10);
+      };
+
+      const phrase = escapeLike(q);
+      const byPhrase = await runQuery<any[]>("search_team_notes", "phrase",
+        base().or(`title.ilike.%${phrase}%,content.ilike.%${phrase}%`));
+      if (byPhrase.failed) return toolError("search_team_notes", "phrase");
+
+      let rows = byPhrase.data || [];
+      let strategy: "phrase" | "terms" = "phrase";
+
+      if (rows.length === 0 && terms.length > 0) {
+        const clause = terms
+          .map((t) => `title.ilike.%${escapeLike(t)}%,content.ilike.%${escapeLike(t)}%`)
+          .join(",");
+        const byTerms = await runQuery<any[]>("search_team_notes", "terms", base().or(clause));
+        if (byTerms.failed) return toolError("search_team_notes", "terms");
+        rows = byTerms.data || [];
+        strategy = "terms";
+      }
+
+      const searched = {
+        query: q,
+        ...(sym ? { asset_symbol: sym } : {}),
+        terms_used: strategy === "terms" ? terms : [q],
+        scope: assetId ? `notes on ${sym}` : "all notes visible to you",
+      };
+      if (rows.length === 0) return toolEmpty("search_team_notes", searched);
+
+      return toolOk("search_team_notes", {
+        ...searched,
+        match_strategy: strategy,
+        results_returned: rows.length,
+        results: rows.map((n: any) => {
+          const hay = `${n.title ?? ""} ${n.content_excerpt ?? ""}`.toLowerCase();
+          return {
+            id: n.id,
+            asset_id: n.asset_id ?? n.asset?.id ?? null,
+            symbol: n.asset?.symbol ?? null,
+            date: n.created_at?.slice(0, 10),
+            updated_at: n.updated_at ?? n.created_at ?? null,
+            title: n.title,
+            excerpt: n.content_excerpt ?? "",
+            is_shared: !!n.is_shared,
+            // Which of the terms actually appear in what we returned. A row
+            // matching one loose term is not the same evidence as one matching
+            // four, and only the model can judge that -- so tell it.
+            matched_terms: strategy === "terms" ? terms.filter((t) => hay.includes(t)) : [q],
+          };
+        }),
       });
     }
 
-    return JSON.stringify({ error: `Unknown tool: ${name}` });
+    return toolError(name || "unknown", "unknown_tool");
   } catch (e) {
-    return JSON.stringify({ error: (e as Error).message || "Tool execution failed" });
+    // The driver's message names tables, columns and sometimes policies. It
+    // belongs in the logs, not in the model's context or the browser.
+    console.error(`ai-chat tool ${name} threw:`, (e as Error)?.message ?? String(e));
+    return toolError(name || "unknown", "unhandled");
   }
 }
 
@@ -1895,13 +2085,22 @@ async function callAnthropicWithLoop(opts: {
         combinedText += block.text || "";
         if (Array.isArray(block.citations)) {
           for (const c of block.citations) {
-            const docTitle = documents[c.document_index]?.title || "Source";
+            const doc = documents[c.document_index];
+            const docTitle = doc?.title || "Source";
             const citedText = String(c.cited_text || "").trim();
             if (!citedText) continue;
             const key = docTitle + "::" + citedText.slice(0, 200);
             if (citationSeen.has(key)) continue;
             citationSeen.add(key);
-            citations.push({ document_title: docTitle, cited_text: citedText });
+            citations.push({
+              document_title: docTitle,
+              cited_text: citedText,
+              kind: doc?.kind,
+              document_id: doc?.id,
+              asset_id: doc?.asset_id ?? null,
+              symbol: doc?.symbol ?? null,
+              timestamp: doc?.timestamp ?? null,
+            });
           }
         }
       } else if (block.type === "tool_use") {
@@ -1937,11 +2136,17 @@ async function callAnthropicWithLoop(opts: {
       const result = supabase
         ? await executeResearchTool(supabase, userId, tu.name, tu.input || {})
         : JSON.stringify({ error: "Tools not available in this context." });
-      // Track for client display
+      // Track for client display.
+      //
+      // `result_summary` used to be `truncate(result, 160)` -- the raw JSON,
+      // cut mid-structure, which is how `{"results":[]}` ended up as the
+      // user-visible account of a search. The client now gets the three
+      // things it needs to write a sentence and draw links: the status, a
+      // count, and the records' own ids. Never the raw blob.
       tool_calls.push({
         name: tu.name,
         input: tu.input || {},
-        result_summary: truncate(result, 160),
+        ...summarizeToolResult(tu.name, result),
       });
       toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
     }

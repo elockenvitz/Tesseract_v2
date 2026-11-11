@@ -22,7 +22,11 @@ import {
   ChevronRight,
   Search
 } from 'lucide-react'
-import { useAI, useAISuggestions, type TagRef } from '../../hooks/useAI'
+import {
+  useAI, useAISuggestions,
+  type TagRef, type AiSourceRef, type MessageToolCall, type MessageCitation,
+} from '../../hooks/useAI'
+import { openAsset, type AssetFocus } from '../../lib/desktop-asset'
 import { useAIConfig, AI_MODELS, AI_PROVIDERS, type AIProvider } from '../../hooks/useAIConfig'
 import { Button } from '../ui/Button'
 import { clsx } from 'clsx'
@@ -715,18 +719,62 @@ export function AISection({
 function ToolCallsFooter({
   toolCalls,
 }: {
-  toolCalls: Array<{ name: string; input: Record<string, unknown>; result_summary?: string }>
+  toolCalls: MessageToolCall[]
 }) {
   const [open, setOpen] = useState(false)
 
   const friendlyLabel = (name: string, input: Record<string, unknown>): string => {
     if (name === 'get_asset')         return `Looked up ${String(input.symbol || '').toUpperCase()}`
-    if (name === 'search_assets')     return `Searched assets: "${String(input.query || '')}"`
+    if (name === 'search_assets')     return `Searched assets for "${String(input.query || '')}"`
     if (name === 'get_portfolio')     return `Pulled portfolio: ${String(input.name_or_id || '')}`
     if (name === 'get_theme')         return `Pulled theme: ${String(input.name_or_id || '')}`
-    if (name === 'search_team_notes') return `Searched notes: "${String(input.query || '')}"`
+    if (name === 'search_team_notes') return `Searched notes for "${String(input.query || '')}"`
     return name
   }
+
+  /*
+   * One sentence per lookup, and the three statuses must read differently.
+   *
+   * This used to print `result_summary` -- the tool's raw JSON cut to 160
+   * characters -- so a search that found nothing showed the user the literal
+   * text `{"results":[]}`, and a search that FAILED showed something equally
+   * cryptic that looked identical in spirit. The whole point of the status
+   * field is that "we looked and found none" and "we could not look" are not
+   * the same thing and must never render the same way.
+   */
+  const outcome = (tc: MessageToolCall): { text: string; tone: string } => {
+    const n = tc.result_count ?? tc.sources?.length ?? 0
+    if (tc.status === 'error') {
+      return {
+        text: 'This lookup failed, so the answer may be incomplete.',
+        tone: 'text-red-600 dark:text-red-400',
+      }
+    }
+    if (tc.status === 'empty') {
+      return {
+        text: tc.searched ? `No matches for ${tc.searched}.` : 'No matching records.',
+        tone: 'text-amber-700 dark:text-amber-500',
+      }
+    }
+    if (tc.status === 'ok') {
+      return {
+        text: n > 0
+          ? `${n} ${n === 1 ? 'record' : 'records'} found.`
+          : 'Found, with nothing linked to it.',
+        tone: 'text-gray-500 dark:text-gray-400',
+      }
+    }
+    // A message produced before statuses existed. Say nothing rather than
+    // invent an outcome for it.
+    return { text: '', tone: '' }
+  }
+
+  const borderFor = (status?: string) =>
+    status === 'error' ? 'border-red-300 dark:border-red-700'
+      : status === 'empty' ? 'border-amber-300 dark:border-amber-700'
+      : 'border-emerald-300 dark:border-emerald-700'
+
+  const anyFailed = toolCalls.some(tc => tc.status === 'error')
 
   return (
     <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700/60">
@@ -738,23 +786,106 @@ function ToolCallsFooter({
       >
         <Search className="w-3 h-3" />
         Research ({toolCalls.length})
+        {anyFailed && (
+          <span className="text-red-600 dark:text-red-400" title="A lookup failed">
+            <AlertCircle className="w-3 h-3" />
+          </span>
+        )}
         <ChevronRight className={clsx('w-3 h-3 transition-transform', open && 'rotate-90')} />
       </button>
       {open && (
-        <ul className="mt-1.5 space-y-1">
-          {toolCalls.map((tc, i) => (
-            <li key={i} className="text-[11px] text-gray-700 dark:text-gray-300 pl-1 border-l-2 border-amber-300 dark:border-amber-700">
-              <div className="font-medium">{friendlyLabel(tc.name, tc.input)}</div>
-              {tc.result_summary && (
-                <div className="text-gray-500 dark:text-gray-400 italic truncate" title={tc.result_summary}>
-                  ↳ {tc.result_summary.slice(0, 140)}
-                </div>
-              )}
-            </li>
-          ))}
+        <ul className="mt-1.5 space-y-1.5">
+          {toolCalls.map((tc, i) => {
+            const o = outcome(tc)
+            return (
+              <li
+                key={i}
+                className={clsx(
+                  'text-[11px] text-gray-700 dark:text-gray-300 pl-1.5 border-l-2',
+                  borderFor(tc.status),
+                )}
+              >
+                <div className="font-medium">{friendlyLabel(tc.name, tc.input)}</div>
+                {o.text && <div className={o.tone}>{o.text}</div>}
+                {tc.sources && tc.sources.length > 0 && (
+                  <ul className="mt-0.5 space-y-0.5">
+                    {tc.sources.map(s => (
+                      <li key={`${s.kind}:${s.id}`}>
+                        <SourceLink source={s} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
+  )
+}
+
+/**
+ * One consulted record, as a link where we can open it.
+ *
+ * Uses the shell's existing `openAsset` channel rather than a new route: the
+ * asset page is where notes, contributions and price targets are read, and
+ * `focus` already accepts 'research' for the note and thesis surfaces. A
+ * source we cannot open renders as plain text, not a dead link.
+ */
+function SourceLink({ source }: { source: AiSourceRef }) {
+  const openable = Boolean(source.asset_id)
+
+  const kindLabel: Record<AiSourceRef['kind'], string> = {
+    asset: 'Asset',
+    note: 'Note',
+    contribution: 'Thesis',
+    price_target: 'Target',
+    portfolio: 'Portfolio',
+    theme: 'Theme',
+  }
+
+  // Notes and thesis sections live behind Research; everything else reads on
+  // the overview.
+  const focus: AssetFocus =
+    source.kind === 'note' || source.kind === 'contribution' ? 'research' : 'overview'
+
+  const when = source.timestamp
+    ? new Date(source.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    : null
+
+  const body = (
+    <>
+      <span className="inline-block px-1 mr-1 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-[10px] uppercase tracking-wide">
+        {kindLabel[source.kind]}
+      </span>
+      <span className="font-medium">{source.title}</span>
+      {when && <span className="text-gray-400 dark:text-gray-500 ml-1">{when}</span>}
+    </>
+  )
+
+  if (!openable) {
+    return <span className="text-gray-500 dark:text-gray-400">{body}</span>
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        // No focusRequestId here: assetTabFor stamps one per call, which is
+        // what lets the receiver tell a new intent from a remounted tab.
+        openAsset({
+          assetId: source.asset_id as string,
+          symbol: source.symbol ?? null,
+          focus,
+          origin: 'ai-research-trail',
+        })
+      }}
+      className="text-left text-primary-600 dark:text-primary-400 hover:underline"
+      title={`Open ${source.title}`}
+    >
+      {body}
+    </button>
   )
 }
 
@@ -765,20 +896,36 @@ function ToolCallsFooter({
 function CitationsFooter({
   citations,
 }: {
-  citations: Array<{ document_title: string; cited_text: string }>
+  citations: MessageCitation[]
 }) {
   const [open, setOpen] = useState(false)
 
-  // Group snippets by document title — same doc cited multiple times
-  // collapses into one entry with multiple snippets.
+  /*
+   * Group snippets by document, keeping the document's provenance.
+   *
+   * Keyed by id where there is one, falling back to the title, because two
+   * notes can share a title and must not merge into one source. The ref is
+   * kept alongside the snippets so a quoted document can be opened, not just
+   * read.
+   */
   const grouped = useMemo(() => {
-    const m = new Map<string, string[]>()
+    const m = new Map<string, { ref: AiSourceRef | null; title: string; snippets: string[] }>()
     for (const c of citations) {
-      const list = m.get(c.document_title) || []
-      list.push(c.cited_text)
-      m.set(c.document_title, list)
+      const key = c.document_id || c.document_title
+      const entry = m.get(key) || {
+        title: c.document_title,
+        ref: c.document_id && c.kind
+          ? {
+              kind: c.kind, id: c.document_id, asset_id: c.asset_id ?? null,
+              symbol: c.symbol ?? null, title: c.document_title, timestamp: c.timestamp ?? null,
+            }
+          : null,
+        snippets: [] as string[],
+      }
+      entry.snippets.push(c.cited_text)
+      m.set(key, entry)
     }
-    return [...m.entries()]
+    return [...m.values()]
   }, [citations])
 
   return (
@@ -787,19 +934,24 @@ function CitationsFooter({
         type="button"
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-1 text-[11px] font-medium text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
-        title={open ? 'Hide sources' : 'Show sources'}
+        // "Quoted" not "sources": these are the documents the model quoted for
+        // a specific claim, which is a stronger statement than the Research
+        // trail's "consulted" and must not be conflated with it.
+        title={open ? 'Hide quoted sources' : 'Show quoted sources'}
       >
         <BookOpen className="w-3 h-3" />
-        {grouped.length} source{grouped.length === 1 ? '' : 's'}
+        {grouped.length} quoted source{grouped.length === 1 ? '' : 's'}
         <ChevronRight className={clsx('w-3 h-3 transition-transform', open && 'rotate-90')} />
       </button>
       {open && (
         <ul className="mt-1.5 space-y-1.5">
-          {grouped.map(([title, snippets]) => (
-            <li key={title} className="text-[11px]">
-              <div className="font-semibold text-gray-700 dark:text-gray-300">{title}</div>
+          {grouped.map((g, gi) => (
+            <li key={g.ref?.id ?? `${g.title}-${gi}`} className="text-[11px]">
+              {g.ref
+                ? <SourceLink source={g.ref} />
+                : <span className="font-semibold text-gray-700 dark:text-gray-300">{g.title}</span>}
               <ul className="ml-3 space-y-0.5 mt-0.5">
-                {snippets.map((s, i) => (
+                {g.snippets.map((s, i) => (
                   <li key={i} className="text-gray-600 dark:text-gray-400 italic border-l-2 border-gray-300 dark:border-gray-600 pl-2">
                     "{s.length > 200 ? s.slice(0, 200) + '…' : s}"
                   </li>
@@ -824,8 +976,8 @@ function AIMessageBubble({
     content: string
     timestamp: Date
     model?: string | null
-    citations?: Array<{ document_title: string; cited_text: string }>
-    tool_calls?: Array<{ name: string; input: Record<string, unknown>; result_summary?: string }>
+    citations?: MessageCitation[]
+    tool_calls?: MessageToolCall[]
     actions?: AiAction[]
     streaming?: boolean
     truncated?: boolean
