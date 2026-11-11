@@ -84,6 +84,12 @@ export interface AiTimings {
 /** The kinds of record the AI can consult. One per Tesseract object type. */
 export type AiSourceKind =
   | 'asset' | 'note' | 'contribution' | 'price_target' | 'portfolio' | 'theme'
+  // The decision chain, kept as four distinct kinds because they are four
+  // distinct facts: a recommendation is not a ruling, a ruling is not a
+  // committed trade, and a committed trade is not an executed one.
+  | 'recommendation' | 'decision_request' | 'accepted_trade'
+  | 'decision_review' | 'outcome'
+  | 'workflow' | 'checklist_item'
 
 /**
  * A record the AI consulted, with enough provenance to open it.

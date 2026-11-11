@@ -31,7 +31,14 @@
 export type ToolStatus = "ok" | "empty" | "error";
 
 export type SourceKind =
-  | "asset" | "note" | "contribution" | "price_target" | "portfolio" | "theme";
+  | "asset" | "note" | "contribution" | "price_target" | "portfolio" | "theme"
+  // The decision chain. Four separate stages, four separate kinds, on purpose:
+  // a recommendation is not a ruling, a ruling is not a committed trade, and a
+  // committed trade is not an executed one.
+  | "recommendation" | "decision_request" | "accepted_trade"
+  | "decision_review" | "outcome"
+  // Process.
+  | "workflow" | "checklist_item";
 
 /**
  * A record the model consulted, with enough provenance for the UI to open it.
@@ -162,6 +169,134 @@ export function escapeLike(s: string): string {
   return String(s).replace(/%/g, "\\%").replace(/_/g, "\\_").replace(/,/g, " ");
 }
 
+// ─── People ──────────────────────────────────────────────────────────────
+
+export interface PersonRow {
+  id: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+}
+
+/**
+ * A name for a user id, or null.
+ *
+ * Returns null rather than the raw uuid when the id cannot be resolved. A uuid
+ * printed where a person's name belongs reads as data corruption to the reader
+ * and gives the model something to mistake for an identifier it can cite.
+ */
+export function personLabel(
+  id: string | null | undefined,
+  people: Map<string, PersonRow>,
+): string | null {
+  if (!id) return null;
+  const p = people.get(id);
+  if (!p) return null;
+  const name = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+  return name || p.email || null;
+}
+
+export function peopleMap(rows: PersonRow[] | null | undefined): Map<string, PersonRow> {
+  return new Map((rows || []).filter((r) => r?.id).map((r) => [r.id, r]));
+}
+
+// ─── Workflow stages ─────────────────────────────────────────────────────
+
+export interface StageRow {
+  id: string;
+  workflow_id: string;
+  stage_key: string | null;
+  stage_label: string | null;
+  sort_order?: number | null;
+}
+
+/**
+ * Resolve a stage reference to its label.
+ *
+ * `asset_checklist_items.stage_id` and `asset_workflow_progress`'s
+ * `current_stage_key` are both TEXT, and production holds BOTH conventions:
+ * measured 2026-11-11, 129 of 141 checklist rows hold a `stage_key`, 10 hold a
+ * `workflow_stages.id` uuid, and 2 hold neither; 364 of 874 progress rows name
+ * a stage that does not exist in their workflow.
+ *
+ * So this tries both conventions, scoped to the workflow, and returns null when
+ * neither matches. Null means "this stage reference does not resolve", which
+ * the caller reports as such. Guessing a label here -- picking the first stage,
+ * or echoing the raw key as though it were a name -- would invent process state
+ * that nobody recorded.
+ */
+export function resolveStageLabel(
+  stageRef: string | null | undefined,
+  workflowId: string | null | undefined,
+  stages: StageRow[],
+): { label: string | null; resolved: boolean } {
+  if (!stageRef) return { label: null, resolved: false };
+  const inWorkflow = stages.filter((s) => !workflowId || s.workflow_id === workflowId);
+  const hit =
+    inWorkflow.find((s) => s.stage_key === stageRef) ??
+    inWorkflow.find((s) => s.id === stageRef);
+  if (!hit) return { label: null, resolved: false };
+  return { label: hit.stage_label || hit.stage_key || null, resolved: true };
+}
+
+// ─── Checklist requirements ──────────────────────────────────────────────
+
+export interface ChecklistRow {
+  id: string;
+  workflow_id?: string | null;
+  stage_id?: string | null;
+  item_text?: string | null;
+  status?: string | null;
+  completed?: boolean | null;
+  item_type?: string | null;
+  assignee_id?: string | null;
+  due_date?: string | null;
+  completed_at?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface ChecklistBuckets {
+  total: number;
+  open: number;
+  completed: number;
+  not_applicable: number;
+  /** Open requirements only, bounded. The point of the tool is what REMAINS. */
+  open_items: ChecklistRow[];
+  open_items_truncated: boolean;
+}
+
+/**
+ * Split requirements into done / open / not-applicable.
+ *
+ * `status` is the authority, not the older `completed` boolean. Both exist on
+ * the table; measured 2026-11-11 they agree on all 141 rows, but `status` also
+ * carries `na`, which the boolean cannot express -- and a requirement marked
+ * not-applicable is neither outstanding work nor a completed check. Collapsing
+ * it into either one misstates what remains.
+ */
+export function bucketChecklist(
+  rows: ChecklistRow[] | null | undefined,
+  maxOpen = 20,
+): ChecklistBuckets {
+  const all = (rows || []).filter((r) => r?.id);
+  const statusOf = (r: ChecklistRow): "completed" | "na" | "open" => {
+    if (r.status === "completed") return "completed";
+    if (r.status === "na") return "na";
+    if (!r.status && r.completed === true) return "completed";
+    return "open";
+  };
+  const open = all.filter((r) => statusOf(r) === "open");
+  return {
+    total: all.length,
+    open: open.length,
+    completed: all.filter((r) => statusOf(r) === "completed").length,
+    not_applicable: all.filter((r) => statusOf(r) === "na").length,
+    open_items: open.slice(0, maxOpen),
+    open_items_truncated: open.length > maxOpen,
+  };
+}
+
 /**
  * Turn a tool's JSON into what the BROWSER is told.
  *
@@ -195,6 +330,10 @@ export function summarizeToolResult(
     if (!s || typeof s !== "object") return undefined;
     if (s.scope && s.query) return `"${s.query}" in ${s.scope}`;
     if (s.query) return `"${s.query}"`;
+    // The asset-scoped tools name the scope instead of a query, and the scope
+    // is the honest part: "decisions on AAPL visible to you" is a claim this
+    // function can stand behind, where "AAPL" alone invites "there are none".
+    if (s.symbol && s.scope) return `${s.symbol} in ${s.scope}`;
     if (s.symbol) return String(s.symbol);
     if (s.name_or_id) return String(s.name_or_id);
     return undefined;
@@ -261,12 +400,80 @@ export function summarizeToolResult(
     if (p.theme_id) {
       sources.push({ kind: "theme", id: p.theme_id, title: p.name || "Theme", timestamp: p.updated_at ?? null });
     }
+  } else if (name === "get_decisions") {
+    /*
+     * Four stages, four kinds, in the order they happen. The reader must be
+     * able to see from the trail alone that a recommendation and a committed
+     * trade are different records, because the sentence "we decided to buy
+     * AAPL" is true of a PM ruling and false of an unexecuted Trade Book row.
+     */
+    for (const r of (p.recommendations || [])) {
+      if (!r?.id) continue;
+      sources.push({
+        kind: "recommendation", id: r.id, asset_id: assetId, symbol,
+        title: `${symbol} ${String(r.action || "").toUpperCase()} recommendation (${r.queue_status || "unknown"})`.replace(/\s+/g, " "),
+        timestamp: r.created_at ?? null,
+      });
+    }
+    for (const d of (p.pm_rulings || [])) {
+      if (!d?.id) continue;
+      sources.push({
+        kind: "decision_request", id: d.id, asset_id: assetId, symbol,
+        title: `${symbol} PM ruling: ${d.status || "unknown"}`,
+        timestamp: d.reviewed_at ?? d.created_at ?? null,
+      });
+    }
+    for (const t of (p.committed_trades || [])) {
+      if (!t?.id) continue;
+      const exec = t.execution_status ? `, execution ${t.execution_status}` : "";
+      sources.push({
+        kind: "accepted_trade", id: t.id, asset_id: assetId, symbol,
+        title: `${symbol} ${String(t.action || "").toUpperCase()} committed trade${exec}`,
+        timestamp: t.created_at ?? null,
+      });
+    }
+    for (const r of (p.decision_reviews || [])) {
+      if (!r?.id) continue;
+      sources.push({
+        kind: "decision_review", id: r.id, asset_id: assetId, symbol,
+        title: `${symbol} decision review${r.decision_quality ? `: ${r.decision_quality}` : ""}`,
+        timestamp: r.reviewed_at ?? null,
+      });
+    }
+    for (const o of (p.price_target_outcomes || [])) {
+      if (!o?.id) continue;
+      sources.push({
+        kind: "outcome", id: o.id, asset_id: assetId, symbol,
+        title: `${symbol} ${String(o.scenario_type || "").toUpperCase()} target outcome: ${o.status || "unknown"}`.replace(/\s+/g, " "),
+        timestamp: o.evaluated_at ?? o.created_at ?? null,
+      });
+    }
+  } else if (name === "get_workflows") {
+    for (const w of (p.workflows || [])) {
+      if (!w?.workflow_id) continue;
+      const at = w.current_stage_label ? ` at ${w.current_stage_label}` : "";
+      sources.push({
+        kind: "workflow", id: w.workflow_id, asset_id: assetId, symbol,
+        title: `${w.name || "Workflow"}${at}`,
+        timestamp: w.updated_at ?? null,
+      });
+      for (const it of (w.open_requirements || [])) {
+        if (!it?.id) continue;
+        sources.push({
+          kind: "checklist_item", id: it.id, asset_id: assetId, symbol,
+          title: it.requirement || "Untitled requirement",
+          timestamp: it.updated_at ?? it.created_at ?? null,
+        });
+      }
+    }
   }
 
   const counted = Array.isArray(p.results)
     ? p.results.length
     : name === "get_theme" ? (p.constituents_returned ?? 0)
     : name === "get_portfolio" ? (p.holdings_returned ?? 0)
+    : name === "get_decisions" ? (p.records_returned ?? sources.length)
+    : name === "get_workflows" ? (p.records_returned ?? sources.length)
     : sources.length;
 
   return { status, searched: describeSearched(p), result_count: counted, sources };
