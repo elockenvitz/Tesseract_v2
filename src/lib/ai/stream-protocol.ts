@@ -128,8 +128,36 @@ export interface AiStreamFinalEvent {
    */
   raw: string
   model: string | null
-  citations: Array<{ document_title: string; cited_text: string }>
-  tool_calls: Array<{ name: string; input: Record<string, unknown>; result_summary?: string }>
+  /** Claim-level citations. Provenance fields are absent on older responses. */
+  citations: Array<{
+    document_title: string
+    cited_text: string
+    kind?: 'asset' | 'note' | 'contribution' | 'price_target' | 'portfolio' | 'theme'
+    document_id?: string
+    asset_id?: string | null
+    symbol?: string | null
+    timestamp?: string | null
+  }>
+  /**
+   * Research lookups, each carrying its own status. A consumer that ignores
+   * `status` will report a failed search as "no records found", which is the
+   * defect this field exists to prevent.
+   */
+  tool_calls: Array<{
+    name: string
+    input: Record<string, unknown>
+    status?: 'ok' | 'empty' | 'error'
+    searched?: string
+    result_count?: number
+    sources?: Array<{
+      kind: 'asset' | 'note' | 'contribution' | 'price_target' | 'portfolio' | 'theme'
+      id: string
+      asset_id?: string | null
+      symbol?: string | null
+      title: string
+      timestamp?: string | null
+    }>
+  }>
   usage: Record<string, unknown>
   timings: Record<string, number>
 }
