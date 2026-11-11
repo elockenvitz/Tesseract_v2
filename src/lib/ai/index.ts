@@ -121,6 +121,16 @@ export type { AiChatMode, ChatLayout, ChatModeInput } from './chat-modes'
 export { suggestedPrompts } from './suggested-prompts'
 export type { PromptContext, PromptTag, PromptTarget } from './suggested-prompts'
 
+/* Whether the pane yet knows what it is showing. */
+export { isThreadSettling } from './restore-gate'
+export type { RestoreGateInput } from './restore-gate'
+
+/* What the assistant is called. One place, so renaming is one edit. */
+export {
+  ACT_AI, ACT_AI_RESEARCH, ACT_AI_BRIEFING, ACT_AI_PLACEHOLDER, ACT_AI_ANALYZE,
+  actAiTitle,
+} from './brand'
+
 export {
   selectContext,
   describeSelection,

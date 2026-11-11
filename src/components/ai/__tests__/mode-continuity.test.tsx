@@ -24,6 +24,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AiRenderableMessage } from '../../../lib/ai/presentation'
+/* The composer names what you are talking to, so the placeholder is branding
+   and lives in one place. Asserting the literal here is how this test broke
+   when the assistant was renamed to ACT AI. */
+import { ACT_AI_PLACEHOLDER } from '../../../lib/ai/brand'
 
 const messages: AiRenderableMessage[] = [
   {
@@ -137,7 +141,7 @@ describe('compact ↔ research', () => {
   it('keeps an unsent draft across the flip', async () => {
     const user = userEvent.setup()
     const view = renderPane('compact')
-    await user.type(screen.getByPlaceholderText('Ask anything…'), 'and what about the risks')
+    await user.type(screen.getByPlaceholderText(ACT_AI_PLACEHOLDER), 'and what about the risks')
 
     view.rerender(
       <AISection
@@ -146,7 +150,7 @@ describe('compact ↔ research', () => {
       />,
     )
 
-    expect((screen.getByPlaceholderText('Ask anything…') as HTMLTextAreaElement).value)
+    expect((screen.getByPlaceholderText(ACT_AI_PLACEHOLDER) as HTMLTextAreaElement).value)
       .toBe('and what about the risks')
     expect(sendMessage).not.toHaveBeenCalled()
   })

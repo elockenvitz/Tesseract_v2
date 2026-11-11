@@ -19,6 +19,7 @@ import { TesseractLogo } from '../ui/TesseractLogo'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { MobileSearchOverlay } from '../mobile/MobileSearchOverlay'
 import { OrgLogo } from '../organization/OrgLogo'
+import { ACT_AI } from '../../lib/ai/brand'
 // SetupWizard removed — org creation disabled for normal users
 
 interface HeaderProps {
@@ -883,7 +884,7 @@ export function Header({
                   ? "text-primary-600 bg-primary-100 dark:bg-primary-900/40 dark:text-primary-300"
                   : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
               )}
-              title="AI Assistant"
+              title={ACT_AI}
             >
               {/* One glyph on every surface.
                   The gradient chip was a filled brand mark sitting among flat

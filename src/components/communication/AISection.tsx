@@ -40,6 +40,7 @@ import type { AiAction } from '../../lib/ai'
  * in research mode. See `lib/ai/chat-modes`.
  */
 import { chatLayout, modeToggleLabel, type AiChatMode } from '../../lib/ai/chat-modes'
+import { ACT_AI_PLACEHOLDER } from '../../lib/ai/brand'
 import {
   conversationContextState, describeSendTarget, shortSubjectLabel,
   subjectsAgree, subjectTag,
@@ -117,6 +118,8 @@ export function AISection({
     isConfigured,
     configMode,
     conversationId,
+    /* Whether this pane yet knows what it is showing. See the thread area. */
+    isRestoringConversation,
     sendMessage,
     clearConversation,
     isLoading,
@@ -647,7 +650,25 @@ export function AISection({
             centre inside once the column, rather than the scrollport, is the
             prompts' parent. */}
         <div className={clsx(layout.column, layout.threadGap, 'flex min-h-full flex-col')}>
-        {messages.length === 0 ? (
+        {isRestoringConversation ? (
+          /*
+            Not known yet, so nothing claimed.
+
+            Opening the panel on an asset used to paint the empty state first,
+            then rewrite its prompts once the tag labels landed, then replace
+            the whole screen with the restored thread. Each paint was honest
+            about what was known at the time, which is exactly the problem:
+            "we have not looked yet" and "there is nothing here" rendered the
+            same.
+
+            An empty column rather than a skeleton or a spinner. The header,
+            the context chips and the composer are already painted, so the
+            pane reads as open and working, and a placeholder that survives
+            300ms is the flash this change exists to remove. No timer, no
+            minimum duration: the gate is the data landing.
+          */
+          <div data-testid="ai-thread-settling" className="flex-1" aria-busy="true" />
+        ) : messages.length === 0 ? (
           /* An empty thread. The prompts carry the explanation; if the prior
              message failed and got popped, the error rides above them so it
              does not just look as though nothing happened. */
@@ -710,7 +731,7 @@ export function AISection({
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder="Ask anything…"
+              placeholder={ACT_AI_PLACEHOLDER}
               className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:text-white"
               rows={1}
               disabled={isLoading}

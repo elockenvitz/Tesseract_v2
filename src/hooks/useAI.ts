@@ -26,6 +26,7 @@ import {
   type RejectedAiAction,
   type ViewState,
 } from '../lib/ai'
+import { isThreadSettling } from '../lib/ai/restore-gate'
 import type {
   AiSourceKind, AiSourceRef, MessageCitation, MessageToolCall, AiRenderableMessage,
 } from '../lib/ai/presentation'
@@ -290,6 +291,20 @@ export function useAI(initialTags: TagRef[] = []) {
     initialTags.map(tagKey).sort().join('|'),
   )
 
+  /*
+   * The conversation this pane is in the middle of restoring, if any.
+   *
+   * Opening the panel on an asset used to paint three times: the empty state
+   * with generic prompts, then the same empty state with the labelled prompts
+   * once `tagLabels` resolved, then a restored thread once the tag rows
+   * arrived and the transcript was fetched. All three are correct renders of
+   * what was known at the time; the defect is that "not known yet" and "there
+   * is nothing" rendered identically.
+   *
+   * Set before `conversationId`, cleared when the transcript lands.
+   */
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+
   // Detect parent prop changes (user navigated to a different asset/etc.)
   // and reset the panel: clear the current conversation + adopt the new
   // tags. The auto-load effect below then surfaces the most recent
@@ -301,6 +316,11 @@ export function useAI(initialTags: TagRef[] = []) {
     setConversationId(null)
     setMessages([])
     setTagsState(initialTags)
+    /* The reader navigated: whatever we were restoring is not what they are
+       looking at. Released here rather than in the restore effect's cleanup,
+       because setting state while unmounting an effect is how a cleanup starts
+       scheduling renders nobody asked for. */
+    setRestoringId(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTags])
 
@@ -331,7 +351,7 @@ export function useAI(initialTags: TagRef[] = []) {
     () => conversations.map(c => c.id).join('|'),
     [conversations],
   )
-  const { data: tagsByConvId } = useQuery<Map<string, TagRef[]>>({
+  const { data: tagsByConvId, isLoading: isLoadingConvTags } = useQuery<Map<string, TagRef[]>>({
     queryKey: ['ai-conversation-tags', conversationIdKey],
     queryFn: async () => {
       const ids = conversationIdKey.split('|').filter(Boolean)
@@ -370,7 +390,7 @@ export function useAI(initialTags: TagRef[] = []) {
     return [...s].sort().join('|')
   }, [tagsByConvId, tags])
 
-  const { data: tagLabels } = useQuery<Record<string, string>>({
+  const { data: tagLabels, isLoading: isLoadingTagLabels } = useQuery<Record<string, string>>({
     queryKey: ['ai-tag-labels', allTagRefsKey],
     queryFn: async () => {
       const out: Record<string, string> = {}
@@ -837,6 +857,11 @@ export function useAI(initialTags: TagRef[] = []) {
 
     if (candidates[0]) {
       const picked = candidates[0]
+      /* Claim the restore BEFORE the id lands, so the pane never gets a frame
+         where a conversation is selected and its transcript is still empty.
+         That frame is the empty state, and it is why opening the panel showed
+         suggestions and then replaced them with a thread. */
+      setRestoringId(picked.id)
       setConversationId(picked.id)
       setTagsState(picked.tags || initialTags)
       // The transcript is fetched rather than read off the list row. This
@@ -845,18 +870,42 @@ export function useAI(initialTags: TagRef[] = []) {
       // `cancelled` is the same guard the send path uses for the same reason.
       let cancelled = false
       fetchConversationMessages(picked.id)
-        .then(loaded => { if (!cancelled) setMessages(loaded) })
-        .catch(console.error)
+        .then(loaded => { if (!cancelled) { setMessages(loaded); setRestoringId(null) } })
+        /* A failed restore releases the gate too. Holding it would leave the
+           pane on a skeleton with no way out. */
+        .catch(e => { console.error(e); if (!cancelled) setRestoringId(null) })
       return () => { cancelled = true }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, initialTagsKey, conversationsWithTags.length])
+
+  /*
+   * Does this pane not yet know what to show?
+   *
+   * The condition itself is in `lib/ai/restore-gate`, where it can be tested
+   * without a Supabase client. This call is only the wiring.
+   */
+  const isRestoringConversation = isThreadSettling({
+    messageCount: messages.length,
+    initialTagCount: initialTags.length,
+    openTagCount: tags.length,
+    hasConversation: conversationId !== null,
+    isFetchingClaimedTranscript: restoringId !== null,
+    isLoadingList,
+    /* `tagsByConvId === undefined` as well as the loading flag: a query that
+       is disabled because there are no conversations yet is not "loading",
+       but it has also not answered. */
+    isLoadingConversationTags:
+      conversationIdKey.length > 0 && (isLoadingConvTags || tagsByConvId === undefined),
+    isLoadingTagLabels,
+  })
 
   return {
     // State
     messages,
     tags,
     conversationId,
+    isRestoringConversation,
     isConfigured: effectiveConfig.isConfigured,
     configMode: effectiveConfig.mode,
 
