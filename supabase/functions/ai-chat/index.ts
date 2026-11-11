@@ -51,6 +51,10 @@ import {
   buildNoteSearchTerms,
   escapeLike,
   summarizeToolResult,
+  peopleMap,
+  personLabel,
+  resolveStageLabel,
+  bucketChecklist,
 } from "../_shared/research-results.ts";
 
 const corsHeaders = {
@@ -1019,7 +1023,7 @@ What you are not for:
 - Hedged summaries that avoid taking a position
 
 Research tools:
-- You have tools that look up additional data — assets by ticker, portfolios by name, themes, team notes, asset search.
+- You have tools that look up additional data — assets by ticker, portfolios by name, themes, team notes, asset search, the decision record for an asset (get_decisions), and the research processes running on an asset (get_workflows).
 - Use them when the user references a company / portfolio / theme you don't already have full context on, or when comparing multiple objects would benefit the answer.
 - Don't call tools for objects you already have rich context on (the user's currently-tagged objects are already provided as documents).
 - Prefer specific lookups (get_asset, get_portfolio) over broad searches when you know the name. Cap yourself to the minimum set of tool calls needed.
@@ -1031,7 +1035,16 @@ Every tool result carries a "status". Honour it exactly:
 - status "empty" — the search RAN and matched nothing. Say that no MATCHING records were found, and say what was searched (the result's "searched" field tells you). Never widen this into "the firm has no research on X" or "nothing has been written" — you only know that this query matched nothing.
 - status "error" — the search DID NOT RUN. You do not know whether records exist. Say the lookup failed and that the answer is therefore incomplete. NEVER report an error as an absence of records, and never silently omit it.
 
-Never state or imply that you have reviewed everything available. You have seen only what these results contain. If a question needs a record type you have no tool for (decisions, workflows, meeting notes), say so plainly rather than answering from the records you do have.`;
+get_decisions returns FOUR separate kinds of record and they must never be merged:
+- A "recommendation" is what an analyst proposed. It is not a decision.
+- A "pm_ruling" is the PM's answer to a recommendation. Its "status" is the decision: pending, under_review, needs_discussion, accepted, accepted_with_modification, rejected, deferred or withdrawn. An accepted ruling does NOT mean a trade happened.
+- A "committed_trade" is a Trade Book row, the only object that represents a committed trade. Its "execution_status" says whether it was actually executed, so a committed trade at "not_started" has NOT been traded. Check "is_active" and "reverted_at" before treating one as live.
+- "decision_reviews" and "price_target_outcomes" are retrospective judgements, not decisions.
+Use the explicit id fields (recommendation_id, pm_ruling_id, committed_trade_id) to state how records link. Do not infer a link that is not in those fields. Zero committed_trades means none are visible to this user, never that none exist.
+
+get_workflows reports process state. When "current_stage_unresolved" or "stage_unresolved" is true, the stored stage does not match any stage in that workflow: say the stage is unrecorded rather than naming one. Honour "open_requirements_truncated" by saying more remain than are listed.
+
+Never state or imply that you have reviewed everything available. You have seen only what these results contain. If a question needs a record type you have no tool for (meeting notes, emails), say so plainly rather than answering from the records you do have.`;
 
   if (!opts.structured) return base;
   return `${base}\n\n${buildActionDirective(opts.maxActions, opts.maxEvidence, opts.allowDeep)}`;
@@ -1539,6 +1552,41 @@ const RESEARCH_TOOLS = [
       required: ["query"],
     },
   },
+  {
+    name: "get_decisions",
+    description:
+      "Look up the decision record for one asset by ticker: analyst recommendations and the " +
+      "context they were submitted with, the PM's ruling on each (pending, under review, needs " +
+      "discussion, accepted, accepted with modification, rejected, deferred or withdrawn), the " +
+      "committed trades in the Trade Book with their execution and reconciliation state, and any " +
+      "decision reviews or price-target outcomes. These are FOUR SEPARATE STAGES and the result " +
+      "keeps them separate: a recommendation is not a ruling, a ruling is not a committed trade, " +
+      "and a committed trade is not an executed one. Use this when the user asks what was " +
+      "decided, recommended, approved, traded or how a past decision turned out.",
+    input_schema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Ticker symbol like AAPL (case-insensitive)." },
+      },
+      required: ["symbol"],
+    },
+  },
+  {
+    name: "get_workflows",
+    description:
+      "Look up the research processes running on one asset by ticker: each workflow the asset is " +
+      "in, the stage it currently sits at, how many checklist requirements are done versus open, " +
+      "the open requirements themselves, who is assigned, and any stage deadlines. Use this when " +
+      "the user asks what work remains, what is outstanding, where a name is in the process, who " +
+      "owns it, or what is due.",
+    input_schema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Ticker symbol like AAPL (case-insensitive)." },
+      },
+      required: ["symbol"],
+    },
+  },
 ] as const;
 
 /*
@@ -1820,6 +1868,494 @@ async function executeResearchTool(
             matched_terms: strategy === "terms" ? terms.filter((t) => hay.includes(t)) : [q],
           };
         }),
+      });
+    }
+
+    /*
+     * ── get_decisions ────────────────────────────────────────────────────
+     *
+     * The decision chain, kept in four pieces because it IS four pieces:
+     *
+     *   trade_queue_items   an analyst's recommendation, with its rationale
+     *          |            and the stage it reached
+     *          v
+     *   decision_requests   the formal ask put to the PM, and the PM's ruling
+     *          |            (pending / under_review / needs_discussion /
+     *          |             accepted / accepted_with_modification /
+     *          |             rejected / deferred / withdrawn)
+     *          v
+     *   accepted_trades     the committed Trade Book row -- the ONLY object
+     *          |            that represents a committed trade -- carrying its
+     *          |            own execution_status and reconciliation_status
+     *          v
+     *   decision_reviews    how it was judged afterwards, keyed by the
+     *   price_target_...    recommendation id; outcomes keyed by the asset
+     *
+     * Collapsing these is the error this tool exists to prevent. "We decided
+     * to buy AAPL" is true of an accepted PM ruling and false of a Trade Book
+     * row still at execution_status 'not_started'. The payload therefore uses
+     * four named arrays and never a merged "decisions" list, and every row
+     * carries the foreign ids so the model can state the links rather than
+     * assume them.
+     *
+     * One honesty limit, stated in `searched` and unavoidable from inside the
+     * caller's own client: `accepted_trades` is readable only to portfolio
+     * members, so zero rows means "none visible to you", never "none exist".
+     * Measured on AAPL 2026-11-11: 6 rows exist, this caller can read 0.
+     */
+    if (name === "get_decisions") {
+      const sym = String(input.symbol || "").trim().toUpperCase();
+      if (!sym) return toolError("get_decisions", "missing_symbol");
+
+      const found = await runQuery<any>("get_decisions", "asset",
+        supabase.from("assets").select("id, symbol, company_name")
+          .ilike("symbol", sym).maybeSingle());
+      if (found.failed) return toolError("get_decisions", "asset");
+      const asset = found.data;
+      if (!asset) return toolEmpty("get_decisions", { symbol: sym, looked_in: "assets" });
+
+      // Stage 1 first: the PM rulings and the reviews are keyed by the
+      // recommendation ids, so they cannot be fetched until these are known.
+      const recs = await runQuery<any[]>("get_decisions", "recommendations",
+        supabase.from("trade_queue_items")
+          .select(
+            "id, portfolio_id, action, proposed_shares, proposed_weight, target_price, urgency, " +
+            "status, stage, outcome, outcome_at, outcome_note, rationale, thesis_text, conviction, " +
+            "time_horizon, created_by, created_at, updated_at, decided_at, decided_by, deferred_until, " +
+            "portfolio:portfolios(id, name)",
+          )
+          .eq("asset_id", asset.id)
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(12));
+      if (recs.failed) return toolError("get_decisions", "recommendations");
+      const recRows = recs.data || [];
+      const recIds = recRows.map((r: any) => r.id).filter(Boolean);
+
+      const [rulings, trades, reviews, outcomes] = await Promise.all([
+        recIds.length
+          ? runQuery<any[]>("get_decisions", "pm_rulings",
+              supabase.from("decision_requests")
+                .select(
+                  "id, trade_queue_item_id, portfolio_id, status, urgency, context_note, " +
+                  "decision_note, requested_by, reviewed_by, reviewed_at, created_at, " +
+                  "deferred_until, sizing_weight, sizing_shares, sizing_mode, accepted_trade_id",
+                )
+                .in("trade_queue_item_id", recIds)
+                .order("created_at", { ascending: false })
+                .limit(20))
+          : Promise.resolve({ data: [] as any[], failed: false }),
+        runQuery<any[]>("get_decisions", "committed_trades",
+          supabase.from("accepted_trades")
+            .select(
+              "id, portfolio_id, action, target_weight, delta_weight, delta_shares, notional_value, " +
+              "price_at_acceptance, source, decision_request_id, trade_queue_item_id, accepted_by, " +
+              "acceptance_note, execution_status, execution_completed_at, executed_by, " +
+              "reconciliation_status, reconciled_at, is_active, reverted_at, revert_reason, " +
+              "corrects_accepted_trade_id, created_at, portfolio:portfolios(id, name)",
+            )
+            .eq("asset_id", asset.id)
+            .order("created_at", { ascending: false })
+            .limit(12)),
+        recIds.length
+          ? runQuery<any[]>("get_decisions", "decision_reviews",
+              supabase.from("decision_reviews")
+                .select("id, decision_id, decision_quality, thesis_played_out, sizing_quality, " +
+                        "process_note, reviewed_by, reviewed_at")
+                .in("decision_id", recIds)
+                .limit(20))
+          : Promise.resolve({ data: [] as any[], failed: false }),
+        runQuery<any[]>("get_decisions", "price_target_outcomes",
+          supabase.from("price_target_outcomes")
+            .select("id, price_target_id, scenario_type, target_price, target_date, status, " +
+                    "hit_date, hit_price, accuracy_pct, days_to_hit, evaluated_at, created_at")
+            .eq("asset_id", asset.id)
+            .order("created_at", { ascending: false })
+            .limit(10)),
+      ]);
+
+      const badStage = rulings.failed ? "pm_rulings"
+        : trades.failed ? "committed_trades"
+        : reviews.failed ? "decision_reviews"
+        : outcomes.failed ? "price_target_outcomes"
+        : null;
+      if (badStage) return toolError("get_decisions", badStage);
+
+      const rulingRows = rulings.data || [];
+      const tradeRows = trades.data || [];
+      const reviewRows = reviews.data || [];
+      const outcomeRows = outcomes.data || [];
+
+      // One name lookup for every person referenced by the rows above. Only
+      // ids already present in rows the caller could read are resolved, so
+      // this reveals nothing the caller could not already see.
+      const personIds = [...new Set([
+        ...recRows.flatMap((r: any) => [r.created_by, r.decided_by]),
+        ...rulingRows.flatMap((d: any) => [d.requested_by, d.reviewed_by]),
+        ...tradeRows.flatMap((t: any) => [t.accepted_by, t.executed_by]),
+        ...reviewRows.map((r: any) => r.reviewed_by),
+      ].filter(Boolean))];
+      const people = personIds.length
+        ? await runQuery<any[]>("get_decisions", "people",
+            supabase.from("users").select("id, first_name, last_name, email").in("id", personIds))
+        : { data: [] as any[], failed: false };
+      if (people.failed) return toolError("get_decisions", "people");
+      const who = peopleMap(people.data);
+
+      const searched = {
+        symbol: sym,
+        scope:
+          "recommendations and PM rulings you can see, committed trades in portfolios you are a " +
+          "member of, plus reviews and price-target outcomes on this asset",
+      };
+
+      const total = recRows.length + rulingRows.length + tradeRows.length
+        + reviewRows.length + outcomeRows.length;
+      if (total === 0) return toolEmpty("get_decisions", searched);
+
+      return toolOk("get_decisions", {
+        ...searched,
+        asset_id: asset.id,
+        company: asset.company_name,
+        records_returned: total,
+        /*
+         * Said to the model in words, because a field it can ignore is a field
+         * it will ignore, and this is the distinction the whole tool is for.
+         */
+        stage_separation:
+          "These are four different kinds of record and must not be merged. A recommendation is an " +
+          "analyst's proposal. A pm_ruling is the PM's answer to it. A committed_trade is a Trade " +
+          "Book row and the ONLY object representing a committed trade; its execution_status says " +
+          "whether it was actually executed, so a committed trade with execution_status " +
+          "'not_started' has NOT been traded. decision_reviews and price_target_outcomes are " +
+          "retrospective judgements, not decisions.",
+        counts: {
+          recommendations: recRows.length,
+          pm_rulings: rulingRows.length,
+          committed_trades: tradeRows.length,
+          decision_reviews: reviewRows.length,
+          price_target_outcomes: outcomeRows.length,
+        },
+        recommendations: recRows.map((r: any) => ({
+          id: r.id,
+          action: r.action,
+          // Two different fields with overlapping vocabularies, named apart so
+          // the model cannot report one as the other. `decision_outcome` is
+          // deliberately absent: it is NULL on all 241 production rows.
+          queue_status: r.status ?? null,
+          pipeline_stage: r.stage ?? null,
+          lifecycle_outcome: r.outcome ?? null,
+          outcome_note: r.outcome_note ?? null,
+          outcome_at: r.outcome_at ?? null,
+          proposed_shares: r.proposed_shares ?? null,
+          proposed_weight: r.proposed_weight ?? null,
+          target_price: r.target_price ?? null,
+          urgency: r.urgency ?? null,
+          conviction: r.conviction ?? null,
+          time_horizon: r.time_horizon ?? null,
+          // The submission context the user asked for: why it was proposed.
+          rationale: truncate(r.rationale || "", 600) || null,
+          thesis: truncate(r.thesis_text || "", 600) || null,
+          portfolio_id: r.portfolio_id ?? null,
+          portfolio: r.portfolio?.name ?? null,
+          submitted_by: personLabel(r.created_by, who),
+          created_at: r.created_at ?? null,
+          updated_at: r.updated_at ?? null,
+          decided_by: personLabel(r.decided_by, who),
+          decided_at: r.decided_at ?? null,
+          deferred_until: r.deferred_until ?? null,
+        })),
+        pm_rulings: rulingRows.map((d: any) => ({
+          id: d.id,
+          // The links, explicit, so the model states them instead of guessing.
+          recommendation_id: d.trade_queue_item_id ?? null,
+          committed_trade_id: d.accepted_trade_id ?? null,
+          status: d.status ?? null,
+          urgency: d.urgency ?? null,
+          submitted_context: truncate(d.context_note || "", 500) || null,
+          decision_note: truncate(d.decision_note || "", 500) || null,
+          requested_by: personLabel(d.requested_by, who),
+          ruled_by: personLabel(d.reviewed_by, who),
+          reviewed_at: d.reviewed_at ?? null,
+          created_at: d.created_at ?? null,
+          deferred_until: d.deferred_until ?? null,
+          sizing_mode: d.sizing_mode ?? null,
+          sizing_weight: d.sizing_weight ?? null,
+          sizing_shares: d.sizing_shares ?? null,
+          portfolio_id: d.portfolio_id ?? null,
+        })),
+        committed_trades: tradeRows.map((t: any) => ({
+          id: t.id,
+          recommendation_id: t.trade_queue_item_id ?? null,
+          pm_ruling_id: t.decision_request_id ?? null,
+          corrects_trade_id: t.corrects_accepted_trade_id ?? null,
+          action: t.action,
+          target_weight: t.target_weight ?? null,
+          delta_weight: t.delta_weight ?? null,
+          delta_shares: t.delta_shares ?? null,
+          notional_value: t.notional_value ?? null,
+          price_at_acceptance: t.price_at_acceptance ?? null,
+          source: t.source ?? null,
+          portfolio_id: t.portfolio_id ?? null,
+          portfolio: t.portfolio?.name ?? null,
+          accepted_by: personLabel(t.accepted_by, who),
+          acceptance_note: truncate(t.acceptance_note || "", 400) || null,
+          created_at: t.created_at ?? null,
+          // Execution evidence, which is NOT the same fact as acceptance.
+          execution_status: t.execution_status ?? null,
+          execution_completed_at: t.execution_completed_at ?? null,
+          executed_by: personLabel(t.executed_by, who),
+          reconciliation_status: t.reconciliation_status ?? null,
+          reconciled_at: t.reconciled_at ?? null,
+          // A reverted or inactive row is still a record, but it is not a live
+          // commitment. Flagged rather than filtered, so the history survives.
+          is_active: t.is_active !== false,
+          reverted_at: t.reverted_at ?? null,
+          revert_reason: t.revert_reason ?? null,
+        })),
+        decision_reviews: reviewRows.map((r: any) => ({
+          id: r.id,
+          recommendation_id: r.decision_id ?? null,
+          decision_quality: r.decision_quality ?? null,
+          thesis_played_out: r.thesis_played_out ?? null,
+          sizing_quality: r.sizing_quality ?? null,
+          process_note: truncate(r.process_note || "", 500) || null,
+          reviewed_by: personLabel(r.reviewed_by, who),
+          reviewed_at: r.reviewed_at ?? null,
+        })),
+        price_target_outcomes: outcomeRows.map((o: any) => ({
+          id: o.id,
+          price_target_id: o.price_target_id ?? null,
+          scenario_type: o.scenario_type ?? null,
+          target_price: o.target_price ?? null,
+          target_date: o.target_date ?? null,
+          status: o.status ?? null,
+          hit_date: o.hit_date ?? null,
+          hit_price: o.hit_price ?? null,
+          accuracy_pct: o.accuracy_pct ?? null,
+          days_to_hit: o.days_to_hit ?? null,
+          evaluated_at: o.evaluated_at ?? null,
+          created_at: o.created_at ?? null,
+        })),
+      });
+    }
+
+    /*
+     * ── get_workflows ────────────────────────────────────────────────────
+     *
+     * What process is running on this name and what is still open.
+     *
+     * The stage reference is the trap. `asset_workflow_progress`'s
+     * `current_stage_key` and `asset_checklist_items.stage_id` are both TEXT,
+     * and production holds both conventions plus values that resolve to
+     * nothing: measured 2026-11-11, 364 of 874 progress rows name a stage that
+     * does not exist in their own workflow. `resolveStageLabel` tries both and
+     * returns null rather than guessing, and an unresolved stage is reported as
+     * unresolved. Echoing the raw key as a stage name would invent process
+     * state nobody recorded.
+     *
+     * Visibility needs no work here: `workflows`' own SELECT policy already
+     * requires the current org AND (public OR creator OR explicit access), and
+     * the stage, progress, checklist, assignment and deadline tables all scope
+     * through either that workflow or `current_org_id()`. The caller-scoped
+     * client is what makes that apply, which is why this never touches the
+     * service-role client.
+     */
+    if (name === "get_workflows") {
+      const sym = String(input.symbol || "").trim().toUpperCase();
+      if (!sym) return toolError("get_workflows", "missing_symbol");
+
+      const found = await runQuery<any>("get_workflows", "asset",
+        supabase.from("assets").select("id, symbol, company_name")
+          .ilike("symbol", sym).maybeSingle());
+      if (found.failed) return toolError("get_workflows", "asset");
+      const asset = found.data;
+      if (!asset) return toolEmpty("get_workflows", { symbol: sym, looked_in: "assets" });
+
+      const progress = await runQuery<any[]>("get_workflows", "progress",
+        supabase.from("asset_workflow_progress")
+          .select(
+            "id, workflow_id, current_stage_key, is_started, is_completed, started_at, " +
+            "completed_at, updated_at, started_by, completed_by, " +
+            "workflow:workflows(id, name, description, status, is_public, archived, deleted)",
+          )
+          .eq("asset_id", asset.id)
+          .order("updated_at", { ascending: false })
+          .limit(12));
+      if (progress.failed) return toolError("get_workflows", "progress");
+
+      // An archived or soft-deleted workflow is not current work. Dropped
+      // here rather than in the query because the flags live on the embedded
+      // row, and counted so the drop is visible instead of silent.
+      const allProgress = progress.data || [];
+      const progressRows = allProgress.filter(
+        (p: any) => p.workflow && p.workflow.deleted !== true && p.workflow.archived !== true,
+      );
+      const workflowIds = [...new Set(progressRows.map((p: any) => p.workflow_id).filter(Boolean))];
+
+      const [stages, checklist, assignments, deadlines] = await Promise.all([
+        workflowIds.length
+          ? runQuery<any[]>("get_workflows", "stages",
+              supabase.from("workflow_stages")
+                .select("id, workflow_id, stage_key, stage_label, sort_order, standard_deadline_days, completion_criteria")
+                .in("workflow_id", workflowIds)
+                .order("sort_order", { ascending: true }))
+          : Promise.resolve({ data: [] as any[], failed: false }),
+        runQuery<any[]>("get_workflows", "requirements",
+          supabase.from("asset_checklist_items")
+            .select("id, workflow_id, stage_id, item_text, status, completed, item_type, " +
+                    "assignee_id, due_date, completed_at, completed_by, takeaway, created_at, updated_at")
+            .eq("asset_id", asset.id)
+            .order("sort_order", { ascending: true })
+            .limit(120)),
+        runQuery<any[]>("get_workflows", "assignments",
+          supabase.from("stage_assignments")
+            .select("id, workflow_id, stage_id, assigned_user_id, assigned_by, assigned_at, due_date, notes")
+            .eq("asset_id", asset.id)
+            .limit(30)),
+        runQuery<any[]>("get_workflows", "deadlines",
+          supabase.from("asset_stage_deadlines")
+            .select("id, workflow_id, stage_id, deadline_date, notes, set_by, updated_at")
+            .eq("asset_id", asset.id)
+            .limit(30)),
+      ]);
+
+      const badStage = stages.failed ? "stages"
+        : checklist.failed ? "requirements"
+        : assignments.failed ? "assignments"
+        : deadlines.failed ? "deadlines"
+        : null;
+      if (badStage) return toolError("get_workflows", badStage);
+
+      const stageRows = (stages.data || []) as any[];
+      const checklistRows = (checklist.data || []) as any[];
+      const assignmentRows = (assignments.data || []) as any[];
+      const deadlineRows = (deadlines.data || []) as any[];
+
+      const personIds = [...new Set([
+        ...checklistRows.map((c: any) => c.assignee_id),
+        ...checklistRows.map((c: any) => c.completed_by),
+        ...assignmentRows.flatMap((a: any) => [a.assigned_user_id, a.assigned_by]),
+        ...progressRows.flatMap((p: any) => [p.started_by, p.completed_by]),
+        ...deadlineRows.map((d: any) => d.set_by),
+      ].filter(Boolean))];
+      const people = personIds.length
+        ? await runQuery<any[]>("get_workflows", "people",
+            supabase.from("users").select("id, first_name, last_name, email").in("id", personIds))
+        : { data: [] as any[], failed: false };
+      if (people.failed) return toolError("get_workflows", "people");
+      const who = peopleMap(people.data);
+
+      const searched = {
+        symbol: sym,
+        scope: "workflows on this asset that you have access to, with their stages, requirements, assignments and deadlines",
+      };
+      if (progressRows.length === 0) {
+        return toolEmpty("get_workflows", {
+          ...searched,
+          ...(allProgress.length > progressRows.length
+            ? { note_archived_excluded: allProgress.length - progressRows.length }
+            : {}),
+        });
+      }
+
+      const labelFor = (ref: string | null, wf: string | null) => resolveStageLabel(ref, wf, stageRows);
+
+      const workflows = progressRows.map((p: any) => {
+        const wfId = p.workflow_id;
+        const mine = checklistRows.filter((c: any) => c.workflow_id === wfId);
+        const buckets = bucketChecklist(mine, 15);
+        const cur = labelFor(p.current_stage_key, wfId);
+        return {
+          workflow_id: wfId,
+          name: p.workflow?.name ?? null,
+          description: truncate(p.workflow?.description || "", 300) || null,
+          workflow_status: p.workflow?.status ?? null,
+          is_started: p.is_started === true,
+          is_completed: p.is_completed === true,
+          started_at: p.started_at ?? null,
+          started_by: personLabel(p.started_by, who),
+          completed_at: p.completed_at ?? null,
+          updated_at: p.updated_at ?? null,
+          current_stage_key: p.current_stage_key ?? null,
+          current_stage_label: cur.label,
+          // Honest about the drift rather than papering over it.
+          current_stage_unresolved: Boolean(p.current_stage_key) && !cur.resolved,
+          stages: stageRows
+            .filter((s: any) => s.workflow_id === wfId)
+            .map((s: any) => ({ key: s.stage_key, label: s.stage_label, order: s.sort_order })),
+          requirement_counts: {
+            total: buckets.total,
+            open: buckets.open,
+            completed: buckets.completed,
+            not_applicable: buckets.not_applicable,
+          },
+          open_requirements_truncated: buckets.open_items_truncated,
+          open_requirements: buckets.open_items.map((c: any) => {
+            const st = labelFor(c.stage_id, wfId);
+            return {
+              id: c.id,
+              requirement: truncate(c.item_text || "", 300) || null,
+              requirement_type: c.item_type ?? null,
+              stage_label: st.label,
+              stage_unresolved: Boolean(c.stage_id) && !st.resolved,
+              assigned_to: personLabel(c.assignee_id, who),
+              due_date: c.due_date ?? null,
+              created_at: c.created_at ?? null,
+              updated_at: c.updated_at ?? null,
+            };
+          }),
+          // Historical completion, enough to explain the current state.
+          recently_completed: mine
+            .filter((c: any) => c.status === "completed" && c.completed_at)
+            .sort((a: any, b: any) => String(b.completed_at).localeCompare(String(a.completed_at)))
+            .slice(0, 5)
+            .map((c: any) => ({
+              id: c.id,
+              requirement: truncate(c.item_text || "", 200) || null,
+              takeaway: truncate(c.takeaway || "", 300) || null,
+              completed_by: personLabel(c.completed_by, who),
+              completed_at: c.completed_at,
+            })),
+          assignments: assignmentRows
+            .filter((a: any) => a.workflow_id === wfId)
+            .map((a: any) => ({
+              id: a.id,
+              stage_label: labelFor(a.stage_id, wfId).label,
+              assigned_to: personLabel(a.assigned_user_id, who),
+              assigned_by: personLabel(a.assigned_by, who),
+              assigned_at: a.assigned_at ?? null,
+              due_date: a.due_date ?? null,
+              notes: truncate(a.notes || "", 200) || null,
+            })),
+          deadlines: deadlineRows
+            .filter((d: any) => d.workflow_id === wfId)
+            .map((d: any) => ({
+              id: d.id,
+              stage_label: labelFor(d.stage_id, wfId).label,
+              deadline_date: d.deadline_date ?? null,
+              set_by: personLabel(d.set_by, who),
+              notes: truncate(d.notes || "", 200) || null,
+            })),
+        };
+      });
+
+      const openTotal = workflows.reduce((n, w) => n + w.requirement_counts.open, 0);
+
+      return toolOk("get_workflows", {
+        ...searched,
+        asset_id: asset.id,
+        company: asset.company_name,
+        records_returned: workflows.length,
+        workflows_returned: workflows.length,
+        open_requirements_total: openTotal,
+        ...(allProgress.length > progressRows.length
+          ? { archived_or_deleted_workflows_excluded: allProgress.length - progressRows.length }
+          : {}),
+        // Requirements with no workflow_id belong to no process here, so they
+        // are counted and not silently folded into one.
+        unassigned_requirements: checklistRows.filter((c: any) => !c.workflow_id).length,
+        workflows,
       });
     }
 

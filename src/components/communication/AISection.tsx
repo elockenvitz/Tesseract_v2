@@ -729,6 +729,8 @@ function ToolCallsFooter({
     if (name === 'get_portfolio')     return `Pulled portfolio: ${String(input.name_or_id || '')}`
     if (name === 'get_theme')         return `Pulled theme: ${String(input.name_or_id || '')}`
     if (name === 'search_team_notes') return `Searched notes for "${String(input.query || '')}"`
+    if (name === 'get_decisions')     return `Checked the decision record for ${String(input.symbol || '').toUpperCase()}`
+    if (name === 'get_workflows')     return `Checked open work on ${String(input.symbol || '').toUpperCase()}`
     return name
   }
 
@@ -843,12 +845,35 @@ function SourceLink({ source }: { source: AiSourceRef }) {
     price_target: 'Target',
     portfolio: 'Portfolio',
     theme: 'Theme',
+    // Four separate words for four separate records. Calling them all
+    // "Decision" would undo in the label exactly what the tool keeps apart.
+    recommendation: 'Recommendation',
+    decision_request: 'PM ruling',
+    accepted_trade: 'Committed trade',
+    decision_review: 'Review',
+    outcome: 'Outcome',
+    workflow: 'Process',
+    checklist_item: 'Requirement',
   }
 
-  // Notes and thesis sections live behind Research; everything else reads on
-  // the overview.
-  const focus: AssetFocus =
-    source.kind === 'note' || source.kind === 'contribution' ? 'research' : 'overview'
+  // Where each kind is actually read. The asset page already has the tabs;
+  // this is a routing table, not a new surface.
+  const FOCUS_BY_KIND: Record<AiSourceRef['kind'], AssetFocus> = {
+    asset: 'overview',
+    note: 'research',
+    contribution: 'research',
+    price_target: 'overview',
+    portfolio: 'overview',
+    theme: 'overview',
+    recommendation: 'decisions',
+    decision_request: 'decisions',
+    decision_review: 'decisions',
+    outcome: 'decisions',
+    accepted_trade: 'position',
+    workflow: 'framework',
+    checklist_item: 'framework',
+  }
+  const focus: AssetFocus = FOCUS_BY_KIND[source.kind] ?? 'overview'
 
   const when = source.timestamp
     ? new Date(source.timestamp).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })

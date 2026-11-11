@@ -40,6 +40,8 @@ export type AiToolName =
   | 'get_portfolio'
   | 'get_theme'
   | 'search_team_notes'
+  | 'get_decisions'
+  | 'get_workflows'
 
 /**
  * What the reader is told while a tool runs.
@@ -59,6 +61,8 @@ export const TOOL_STATUS_LABEL: Readonly<Record<AiToolName, string>> = Object.fr
   get_portfolio: 'Checking portfolio exposure…',
   get_theme: 'Checking theme…',
   search_team_notes: 'Checking recent research…',
+  get_decisions: 'Checking the decision record…',
+  get_workflows: 'Checking open work…',
 })
 
 /** Non-tool phases worth showing. Same rule: activity, never reasoning. */
@@ -133,6 +137,8 @@ export interface AiStreamFinalEvent {
     document_title: string
     cited_text: string
     kind?: 'asset' | 'note' | 'contribution' | 'price_target' | 'portfolio' | 'theme'
+      | 'recommendation' | 'decision_request' | 'accepted_trade'
+      | 'decision_review' | 'outcome' | 'workflow' | 'checklist_item'
     document_id?: string
     asset_id?: string | null
     symbol?: string | null
@@ -151,6 +157,8 @@ export interface AiStreamFinalEvent {
     result_count?: number
     sources?: Array<{
       kind: 'asset' | 'note' | 'contribution' | 'price_target' | 'portfolio' | 'theme'
+      | 'recommendation' | 'decision_request' | 'accepted_trade'
+      | 'decision_review' | 'outcome' | 'workflow' | 'checklist_item'
       id: string
       asset_id?: string | null
       symbol?: string | null
