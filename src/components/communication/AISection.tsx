@@ -11,6 +11,8 @@ import {
   PanelLeftOpen,
   PanelLeftClose,
   ArrowLeft,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react'
 import { useAI, useAISuggestions, type TagRef } from '../../hooks/useAI'
 import { useAIConfig, AI_MODELS, AI_PROVIDERS, type AIProvider } from '../../hooks/useAIConfig'
@@ -26,10 +28,18 @@ import { clsx } from 'clsx'
  * failed" starts rendering as "no records found" on one surface and not the
  * other.
  */
-import { AiMessage, AiThinking, AiErrorNotice, AiPrompts } from '../ai'
+import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips } from '../ai'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
+/*
+ * The two shapes this pane takes, and the layout each implies.
+ *
+ * Derived from the pane the reader is already in rather than stored here: a
+ * second, independent mode switch is how a 384px rail ends up claiming to be
+ * in research mode. See `lib/ai/chat-modes`.
+ */
+import { chatLayout, modeToggleLabel, type AiChatMode } from '../../lib/ai/chat-modes'
 import {
   conversationContextState, describeSendTarget, shortSubjectLabel,
   subjectsAgree, subjectTag,
@@ -67,6 +77,23 @@ interface AISectionProps {
    */
   currentSubject?: { type: string; id: string; label?: string | null } | null
   onOpenSettings?: () => void
+  /**
+   * Compact rail or full-width research pane.
+   *
+   * Optional and derived from `isFullscreen` when absent, so every existing
+   * caller keeps the behaviour it had. The parent passes it explicitly
+   * because only the parent knows whether this is a phone sheet, where
+   * "fullscreen" is meaningless and the control is not even rendered.
+   */
+  mode?: AiChatMode
+  /**
+   * Switch modes. Rendered as a labelled control inside the pane only when
+   * supplied — on a phone there is nothing to switch to.
+   *
+   * It must be the SAME callback that drives the pane's own width
+   * (`onToggleFullscreen`), not a second piece of state.
+   */
+  onToggleMode?: () => void
 }
 
 export function AISection({
@@ -77,8 +104,13 @@ export function AISection({
   initialTags = [],
   engagementTarget = null,
   currentSubject = null,
-  onOpenSettings
+  onOpenSettings,
+  mode: modeProp,
+  onToggleMode,
 }: AISectionProps) {
+  /* One source of truth for the width: the pane's own fullscreen state. */
+  const mode: AiChatMode = modeProp ?? (isFullscreen ? 'research' : 'compact')
+  const layout = chatLayout(mode)
   const {
     messages,
     tags,
@@ -109,7 +141,36 @@ export function AISection({
   } = useAI(initialTags)
 
   const { effectiveConfig, updateUserPrefs } = useAIConfig()
-  const suggestions = useAISuggestions(tags, tagLabels)
+  /*
+   * The questions offered on an empty thread.
+   *
+   * `tags` is the open conversation's own binding, so the suggestions follow
+   * the thread rather than the last engagement. The target contributes only
+   * what it alone knows — the ticker, the portfolio name, and the issue that
+   * raised this — and `suggestedPrompts` names nothing it was not given.
+   */
+  /*
+   * ...and only while the target still describes where the reader is. It is
+   * never cleared, so after walking from AAPL to MSFT its ticker would
+   * otherwise seed a question about AAPL on an MSFT thread. Same rule, and
+   * the same helper, as the bound-object header below.
+   */
+  const targetStillCurrent = subjectsAgree(
+    engagementTarget
+      ? { type: engagementTarget.objectType, id: engagementTarget.objectId }
+      : null,
+    currentSubject,
+  )
+  const suggestions = useAISuggestions(tags, tagLabels, {
+    target: engagementTarget && targetStillCurrent
+      ? {
+          symbol: engagementTarget.symbol ?? null,
+          portfolioName: engagementTarget.portfolioName ?? null,
+          issue: engagementTarget.issue ?? null,
+        }
+      : null,
+    mode,
+  })
 
   const [input, setInput] = useState('')
 
@@ -226,7 +287,9 @@ export function AISection({
   // When the user picks a conversation, snap back to chat automatically —
   // they almost always want to read it, not stare at the list.
   const [showListAsScreen, setShowListAsScreen] = useState(false)
-  const isInlineSidebar = isFullscreen
+  /* Research mode has the width for the list beside the thread; compact does
+     not, and hands the whole pane over to it instead. */
+  const isInlineSidebar = layout.showInlineSidebar
   const handleSelectConversationFromList = (id: string) => {
     selectConversation(id)
     if (!isInlineSidebar) setShowListAsScreen(false)
@@ -507,9 +570,8 @@ export function AISection({
           </button>
         </div>
       )}
-      {/* Minimal header — sidebar toggle only. The AI knows what page
-          you're on; no need to spell it out in the chat surface. */}
-      <div className="px-2 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+      {/* The pane's own controls: conversations, and the mode this is in. */}
+      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
         <button
           onClick={() => {
             if (isInlineSidebar) setShowConversationList(v => !v)
@@ -526,10 +588,65 @@ export function AISection({
             ? <PanelLeftClose className="h-4 w-4" />
             : <PanelLeftOpen  className="h-4 w-4" />}
         </button>
+
+        {/*
+          The mode, named rather than implied.
+
+          The width control already existed in the pane's outer chrome as an
+          unlabelled Maximize icon, which is why nobody found the research
+          layout: "fullscreen" describes the window, not what the pane becomes.
+          Same callback, same single piece of state — this one says what it is
+          for. Absent on a phone, where the sheet is already edge to edge.
+        */}
+        {onToggleMode && (
+          <button
+            type="button"
+            data-testid="ai-mode-toggle"
+            onClick={onToggleMode}
+            aria-pressed={mode === 'research'}
+            className={clsx(
+              'ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium',
+              mode === 'research'
+                ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                : 'text-gray-500 hover:bg-gray-200 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200',
+            )}
+            title={modeToggleLabel(mode)}
+          >
+            {mode === 'research'
+              ? <Minimize2 className="h-3.5 w-3.5" />
+              : <Maximize2 className="h-3.5 w-3.5" />}
+            {mode === 'research' ? 'Research mode' : 'Expand'}
+          </button>
+        )}
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/*
+        What this conversation is about.
+
+        Display only: the model's context is assembled server-side from the
+        conversation's tags. On the rail, with the thread scrolled, this is the
+        only thing on screen that answers "which company am I asking about".
+      */}
+      <AiContextChips
+        subject={currentSubject}
+        target={engagementTarget}
+        mode={mode}
+      />
+
+      {/*
+        Messages.
+
+        The scrollport is the pane; the COLUMN inside it is the reading
+        measure. Research mode centres a 48rem column rather than stretching a
+        thread across a 1600px monitor, where prose runs to about 200
+        characters a line and a reply becomes unreadable at exactly the moment
+        the reader asked for more room.
+      */}
+      <div className={clsx('flex-1 overflow-y-auto', layout.threadPad)}>
+        {/* `min-h-full` so the empty state's own centring still has a box to
+            centre inside once the column, rather than the scrollport, is the
+            prompts' parent. */}
+        <div className={clsx(layout.column, layout.threadGap, 'flex min-h-full flex-col')}>
         {messages.length === 0 ? (
           /* An empty thread. The prompts carry the explanation; if the prior
              message failed and got popped, the error rides above them so it
@@ -538,6 +655,7 @@ export function AISection({
             suggestions={suggestions}
             onPick={handleSuggestionClick}
             header={<AiErrorNotice error={error} onRetry={retryLastSend} />}
+            columns={layout.promptColumns}
           />
         ) : (
           <>
@@ -547,6 +665,9 @@ export function AISection({
                 message={message}
                 modelLabel={modelLabelFor(message.model)}
                 onTickerClick={handleTickerClick}
+                /* The bubble's ceiling, and whether the evidence rail starts
+                   open. Research mode is where sources get checked. */
+                mode={mode}
                 /* Structured recommendations arrive already validated against
                    the action catalogue and against this conversation's own
                    context. The pane never reads the prose to find them, and
@@ -576,10 +697,12 @@ export function AISection({
             <div ref={messagesEndRef} />
           </>
         )}
+        </div>
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+      <div className={clsx('border-t border-gray-200 dark:border-gray-700', mode === 'research' ? 'px-6 py-4' : 'p-4')}>
+        <div className={layout.column}>
         <div className="flex items-end space-x-2">
           <div className="flex-1 relative">
             <textarea
@@ -691,6 +814,7 @@ export function AISection({
             <span>Settings</span>
           </button>
         </div>
+        </div> {/* reading column */}
       </div>
       </div> {/* main pane */}
     </div>

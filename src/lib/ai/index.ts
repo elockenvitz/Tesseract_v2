@@ -112,6 +112,16 @@ export type {
 } from './request-context'
 
 export {
+  chatModeFor,
+  chatLayout,
+  modeToggleLabel,
+} from './chat-modes'
+export type { AiChatMode, ChatLayout, ChatModeInput } from './chat-modes'
+
+export { suggestedPrompts } from './suggested-prompts'
+export type { PromptContext, PromptTag, PromptTarget } from './suggested-prompts'
+
+export {
   selectContext,
   describeSelection,
   DEFAULT_BUDGET,

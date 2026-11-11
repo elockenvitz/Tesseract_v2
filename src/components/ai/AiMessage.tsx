@@ -22,6 +22,7 @@ import { AiProse } from './AiProse'
 import { ResearchTrail } from './ResearchTrail'
 import { Citations } from './Citations'
 import type { AiRenderableMessage, AiSourceRef } from '../../lib/ai/presentation'
+import { chatLayout, type AiChatMode } from '../../lib/ai/chat-modes'
 
 interface AiMessageProps {
   message: AiRenderableMessage
@@ -31,13 +32,29 @@ interface AiMessageProps {
   onOpenSource?: (source: AiSourceRef) => void
   /** Suggested actions, or anything else the chat wants under the body. */
   footer?: ReactNode
-  /** A briefing opens its evidence; a chat reply folds it away. */
+  /**
+   * A briefing opens its evidence; a chat reply folds it away.
+   *
+   * Left undefined, the mode decides: research mode is where someone is
+   * checking sources, and a trail folded shut on a full-width pane is a click
+   * charged for nothing.
+   */
   evidenceOpen?: boolean
+  /**
+   * Compact rail or full-width research pane.
+   *
+   * It governs the bubble's ceiling, which is not cosmetic: at `max-w-[85%]`
+   * a six-column weight table scrolls inside a container that had 15% of a
+   * 1600px pane left over beside it.
+   */
+  mode?: AiChatMode
 }
 
 export function AiMessage({
-  message, modelLabel, onTickerClick, onOpenSource, footer, evidenceOpen = false,
+  message, modelLabel, onTickerClick, onOpenSource, footer, evidenceOpen, mode = 'compact',
 }: AiMessageProps) {
+  const layout = chatLayout(mode)
+  const showEvidenceOpen = evidenceOpen ?? layout.evidenceOpen
   const [copied, setCopied] = useState(false)
   const isAssistant = message.role === 'assistant'
 
@@ -55,7 +72,8 @@ export function AiMessage({
     <div className={clsx('flex group', isAssistant ? 'justify-start' : 'justify-end')}>
       <div
         className={clsx(
-          'relative max-w-[85%] rounded-lg px-4 py-3',
+          'relative rounded-lg px-4 py-3',
+          isAssistant ? layout.assistantBubble : layout.userBubble,
           isAssistant
             ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
             : 'bg-primary-600 text-white',
@@ -70,7 +88,7 @@ export function AiMessage({
         {isAssistant && message.tool_calls && message.tool_calls.length > 0 && (
           <ResearchTrail
             toolCalls={message.tool_calls}
-            defaultOpen={evidenceOpen}
+            defaultOpen={showEvidenceOpen}
             onOpenSource={onOpenSource}
           />
         )}
@@ -78,7 +96,7 @@ export function AiMessage({
         {isAssistant && message.citations && message.citations.length > 0 && (
           <Citations
             citations={message.citations}
-            defaultOpen={evidenceOpen}
+            defaultOpen={showEvidenceOpen}
             onOpenSource={onOpenSource}
           />
         )}

@@ -9,7 +9,7 @@ import { clsx } from 'clsx'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
 import { useDismissOnBack } from '../../hooks/useDismissOnBack'
 import type { EngagementTarget } from '../../lib/engagement'
-import { selectContext } from '../../lib/ai'
+import { selectContext, chatModeFor, modeToggleLabel } from '../../lib/ai'
 
 interface CommunicationPaneProps {
   /** Presents the pane as a bottom sheet instead of a fixed right rail. */
@@ -211,6 +211,19 @@ export function CommunicationPane({
             */
             currentSubject={tabSubject}
             onOpenSettings={onOpenSettings}
+            /*
+              Compact rail or full-width research pane.
+
+              Derived from the pane's own width state, so the two can never
+              disagree: `chatModeFor` returns compact on a phone whatever the
+              rail state says, because the sheet is already edge to edge and
+              has no room for the inline conversation list.
+            */
+            mode={chatModeFor({ isFullscreen, isMobile })}
+            /* The switch, only where there is something to switch to. The
+               same callback that drives the pane's width — not a second
+               piece of state. */
+            onToggleMode={isMobile ? undefined : onToggleFullscreen}
           />
         )
       case 'discuss':
@@ -322,7 +335,13 @@ export function CommunicationPane({
               <button
                 onClick={onToggleFullscreen}
                 className="p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"
-                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                /* Two controls drive the same state, so they say the same
+                   thing. On the AI view the width IS the mode. */
+                title={
+                  view === 'ai'
+                    ? modeToggleLabel(chatModeFor({ isFullscreen, isMobile }))
+                    : isFullscreen ? 'Exit fullscreen' : 'Fullscreen'
+                }
               >
                 {isFullscreen ? (
                   <Minimize2 className="h-4 w-4" />

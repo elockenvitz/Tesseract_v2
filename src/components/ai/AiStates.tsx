@@ -108,14 +108,21 @@ export function AiErrorNotice({
  * suggestions change with the asset.
  */
 export function AiPrompts({
-  suggestions, onPick, header, className,
+  suggestions, onPick, header, className, columns = 1,
 }: {
   suggestions: string[]
   onPick: (suggestion: string) => void
   /** Anything to show above the prompts — an error, a context note. */
   header?: ReactNode
   className?: string
+  /**
+   * How many sit across. Research mode has the width for two, which is the
+   * difference between four questions and six fitting above the composer
+   * without the column running past the reading measure.
+   */
+  columns?: 1 | 2
 }) {
+  const wide = columns === 2
   return (
     <div className={clsx('flex h-full flex-col items-center justify-center px-4 text-center', className)}>
       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full
@@ -123,8 +130,16 @@ export function AiPrompts({
                       dark:from-primary-900/30 dark:to-purple-900/30">
         <Sparkles className="h-5 w-5 text-primary-500" />
       </div>
-      {header && <div className="mb-3 w-full max-w-sm text-left">{header}</div>}
-      <div className="w-full max-w-sm space-y-2">
+      {header && (
+        <div className={clsx('mb-3 w-full text-left', wide ? 'max-w-2xl' : 'max-w-sm')}>{header}</div>
+      )}
+      <div
+        data-testid="ai-prompts"
+        className={clsx(
+          'w-full',
+          wide ? 'grid max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2' : 'max-w-sm space-y-2',
+        )}
+      >
         {suggestions.map((suggestion, i) => (
           <button
             key={i}

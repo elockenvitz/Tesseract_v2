@@ -15,6 +15,8 @@ import {
   createInFlight,
   cancelInFlight,
   shouldApplyToView,
+  suggestedPrompts,
+  type PromptContext,
   type AiAction,
   type AiEvidence,
   type AiObjectRef,
@@ -899,57 +901,21 @@ export function useAI(initialTags: TagRef[] = []) {
 }
 
 // ─── Suggested prompts ─────────────────────────────────────────────────────
-// Suggestions adapt to whatever's tagged. Single object → object-specific
-// prompts using its actual name (so users see "Analyze AAPL's thesis"
-// rather than the generic "Analyze my thesis"). Multi-tag → comparison.
-// No tags → generic market.
-export function useAISuggestions(tags: TagRef[], tagLabels: Record<string, string> = {}) {
-  if (tags.length === 0) {
-    return [
-      'What sectors are showing momentum?',
-      'Explain the current market environment',
-      'What should I be watching this week?',
-    ]
-  }
-  const labelFor = (t: TagRef) => tagLabels[`${t.type}:${t.id}`] || t.type
-  const onlyAssets = tags.every(t => t.type === 'asset')
-
-  if (tags.length === 1) {
-    const t = tags[0]
-    const name = labelFor(t)
-    if (t.type === 'asset') {
-      return [
-        `Analyze ${name}'s thesis for blind spots`,
-        `Suggest bull/base/bear outcomes for ${name}`,
-        `What are the key risks to the ${name} thesis?`,
-        `Summarize the team's notes on ${name}`,
-      ]
-    }
-    if (t.type === 'theme') {
-      return [
-        `Which assets have the most exposure to ${name}?`,
-        `What are the key drivers of ${name}?`,
-        `Suggest assets to add to ${name}`,
-      ]
-    }
-    if (t.type === 'portfolio') {
-      return [
-        `Analyze ${name}'s sector allocation`,
-        `What are ${name}'s concentration risks?`,
-        `Suggest rebalancing actions for ${name}`,
-      ]
-    }
-  }
-  if (onlyAssets && tags.length > 1) {
-    const names = tags.map(labelFor).join(' vs ')
-    return [
-      `Compare ${names} side by side`,
-      `Which has the strongest thesis: ${names}?`,
-      `How do the risks differ across ${names}?`,
-    ]
-  }
-  return [
-    `Synthesize what ${tags.map(labelFor).join(', ')} have in common`,
-    `Highlight the biggest risks across ${tags.map(labelFor).join(', ')}`,
-  ]
+/**
+ * Suggestions adapt to whatever's tagged, and to why the pane was opened.
+ *
+ * The strings and the rules they follow are in `lib/ai/suggested-prompts`, not
+ * here: this module builds a Supabase client at import time, so nothing
+ * declared in it can be tested without standing up auth. That is the reason
+ * the old version shipped a sentence about a company called "asset" — the
+ * no-label fallback had nowhere a test could reach it.
+ *
+ * The signature is unchanged for existing callers; `extra` is additive.
+ */
+export function useAISuggestions(
+  tags: TagRef[],
+  tagLabels: Record<string, string> = {},
+  extra: Pick<PromptContext, 'target' | 'mode'> = {},
+) {
+  return suggestedPrompts({ tags, tagLabels, ...extra })
 }
