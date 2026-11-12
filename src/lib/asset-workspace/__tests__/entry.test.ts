@@ -44,8 +44,8 @@ describe('arriving to rule on something', () => {
     expect(entry.decisionId).toBe('dr-7')
   })
 
-  it('is a decision when the sender only named the intent', () => {
-    /* A lens that knows the reader is deciding but not which request. The
+  it('is a decision when the sender only named the destination', () => {
+    /* A surface that knows the reader is deciding but not which request. The
        page can still lead with what is waiting; it just cannot point at one
        row. */
     const entry = resolveEntry(assetTabFor({
@@ -53,6 +53,20 @@ describe('arriving to rule on something', () => {
     }).data)
     expect(entry.mode).toBe('decision')
     expect(entry.decisionId).toBeNull()
+  })
+
+  it('is not a decision merely because a decisions lens sent them', () => {
+    /*
+     * `DecisionDetail` sends a reader from a DECIDED record with
+     * `focus: 'research'` -- "go and read the case". Reading its origin as a
+     * decision entry would lead that page with whatever unrelated request
+     * happens to be open on the name. The origin is provenance, not intent.
+     */
+    const entry = resolveEntry(assetTabFor({
+      assetId: 'a-1', focus: 'research', origin: 'decisions',
+    }).data)
+    expect(entry.mode).toBe('general')
+    expect(entry.origin).toBe('decisions')
   })
 
   it('carries the book the sender was looking at it from', () => {

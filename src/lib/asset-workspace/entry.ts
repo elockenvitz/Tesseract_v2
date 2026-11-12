@@ -37,10 +37,15 @@
  * composes differently when the reader came for a thing; it does not pretend
  * they did.
  *
- * Which is why `decisionId` and `work` may be null on their own modes: the
- * Decision Inbox can say "this request", and a lens can only say "the reader
- * came here to decide". Both are honest; the first is more useful, and a
- * surface that needs the exact record checks for it.
+ * Which is why `decisionId` may be null on a decision mode: the Decision
+ * Inbox can say "this request", while a surface that sends a reader to the
+ * decision destination can only say "they came here to decide". Both are
+ * honest; the first is more useful, and a surface that needs the exact record
+ * checks for it.
+ *
+ * `origin` never decides a mode. It says which lens raised the hop, which is
+ * provenance for the reader, and a lens name is not a statement about what
+ * the reader came to do.
  */
 
 import { destinationFromTabData, type WorkDestination } from '../asset-work/work-destination'
@@ -72,9 +77,6 @@ export const GENERAL_ENTRY: WorkspaceEntry = {
   origin: null,
   reason: null,
 }
-
-/** Origins that mean the reader came to rule on something. */
-const DECISION_ORIGINS = new Set(['decisions', 'decision-inbox'])
 
 /**
  * The shape this reads: whatever the shell merged into the asset tab.
@@ -123,8 +125,17 @@ export function resolveEntry(data: EntryDescriptor): WorkspaceEntry {
   const named = destinationFromTabData(data)
   const work = named && str(named.workflowId) ? named : null
 
+  /*
+   * A named record, or an explicitly named destination. Never the origin.
+   *
+   * `origin` is provenance -- which lens raised the hop -- and it is too weak
+   * to compose a page on. The Decisions lens sends a reader to a DECIDED
+   * record with `focus: 'research'`, meaning "go and read the case"; treating
+   * its origin as a decision entry would lead that page with whatever
+   * unrelated request happens to be open on the name.
+   */
   const mode: WorkspaceEntryMode =
-    decisionId || str(data.focus) === 'decisions' || (origin && DECISION_ORIGINS.has(origin))
+    decisionId || str(data.focus) === 'decisions'
       ? 'decision'
       : work
         ? 'work'
