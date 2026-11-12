@@ -58,8 +58,22 @@ export interface ChatLayout {
    * Compact has no room to centre anything.
    */
   column: string
-  /** The assistant bubble. Research lets a table use the whole column. */
-  assistantBubble: string
+  /**
+   * The assistant's turn.
+   *
+   * Not a bubble, and the rename is the point. A reply was rendered as a
+   * filled grey container inset to 85% of the pane, which did two things
+   * wrong at once: it read as a dense block of chat rather than as something
+   * written to be read, and it spent the pane's narrowest dimension on
+   * padding and empty gutter. A six-column weight table scrolled inside a
+   * container that had 15% of the pane sitting empty beside it.
+   *
+   * The answer is the content of the pane, so it takes the pane's width in
+   * both modes and sits on its surface. The reader's own turn is what stays a
+   * bubble, which is also what keeps the two distinguishable without a fill
+   * on each.
+   */
+  assistantTurn: string
   /** The reader's own turn stays inset in both modes, so the two never blur. */
   userBubble: string
   /** Padding around the thread. */
@@ -83,7 +97,7 @@ export interface ChatLayout {
 
 const COMPACT: ChatLayout = {
   column: 'w-full',
-  assistantBubble: 'max-w-[85%]',
+  assistantTurn: 'w-full max-w-none',
   userBubble: 'max-w-[85%]',
   threadPad: 'p-4',
   threadGap: 'space-y-4',
@@ -94,7 +108,7 @@ const COMPACT: ChatLayout = {
 
 const RESEARCH: ChatLayout = {
   column: 'mx-auto w-full max-w-3xl',
-  assistantBubble: 'w-full max-w-none',
+  assistantTurn: 'w-full max-w-none',
   userBubble: 'max-w-[80%]',
   threadPad: 'px-6 py-5',
   threadGap: 'space-y-6',

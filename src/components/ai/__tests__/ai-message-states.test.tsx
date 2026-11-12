@@ -33,6 +33,35 @@ describe('AiMessage', () => {
     expect(screen.getByText('**not bold**')).toBeTruthy()
   })
 
+  describe('the answer is the page, not a bubble in it', () => {
+    const turn = (role: 'assistant' | 'user', mode: 'compact' | 'research' = 'compact') =>
+      render(<AiMessage message={msg({ role })} mode={mode} />)
+        .container.querySelector('[data-turn]') as HTMLElement
+
+    it('gives the answer no fill and no inset, in either mode', () => {
+      /*
+       * The reported defect: a long reply read as a dense grey block inset
+       * from the pane, which is both harder to read and narrower than the
+       * space available. An answer is the content of the pane.
+       */
+      for (const mode of ['compact', 'research'] as const) {
+        const el = turn('assistant', mode)
+        expect(el.className).not.toMatch(/bg-gray-100/)
+        expect(el.className).not.toMatch(/max-w-\[\d+%\]/)
+        expect(el.className).toMatch(/max-w-none/)
+      }
+    })
+
+    it('keeps the reader own turn a filled bubble, so the voices stay apart', () => {
+      /* Without this the two turns would be indistinguishable: removing the
+         fill from BOTH is how a thread becomes one undifferentiated column. */
+      const el = turn('user')
+      expect(el.className).toMatch(/bg-primary-600/)
+      expect(el.className).toMatch(/rounded-lg/)
+      expect(el.className).toMatch(/max-w-\[85%\]/)
+    })
+  })
+
   it('shows the model label the caller resolved', () => {
     render(<AiMessage message={msg({ model: 'claude-sonnet-4-6' })} modelLabel="Claude Sonnet 4.6" />)
     expect(screen.getByText('Claude Sonnet 4.6')).toBeTruthy()

@@ -70,13 +70,26 @@ export function AiMessage({
   return (
     <div className={clsx('flex group', isAssistant ? 'justify-start' : 'justify-end')}>
       <div
+        /*
+         * The answer is not a chat bubble.
+         *
+         * It used to be a filled grey container inset to 85% of the pane, and
+         * both halves of that were wrong. The fill made a long reply read as
+         * a dense block rather than as something written to be read, and the
+         * inset spent the pane's scarcest dimension on an empty gutter.
+         *
+         * So the assistant's turn sits on the pane's own surface at full
+         * width, like a document. The reader's turn keeps the filled bubble,
+         * which is what still makes the alternation legible: one voice is
+         * boxed and right-aligned, the other is the page.
+         */
         className={clsx(
-          'relative rounded-lg px-4 py-3',
-          isAssistant ? layout.assistantBubble : layout.userBubble,
+          'relative',
           isAssistant
-            ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
-            : 'bg-primary-600 text-white',
+            ? clsx(layout.assistantTurn, 'text-gray-900 dark:text-gray-100')
+            : clsx(layout.userBubble, 'rounded-lg px-4 py-3 bg-primary-600 text-white'),
         )}
+        data-turn={isAssistant ? 'assistant' : 'user'}
       >
         {isAssistant ? (
           <AiProse content={message.content} onTickerClick={onTickerClick} />

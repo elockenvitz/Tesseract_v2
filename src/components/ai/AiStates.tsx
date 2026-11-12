@@ -27,7 +27,12 @@ import { clsx } from 'clsx'
 export function AiThinking({ status, onStop }: { status?: string | null; onStop?: () => void }) {
   return (
     <div className="flex justify-start" data-testid="ai-thinking">
-      <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-4 py-3">
+      {/*
+        No fill, matching the answer it turns into.
+        A grey box here would become an unfilled answer a moment later, so the
+        arrival of the first words would read as the container disappearing.
+      */}
+      <div className="py-1">
         <div className="flex items-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin text-primary-500" />
           <span className="text-sm text-gray-600 dark:text-gray-400">{status ?? 'Working…'}</span>

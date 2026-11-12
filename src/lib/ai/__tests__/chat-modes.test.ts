@@ -40,11 +40,16 @@ describe('chatLayout', () => {
     expect(chatLayout('compact').column).toBe('w-full')
   })
 
-  it('lets a research reply use the whole column, and keeps the rail inset', () => {
-    /* A six-column weight table inside `max-w-[85%]` scrolls while 15% of a
-       1600px pane sits empty beside it. */
-    expect(chatLayout('research').assistantBubble).toContain('max-w-none')
-    expect(chatLayout('compact').assistantBubble).toBe('max-w-[85%]')
+  it('lets a reply use the whole width in BOTH modes', () => {
+    /*
+     * This used to hold the compact rail at `max-w-[85%]`, and the reason
+     * given for research mode applied to the rail with more force, not less:
+     * a six-column weight table inside 85% scrolls while 15% of the pane sits
+     * empty beside it, and in a 384px rail that gutter is the scarcest space
+     * on the screen. The reader's own turn is what stays inset.
+     */
+    expect(chatLayout('research').assistantTurn).toContain('max-w-none')
+    expect(chatLayout('compact').assistantTurn).toContain('max-w-none')
   })
 
   it('keeps the reader own turn inset in both modes, so the two never blur', () => {
