@@ -96,6 +96,20 @@ import {
   type WorkspaceFacts, type LeadCompanion,
 } from '../../lib/asset-workspace/context'
 /*
+ * The entry reason, and the three compositions it chooses between.
+ *
+ * `effectiveMode` is the honesty guard: a decision entry whose request has
+ * since been ruled on, or a work entry whose run is gone, composes the
+ * general page rather than leading with a block about a record that is no
+ * longer there.
+ */
+import {
+  GENERAL_ENTRY, effectiveMode, type WorkspaceEntry,
+} from '../../lib/asset-workspace/entry'
+import { DecisionAtHand } from './DecisionAtHand'
+import { WorkAtHand } from './WorkAtHand'
+import { WorkspaceActions } from './WorkspaceActions'
+/*
  * The excerpt helper, shared with Our View rather than reimplemented.
  *
  * Both surfaces quote an analyst verbatim and attribute it; two independent
@@ -158,6 +172,26 @@ export interface InvestmentSnapshotProps {
    * not wired it still gets the truthful summary.
    */
   onOpenEvidence?: (noteId: string) => void
+  /**
+   * WHY the reader opened this name, as the sender described it.
+   *
+   * This is what makes the surface a contextual workspace rather than one
+   * page with a situation label on it: a general open, a decision to rule on
+   * and a process to advance compose differently, because the first question
+   * is different in each. Resolved by `lib/asset-workspace/entry` from the
+   * tab descriptor the shell already delivered.
+   *
+   * Optional, and absent means `general` -- every existing caller keeps the
+   * page it had.
+   */
+  entry?: WorkspaceEntry
+  /**
+   * The process run the asset page currently has selected, if any.
+   *
+   * Only so the action area can tell whether "open the requirements" leads
+   * anywhere. The Snapshot does not fetch workflows and does not choose one.
+   */
+  activeWorkflowId?: string | null
 }
 
 const pct = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
@@ -251,6 +285,8 @@ export function InvestmentSnapshot({
   asset, coverage, currentQuote, onOpenSubPage,
   contributions, currentUserId,
   onOpenEvidence,
+  entry = GENERAL_ENTRY,
+  activeWorkflowId = null,
 }: InvestmentSnapshotProps) {
   const symbol = asset.symbol ?? null
 
@@ -1316,7 +1352,20 @@ export function InvestmentSnapshot({
     unobservedExecutionCount: executionProvenance.unobserved,
     executionCount: executionProvenance.total,
     viewerId: null,
-    arrivalIntent: null,
+    /*
+     * The reason the reader is here, which this surface finally has.
+     *
+     * It was `null` from the day the resolver was written, with the field
+     * documented as "where they came from, if the sender said". Every lens
+     * says; the page was the one that was not listening. The resolver reads
+     * it in `resolveLanding`, which is how an explicit arrival outranks what
+     * the records would otherwise infer.
+     */
+    arrivalIntent: {
+      origin: entry.origin,
+      focus: entry.mode === 'decision' ? 'decisions' : entry.mode === 'work' ? 'workflow' : null,
+      portfolioId: entry.portfolioId,
+    },
   }
   const workspaceState = resolveWorkspaceState(workspaceFacts)
   /*
@@ -1350,6 +1399,73 @@ export function InvestmentSnapshot({
     leadKind === 'decision' ? needsDecision
       : leadKind === 'position' ? exposureValuation
       : null
+
+  /* ------------------------------------------------- the three compositions */
+
+  /*
+   * Which situation the READER is in, as opposed to which situation the
+   * ASSET is in.
+   *
+   * `workspaceState` above is a fact about the name: a decision is waiting,
+   * the case is stale, nobody holds it. `entryMode` is why this person opened
+   * it, and the two are independent -- a PM arriving to rule on a buy and an
+   * analyst arriving to finish a requirement can be looking at the same name
+   * in the same state and need almost nothing in common.
+   *
+   * The state still decides the emphasis WITHIN the general composition, as
+   * it did before. The entry reason decides which composition.
+   */
+  const entryMode = effectiveMode(entry, {
+    /* Requests only. A live idea is work owed, not a ruling to make, and
+       leading with "the decision in front of you" over an idea nobody has
+       recommended yet would be the surface overstating its records. */
+    openDecisionCount: scopedOpen.length,
+    hasWork: !!entry.work,
+  })
+
+  const decisionAtHand = entryMode === 'decision' ? (
+    <DecisionAtHand
+      assetId={asset.id}
+      rows={scopedOpen}
+      rationaleByIdeaId={ideaRationaleById}
+      highlightId={entry.decisionId}
+      reason={entry.reason}
+      onOpenDecisions={() => onOpenSubPage('decisions')}
+    />
+  ) : null
+
+  const workAtHand = entryMode === 'work' && entry.work ? (
+    <WorkAtHand
+      assetId={asset.id}
+      workflowId={entry.work.workflowId}
+      requirementId={entry.work.requirementId ?? null}
+      reason={entry.reason}
+      onOpenProcess={() => onOpenSubPage('workflow')}
+    />
+  ) : null
+
+  /*
+   * What leads the page, and what sits in the narrow column beside it.
+   *
+   * One place decides this, so the dedupe below can be stated as a fact
+   * rather than recomputed per branch. A block that leads is never also
+   * rendered lower down: a panel drawn twice on one page is a defect, not
+   * emphasis.
+   */
+  const lead: { primary: ReactNode; secondary: ReactNode | null; kind: string } =
+    entryMode === 'decision'
+      ? { primary: decisionAtHand, secondary: exposureValuation, kind: 'decision-entry' }
+      : entryMode === 'work'
+        /* The queue takes the narrow column when something is owed, because
+           work owed outranks standing exposure; otherwise the exposure does. */
+        ? { primary: workAtHand, secondary: needsDecision ?? exposureValuation, kind: 'work-entry' }
+        : { primary: ourView, secondary: leadCompanion, kind: leadKind }
+
+  /* Consumed by the lead row, so the lower grid must not repeat them. */
+  const exposureLed = entryMode === 'decision'
+    || (entryMode === 'work' && !needsDecision)
+    || (entryMode === 'general' && leadKind === 'position')
+  const caseLed = entryMode === 'general'
   /*
    * Execution provenance is withheld HERE, and only here.
    *
@@ -1377,6 +1493,9 @@ export function InvestmentSnapshot({
       data-asset={asset.id}
       data-portfolio={portfolioId ?? 'all'}
       data-workspace-state={workspaceState}
+      /* The situation the READER is in. Distinct from the state above, which
+         is the situation the ASSET is in. */
+      data-entry-mode={entryMode}
       className="flex flex-col gap-5"
     >
       {/*
@@ -1429,18 +1548,50 @@ export function InvestmentSnapshot({
         A panel that does not lead is still on the page, lower down. Nothing
         is hidden by a rule the reader cannot see.
       */}
-      {leadCompanion ? (
+      {/*
+        ── And the entry reason decides which composition ──────────────────
+
+        The three leads, in one row each:
+
+          general    the case, with the state's chosen companion beside it
+          decision   the request being ruled on, with the exposure it moves
+          work       the process being advanced, with what is owed on it
+
+        In the two contextual modes the case does not disappear -- it moves
+        below the action area, which is where a reader who came to rule or to
+        work reads it: after they know what they are ruling on.
+      */}
+      {lead.secondary ? (
         /* `items-start` so a short queue does not stretch to the height of a
            long thesis beside it. */
         <div
           data-testid="snapshot-lead-row"
-          data-lead={leadKind}
+          data-lead={lead.kind}
           className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]"
         >
-          {ourView}
-          {leadCompanion}
+          {lead.primary}
+          {lead.secondary}
         </div>
-      ) : ourView}
+      ) : lead.primary}
+      {/*
+        One restrained row of real destinations, framed by the entry reason.
+
+        Directly under the lead, because the lead states the situation and
+        this is what the reader does about it. Every control resolves to a
+        surface that exists and holds something; see `WorkspaceActions`.
+      */}
+      <WorkspaceActions
+        mode={entryMode}
+        assetId={asset.id}
+        symbol={symbol}
+        companyName={asset.company_name ?? null}
+        held={data.positions.length > 0}
+        hasCase={!!data.caseWrittenAt}
+        hasProcess={!!(entry.work?.workflowId ?? activeWorkflowId)}
+        onOpenSubPage={onOpenSubPage}
+      />
+      {/* The firm's own words, where the contextual modes put them. */}
+      {caseLed ? null : ourView}
       {/*
         ── ACT AI Briefing ─────────────────────────────────────────────────
 
@@ -1461,6 +1612,9 @@ export function InvestmentSnapshot({
         companyName={asset.company_name ?? null}
         coveringUserIds={coverage.map(c => c.user_id).filter((v): v is string => Boolean(v))}
         spot={quotePrice ?? data.spot}
+        /* So the briefing asks the question the reader's arrival implies,
+           rather than the one the record alone would suggest. */
+        entryMode={entryMode}
       />
       {/*
         Both left-column blocks are now conditional — "What changed" only when
@@ -1479,11 +1633,11 @@ export function InvestmentSnapshot({
           <div className="flex min-w-0 flex-col gap-5">
             {/* Not when it is leading the top row. A panel rendered twice on
                 one page is a defect, not emphasis. */}
-            {leadKind === 'position' ? null : exposureValuation}
+            {exposureLed ? null : exposureValuation}
             {decisionHistory}
           </div>
         </div>
-      ) : leadKind === 'position' ? (
+      ) : exposureLed ? (
         /* The exposure is already at the top, so the record stands alone. */
         decisionHistory
       ) : (

@@ -87,6 +87,7 @@ import {
 import { scrollToSection } from '../../lib/asset-workspace/scroll-to-section'
 import { stripTarget, type StripCell } from '../../lib/asset-workspace/strip-targets'
 import { focusIntentKey, shouldApplyFocus } from '../../lib/asset-workspace/arrival-focus'
+import { resolveEntry } from '../../lib/asset-workspace/entry'
 import { useAssetListMemberships } from '../../hooks/lists/useAssetListMemberships'
 import { useAssetConversations } from '../../hooks/ai/useAssetConversations'
 import { askAI } from '../../lib/engagement'
@@ -883,6 +884,38 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         asset.focusRequestId ?? ''].join('|'),
     }
   }, [navigationTaskId, navigationWorkflowId, navigationStageId, taskDetails, asset.focusRequestId])
+
+  /**
+   * WHY this reader opened this name, for the Overview to compose against.
+   *
+   * ── Why the descriptor is spelled out here ──────────────────────────────
+   *
+   * Three arrival shapes reach this tab and they put the same facts in
+   * different places: `openAsset` writes them flat into tab data, a
+   * notification nests them under `data`, and `UserTab` sends a task with no
+   * run at all -- which `taskArrival` has just resolved through
+   * `task-details`. `resolveEntry` reads ONE record, so this is the one place
+   * that knows which field lives where, exactly as `destinationFromTabData`
+   * is the one place that knows the three spellings of a requirement id.
+   *
+   * Without the `taskArrival` fallback the most common work arrival in the
+   * product -- an analyst following their own assigned requirement -- would
+   * resolve to a general entry, because the sender never knew the workflow.
+   */
+  const workspaceEntry = React.useMemo(() => resolveEntry({
+    focus: asset.focus,
+    origin: asset.origin,
+    issue: asset.issue,
+    portfolioId: asset.portfolioId,
+    decisionId: asset.decisionId ?? asset.data?.decisionId,
+    workflowId: navigationWorkflowId ?? asset.workflowId ?? taskArrival?.workflowId,
+    stageId: navigationStageId ?? asset.stageId ?? taskArrival?.stageId,
+    requirementId: asset.requirementId ?? asset.data?.requirementId ?? navigationTaskId,
+  }), [
+    asset.focus, asset.origin, asset.issue, asset.portfolioId, asset.decisionId,
+    asset.workflowId, asset.stageId, asset.requirementId, asset.data,
+    navigationWorkflowId, navigationStageId, navigationTaskId, taskArrival,
+  ])
 
   useEffect(() => {
     const effectiveWorkflowId = taskArrival?.workflowId
@@ -4402,6 +4435,15 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
             /* Through `goToSubPage`, so an Overview link into Work both
                lands in Work and scrolls to the section it named. */
             onOpenSubPage={goToSubPage}
+            /*
+              Why the reader is here. This is what makes the Overview three
+              workspaces rather than one page with a label: a decision to
+              rule on, a process to advance, or the name itself.
+            */
+            entry={workspaceEntry}
+            /* Only so the action area can tell whether "open the
+               requirements" leads anywhere. */
+            activeWorkflowId={asset.workflow_id ?? null}
             currentUserId={user?.id}
             /* The existing note navigation — opens the note in its own tab.
                Lets "What changed" name the research items instead of counting
