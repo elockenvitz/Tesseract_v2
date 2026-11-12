@@ -269,10 +269,132 @@ gets wrong, and no control in the new blocks resolves a request.
 
 ---
 
+## 5b. The second pass: the Dashboard's right-hand workspace
+
+### What the first pass missed
+
+Everything in §1 to §5 happens on the **Asset tab**, which is the page the
+Dashboard's left column navigates to. It is not the surface the review was of.
+
+Pressing a card on `dashboard-next` opens the **work pane beside the feed**:
+`IdeasWorkPane` rendering `AssetWorkspacePane` (`src/components/asset-v2`).
+That path received a `focus` and a **headline string** and nothing else, so it
+could only re-derive the asset's current state. Pressing "AAPL has reached the
+target you set for it" produced a page about AAPL that never mentioned a
+target, with the pending recommendation band on top of it.
+
+The producers had the numbers all along. `usePortfolioLenses` computes the
+breach from `analyst_price_targets` against the holdings snapshot; the feed
+then added every target hit and every recommendation to its entry list with
+`source: null`, dropping the row. That is the gap this pass closes.
+
+### The contract
+
+`src/lib/asset-workspace/entry-context.ts`.
+`WorkspaceEntryContext` carries: `intent`, `assetId`, `organizationId`,
+`sourceItem` (which producer, which card, when), `why` (the card's own words),
+the portfolio, an optional `decisionId`, an optional `workflow`, and a typed
+`event`. `targetReachedFrom` and `recommendationFrom` build the events from
+the producer rows and return **null rather than a partial event**, so an
+intent the surface cannot draw degrades to the general workspace.
+`contextAppliesTo` is the staleness guard: another name, another organisation,
+or an unresolved organisation means the context applies to nothing.
+
+Nothing in the contract fetches, ranks, routes or authorises. The pane's own
+org-scoped queries remain the source of truth for everything it draws.
+
+### What leads now
+
+| Pressed on the Dashboard | What the pane opens with |
+|---|---|
+| A target-reached card | **Target review**: the recorded target and its case, the mark it was compared against, the overshoot, the snapshot date and the reading's age, the scenarios on record, the case's age, the exposure |
+| A pending recommendation | **Decision preparation**: the action, the proposed weight against what is held, the rationale, who raised it and when |
+| Anything else, or a cold open | The existing workspace, unchanged |
+
+### What it refuses to say
+
+- It never says the price crossed the target **today**. The lens compares one
+  snapshot against one stored number, so the band dates the reading and says
+  the crossing date is not recorded.
+- It labels the compared price a **book mark** and names the page's own
+  price-history close separately, because they are two measurements.
+- It says so when the **ladder no longer holds the target** the alert was
+  about, rather than presenting an edited record as current.
+- It never recommends buying, selling or trimming. The actions review the
+  case and the scenarios; the ACT AI questions ask what would have to be true.
+
+### Second-pass commits
+
+| SHA | What it closes |
+|---|---|
+| `59bf8ab6` | The typed contract, and the producer rows reaching the feed entry at all |
+| `2a78cae0` | `EntryOrientation`: the composition, the pane wiring, and the rendered tests |
+
+### The scope gate caught this work
+
+`guard:unit` failed on the first run of the second pass, before any test did:
+`src/components/asset-v2/__tests__` was a new directory that was neither
+gated nor deferred, and the guard refuses to run a smaller suite and call it a
+pass. The directory is now in `GATED_DIRS` with the reason written beside it.
+That is the gate observing its own failure mode without anyone injecting one.
+
+### Second-pass non-vacuity
+
+1. Restoring `source: null` for breaches in the feed fails
+   `attention-entry-row.test.tsx` with `undefined` where 230 belongs. This is
+   the exact defect as shipped, and no rendered test could catch it, because a
+   rendered test builds the entry it renders.
+2. Moving the band below the request band fails "does not displace the target
+   event the reader pressed" in `entry-orientation.test.tsx`. That is the
+   reported behaviour, asserted on document order.
+3. Dropping the asset half of `contextAppliesTo` fails two cases, one of them
+   rendered: AAPL's target event appearing on MSFT's page.
+
+### Still on the tab path, not the pane
+
+The **work** experience (an assigned requirement, a process run) is served by
+the Asset tab, where `WorkAtHand` leads and ten rendered cases in
+`contextual-workspace.test.tsx` pin it. The Dashboard feed has no workflow or
+requirement card to press, so there is no pane sender to carry one; the
+contract already has the `workflow` field for when there is.
+
+---
+
 ## 6. Manual product review (10–15 minutes)
 
 Desktop, `localhost:5190`. Pick a name your org actually holds and has written
 on; the demo corpus is largely junk and is not evidence either way.
+
+**A0. The acceptance case: the AAPL target card (4 min)** — do this one first
+0a. Open the **Dashboard** tab (the feed shell, not the legacy deck) and find
+    the card that reads "<TICKER> has reached the target you set for it". The
+    review used AAPL.
+0b. Press it. The workspace opens in the **right-hand pane**, and the first
+    thing in that pane is a blue band headed **Why you are here**: "The
+    book's mark has passed the <case> case you set for <TICKER>".
+0c. Under it, three figures with their sources: the target with the case it
+    belongs to and the date it was stated; the **book mark** with the
+    holdings-snapshot date; the overshoot.
+0d. The line under them dates the reading ("this compares the holdings
+    snapshot of <date>, N days ago") and says the crossing date is not
+    recorded. It must not say "today".
+0e. **Scenarios on record** lists the ladder with each rung marked passed or
+    above the mark, and the rung this alert is about marked "this alert". If
+    you have edited the ladder since, an amber line says the record no longer
+    holds that target.
+0f. The price-history close is named separately from the book mark, with its
+    own date.
+0g. The written case's age and the exposure appear below. If a request is
+    also waiting on the name, it appears as "Also waiting on this name",
+    **below** the target event, with its own band further down the page.
+0h. Press **Review the case**: the canonical thesis editor opens in place.
+0i. Press **Update the scenarios**: the Asset tab opens at its framework,
+    carrying the reason.
+0j. Press one of the **Ask ACT AI about this target** questions: the pane
+    opens with that question drafted, naming the target and the mark. None of
+    the offered questions asks whether to buy or sell.
+0k. Press a different card for another name: the band must describe that
+    name's event, never the previous one.
 
 **A. General review (3 min)**
 1. Open any asset from search or the Dashboard.
@@ -337,15 +459,30 @@ on; the demo corpus is largely junk and is not evidence either way.
   widths (`grid-cols-1` by default), but the phone asset page composes
   identically for all three entries. Treat the contextual workspace as
   desktop-only for now.
-- **`guard:unit` is intermittently red.** `outcomes-detail-mobile` and
-  `outcomes-mobile-home` have each failed once this week at ~5.1s timeouts,
-  both passing in isolation, neither in a file this work touches. It gates a
-  required check. **This pass it was green**: 637 files, 11,074 tests, exit 0,
-  both of those suites included. One green run does not fix a flake, and I did
-  not change a timeout or an assertion to get it — so the cause is still
-  unknown and the next run can still be red on those two files. The honest fix
-  is to find out why those two suites take ~5s to reach their first
-  assertion, which is its own change.
+- **`guard:unit`'s intermittent timeouts now have a cause.** The flake is a
+  class, not two files: several gated tests assert a property of the whole
+  repository by walking `src/` with `fs` (no RPC call to a revoked function
+  anywhere, no `price_history_cache` upsert anywhere, and the mobile outcomes
+  pair). Each walk is independent and each runs against the default 5s
+  timeout.
+
+  **Measured this session.** Run on their own, `automation-rpc-authority` and
+  `yahoo-chart-proxy-auth` take 1.7s each. Run while a production build had
+  every core, both failed at exactly 5000ms in the same pass. So the headroom
+  is about 3x and it disappears under CPU contention, which is also what CI
+  looks like when other jobs share the runner.
+
+  Nothing was weakened to get past it: no timeout raised, no assertion
+  touched. The real fix is to stop walking the tree once per test (one shared,
+  cached scan the cases read), which is its own change and is listed in §8.
+- **Two paths, one vocabulary, not yet one implementation.** The Asset tab
+  composes from `entry.ts` (a tab descriptor) and the Dashboard's work pane
+  composes from `entry-context.ts` (the typed event). They share the intent
+  words and nothing else. A target-reached card opened as a **tab** rather
+  than in the pane therefore still gets the general Overview: the tab
+  descriptor has no field for the event. Converging them means `openAsset`
+  carrying the event, which is a change to a seam every lens uses and is not
+  this pass.
 - **Not every sender carries a reason.** The Dashboard's asset cards, the
   Research and Portfolio lenses and the Ideas lens still open assets with
   `focus` and `origin` only, which resolves to a general entry. That is
@@ -373,3 +510,20 @@ on; the demo corpus is largely junk and is not evidence either way.
 4. **`ai_conversations` has no `organization_id`.** One conversation list
    across every org a user belongs to. Product decision plus a schema change
    under Standing Rule 5; unchanged from the previous handoff.
+5. **Whole-tree scans, once per test.** Several gated tests each walk `src/`
+   with `fs` to assert a repository-wide property. The assertions are right
+   and worth keeping; the method costs ~1.7s per test and fails at 5s under
+   contention (see §7). One cached scan shared by the cases would remove the
+   whole flake class. Not touched here: changing how a security gate collects
+   its evidence is not a change to make inside a workspace pass.
+6. **A target-reached card opened as a TAB is still general.** The event
+   reaches the pane and not the tab, because `openAsset`'s descriptor has no
+   field for it. See §7; converging the two paths is its own change.
+7. **The breach compares a holdings mark, not a close.** The lens's own
+   comment says which price *should* drive `overshootPct` is an open
+   calculation question: a mark carried forward from an upload can sit well
+   away from the last close, and "has this target been reached" arguably
+   deserves the closer of the two. The orientation now shows both numbers
+   with their sources, which makes the discrepancy visible rather than
+   resolving it. Resolving it would move every target card in and out of
+   existence and is a product decision.
