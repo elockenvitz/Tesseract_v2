@@ -275,6 +275,10 @@ export const GATED_DIRS = [
    */
   'src/components/research/__tests__',
   'src/components/layout',  'src/hooks/__tests__',
+  /* `src/hooks/ai/__tests__` is its own entry because `src/hooks/__tests__`
+     does not contain it: these are substring filters over paths, not a
+     recursive walk. */
+  'src/hooks/ai/__tests__',
   'src/components/communication',
 
   /*
