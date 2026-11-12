@@ -250,6 +250,20 @@ export const GATED_DIRS = [
    */
   'src/components/asset/__tests__',
   /*
+   * The entry orientation: the band the Dashboard's work pane opens with when
+   * the reader pressed an event rather than a name.
+   *
+   * Gated, although its sibling `src/components/asset-v2` is deferred. That
+   * entry covers the co-located suite for a surface that was parked as a
+   * PAGE; this directory covers the composition that ships in the pane
+   * beside the Dashboard feed, and its failure modes are claims about the
+   * firm's record of the same kind as the directory above: a target event
+   * stated without the mark it was measured against, a reading implied to be
+   * today when it is a week old, a target reported as current after the
+   * ladder was edited, or one organisation's event drawn over another's data.
+   */
+  'src/components/asset-v2/__tests__',
+  /*
    * The AI presentation layer: the prose renderer, the research trail, the
    * message shell and the three non-answer states.
    *
