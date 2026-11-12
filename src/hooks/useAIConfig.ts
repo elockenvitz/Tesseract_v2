@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 /**
  * Store (or replace) the organization's provider API key.
@@ -157,6 +158,21 @@ function sanitizeApiKey(key: string): string {
 
 export function useAIConfig() {
   const { user, loading: authLoading } = useAuth()
+  /*
+   * The active organization, because two of the queries below are answers
+   * ABOUT it.
+   *
+   * `get_org_ai_config_summary` and `is_active_org_admin_of_current_org`
+   * resolve the organization server-side and take no argument, so nothing in
+   * the request distinguished one org from another -- and the cache keys did
+   * not either. After switching organizations React Query served the previous
+   * org's answer: a BYOK org could look unconfigured, an unconfigured org
+   * could look like it had a key, and the BYOK editor could be enabled for
+   * somebody who is not an admin of the org they are now in. (The write
+   * itself is RLS-gated, so that last one was a wrong control rather than a
+   * hole.)
+   */
+  const { currentOrgId, isLoading: isOrgContextLoading } = useOrganization()
   const queryClient = useQueryClient()
 
   // Fetch platform config
@@ -198,7 +214,7 @@ export function useAIConfig() {
   // path for display; the key only matters for the write mutation, which
   // sends a new value rather than reading one.
   const { data: orgConfig, isLoading: isOrgLoading } = useQuery({
-    queryKey: ['org-ai-config'],
+    queryKey: ['org-ai-config', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('get_org_ai_config_summary')
       if (error) throw error
@@ -206,19 +222,19 @@ export function useAIConfig() {
       const rows = (data || []) as OrgAIConfig[]
       return rows[0] ?? null
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && !!currentOrgId,
   })
 
   // Whether the current user can edit the org's BYOK config. Source of
   // truth for the write enable; the actual mutation is also RLS-gated.
   const { data: isOrgAdmin = false } = useQuery({
-    queryKey: ['is-org-admin'],
+    queryKey: ['is-org-admin', currentOrgId],
     queryFn: async () => {
       const { data, error } = await supabase.rpc('is_active_org_admin_of_current_org')
       if (error) throw error
       return !!data
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && !!currentOrgId,
     staleTime: 5 * 60 * 1000,
   })
 
@@ -231,7 +247,12 @@ export function useAIConfig() {
    * restoring, all three flags read false and the config would look resolved
    * while two of its three inputs had not been requested.
    */
-  const isResolving = authLoading || isPlatformLoading || isUserLoading || isOrgLoading
+  /* `isOrgContextLoading` for the same reason `authLoading` is here: the org
+     query is now disabled until the active org is known, and a disabled query
+     reports `isLoading: false`. Without it the config would read as resolved
+     while the org half had not been requested. */
+  const isResolving =
+    authLoading || isOrgContextLoading || isPlatformLoading || isUserLoading || isOrgLoading
 
   // Compute effective config
   const resolvedConfig = (() => {

@@ -35,6 +35,8 @@ import type { ReactNode } from 'react'
 const world = {
   userId: null as string | null,
   authLoading: true,
+  orgId: null as string | null,
+  orgLoading: true,
   /** Rows the three config reads resolve to, once they are allowed to run. */
   platform: null as Record<string, unknown> | null,
   org: null as Record<string, unknown> | null,
@@ -42,6 +44,14 @@ const world = {
 
 vi.mock('../useAuth', () => ({
   useAuth: () => ({ user: world.userId ? { id: world.userId } : null, loading: world.authLoading }),
+}))
+
+/*
+ * The active organization. Two of the reads are answers ABOUT it, so it is
+ * both a cache-key input and a resolving input.
+ */
+vi.mock('../../contexts/OrganizationContext', () => ({
+  useOrganization: () => ({ currentOrgId: world.orgId, isLoading: world.orgLoading }),
 }))
 
 /*
@@ -78,6 +88,8 @@ const render = () => renderHook(() => useAIConfig(), { wrapper })
 beforeEach(() => {
   world.userId = null
   world.authLoading = true
+  world.orgId = null
+  world.orgLoading = true
   world.platform = null
   world.org = null
 })
@@ -139,5 +151,75 @@ describe('the flag does not outlive its purpose', () => {
     const { result } = render()
     expect(result.current.effectiveConfig).toHaveProperty('isResolving')
     expect(result.current.effectiveConfig).toHaveProperty('isConfigured')
+  })
+})
+
+/**
+ * The org-scoping defect, which is a different bug in the same hook.
+ *
+ * `get_org_ai_config_summary` and `is_active_org_admin_of_current_org` take
+ * no argument -- they resolve the organization server-side -- so nothing in
+ * the REQUEST distinguished one org from another, and the cache keys did not
+ * either. After switching organizations React Query answered from the
+ * previous org's entry.
+ *
+ * What that looked like: a BYOK org reading as unconfigured, an unconfigured
+ * org reading as though it had a key, and the BYOK editor enabled for
+ * somebody who is not an admin of the org they are now in.
+ */
+describe('an answer about one organization is not served for another', () => {
+  const keysFor = (orgId: string) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+    world.userId = 'u1'
+    world.authLoading = false
+    world.orgId = orgId
+    world.orgLoading = false
+    renderHook(() => useAIConfig(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    })
+    return client.getQueryCache().getAll().map(q => q.queryKey as unknown[])
+  }
+
+  it('puts the organization in the key of every org-scoped read', () => {
+    const keys = keysFor('org-a')
+    for (const prefix of ['org-ai-config', 'is-org-admin']) {
+      const key = keys.find(k => k[0] === prefix)
+      expect(key, `${prefix} was never requested`).toBeTruthy()
+      expect(key, `${prefix} is cached without the organization`).toContain('org-a')
+    }
+  })
+
+  it('asks again for a different organization rather than reusing the answer', () => {
+    /* Two renders, two orgs, two distinct cache entries. One entry would mean
+       the second org reads the first org's configuration. */
+    const a = keysFor('org-a').find(k => k[0] === 'org-ai-config')
+    const b = keysFor('org-b').find(k => k[0] === 'org-ai-config')
+    expect(JSON.stringify(a)).not.toBe(JSON.stringify(b))
+  })
+
+  it('does not ask about an organization it does not know yet', () => {
+    /* Firing with no org resolves `current_org()` to whatever the server
+       picks and caches it under `null`, which is the same bug wearing a
+       different key. */
+    world.userId = 'u1'
+    world.authLoading = false
+    world.orgId = null
+    world.orgLoading = false
+    const { result } = render()
+    expect(result.current.effectiveConfig.isConfigured).toBe(false)
+  })
+
+  it('is still resolving while the organization is being established', () => {
+    /* The org query is now disabled until the org is known, and a disabled
+       query reports `isLoading: false` -- the same trap `authLoading` is in
+       this flag for. */
+    world.userId = 'u1'
+    world.authLoading = false
+    world.orgId = null
+    world.orgLoading = true
+    const { result } = render()
+    expect(result.current.effectiveConfig.isResolving).toBe(true)
   })
 })
