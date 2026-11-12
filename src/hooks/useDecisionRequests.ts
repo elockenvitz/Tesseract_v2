@@ -83,6 +83,35 @@ export function useDecisionRequestsForIdea(tradeQueueItemId: string | undefined)
 }
 
 /**
+ * Every cached surface that states whether a request is still waiting.
+ *
+ * ── Why this is not just `['decision-requests']` ─────────────────────────
+ *
+ * Three surfaces on the asset page answer "is anything waiting on a human",
+ * and none of them reads `decision_requests` under that key:
+ *
+ *   · the Overview's lead block, and its queue  (`asset-workspace`)
+ *   · the sticky strip's Active work cell       (`asset-workspace`)
+ *   · who proposed it and how long ago          (`asset-work-requests`)
+ *   · the decision history and its provenance   (`asset-decision-timeline`)
+ *
+ * `asset-workspace` has a 60-second staleTime, so a PM who ruled on a request
+ * and walked back to the Overview was shown it still "Awaiting a decision" --
+ * by the block that now LEADS the page for exactly that reader. Stating a
+ * ruling that has been made as still outstanding is the worst version of this
+ * defect, so the invalidation names the surfaces rather than the table.
+ *
+ * Prefix keys on purpose: every asset's entry is marked stale, and only the
+ * mounted one refetches.
+ */
+function invalidateDecisionSurfaces(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+  queryClient.invalidateQueries({ queryKey: ['asset-workspace'] })
+  queryClient.invalidateQueries({ queryKey: ['asset-work-requests'] })
+  queryClient.invalidateQueries({ queryKey: ['asset-decision-timeline'] })
+}
+
+/**
  * Create a decision request.
  */
 export function useCreateDecisionRequest() {
@@ -91,7 +120,7 @@ export function useCreateDecisionRequest() {
   return useMutation({
     mutationFn: (input: CreateDecisionRequestInput) => createDecisionRequest(input),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+      invalidateDecisionSurfaces(queryClient)
       queryClient.invalidateQueries({ queryKey: ['decision-requests', 'idea', variables.tradeQueueItemId] })
     },
   })
@@ -107,7 +136,7 @@ export function useUpdateDecisionRequest() {
     mutationFn: ({ requestId, input }: { requestId: string; input: UpdateDecisionRequestInput }) =>
       updateDecisionRequest(requestId, input),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+      invalidateDecisionSurfaces(queryClient)
     },
   })
 }
@@ -121,7 +150,7 @@ export function useDeleteDecisionRequest() {
   return useMutation({
     mutationFn: (requestId: string) => deleteDecisionRequest(requestId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+      invalidateDecisionSurfaces(queryClient)
     },
   })
 }
@@ -135,7 +164,7 @@ export function useAcceptFromInbox() {
   return useMutation({
     mutationFn: (params: AcceptFromInboxParams) => acceptFromInbox(params),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+      invalidateDecisionSurfaces(queryClient)
       queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
       queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] })
@@ -155,7 +184,7 @@ export function useRejectFromInbox() {
   return useMutation({
     mutationFn: (params: RejectFromInboxParams) => rejectFromInbox(params),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+      invalidateDecisionSurfaces(queryClient)
       queryClient.invalidateQueries({ queryKey: ['trade-queue-items'] })
       queryClient.invalidateQueries({ queryKey: ['trade-lab-proposals'] })
     },
@@ -171,7 +200,9 @@ export function useRevertDecisionAccept() {
   return useMutation({
     mutationFn: (params: RevertAcceptParams) => revertAcceptFromInbox(params),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
+      /* A revert puts the request back to pending, so the asset page has to
+         start saying it is waiting again. Same surfaces, same reason. */
+      invalidateDecisionSurfaces(queryClient)
       queryClient.invalidateQueries({ queryKey: ['accepted-trades'] })
     },
   })
