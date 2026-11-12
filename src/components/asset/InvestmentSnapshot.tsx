@@ -92,7 +92,8 @@ import { conclusionFigures } from './InvestmentConclusion'
  * claim.
  */
 import {
-  resolveWorkspaceState, STALE_CASE_DAYS, type WorkspaceFacts,
+  resolveWorkspaceState, STATE_EMPHASIS, STALE_CASE_DAYS,
+  type WorkspaceFacts, type LeadCompanion,
 } from '../../lib/asset-workspace/context'
 /*
  * The excerpt helper, shared with Our View rather than reimplemented.
@@ -1319,6 +1320,37 @@ export function InvestmentSnapshot({
   }
   const workspaceState = resolveWorkspaceState(workspaceFacts)
   /*
+   * Which panel the state puts beside the case at the top of the page.
+   *
+   * `lead` names a panel; this resolves it to the element, and falls through
+   * to no companion when the named panel has nothing to show. The state is
+   * an emphasis, never a promise that data exists: `decision-pending` is
+   * derived from a waiting decision, but `needsDecision` additionally
+   * requires one the reader can act on, and leading with an empty block
+   * would be worse than not leading at all.
+   */
+  const emphasis = STATE_EMPHASIS[workspaceState]
+  /*
+   * Work owed leads whenever it exists, whatever the state says.
+   *
+   * This ordering is the correction to a regression I introduced reaching for
+   * the tidier version. Gating the queue on `decision-pending` hid it on the
+   * names where an idea sits at ready-to-recommend: that is work owed without
+   * being a pending ruling, so the state is not `decision-pending` and the
+   * only actionable thing on the page vanished.
+   *
+   * So the queue is data-driven, as it always was, and the emphasis decides
+   * only what happens on the names where nothing is owed.
+   */
+  const leadKind: 'decision' | LeadCompanion =
+    needsDecision ? 'decision'
+      : emphasis.lead === 'position' ? 'position'
+      : 'none'
+  const leadCompanion =
+    leadKind === 'decision' ? needsDecision
+      : leadKind === 'position' ? exposureValuation
+      : null
+  /*
    * Execution provenance is withheld HERE, and only here.
    *
    * The Decision Memory panel on this same screen already states it, word for
@@ -1383,12 +1415,30 @@ export function InvestmentSnapshot({
         72ch paragraph sat alone in a page-wide card. With nothing owed, the
         view takes the row by itself.
       */}
-      {needsDecision ? (
+      {/*
+        The top row is the page's one emphasis slot, and the workspace state
+        is what decides it.
+
+        `STATE_EMPHASIS[state].lead` names what earns the row beside the case.
+        Before this the state reached the DOM as a data attribute and nothing
+        else, so a name held with no case on record looked exactly like one
+        held with a written case: an empty case panel took the page-wide lead
+        and the exposure -- the only concrete fact about the name -- sat below
+        two other blocks.
+
+        A panel that does not lead is still on the page, lower down. Nothing
+        is hidden by a rule the reader cannot see.
+      */}
+      {leadCompanion ? (
         /* `items-start` so a short queue does not stretch to the height of a
            long thesis beside it. */
-        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
+        <div
+          data-testid="snapshot-lead-row"
+          data-lead={leadKind}
+          className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]"
+        >
           {ourView}
-          {needsDecision}
+          {leadCompanion}
         </div>
       ) : ourView}
       {/*
@@ -1427,10 +1477,15 @@ export function InvestmentSnapshot({
             {perspectives}
           </div>
           <div className="flex min-w-0 flex-col gap-5">
-            {exposureValuation}
+            {/* Not when it is leading the top row. A panel rendered twice on
+                one page is a defect, not emphasis. */}
+            {leadKind === 'position' ? null : exposureValuation}
             {decisionHistory}
           </div>
         </div>
+      ) : leadKind === 'position' ? (
+        /* The exposure is already at the top, so the record stands alone. */
+        decisionHistory
       ) : (
         /* Side by side rather than stacked: each is a compact block of
            figures, and two of them in a page-wide column is a lot of white

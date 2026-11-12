@@ -426,40 +426,90 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
 /* ───────────────────────────────────────────────────────── emphasis ─── */
 
 /**
- * What the Snapshot leads with, per state.
+ * What sits beside the case at the top of the Snapshot, per state.
  *
- * The same panels in a different order — not different panels. Reordering is
- * reversible, explainable and cannot hide anything; conditional panels would
- * mean a reader cannot find a thing because of a rule they cannot see.
+ * ── What this replaced, and why ──────────────────────────────────────────
+ *
+ * This used to be a six-panel `order` array per state, documented as "the
+ * same panels in a different order". Nothing ever read it. The Snapshot
+ * composes a fixed layout and used `workspaceState` for a `data-` attribute
+ * and nothing else, so for six situations the page looked identical. The
+ * array's own vocabulary had also drifted past the surface it described:
+ * `conclusion` names a card that was deleted, and `work` names a panel the
+ * Snapshot does not have at all.
+ *
+ * A test iterated it and asserted every state covered every panel, with a
+ * comment about a panel being "silently dropped off the page" -- a
+ * consequence that could not occur, because no page read the value. That is
+ * the documented local defect class: a check asserting a property of a
+ * constant rather than of the thing the constant is supposed to govern.
+ *
+ * ── Why a lead companion and not an ordering ─────────────────────────────
+ *
+ * The layout has exactly one emphasis slot: the top row, which is page-wide
+ * and can hold the case alone or the case beside one compact block. Every
+ * other position is already decided by whether its data exists. So the
+ * honest shape is "what earns the top row with the case", which the page can
+ * actually act on, rather than a total order over panels it cannot.
+ *
+ * Reordering remains reversible and hides nothing: a panel that loses the
+ * lead is still on the page, lower down.
  */
+/**
+ * What earns the top row when nothing is OWED on the name.
+ *
+ * Work owed outranks every emphasis and is not in this union on purpose.
+ * Whether a queue leads the page is a question about data, not about
+ * situation: an idea at ready-to-recommend is work owed without being a
+ * pending ruling, so a state-gated queue would hide it on exactly the names
+ * where it is the only thing to do. The queue leads whenever it exists; this
+ * decides what happens on the names where it does not.
+ */
+export type LeadCompanion =
+  /** Exposure and valuation. The reader is holding something unexplained. */
+  | 'position'
+  /** The case takes the row by itself. */
+  | 'none'
+
 export const STATE_EMPHASIS: Record<WorkspaceState, {
   /** One line naming the situation, shown to the reader. */
   label: string
-  /** Panel order, most relevant first. */
-  order: ('conclusion' | 'decision' | 'case' | 'position' | 'work' | 'memory')[]
+  /** What earns the top row beside the case, where nothing is owed. */
+  lead: LeadCompanion
 }> = {
   'decision-pending': {
+    /* The waiting decision leads by virtue of existing, so there is nothing
+       for the emphasis to choose here. */
     label: 'A decision is waiting',
-    order: ['conclusion', 'decision', 'position', 'case', 'memory', 'work'],
+    lead: 'none',
   },
   'position-monitored': {
     label: 'Held, with a written case',
-    order: ['conclusion', 'case', 'position', 'memory', 'work', 'decision'],
+    lead: 'none',
   },
   'position-unexplained': {
+    /*
+     * The state that was costing a reader something. Held with nothing
+     * written means the case panel at the top of the page is empty or nearly
+     * so, and the exposure -- the only concrete fact about the name -- sat
+     * below two other blocks. The reader's question on this name is "what are
+     * we holding, and why has nobody written it down", and half of that was
+     * at the bottom.
+     */
     label: 'Held, with no case on record',
-    order: ['conclusion', 'position', 'case', 'work', 'memory', 'decision'],
+    lead: 'position',
   },
   'research-active': {
     label: 'Research in progress',
-    order: ['conclusion', 'case', 'work', 'memory', 'position', 'decision'],
+    lead: 'none',
   },
   'research-unstarted': {
     label: 'Covered, nothing written yet',
-    order: ['conclusion', 'case', 'work', 'position', 'memory', 'decision'],
+    lead: 'none',
   },
   unowned: {
+    /* Not held: there is no exposure to lead with. */
     label: 'Not held, not covered',
-    order: ['conclusion', 'case', 'work', 'position', 'memory', 'decision'],
+    lead: 'none',
   },
 }
