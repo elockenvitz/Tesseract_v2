@@ -42,6 +42,12 @@ export type AiToolName =
   | 'search_team_notes'
   | 'get_decisions'
   | 'get_workflows'
+  /* Cross-asset: the reader's own work rather than one company. */
+  | 'get_watchlists'
+  | 'get_coverage'
+  | 'get_idea_pipeline'
+  | 'get_pending_decisions'
+  | 'get_outstanding_work'
 
 /**
  * What the reader is told while a tool runs.
@@ -63,6 +69,13 @@ export const TOOL_STATUS_LABEL: Readonly<Record<AiToolName, string>> = Object.fr
   search_team_notes: 'Checking recent research…',
   get_decisions: 'Checking the decision record…',
   get_workflows: 'Checking open work…',
+  /* "Your" is accurate and worth saying: these read the reader's own records,
+     and a reader who knows that can judge an answer that comes back thin. */
+  get_watchlists: 'Reading your lists…',
+  get_coverage: 'Checking coverage…',
+  get_idea_pipeline: 'Reading the Idea Pipeline…',
+  get_pending_decisions: 'Checking what needs a decision…',
+  get_outstanding_work: 'Checking outstanding work…',
 })
 
 /** Non-tool phases worth showing. Same rule: activity, never reasoning. */

@@ -38,7 +38,11 @@ export type SourceKind =
   | "recommendation" | "decision_request" | "accepted_trade"
   | "decision_review" | "outcome"
   // Process.
-  | "workflow" | "checklist_item";
+  | "workflow" | "checklist_item"
+  // An Idea Pipeline entry. Distinct from `recommendation`: the pipeline
+  // measures how well understood an idea is and stops at ready-to-recommend.
+  // Whether a recommendation was submitted is a `decision_requests` fact.
+  | "idea";
 
 /**
  * A record the model consulted, with enough provenance for the UI to open it.
@@ -102,15 +106,305 @@ export async function runQuery<T>(
 }
 
 /**
+ * How much of the organization a tool's query path can actually see.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ *
+ * Every tool runs on a caller-scoped client, so Row Level Security decides
+ * what comes back. A row the caller may not read is not returned and not
+ * counted: at the query level "there are none" and "there are none you may
+ * see" are THE SAME OBSERVATION. Nothing in the result distinguishes them,
+ * and the model was left to guess, which it did by asserting absence.
+ *
+ * That is not a hypothetical. `decision_requests` is readable only for
+ * portfolios the caller is on the team of, and this product has two
+ * portfolio-membership tables that disagree, so a PM added through one of them
+ * reads ZERO pending recommendations while the desk holds several. "Nothing
+ * needs your decision" is then a false statement about the firm, produced from
+ * a correct query.
+ *
+ * The fix is NOT to look behind the policy. No definer RPC, no privileged
+ * count, nothing that reveals the existence of records the caller may not
+ * read. Instead each tool states what its path covers, and the model is
+ * instructed to answer within that coverage.
+ *
+ * ── The three scopes ─────────────────────────────────────────────────────
+ *
+ * `organization`   The path genuinely spans the caller's active organization.
+ *                  Only here may an empty result be reported as a fact about
+ *                  the firm, and even then it is about the ACTIVE org, because
+ *                  these policies compare against `current_org_id()`.
+ *
+ * `caller_visible` Org-wide except for records withheld by a sharing or
+ *                  membership rule. Absence is never a fact about the firm.
+ *
+ * `caller`         Only what the caller owns or has been given. Says almost
+ *                  nothing about the organization.
+ */
+export type VisibilityScope = "organization" | "caller_visible" | "caller";
+
+export interface VisibilityDeclaration {
+  scope: VisibilityScope;
+  /** What this path can see, in words the model can repeat to a reader. */
+  covers: string;
+  /** What it cannot. Null only when the scope is `organization`. */
+  excludes: string | null;
+}
+
+/**
+ * Per-tool visibility, read off the live SELECT policies.
+ *
+ * Kept as a table rather than an argument at each call site so that it is one
+ * reviewable place, and so no tool can forget to declare. `toolVisibility`
+ * throws on an unknown name, and a test asserts every declared tool appears
+ * here: a new retrieval tool must state its reach before it can ship.
+ *
+ * Verified against `pg_policies` on 2026-11-11. If a policy is widened or
+ * narrowed, this table is wrong until someone updates it, which is why each
+ * entry records the predicate it came from.
+ */
+export const TOOL_VISIBILITY: Readonly<Record<string, VisibilityDeclaration>> = {
+  /* assets: readable org-wide. */
+  get_asset: {
+    scope: "caller_visible",
+    covers: "the asset record, its thesis sections, price targets and notes that you may read",
+    excludes: "notes and thesis contributions restricted to an audience you are not in",
+  },
+  search_assets: {
+    scope: "caller_visible",
+    covers: "assets in your organization",
+    excludes: "assets in other organizations",
+  },
+  /* portfolio_holdings: gated by the portfolio's own permission predicate. */
+  get_portfolio: {
+    scope: "caller_visible",
+    covers: "portfolios you have access to, and their holdings",
+    excludes: "portfolios you are not a member of, whose holdings you cannot read at all",
+  },
+  get_theme: {
+    scope: "caller_visible",
+    covers: "themes in your organization",
+    excludes: "themes restricted to an audience you are not in",
+  },
+  search_team_notes: {
+    scope: "caller_visible",
+    covers: "notes and research shared with you",
+    excludes: "private notes belonging to colleagues, and notes restricted to another audience",
+  },
+  /*
+   * decision_requests: portfolio_in_current_org(portfolio_id) AND
+   * (requested_by = auth.uid() OR caller is in portfolio_team).
+   * accepted_trades is gated by portfolio access as well. This is the tool
+   * whose empty answer has already been wrong in production.
+   */
+  get_decisions: {
+    scope: "caller_visible",
+    covers:
+      "recommendations, PM rulings, committed trades and reviews on portfolios you raised or are on the team of",
+    excludes:
+      "the entire decision record for every portfolio you are not on the team of, including committed trades that exist and are not visible to you",
+  },
+  /* asset_workflow_progress: the workflow's organization_id = current_org_id(). */
+  get_workflows: {
+    scope: "organization",
+    covers: "research processes on this asset across your organization",
+    excludes: null,
+  },
+
+  /* ── New in this change ───────────────────────────────────────────────── */
+
+  /*
+   * asset_lists: created_by = auth.uid() OR user_has_list_collaboration(id).
+   * Your own lists and ones explicitly shared with you. The firm may hold any
+   * number of others.
+   */
+  get_watchlists: {
+    scope: "caller",
+    covers: "lists you created and lists shared with you directly",
+    excludes: "every other list in the organization, including the desk's own, unless it was shared with you",
+  },
+  /* coverage: organization_id = current_org_id(). Genuinely org-wide. */
+  get_coverage: {
+    scope: "organization",
+    covers: "coverage assignments across your active organization",
+    excludes: null,
+  },
+  /*
+   * trade_queue_items: unassigned ideas you created or are assigned; portfolio
+   * ideas in your org that are not someone else's private.
+   */
+  get_idea_pipeline: {
+    scope: "caller_visible",
+    covers: "ideas you created or are assigned, and your organization's non-private ideas",
+    excludes: "ideas colleagues marked private",
+  },
+  get_pending_decisions: {
+    scope: "caller_visible",
+    covers: "recommendations awaiting a ruling on portfolios you raised or are on the team of",
+    excludes: "recommendations on every portfolio you are not on the team of",
+  },
+  get_outstanding_work: {
+    scope: "organization",
+    covers: "research processes and their open requirements across your active organization",
+    excludes: null,
+  },
+};
+
+/**
+ * The Idea Pipeline's four canonical stages, mirrored from
+ * `src/lib/ideas/stage-model.ts`.
+ *
+ * A mirror because an Edge Function cannot import from `src`, and a mirror
+ * guarded by a drift test (`src/lib/ai/__tests__/retrieval-visibility.test.ts`)
+ * rather than by hope: the stage column holds fifteen enum values accumulated
+ * across three vocabularies, and the whole point of the model module is that
+ * there is ONE answer to which stage an idea is at. A second, quietly
+ * disagreeing copy here would put the assistant's answer at odds with the
+ * screen the reader is looking at.
+ *
+ * The pipeline ends at `ready_to_recommend` deliberately. `deciding` was a
+ * stage once, and it broke the line between how mature an idea is and what a
+ * PM has done about it: ideas executed months ago still read `deciding`,
+ * because the column records where the process GOT TO and nothing moves it
+ * back. So it maps forward here and is never reported as a decision.
+ */
+export const IDEA_STAGES = [
+  "exploring",
+  "researching",
+  "developing",
+  "ready_to_recommend",
+] as const;
+
+export type IdeaStage = (typeof IDEA_STAGES)[number];
+
+/** Legacy stage values to canonical ones. Mirrors `LEGACY_STAGE_MAP`. */
+export const LEGACY_IDEA_STAGES: Readonly<Record<string, IdeaStage>> = {
+  // v2 five-stage vocabulary
+  aware: "exploring",
+  investigate: "researching",
+  deep_research: "developing",
+  thesis_forming: "developing",
+  ready_for_decision: "ready_to_recommend",
+  // v1 vocabulary, never migrated off
+  idea: "exploring",
+  discussing: "developing",
+  working_on: "developing",
+  modeling: "developing",
+  simulating: "developing",
+  // The stage that should never have been a stage.
+  deciding: "ready_to_recommend",
+};
+
+/** The canonical stage for any stored value. Unknown values read as earliest. */
+export function toIdeaStage(raw: string | null | undefined): IdeaStage {
+  if (!raw) return "exploring";
+  if ((IDEA_STAGES as readonly string[]).includes(raw)) return raw as IdeaStage;
+  return LEGACY_IDEA_STAGES[raw] ?? "exploring";
+}
+
+/** The words a reader sees for a stage. */
+export const IDEA_STAGE_LABEL: Readonly<Record<IdeaStage, string>> = {
+  exploring: "Exploring",
+  researching: "Researching",
+  developing: "Developing",
+  ready_to_recommend: "Ready to recommend",
+};
+
+/**
+ * Statuses that mean an idea is no longer live work.
+ *
+ * Mirrored from `src/lib/trade-status-semantics`, which owns the rule and
+ * records why `outcome` outranks `status` and why neither `stage` nor
+ * `visibility_tier` may answer liveness. Guarded by the same drift test.
+ */
+export const TERMINAL_IDEA_STATUSES: readonly string[] = [
+  "approved",
+  "executed",
+  "rejected",
+  "cancelled",
+  "archived",
+  "deleted",
+];
+
+/**
+ * Is there open work on this idea right now?
+ *
+ * `outcome` outranks `status`: any non-null outcome is terminal, whatever the
+ * status says. `status` is consulted only in its absence, and `stage` is never
+ * consulted at all -- the stage column records where the process got to and
+ * nothing moves it back, so an executed idea can still read
+ * `ready_for_decision`.
+ */
+export function isLiveIdeaRow(
+  row: { outcome?: string | null; status?: string | null } | null | undefined,
+): boolean {
+  if (!row) return false;
+  if (row.outcome) return false;
+  const status = String(row.status ?? "");
+  return !TERMINAL_IDEA_STATUSES.includes(status);
+}
+
+/**
+ * Rulings that count as answered, mirrored from
+ * `src/lib/decisions/outcome-eligibility.ts`.
+ *
+ * `withdrawn` is NOT here: a retracted request was never ruled on. It is
+ * excluded from the open inbox separately, at the one call site that needs it,
+ * so this list keeps meaning "a PM answered".
+ */
+export const DECIDED_DECISION_STATUSES: readonly string[] = [
+  "accepted",
+  "accepted_with_modification",
+  "rejected",
+  "deferred",
+];
+
+/** The declaration for a tool, or a loud failure. */
+export function toolVisibility(tool: string): VisibilityDeclaration {
+  const found = TOOL_VISIBILITY[tool];
+  if (!found) {
+    throw new Error(
+      `No visibility declaration for tool "${tool}". Add one to TOOL_VISIBILITY: ` +
+        "a retrieval tool that does not state its reach lets the model turn an " +
+        "RLS-filtered empty result into a claim about the firm.",
+    );
+  }
+  return found;
+}
+
+/**
+ * The sentence the model is told to respect when a lookup comes back empty.
+ *
+ * Phrased as an instruction rather than a fact, because the model's failure
+ * mode here is not misreading the data, it is filling a silence.
+ */
+export function absenceRule(v: VisibilityDeclaration): string {
+  if (v.scope === "organization") {
+    return `This path covers ${v.covers}, so an empty result means there are none in your active organization. It says nothing about other organizations.`;
+  }
+  return `This path covers only ${v.covers}. It does NOT cover ${v.excludes}. An empty result means none are visible to you. Do not say none exist, and do not say the firm has none: say none are visible to you, and name what the path does not cover if the reader needs to know.`;
+}
+
+/**
  * Found something.
  *
  * `status` is written AFTER the payload spread deliberately. A tool that
  * selects a column called `status` -- several tables have one -- would
  * otherwise relabel its own outcome, and the whole contract rests on that
  * field being set by this function and nothing else.
+ *
+ * `visibility` rides along on OK results too, not just empty ones. A partial
+ * answer is the more dangerous case: three ideas returned out of eleven reads
+ * as a complete list unless the reach is stated.
  */
 export function toolOk(tool: string, payload: Record<string, unknown>): string {
-  return JSON.stringify({ tool, ...payload, status: "ok" as ToolStatus });
+  const v = toolVisibility(tool);
+  return JSON.stringify({
+    tool,
+    ...payload,
+    visibility: { scope: v.scope, covers: v.covers, excludes: v.excludes },
+    status: "ok" as ToolStatus,
+  });
 }
 
 /**
@@ -118,11 +412,14 @@ export function toolOk(tool: string, payload: Record<string, unknown>): string {
  * the model can say "no notes on AAPL match X" rather than "there are no notes".
  */
 export function toolEmpty(tool: string, searched: Record<string, unknown>): string {
+  const v = toolVisibility(tool);
   return JSON.stringify({
     tool,
     status: "empty" as ToolStatus,
     searched,
+    visibility: { scope: v.scope, covers: v.covers, excludes: v.excludes },
     note: "The search ran and matched no records. This is an absence of MATCHES, not proof the firm holds no such records.",
+    absence_rule: absenceRule(v),
   });
 }
 
@@ -466,14 +763,85 @@ export function summarizeToolResult(
         });
       }
     }
+
+  /* ── The cross-asset tools ───────────────────────────────────────────────
+   *
+   * These return records about MANY assets, so each source carries its own
+   * `asset_id` and `symbol` rather than inheriting the one asset the
+   * single-name tools looked up. Without that the links all point at whatever
+   * asset happened to be first.
+   */
+  } else if (name === "get_watchlists") {
+    for (const l of (p.lists || [])) {
+      for (const a of (l.assets || [])) {
+        if (!a?.asset_id) continue;
+        sources.push({
+          kind: "asset", id: a.asset_id, asset_id: a.asset_id, symbol: a.symbol ?? null,
+          title: `${a.symbol || a.company || "Asset"} on ${l.name || "a list"}`,
+          timestamp: a.added_at ?? null,
+        });
+      }
+    }
+  } else if (name === "get_coverage") {
+    for (const c of (p.assignments || [])) {
+      if (!c?.asset_id) continue;
+      const by = c.analyst ? ` covered by ${c.analyst}` : "";
+      sources.push({
+        kind: "asset", id: c.asset_id, asset_id: c.asset_id, symbol: c.symbol ?? null,
+        title: `${c.symbol || c.company || "Asset"}${by}`,
+        timestamp: c.since ?? null,
+      });
+    }
+  } else if (name === "get_idea_pipeline") {
+    for (const g of (p.by_stage || [])) {
+      for (const i of (g.ideas || [])) {
+        if (!i?.idea_id) continue;
+        const act = i.action ? `${String(i.action).toUpperCase()} ` : "";
+        sources.push({
+          kind: "idea", id: i.idea_id, asset_id: i.asset_id ?? null, symbol: i.symbol ?? null,
+          title: `${act}${i.symbol || i.company || "idea"} at ${g.stage_label}`,
+          timestamp: i.created_at ?? null,
+        });
+      }
+    }
+  } else if (name === "get_pending_decisions") {
+    for (const r of (p.requests || [])) {
+      if (!r?.decision_request_id) continue;
+      const act = r.proposed_action ? `${String(r.proposed_action).toUpperCase()} ` : "";
+      const wait = typeof r.waiting_days === "number" ? `, waiting ${r.waiting_days}d` : "";
+      sources.push({
+        kind: "decision_request", id: r.decision_request_id,
+        asset_id: r.asset_id ?? null, symbol: r.symbol ?? null,
+        title: `${act}${r.symbol || r.company || "request"} awaiting a ruling${wait}`,
+        timestamp: r.raised_at ?? null,
+      });
+    }
+  } else if (name === "get_outstanding_work") {
+    for (const w of (p.work || [])) {
+      if (w?.workflow_id && w?.asset_id) {
+        const at = w.current_stage_label ? ` at ${w.current_stage_label}` : "";
+        sources.push({
+          kind: "workflow", id: w.workflow_id, asset_id: w.asset_id, symbol: w.symbol ?? null,
+          title: `${w.symbol ? `${w.symbol}: ` : ""}${w.workflow || "Workflow"}${at}`,
+          timestamp: w.updated_at ?? null,
+        });
+      }
+      for (const it of (w.open_requirements || [])) {
+        if (!it?.id) continue;
+        sources.push({
+          kind: "checklist_item", id: it.id, asset_id: w.asset_id ?? null, symbol: w.symbol ?? null,
+          title: `${w.symbol ? `${w.symbol}: ` : ""}${it.requirement || "Untitled requirement"}`,
+          timestamp: it.due_date ?? null,
+        });
+      }
+    }
   }
 
   const counted = Array.isArray(p.results)
     ? p.results.length
     : name === "get_theme" ? (p.constituents_returned ?? 0)
     : name === "get_portfolio" ? (p.holdings_returned ?? 0)
-    : name === "get_decisions" ? (p.records_returned ?? sources.length)
-    : name === "get_workflows" ? (p.records_returned ?? sources.length)
+    : typeof p.records_returned === "number" ? p.records_returned
     : sources.length;
 
   return { status, searched: describeSearched(p), result_count: counted, sources };

@@ -33,6 +33,10 @@ export const SOURCE_KIND_LABEL: Readonly<Record<AiSourceKind, string>> = Object.
   outcome: 'Outcome',
   workflow: 'Process',
   checklist_item: 'Requirement',
+  /* Not "Recommendation": an idea in the pipeline has not been submitted to
+     anybody. Labelling it as one would be the exact merge the decision chain
+     exists to prevent, one step earlier. */
+  idea: 'Idea',
 })
 
 /** What a lookup was, in plain words. */
@@ -45,6 +49,31 @@ export function toolCallLabel(name: string, input: Record<string, unknown>): str
   if (name === 'search_team_notes') return `Searched notes for "${String(input.query || '')}"`
   if (name === 'get_decisions')     return `Checked the decision record for ${sym}`
   if (name === 'get_workflows')     return `Checked open work on ${sym}`
+
+  /* The cross-asset lookups. Each says WHOSE records it read, because that is
+     the part a reader needs in order to judge the answer: "your pipeline" and
+     "the desk's pipeline" are different questions with different answers. */
+  if (name === 'get_watchlists') {
+    const q = String(input.name || '')
+    return q ? `Read your lists matching "${q}"` : 'Read your lists'
+  }
+  if (name === 'get_coverage') {
+    const org = input.scope === 'organization'
+    if (sym) return org ? `Checked who covers ${sym}` : `Checked your coverage of ${sym}`
+    return org ? "Read the desk's coverage" : 'Read your coverage'
+  }
+  if (name === 'get_idea_pipeline') {
+    const whose = input.scope === 'organization' ? "the desk's" : 'your'
+    const stage = typeof input.stage === 'string' ? input.stage.replace(/_/g, ' ') : ''
+    return stage ? `Read ${whose} ideas at ${stage}` : `Read ${whose} Idea Pipeline`
+  }
+  if (name === 'get_pending_decisions') {
+    return sym ? `Checked open recommendations on ${sym}` : 'Checked what is awaiting a ruling'
+  }
+  if (name === 'get_outstanding_work') {
+    return input.overdue_only === true ? 'Checked what is overdue' : 'Checked outstanding research work'
+  }
+
   /* A tool the client has not learned about yet. The raw name is honest; an
      invented sentence would not be. */
   return name

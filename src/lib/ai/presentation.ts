@@ -26,6 +26,10 @@ export type AiSourceKind =
   | 'recommendation' | 'decision_request' | 'accepted_trade'
   | 'decision_review' | 'outcome'
   | 'workflow' | 'checklist_item'
+  /* An Idea Pipeline entry. Distinct from `recommendation`: the pipeline
+     measures how well understood an idea is and stops at ready-to-recommend.
+     Whether a recommendation was submitted is a `decision_requests` fact. */
+  | 'idea'
 
 /**
  * A record the AI consulted, with enough provenance to open it.

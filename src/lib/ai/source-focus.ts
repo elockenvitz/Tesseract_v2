@@ -23,6 +23,7 @@ export type AiResearchSourceKind =
   | 'asset' | 'note' | 'contribution' | 'price_target' | 'portfolio' | 'theme'
   | 'recommendation' | 'decision_request' | 'accepted_trade'
   | 'decision_review' | 'outcome' | 'workflow' | 'checklist_item'
+  | 'idea'
 
 /**
  * Which sub-page each focus lands on.
@@ -67,6 +68,13 @@ export const FOCUS_BY_SOURCE_KIND: Readonly<Record<AiResearchSourceKind, AssetFo
     accepted_trade: 'position',
     workflow: 'decisions',
     checklist_item: 'decisions',
+    /* An idea is worked on the Work surface, which `decisions` is the only
+       focus to reach. Not `overview`: landing a reader on the snapshot when
+       they clicked a specific idea is the vaguely-related link this table
+       exists to prevent. A deep link to the Idea Pipeline itself would be
+       better still and needs a non-asset destination, which this routing
+       table cannot express yet. */
+    idea: 'decisions',
   })
 
 /** The focus for a kind, falling back to the asset's own overview. */
