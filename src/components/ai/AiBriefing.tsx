@@ -33,7 +33,6 @@
 import { Sparkles, ArrowRight } from 'lucide-react'
 import { clsx } from 'clsx'
 import { AiMessage } from './AiMessage'
-import { ResearchTrail } from './ResearchTrail'
 import { AiThinking, AiErrorNotice } from './AiStates'
 import { ACT_AI_BRIEFING } from '../../lib/ai/brand'
 import { BRIEFING_INTENT, BRIEFING_TITLE, type BriefingContext } from '../../lib/ai/briefing'
@@ -101,14 +100,26 @@ export function AiBriefing({
           <AiThinking status="Reading what the firm holds…" />
         ) : message ? (
           <>
-            <AiMessage message={message} />
-            {toolCalls.length > 0 && (
-              <ResearchTrail
-                toolCalls={toolCalls}
-                defaultOpen
-                onOpenSource={onOpenSource}
-              />
-            )}
+            {/*
+              One evidence section, rendered by the message.
+
+              This used to render a `ResearchTrail` of its own BESIDE
+              `AiMessage` -- and the briefing's message already carries the
+              same `tool_calls`, so the trail appeared twice. That is exactly
+              the duplicated-evidence defect, in this component.
+
+              The lookups are merged into the message rather than rendered
+              separately, so `AiEvidence` sees one set and deduplicates it,
+              and `evidenceOpen` keeps a briefing's sources expanded: a
+              briefing is read once in place of doing the reading, so its
+              sources are part of the artifact rather than something to go
+              looking for.
+            */}
+            <AiMessage
+              message={toolCalls.length > 0 ? { ...message, tool_calls: toolCalls } : message}
+              evidenceOpen
+              onOpenSource={onOpenSource}
+            />
             {onContinueInChat && (
               <button
                 type="button"

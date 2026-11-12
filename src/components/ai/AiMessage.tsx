@@ -19,8 +19,7 @@ import type { ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { clsx } from 'clsx'
 import { AiProse } from './AiProse'
-import { ResearchTrail } from './ResearchTrail'
-import { Citations } from './Citations'
+import { AiEvidence } from './AiEvidence'
 import type { AiRenderableMessage, AiSourceRef } from '../../lib/ai/presentation'
 import { chatLayout, type AiChatMode } from '../../lib/ai/chat-modes'
 
@@ -85,16 +84,19 @@ export function AiMessage({
           <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         )}
 
-        {isAssistant && message.tool_calls && message.tool_calls.length > 0 && (
-          <ResearchTrail
-            toolCalls={message.tool_calls}
-            defaultOpen={showEvidenceOpen}
-            onOpenSource={onOpenSource}
-          />
-        )}
+        {/*
+          ONE evidence section, not two.
 
-        {isAssistant && message.citations && message.citations.length > 0 && (
-          <Citations
+          This replaced a research trail plus a separate citations list. The
+          same record could appear in both, under two headings, and a reader
+          could not tell whether that was one record or two. `AiEvidence`
+          deduplicates by record identity and marks each one quoted or
+          consulted, so the distinction that justified two sections survives
+          without them.
+        */}
+        {isAssistant && (
+          <AiEvidence
+            toolCalls={message.tool_calls}
             citations={message.citations}
             defaultOpen={showEvidenceOpen}
             onOpenSource={onOpenSource}

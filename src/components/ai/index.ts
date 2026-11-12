@@ -14,6 +14,15 @@
 export { AiProse } from './AiProse'
 export { ResearchTrail, SourceRef } from './ResearchTrail'
 export { Citations } from './Citations'
+/*
+ * The one evidence section a message shows. `ResearchTrail` and `Citations`
+ * remain exported: `SourceRef` lives in the former and both still have their
+ * own suites, but no surface should render either directly any more -- a
+ * message's sources go through `AiEvidence`, which is what stops the same
+ * record appearing twice under two headings.
+ */
+export { AiEvidence } from './AiEvidence'
+export type { AiEvidenceProps } from './AiEvidence'
 export { AiMessage } from './AiMessage'
 export { AiThinking, AiErrorNotice, AiPrompts } from './AiStates'
 export { AiContextChips } from './AiContextChips'

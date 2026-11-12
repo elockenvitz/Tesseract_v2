@@ -124,6 +124,12 @@ export type { PromptContext, PromptTag, PromptTarget } from './suggested-prompts
 
 /* Whether the pane yet knows what it is showing. */
 export { isThreadSettling } from './restore-gate'
+/* One supporting-evidence model per answer: records deduplicated across every
+   lookup and citation, each marked quoted or consulted. */
+export { consolidateEvidence, evidenceHeading, lookupSummary } from './evidence'
+export type {
+  ConsolidatedEvidence, EvidenceRecord, EvidenceLookup, EvidenceRelation,
+} from './evidence'
 export type { RestoreGateInput } from './restore-gate'
 
 /* What the assistant is called. One place, so renaming is one edit. */

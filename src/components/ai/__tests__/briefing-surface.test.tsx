@@ -101,7 +101,18 @@ describe('one presentation layer, not two', () => {
       <AiBriefing {...idle} context="decision" message={answer()} toolCalls={[lookup()]} onRun={() => {}} />,
     )
     expect(screen.getByText('AAPL PM ruling: pending')).toBeTruthy()
-    expect(screen.getByText('Checked the decision record for AAPL')).toBeTruthy()
+    /*
+     * The RECORD, open, and the provenance with it -- not the lookup's label.
+     *
+     * This test used to assert "Checked the decision record for AAPL", the
+     * name of the function call. Leading with the machine's actions is what
+     * made the old trail read as diagnostics, so a lookup's label now appears
+     * only when it says something the record list does not: that it failed,
+     * or that nothing was found. The number of lookups is still stated, so
+     * nothing about provenance is hidden.
+     */
+    expect(screen.getByText('From 1 lookup')).toBeTruthy()
+    expect(screen.getByTestId('ai-evidence-relation')).toBeTruthy()
   })
 
   it('reports a lookup s reach in the pane s own words, not its own', () => {

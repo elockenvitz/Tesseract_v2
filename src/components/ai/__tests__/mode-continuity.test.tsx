@@ -198,7 +198,9 @@ describe('compact ↔ research', () => {
 
     const compact = renderPane('compact')
     expect(compact.queryByTitle('Open AAPL PM ruling: pending')).toBeNull()
-    await user.click(compact.getByTitle('Show research'))
+    /* "Show sources", not "Show research": one evidence section now, led by
+       the records rather than by the lookups that found them. */
+    await user.click(compact.getByTitle('Show sources'))
     expect(compact.getByTitle('Open AAPL PM ruling: pending')).toBeTruthy()
   })
 
