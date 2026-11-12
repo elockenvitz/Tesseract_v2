@@ -178,6 +178,33 @@ describe('opened to review the name', () => {
     expect(screen.queryByTestId('workspace-action-exposure')).toBeNull()
   })
 
+  it('shows the running process, without it leading the page', () => {
+    /*
+     * "Active work and research requirements" is one of the questions this
+     * surface answers, and it answered only the half that is an idea or a
+     * decision request. A name with a live run showed no sign of it until
+     * the reader changed mode.
+     */
+    requirements = {
+      all: [{ id: 'ci-9', text: 'Interview two channel partners', stageId: 's-2', completed: false, dueDate: null, assigneeName: null }],
+      open: [{ id: 'ci-9', text: 'Interview two channel partners', stageId: 's-2', completed: false, dueDate: null, assigneeName: null }],
+      doneCount: 0,
+      isLoading: false,
+    }
+    renderWorkspace(entry(), 'wf-1')
+    const block = screen.getByTestId('snapshot-work-at-hand')
+    expect(block.textContent).toMatch(/Interview two channel partners/)
+    /* Supporting, not leading, and without the arrival framing. */
+    expect(leadOf()).not.toBe('work-entry')
+    expect(block.textContent).not.toMatch(/You were sent here/)
+    expect(screen.getByTestId('workspace-action-process')).toBeTruthy()
+  })
+
+  it('says nothing about a process when the page has no run', () => {
+    renderWorkspace(entry(), null)
+    expect(screen.queryByTestId('snapshot-work-at-hand')).toBeNull()
+  })
+
   it('asks the assistant the review question', () => {
     renderWorkspace(entry())
     fireEvent.click(screen.getByTestId('workspace-action-ask'))
@@ -413,6 +440,11 @@ describe('opened to advance a process', () => {
        have caught up. */
     renderWorkspace(workEntry, null)
     expect(screen.getByTestId('workspace-action-process')).toBeTruthy()
+  })
+
+  it('draws the process once, as the lead, never also in the column', () => {
+    renderWorkspace(workEntry, 'wf-1')
+    expect(screen.getAllByTestId('snapshot-work-at-hand')).toHaveLength(1)
   })
 
   it('frames the assistant around the work', () => {

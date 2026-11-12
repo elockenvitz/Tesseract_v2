@@ -1436,10 +1436,34 @@ export function InvestmentSnapshot({
 
   const workAtHand = entryMode === 'work' && entry.work ? (
     <WorkAtHand
+      key="work"
       assetId={asset.id}
       workflowId={entry.work.workflowId}
       requirementId={entry.work.requirementId ?? null}
       reason={entry.reason}
+      onOpenProcess={() => onOpenSubPage('workflow')}
+    />
+  ) : null
+
+  /*
+   * The running process on a general review, where the Overview said nothing
+   * about it at all.
+   *
+   * "Active work and research requirements" is one of the questions this
+   * surface is supposed to answer, and it answered only the half of it that
+   * is an idea or a decision request. A name with a live process run showed
+   * no sign of it until the reader changed mode.
+   *
+   * The same component, without the arrival framing: no "you were sent here",
+   * nothing highlighted, and it sits in the supporting column rather than
+   * leading. On a work entry it is NOT rendered here, because it is already
+   * the lead and a block drawn twice is a defect.
+   */
+  const processInReview = entryMode === 'general' && activeWorkflowId ? (
+    <WorkAtHand
+      key="process"
+      assetId={asset.id}
+      workflowId={activeWorkflowId}
       onOpenProcess={() => onOpenSubPage('workflow')}
     />
   ) : null
@@ -1624,31 +1648,37 @@ export function InvestmentSnapshot({
         nothing, so the position and the record take the full width when there
         is no left column to sit beside.
       */}
-      {whatChanged || perspectives ? (
-        <div className="grid grid-cols-1 gap-x-8 gap-y-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
-          <div className="flex min-w-0 flex-col gap-5">
-            {whatChanged}
-            {perspectives}
-          </div>
-          <div className="flex min-w-0 flex-col gap-5">
-            {/* Not when it is leading the top row. A panel rendered twice on
-                one page is a defect, not emphasis. */}
-            {exposureLed ? null : exposureValuation}
-            {decisionHistory}
-          </div>
-        </div>
-      ) : exposureLed ? (
-        /* The exposure is already at the top, so the record stands alone. */
-        decisionHistory
-      ) : (
+      {/*
+        The supporting detail, as two columns of whatever actually exists.
+
+        This was three hand-written branches over the same four blocks, which
+        is why adding a fifth meant rewriting the condition rather than adding
+        a block. Composed from two lists instead: the wide column holds what
+        reads (research that arrived, the running process), the narrow one
+        holds the figures (exposure, the record). A block already used by the
+        lead row is absent from both -- a panel drawn twice on one page is a
+        defect, not emphasis -- and a column with nothing in it is not drawn,
+        so a quiet single-author name does not hold 62% of a row open for
+        nothing.
+      */}
+      {(() => {
+        const reads = [whatChanged, perspectives, processInReview].filter(Boolean)
+        const figures = [exposureLed ? null : exposureValuation, decisionHistory].filter(Boolean)
+        if (reads.length > 0) {
+          return (
+            <div className="grid grid-cols-1 gap-x-8 gap-y-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
+              <div className="flex min-w-0 flex-col gap-5">{reads}</div>
+              <div className="flex min-w-0 flex-col gap-5">{figures}</div>
+            </div>
+          )
+        }
         /* Side by side rather than stacked: each is a compact block of
            figures, and two of them in a page-wide column is a lot of white
-           to the right of a weight bar. */
-        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
-          {exposureValuation}
-          {decisionHistory}
-        </div>
-      )}
+           to the right of a weight bar. One of them stands alone. */
+        return figures.length > 1 ? (
+          <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">{figures}</div>
+        ) : figures
+      })()}
     </div>
   )
 }
