@@ -18,6 +18,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   briefingContextFor,
+  briefingContextForEntry,
+  workspaceAskDraft,
   briefingQuestion,
   briefingKey,
   briefingHandoffDraft,
@@ -57,6 +59,50 @@ describe('which situation the reader is in', () => {
        half: every state today resolves to one of exactly two contexts. */
     const got = new Set(ALL_STATES.map(briefingContextFor))
     expect([...got].sort()).toEqual(['decision', 'review'])
+  })
+
+  it('never calls a state "work", because no state means the reader came for one', () => {
+    /*
+     * The third context exists, and the STATE cannot produce it. Work owed on
+     * an asset is a fact about the asset; that the reader followed a
+     * requirement to get here is a fact about the reader. Only the entry
+     * reason knows it, and conflating the two would put research-support
+     * framing on every name with an open process.
+     */
+    for (const s of ALL_STATES) expect(briefingContextFor(s), s).not.toBe('work')
+  })
+})
+
+describe('when the surface knows why the reader came', () => {
+  it('lets the entry reason outrank the state', () => {
+    /* Same rule as `resolveLanding`: the reader's last action is better
+       evidence of what they want than a property of the record. */
+    expect(briefingContextForEntry('decision', 'unowned')).toBe('decision')
+    expect(briefingContextForEntry('work', 'decision-pending')).toBe('work')
+  })
+
+  it('falls back to the state on a general open', () => {
+    /* A reader who simply opened a name with a decision waiting on it still
+       gets decision preparation -- that is the state doing its job. */
+    expect(briefingContextForEntry('general', 'decision-pending')).toBe('decision')
+    expect(briefingContextForEntry('general', 'position-monitored')).toBe('review')
+  })
+
+  it('gives each context its own heading, intent and ask', () => {
+    /* The test this module's own rule set: a context earns its place when
+       what it asks for is not the same briefing in different words. */
+    const contexts = ['decision', 'work', 'review'] as const
+    expect(new Set(contexts.map(c => BRIEFING_TITLE[c])).size).toBe(3)
+    expect(new Set(contexts.map(c => BRIEFING_INTENT[c])).size).toBe(3)
+    expect(new Set(contexts.map(c => workspaceAskDraft(c, 'AAPL'))).size).toBe(3)
+  })
+
+  it('asks the work briefing for records, not for a verdict on the work', () => {
+    const q = briefingQuestion({
+      context: 'work', symbol: 'AAPL', state: 'research-active', signals: [],
+    })
+    expect(q).toMatch(/still outstanding/)
+    expect(q).toMatch(/Do not assess whether the work is going well/)
   })
 
   it('names and explains both contexts, with nothing shared between them', () => {

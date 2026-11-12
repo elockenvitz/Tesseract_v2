@@ -38,7 +38,8 @@ import { useState } from 'react'
 import { AiBriefing } from '../ai/AiBriefing'
 import { useAssetAttentionSignals } from '../../hooks/useAssetAttentionSignals'
 import { useAssetBriefing } from '../../hooks/ai/useAssetBriefing'
-import { briefingContextFor, briefingHandoffDraft } from '../../lib/ai/briefing'
+import { briefingContextForEntry, briefingHandoffDraft } from '../../lib/ai/briefing'
+import type { WorkspaceEntryMode } from '../../lib/asset-workspace/entry'
 import { askAI } from '../../lib/engagement'
 import { focusForSourceKind } from '../../lib/ai/source-focus'
 import { openAsset } from '../../lib/desktop-asset'
@@ -53,11 +54,20 @@ export interface AssetBriefingSectionProps {
   coveringUserIds: string[]
   /** The page's live quote, where it has one. */
   spot?: number | null
+  /**
+   * Why the reader opened the name, where the surface knows.
+   *
+   * The entry reason outranks the workspace state in deciding what the
+   * briefing is for: a reader who followed a requirement here is not asking
+   * what has changed on the name. Absent means the state decides, which is
+   * what every caller without an entry reason gets.
+   */
+  entryMode?: WorkspaceEntryMode
   className?: string
 }
 
 export function AssetBriefingSection({
-  assetId, symbol, companyName, coveringUserIds, spot, className,
+  assetId, symbol, companyName, coveringUserIds, spot, entryMode = 'general', className,
 }: AssetBriefingSectionProps) {
   /*
    * Which asset the reader asked about -- not a boolean.
@@ -77,7 +87,7 @@ export function AssetBriefingSection({
   const { signals, state, isLoading: signalsLoading } = useAssetAttentionSignals({
     assetId, symbol, coveringUserIds, spot,
   })
-  const context = briefingContextFor(state)
+  const context = briefingContextForEntry(entryMode, state)
 
   const request = { context, symbol, state, signals }
   const { data, isLoading, error, refetch } = useAssetBriefing({
