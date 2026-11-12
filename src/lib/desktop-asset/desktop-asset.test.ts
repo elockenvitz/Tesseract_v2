@@ -11,6 +11,10 @@ import {
   openAsset, assetTabFor, subscribeToOpenAsset, OPEN_ASSET_EVENT,
   issueTitle, issueDetail,
 } from './navigate'
+/* The reader of this descriptor, so the stale-context cases below are
+   asserted as the workspace actually resolves them rather than as a set of
+   null properties. */
+import { resolveEntry } from '../asset-workspace/entry'
 
 const descriptors: any[] = []
 const typed: any[] = []
@@ -76,6 +80,43 @@ describe('context travels, and never lingers', () => {
     expect(d.data).toHaveProperty('issue', null)
     expect(d.data).toHaveProperty('origin', null)
     expect(d.data.focus).toBe('overview')
+    /* The reason keys, for the same reason. These decide which workspace the
+       Overview composes, so a stale one is not a cosmetic leak: a plain open
+       of AAPL would lead with somebody else's buy request. */
+    expect(d.data).toHaveProperty('decisionId', null)
+    expect(d.data).toHaveProperty('workflowId', null)
+    expect(d.data).toHaveProperty('stageId', null)
+    expect(d.data).toHaveProperty('requirementId', null)
+    expect(d.data).toHaveProperty('taskId', null)
+  })
+
+  it('clears the previous reason when the same name is opened plainly', () => {
+    /*
+     * The stale-context case end to end, through the resolver that reads it.
+     * A PM opens AAPL from the inbox to rule on a request, then opens AAPL
+     * again from search. The second page must be the general overview.
+     */
+    openAsset({
+      assetId: 'a-1', symbol: 'AAPL', decisionId: 'dr-7',
+      portfolioId: 'p1', origin: 'decision-inbox',
+    })
+    expect(resolveEntry(descriptors.at(-1)!.data).mode).toBe('decision')
+
+    openAsset({ assetId: 'a-1', symbol: 'AAPL' })
+    const after = resolveEntry(descriptors.at(-1)!.data)
+    expect(after.mode).toBe('general')
+    expect(after.decisionId).toBeNull()
+    expect(after.portfolioId).toBeNull()
+  })
+
+  it('carries a work destination without the sender knowing the field names', () => {
+    openAsset({
+      assetId: 'a-1', symbol: 'AAPL',
+      work: { workflowId: 'wf-1', stageId: 's-2', requirementId: 'ci-3' },
+    })
+    const entry = resolveEntry(descriptors.at(-1)!.data)
+    expect(entry.mode).toBe('work')
+    expect(entry.work).toEqual({ workflowId: 'wf-1', stageId: 's-2', requirementId: 'ci-3' })
   })
 
   it('targets the existing Asset page, not a parallel workspace', () => {
