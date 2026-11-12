@@ -65,6 +65,27 @@ export interface OpenAssetRequest {
   issue?: EngagementIssue | string | null
   /** Quiet provenance: which lens raised this. */
   origin?: string | null
+  /**
+   * The decision request the reader was sent to rule on.
+   *
+   * `focus` says which part of the asset matters; this says which RECORD.
+   * The Decision Inbox knows it, and without it the workspace can only lead
+   * with "something is waiting here" rather than with the request the reader
+   * clicked. `lib/asset-workspace/entry` reads it.
+   */
+  decisionId?: string | null
+  /**
+   * The process run, stage and requirement the reader was sent to advance.
+   *
+   * These three already travelled in tab data from the process-first route
+   * (`destinationFromTabData` names the spellings), written by senders that
+   * hand-build their own descriptor. Carrying them HERE puts them in the
+   * typed contract, so a sender using `openAsset` does not have to know the
+   * payload's field names, and -- like every other context key -- they are
+   * written even when absent, so a generic open of a name cannot inherit the
+   * run somebody opened twenty minutes ago.
+   */
+  work?: { workflowId: string; stageId?: string | null; requirementId?: string | null } | null
 }
 
 export const OPEN_ASSET_EVENT = 'tesseract:open-asset' as const
@@ -159,6 +180,20 @@ export function assetTabFor(request: OpenAssetRequest) {
       portfolioName: request.portfolioName ?? null,
       issue: request.issue ?? null,
       origin: request.origin ?? null,
+      /* Why the reader is here, as records rather than as a mood. Written
+         even when absent: see the comment on `work` above. */
+      decisionId: request.decisionId ?? null,
+      workflowId: request.work?.workflowId ?? null,
+      stageId: request.work?.stageId ?? null,
+      requirementId: request.work?.requirementId ?? null,
+      /*
+       * The older spelling for a requirement, written as null for the same
+       * reason. `UserTab` sends `{ taskId, stageId }` on an assigned task and
+       * hand-builds its descriptor, so without this a later generic open of
+       * the same name would merge over the rest and leave the task behind --
+       * and `AssetTab` reads `taskId` directly to resolve a task arrival.
+       */
+      taskId: null,
     },
   }
 }
