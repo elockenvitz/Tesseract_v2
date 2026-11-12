@@ -132,7 +132,27 @@ export function AiPrompts({
 }) {
   const wide = columns === 2
   return (
-    <div className={clsx('flex h-full flex-col items-center justify-center px-4 text-center', className)}>
+    <div
+      /*
+       * It arrives rather than appears.
+       *
+       * The thread area is deliberately empty while the pane works out what
+       * it is showing -- a skeleton there would be the very flash the settle
+       * gate exists to remove. But empty-then-present with no motion reads as
+       * a jump, which is what "blank for a second and then it pops in" is
+       * describing. A 10px rise over 300ms turns the same two states into one
+       * movement, with no placeholder and no added delay.
+       *
+       * `motion-reduce:animate-none` because an entrance is decoration: a
+       * reader who has asked their system for less motion gets the content
+       * with none.
+       */
+      className={clsx(
+        'flex h-full flex-col items-center justify-center px-4 text-center',
+        'animate-slide-up motion-reduce:animate-none',
+        className,
+      )}
+    >
       <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full
                       bg-gradient-to-br from-primary-100 to-purple-100
                       dark:from-primary-900/30 dark:to-purple-900/30">

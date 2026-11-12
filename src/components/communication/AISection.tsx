@@ -485,12 +485,24 @@ export function AISection({
    * than none. The resolve is three cached queries; the thread area's own
    * settle gate covers the rest.
    */
-  if (isConfigResolving) {
-    return <div data-testid="ai-config-resolving" className="h-full" aria-busy="true" />
-  }
-
-  // Not configured state
-  if (!isConfigured) {
+  /*
+   * Not configured, once we actually know that -- and otherwise the real pane.
+   *
+   * `isConfigured` resolves from three queries and falls through to `false`
+   * while they are in flight, so that false is a DEFAULT, not a verdict.
+   * Rendering this screen on it told every reader their AI was not set up.
+   *
+   * The first fix returned an empty div for the resolving window, which
+   * traded a wrong screen for a blank pane -- correct and worse. The pane's
+   * chrome does not depend on the configuration at all: the header, the
+   * context chips and the composer can paint immediately and be right. So
+   * resolving now falls THROUGH to the real pane, and only the thread area
+   * waits, which is the one region whose content is actually unknown.
+   *
+   * One transition, and the pane never looks broken or absent on the way to
+   * it.
+   */
+  if (!isConfigured && !isConfigResolving) {
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 flex items-center justify-center p-6">
@@ -726,7 +738,7 @@ export function AISection({
             already grounded, rather than appearing generic and re-ranking a
             moment later. One transition, which is the whole point of the
             gate. A failed fetch still resolves, so this cannot hang. */}
-        {(isRestoringConversation || isLoadingPromptFacts) ? (
+        {(isRestoringConversation || isLoadingPromptFacts || isConfigResolving) ? (
           /*
             Not known yet, so nothing claimed.
 

@@ -262,12 +262,29 @@ describe('it does not accuse the org of having no AI set up', () => {
     renderPane()
     expect(screen.queryByText(/Not Configured/i)).toBeNull()
     expect(screen.queryByText(/Configure in Settings/i)).toBeNull()
-    expect(screen.getByTestId('ai-config-resolving')).toBeTruthy()
   })
 
-  it('shows no prompts either, so the reader sees one transition and not two', () => {
-    /* A spinner or an empty thread here would be a second full-pane state on
-       the way to the first. Nothing, then the pane. */
+  it('keeps the pane itself on screen while the config resolves', () => {
+    /*
+     * The correction to the first fix, and the thing a reader actually
+     * reported: returning an empty element for the resolving window traded a
+     * wrong screen for a BLANK PANE. Correct, and worse.
+     *
+     * None of the chrome depends on the configuration, so all of it can paint
+     * immediately and be right. Only the thread area waits.
+     */
+    hook.isConfigResolving = true
+    hook.isConfigured = false
+    hook.isRestoringConversation = false
+    renderPane()
+    /* The composer, by its real placeholder, so this also pins the branding. */
+    expect(screen.getByPlaceholderText(/Ask ACT AI/i)).toBeTruthy()
+    expect(screen.getByTestId('ai-thread-settling')).toBeTruthy()
+  })
+
+  it('shows no prompts until the config has resolved', () => {
+    /* Until we know whether this is a configured org, the thread area cannot
+       know whether it is showing questions or a setup notice. */
     hook.isConfigResolving = true
     hook.isConfigured = false
     hook.isRestoringConversation = false
@@ -283,7 +300,6 @@ describe('it does not accuse the org of having no AI set up', () => {
     hook.isRestoringConversation = false
     renderPane()
     expect(screen.getByText(/Not Configured/i)).toBeTruthy()
-    expect(screen.queryByTestId('ai-config-resolving')).toBeNull()
   })
 
   it('shows the pane once the config resolves as configured', () => {
