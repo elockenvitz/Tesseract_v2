@@ -171,6 +171,51 @@ export function sourceStateLabel(state: string | null | undefined): string | nul
   return flat.charAt(0).toUpperCase() + flat.slice(1)
 }
 
+/**
+ * How old a record is, where that is old enough to matter.
+ *
+ * ── Why an age and not just a date ────────────────────────────────────────
+ *
+ * Every source already rendered its date, in the lightest grey on the row.
+ * That is provenance, and it is nearly useless for the question a reader
+ * actually has: a thesis dated "12 Mar 2026" and one dated "9 Nov 2026" look
+ * identical while scanning, and only one of them should be leaned on. An
+ * answer built on an eight-month-old thesis is not wrong, but a reader has to
+ * KNOW that to weigh it.
+ *
+ * ── What it will not do ───────────────────────────────────────────────────
+ *
+ * It does not call anything stale, out of date or unreliable. Those are
+ * judgments about a specific record in a specific context, and this layer has
+ * no standing to make one: a thesis on a slow compounder can be two years old
+ * and current, and a note on a company mid-takeover is stale in a week. So it
+ * states the age and stops.
+ *
+ * It also returns nothing for a FUTURE timestamp. A record dated ahead of now
+ * is a data defect, and "in 3 months old" is worse than silence.
+ */
+export const RECORD_AGE_NOTE_DAYS = 90
+
+export function recordAge(
+  timestamp: string | null | undefined,
+  now: Date = new Date(),
+): { days: number; label: string } | null {
+  if (!timestamp) return null
+  const then = new Date(timestamp)
+  if (Number.isNaN(then.getTime())) return null
+
+  const days = Math.floor((now.getTime() - then.getTime()) / 86_400_000)
+  /* Future-dated, or new enough that the date alone says it. */
+  if (days < RECORD_AGE_NOTE_DAYS) return null
+
+  const months = Math.floor(days / 30)
+  if (months < 12) return { days, label: `${months} months old` }
+  const years = Math.floor(days / 365)
+  const rem = Math.floor((days - years * 365) / 30)
+  if (rem === 0) return { days, label: years === 1 ? '1 year old' : `${years} years old` }
+  return { days, label: `${years}y ${rem}m old` }
+}
+
 /** The left rule beside a lookup, coloured by how it went. */
 export function trailBorderFor(status?: string): string {
   return status === 'error' ? 'border-red-300 dark:border-red-700'

@@ -333,7 +333,10 @@ describe('merging the two sources', () => {
      * generic question sitting beside a grounded one says the panel had
      * nothing better, which was not true.
      */
-    const grounded = candidatePrompts({ limit: 6, pendingDecisions: { count: 2, oldestDays: 9 } })
+    const grounded = candidatePrompts({
+      limit: 6,
+      pendingDecisions: { count: 2, longestWaitingDays: 9, yoursToAnswer: 1 },
+    })
     const merged = mergePrompts(grounded, [], 6)
     expect(merged.every(c => c.kind !== 'generic')).toBe(true)
     expect(merged.length).toBeGreaterThan(0)

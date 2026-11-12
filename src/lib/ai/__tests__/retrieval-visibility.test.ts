@@ -48,7 +48,10 @@ import {
 } from '../../../../supabase/functions/_shared/research-results'
 /* The panel's half of the same rule. Imported here rather than tested
    separately so a scope change breaks one file, not two that agree. */
-import { emptySentence, foundSentence, sourceStateLabel, toolCallOutcome } from '../trail-text'
+import {
+  emptySentence, foundSentence, sourceStateLabel, toolCallOutcome,
+  recordAge, RECORD_AGE_NOTE_DAYS,
+} from '../trail-text'
 import { IDEA_STAGES, LEGACY_STAGE_MAP, toIdeaStage } from '../../ideas/stage-model'
 import { TERMINAL_STATUSES } from '../../trade-status-semantics'
 import { DECIDED_DECISION_STATUSES } from '../../decisions/outcome-eligibility'
@@ -437,5 +440,62 @@ describe('the model is taught the visibility contract', () => {
 
   it('keeps maturity and decisions apart in the prompt', () => {
     expect(EDGE_SOURCE).toMatch(/Never report a pipeline stage as a decision/)
+  })
+})
+
+/**
+ * The fifth distinction a reader needs: not "is there a record" but "how old
+ * is the one you are leaning on".
+ *
+ * The source row already carried a date, in the lightest grey on the line, so
+ * a thesis from March and one from last week scanned identically. An answer
+ * built on an eight-month-old thesis is not wrong, but a reader has to know
+ * that to weigh it.
+ */
+describe('a record s age', () => {
+  const now = new Date('2026-11-12T00:00:00Z')
+  const daysAgo = (n: number) =>
+    new Date(now.getTime() - n * 86_400_000).toISOString()
+
+  it('says nothing about a record new enough that the date speaks for itself', () => {
+    expect(recordAge(daysAgo(3), now)).toBeNull()
+    expect(recordAge(daysAgo(RECORD_AGE_NOTE_DAYS - 1), now)).toBeNull()
+  })
+
+  it('states the age once a record is old enough to change how it is weighed', () => {
+    expect(recordAge(daysAgo(RECORD_AGE_NOTE_DAYS), now)?.label).toBe('3 months old')
+    expect(recordAge(daysAgo(240), now)?.label).toBe('8 months old')
+  })
+
+  it('rolls over to years without saying 14 months', () => {
+    expect(recordAge(daysAgo(365), now)?.label).toBe('1 year old')
+    expect(recordAge(daysAgo(430), now)?.label).toBe('1y 2m old')
+    expect(recordAge(daysAgo(730), now)?.label).toBe('2 years old')
+  })
+
+  it('says nothing for a future timestamp', () => {
+    /* A record dated ahead of now is a data defect, and "in 3 months old" is
+       worse than silence. */
+    expect(recordAge(new Date(now.getTime() + 86_400_000 * 40).toISOString(), now)).toBeNull()
+  })
+
+  it('survives a missing or unparseable timestamp', () => {
+    for (const bad of [null, undefined, '', 'not a date']) {
+      expect(recordAge(bad, now)).toBeNull()
+    }
+  })
+
+  it('never calls a record stale, out of date or unreliable', () => {
+    /*
+     * The line this must not cross. Whether age makes a record wrong depends
+     * on the company: a thesis on a slow compounder can be two years old and
+     * current, and a note on a company mid-takeover is stale in a week. This
+     * layer states the age and leaves the judgment where it belongs.
+     */
+    for (const n of [RECORD_AGE_NOTE_DAYS, 240, 365, 900]) {
+      const label = recordAge(daysAgo(n), now)!.label
+      expect(label).not.toMatch(/stale|out of date|outdated|unreliable|old news/i)
+      expect(label).toMatch(/old$/)
+    }
   })
 })

@@ -202,3 +202,50 @@ describe('a source still opens the right object', () => {
     expect(onOpenSource.mock.calls[0][0].asset_id).toBe('a1')
   })
 })
+
+describe('an old record says how old it is', () => {
+  /*
+   * The date was already on the row, in the lightest grey on the line, which
+   * is provenance and nearly useless for the question a reader has: a thesis
+   * from March and one from last week scan identically, and only one of them
+   * should be leaned on.
+   */
+  const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString()
+
+  it('marks a record old enough to change how it is weighed', () => {
+    render(
+      <AiEvidence
+        toolCalls={[call({ sources: [source({ timestamp: daysAgo(240) })] })]}
+        defaultOpen
+      />,
+    )
+    expect(screen.getByTestId('ai-source-age').textContent).toBe('8 months old')
+  })
+
+  it('says nothing on a recent record, so the mark keeps its meaning', () => {
+    /* A badge on every row is a badge nobody reads. */
+    render(
+      <AiEvidence
+        toolCalls={[call({ sources: [source({ timestamp: daysAgo(4) })] })]}
+        defaultOpen
+      />,
+    )
+    expect(screen.queryByTestId('ai-source-age')).toBeNull()
+  })
+
+  it('keeps the exact date beside the age, never instead of it', () => {
+    /* Provenance. "8 months old" is a reading of the timestamp; the
+       timestamp itself is the fact, and the reader can still see it. */
+    render(
+      <AiEvidence
+        toolCalls={[call({ sources: [source({ timestamp: '2026-03-12T00:00:00Z' })] })]}
+        defaultOpen
+      />,
+    )
+    expect(screen.getByTestId('ai-source-age')).toBeTruthy()
+    /* Month and year, not the day: a UTC midnight renders as the previous
+       local date west of Greenwich, and the runner's timezone is not the
+       subject of this test. */
+    expect(screen.getByText(/Mar\b.*2026/)).toBeTruthy()
+  })
+})

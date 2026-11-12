@@ -27,7 +27,8 @@ import type { AiSourceRef, MessageToolCall } from '../../lib/ai/presentation'
 /* The words, and the three-status rule they carry, live in lib so a test can
    read them without a DOM and a second surface cannot quietly reword them. */
 import {
-  SOURCE_KIND_LABEL, sourceStateLabel, toolCallLabel, toolCallOutcome, trailBorderFor,
+  SOURCE_KIND_LABEL, sourceStateLabel, recordAge,
+  toolCallLabel, toolCallOutcome, trailBorderFor,
 } from '../../lib/ai/trail-text'
 
 interface ResearchTrailProps {
@@ -121,6 +122,7 @@ export function SourceRef({
     : null
 
   const state = sourceStateLabel(source.state)
+  const age = recordAge(source.timestamp)
 
   const body = (
     <>
@@ -140,6 +142,24 @@ export function SourceRef({
         </span>
       )}
       {when && <span className="text-gray-400 dark:text-gray-500 ml-1">{when}</span>}
+      {/*
+        The age, where it is old enough to change how the record should be
+        weighed. The date alone is the lightest thing on the row, so a thesis
+        from March and one from last week scan identically -- and only one of
+        them should be leaned on.
+
+        An age, never a verdict: nothing here calls a record stale. A thesis
+        on a slow compounder can be two years old and current.
+      */}
+      {age && (
+        <span
+          data-testid="ai-source-age"
+          className="ml-1 text-amber-700 dark:text-amber-500"
+          title={`Last updated ${when}. Weigh it accordingly.`}
+        >
+          {age.label}
+        </span>
+      )}
       {/*
         The record in its own words. One line, clamped: enough to recognise
         the row without turning the trail into the document.
