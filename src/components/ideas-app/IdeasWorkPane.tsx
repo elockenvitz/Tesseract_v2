@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { Lightbulb } from 'lucide-react'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
@@ -11,6 +11,8 @@ import { useTradeIdeaWorkspace } from '../../hooks/useTradeIdeaWorkspace'
 import { assetFocusFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
+import { entryContextFor } from '../../lib/asset-workspace/entry-context'
+import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 
 /**
  * The contextual workspace.
@@ -168,6 +170,7 @@ export function IdeasWorkPane({
         <WorkSurface
           key={selection.key}
           selection={selection}
+          entry={entry}
           onClose={onClose}
           mode={mode}
         />
@@ -176,11 +179,50 @@ export function IdeasWorkPane({
   )
 }
 
-function WorkSurface({ selection, onClose, mode }: {
+function WorkSurface({ selection, entry, onClose, mode }: {
   selection: IdeasSelection
+  /**
+   * The selected item, for the entry context only.
+   *
+   * ── Why reading it here does not break the rule above ────────────────
+   *
+   * `entry` is documented as presentation, never routed on, and that is
+   * exactly how it is used: `entryContextFor` copies the producer's own row
+   * off it so the workspace can STATE what the reader pressed. Routing is
+   * still `selection.assetId` and `selection.family`, and every figure the
+   * workspace draws from the database still comes from its own org-scoped
+   * reads.
+   *
+   * The entry is captured when the card is pressed and held by the host, so
+   * it is the item the reader actually selected rather than whatever has
+   * since reranked into its place.
+   */
+  entry: AttentionEntry | null
   onClose: () => void
   mode: Progression['mode'] | null
 }) {
+  /*
+   * The organisation the reader is in NOW, for the staleness check the
+   * workspace applies to the context. Never used to widen a read.
+   *
+   * The OPTIONAL accessor, deliberately. `useOrganization` throws outside a
+   * provider, and this pane is mounted by surfaces and suites that stand up
+   * no organisation context -- a routing pane that crashes for want of a
+   * value it only uses to INVALIDATE something is a fragility, not a check.
+   * No organisation resolves to no context applying, which is the safe
+   * direction: the general workspace.
+   */
+  const org = useOrganizationOptional()
+  const currentOrgId = org?.currentOrgId ?? null
+  const entryContext = useMemo(
+    () => entryContextFor({
+      selection,
+      row: entry?.source ?? null,
+      organizationId: currentOrgId ?? null,
+    }),
+    [selection, entry, currentOrgId],
+  )
+
   /**
    * Which name the reader is working, where the candidate names more than one.
    *
@@ -228,6 +270,11 @@ function WorkSurface({ selection, onClose, mode }: {
               issue={selection.why.headline}
               origin="ideas"
               why={{ headline: selection.why.headline, reason: selection.why.reason }}
+              /* A story carries no producer row, so this resolves to a
+                 general context and the workspace is unchanged. Passed for
+                 the staleness check, which applies either way. */
+              entryContext={entryContext}
+              organizationId={currentOrgId ?? null}
             />
           </div>
         )}
@@ -333,6 +380,8 @@ function WorkSurface({ selection, onClose, mode }: {
            * sentence appeared twice within eighty pixels.
            */
           why={{ headline: selection.why.headline, reason: selection.why.reason }}
+          entryContext={entryContext}
+          organizationId={currentOrgId ?? null}
         />
       </div>
     )

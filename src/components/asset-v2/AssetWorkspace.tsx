@@ -76,6 +76,10 @@ import { anchoredWindow, PriceSinceReview } from '../research-v2/ResearchVisual'
 import { useThesisReviews } from '../../hooks/useThesisReview'
 import { ThesisContainer } from '../contributions'
 import { useState } from 'react'
+import { EntryOrientation, type OrientationPageFacts } from './EntryOrientation'
+import {
+  contextAppliesTo, type WorkspaceEntryContext, type LadderRung,
+} from '../../lib/asset-workspace/entry-context'
 
 export interface AssetWorkspaceProps {
   asset: { id: string; symbol?: string | null; company_name?: string | null } & Record<string, any>
@@ -94,6 +98,48 @@ export interface AssetWorkspaceProps {
    * right owner for "and here is why you are looking at it".
    */
   why?: { headline: string; reason: string | null } | null
+  /**
+   * What the reader was looking at when they opened this name.
+   *
+   * The typed contract, not a string: which event, which numbers, stated
+   * when, in which organisation. `EntryOrientation` composes the band at the
+   * top of the page out of it, and the page's own canonical figures fill in
+   * everything the event does not carry.
+   *
+   * Absent for a cold open, which is the general workspace and unchanged.
+   */
+  entryContext?: WorkspaceEntryContext | null
+  /**
+   * The reader's current organisation, for the staleness check only.
+   *
+   * The context carries the organisation it was BUILT in; this is the one the
+   * reader is in NOW. A mismatch discards the context rather than drawing one
+   * organisation's event over another's data, which is why the check needs
+   * both and why neither is ever used to widen a query.
+   */
+  organizationId?: string | null
+}
+
+/**
+ * Where a request waiting on a human is answered.
+ *
+ * Shared by the decision band and by the entry orientation above it. Two
+ * copies of "which object answers this request" is how two surfaces on one
+ * page start sending the same reader to different places; the hop is written
+ * once. It hands off, and it never decides.
+ */
+function decisionHandoff(
+  data: { liveIdeas: AssetLiveIdea[] },
+  symbol: string | null,
+  action: string | null,
+  onOpenLegacy?: () => void,
+): () => void {
+  return () => {
+    // The asset's live idea if one exists, else the legacy asset page.
+    const idea = data.liveIdeas[0]
+    if (idea) routeToIdea(idea.id, `${symbol ?? 'Asset'} — decide: ${action ?? 'request'}`)
+    else onOpenLegacy?.()
+  }
 }
 
 /** Ideas is a separate object; this is the typed hop, not an embedded workspace. */
@@ -105,6 +151,7 @@ function routeToIdea(ideaId: string, issue: string) {
 
 export function AssetWorkspacePane({
   asset, focus, portfolioId, portfolioName, issue, origin, onOpenLegacy, why,
+  entryContext, organizationId,
 }: AssetWorkspaceProps) {
   const activeFocus: AssetFocus = focus ?? 'overview'
   const symbol = asset.symbol ?? null
@@ -482,6 +529,92 @@ export function AssetWorkspacePane({
     })
   }
 
+  /* ------------------------------------------------ why you are here */
+
+  /*
+   * The context, only if it still describes what is on screen.
+   *
+   * `contextAppliesTo` is identity, not a heuristic: a context built for
+   * another name, or in another organisation, applies to nothing and the page
+   * renders exactly as it would have with nothing carried. Both defects it
+   * guards against have shipped in this app before.
+   */
+  const entry = contextAppliesTo(entryContext, {
+    assetId: asset.id, organizationId: organizationId ?? null,
+  }) ? entryContext! : null
+
+  const pendingRequest = data.decisions.find(d => (d.status ?? '').toLowerCase() === 'pending') ?? null
+
+  const orientation = entry?.event ? (() => {
+    /* The canonical figures, from this page's own org-scoped reads. The event
+       carries what the Dashboard item knew; everything below is what the
+       record says now, which is how the band can report a divergence between
+       the two rather than silently preferring one. */
+    const facts: OrientationPageFacts = {
+      ladder: (data.ladder?.cases ?? []).map<LadderRung>(c => ({
+        id: c.id, name: c.name, price: c.price,
+      })),
+      officialTarget: data.target,
+      spot: data.spot,
+      spotAsOf: data.history.length ? data.history[data.history.length - 1].date : null,
+      caseWrittenAt: data.caseWrittenAt ?? null,
+      position: position
+        ? {
+          portfolioName: position.portfolioName,
+          weightPct: position.weightPct,
+          valueUsd: position.marketValue ?? null,
+        }
+        : null,
+      alsoHeldIn: others.map(p => p.portfolioName),
+      pending: pendingRequest
+        ? {
+          label: pendingRequest.action ?? 'Decision request',
+          note: pendingRequest.decisionNote ?? null,
+          portfolioName: pendingRequest.portfolioName ?? null,
+        }
+        : null,
+    }
+
+    return (
+      <EntryOrientation
+        context={entry}
+        facts={facts}
+        actions={{
+          /* The page's own editor, in place. The case section keeps its own
+             control; this is the same one, reached from the orientation. */
+          reviewCase: () => setEditing(true),
+          /* The canonical asset page at its scenarios, which is where a
+             target is actually edited. The event travels with the hop so the
+             reader does not have to restate why they went. */
+          openScenarios: () => openAsset({
+            assetId: asset.id,
+            symbol,
+            companyName: asset.company_name ?? null,
+            focus: 'framework',
+            portfolioId: entry.portfolioId ?? portfolioId ?? null,
+            portfolioName: entry.portfolioName ?? portfolioName ?? null,
+            issue: entry.why?.headline ?? issue ?? null,
+            origin: entry.sourceItem?.family ?? origin ?? null,
+          }),
+          openFullWorkspace: onOpenLegacy,
+          /* Only where a request is actually waiting. An action with nothing
+             behind it is the inert card this work exists to avoid. */
+          openPending: pendingRequest
+            ? decisionHandoff(data, symbol, pendingRequest.action ?? null, onOpenLegacy)
+            : undefined,
+          ask: (question: string) => askAI({
+            ...target,
+            origin: { itemId: asset.id, surface: 'asset-entry-orientation' },
+            issue: entry.why
+              ? { title: entry.why.headline, reason: `entry:${entry.intent}` }
+              : target.issue,
+            seedPrompt: question,
+          }),
+        }}
+      />
+    )
+  })() : null
+
   // Focus reorders one page. It never hides a section behind a tab.
   const lead: React.ReactNode[] = []
   const context: React.ReactNode[] = []
@@ -625,6 +758,16 @@ export function AssetWorkspacePane({
       */}
       <div className="px-4 pb-12 pt-5" data-asset-body>
         <div className="mx-auto flex w-full max-w-[140ch] flex-col gap-6">
+          {/*
+            The event the reader pressed, above everything.
+
+            Above `DecisionBand` deliberately. A pending recommendation is a
+            real claim on the reader's attention and keeps its own band, but
+            it is not what they selected: leading with it would answer a
+            question they did not ask, which is the behaviour reported against
+            the target-reached card.
+          */}
+          {orientation}
           <DecisionBand data={data} position={position} symbol={symbol} onOpenLegacy={onOpenLegacy} />
           {lead}
           {context}
@@ -668,13 +811,7 @@ export function DecisionBand({
   const rr = (bear != null && bull != null && spot != null && bull > spot && spot > bear)
     ? { ratio: (bull - spot) / (spot - bear), bear, bull, spot } : null
 
-  const decide = () => {
-    // Hand off to where the asset's decision work lives: its live idea if one
-    // exists, else the legacy asset page. Never decide on this surface.
-    const idea = data.liveIdeas[0]
-    if (idea) routeToIdea(idea.id, `${symbol ?? 'Asset'} — decide: ${pending.action ?? 'request'}`)
-    else onOpenLegacy?.()
-  }
+  const decide = decisionHandoff(data, symbol, pending.action ?? null, onOpenLegacy)
 
   return (
     <div data-testid="decision-band"
