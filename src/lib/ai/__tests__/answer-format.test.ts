@@ -25,7 +25,10 @@ import {
   CLAIM_KINDS,
   TABLE_RULES,
   ANSWER_FORMS,
+  VOCABULARY_RULES,
+  recordVocabulary,
 } from '../answer-format'
+import { SOURCE_KIND_LABEL } from '../trail-text'
 import { preprocessTickers } from '../markdown'
 import { readFigure, figureTone, numericColumns } from '../figures'
 
@@ -67,8 +70,50 @@ describe('the mirror does not drift', () => {
     const c = presentationContract()
     for (const r of FIGURE_RULES) expect(c).toContain(r)
     for (const r of TABLE_RULES) expect(c).toContain(r)
+    for (const r of VOCABULARY_RULES) expect(c).toContain(r)
     for (const k of CLAIM_KINDS) expect(c).toContain(k.rule)
     for (const f of ANSWER_FORMS) expect(c).toContain(f.form)
+  })
+})
+
+/**
+ * The reported defect: answers written in schema. `decision_requests`,
+ * `asset_id`, rows returned.
+ */
+describe('the vocabulary is the product s, not the schema s', () => {
+  it('teaches a product word for every kind of record the panel can show', () => {
+    /*
+     * Derived, not restated. If the prompt listed these by hand the assistant
+     * could call something a "Decision" in its prose while the source
+     * underneath it said "PM ruling" -- two vocabularies for one record,
+     * which is the drift the whole layer exists to stop.
+     */
+    const block = recordVocabulary()
+    for (const [kind, label] of Object.entries(SOURCE_KIND_LABEL)) {
+      expect(block).toContain(`- ${kind} is "${label}"`)
+    }
+  })
+
+  it('keeps the four decision kinds four different words', () => {
+    /* Collapsing them is the merge the decision chain exists to prevent: a
+       recommendation is not a ruling, and a ruling is not a trade. */
+    const words = ['recommendation', 'decision_request', 'accepted_trade', 'decision_review']
+      .map(k => SOURCE_KIND_LABEL[k as keyof typeof SOURCE_KIND_LABEL])
+    expect(new Set(words).size).toBe(4)
+    for (const w of words) expect(recordVocabulary()).toContain(`"${w}"`)
+  })
+
+  it('forbids the schema words by name, so the rule is checkable', () => {
+    const c = presentationContract()
+    expect(c).toContain('decision_requests')
+    expect(c).toContain('Never a table, column or enum value')
+    expect(c).toMatch(/Never null, undefined, empty or 0 rows/)
+  })
+
+  it('still lets the reader ask for a field name', () => {
+    /* The exception matters: a user who asks which table something lives in
+       is owed a precise answer, not a translation. */
+    expect(presentationContract()).toMatch(/Technical names are correct when the reader asks/)
   })
 })
 

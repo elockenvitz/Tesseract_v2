@@ -38,6 +38,7 @@
  * worse than no structure at all. These are the available forms and when each
  * earns its place.
  */
+import { SOURCE_KIND_LABEL } from './trail-text'
 
 /**
  * The ticker spelling the client turns into a pressable pill.
@@ -86,6 +87,40 @@ export const CLAIM_KINDS: readonly { kind: string; rule: string }[] = Object.fre
 ])
 
 /**
+ * The words a record is called by, and the words it is never called by.
+ *
+ * ── The defect ────────────────────────────────────────────────────────────
+ *
+ * Answers came back talking about `decision_requests`, `asset_id` and rows
+ * returned. That is the schema talking. It is unreadable to the people this
+ * product is for, and worse than unreadable: a reader cannot tell whether
+ * "0 rows in price_targets" means nobody has set a target or that the
+ * assistant could not see them.
+ *
+ * ── Why the list is derived ───────────────────────────────────────────────
+ *
+ * The panel already translates a record kind into a product word for the
+ * evidence section, and `SOURCE_KIND_LABEL` is where those words live. If the
+ * prompt restated them by hand, the assistant could call something a
+ * "Decision" in its prose while the source beneath it said "PM ruling", which
+ * is the drift this whole layer exists to stop. One vocabulary, read from the
+ * same map the UI reads.
+ */
+export const VOCABULARY_RULES: readonly string[] = Object.freeze([
+  'Name a record the way the product names it. Never a table, column or enum value: "the PM ruling", not "the decision_requests row"; "no requirement is overdue", not "checklist_items returned 0 rows".',
+  'An absent value is absent. Never null, undefined, empty or 0 rows: "no price target has been set", "the thesis has no owner yet".',
+  'Do not describe your own retrieval. The reader wants what you found, not which lookup you ran or how many results it had.',
+  'Technical names are correct when the reader asks for one. If they ask which field or table something lives in, answer precisely and name it.',
+])
+
+/** The product word for each kind of record, as one block for the prompt. */
+export function recordVocabulary(): string {
+  return Object.entries(SOURCE_KIND_LABEL)
+    .map(([kind, label]) => `- ${kind} is "${label}"`)
+    .join('\n')
+}
+
+/**
  * When a table earns its place, and when it does not.
  *
  * A table of one row is a sentence with extra furniture. A table of prose is
@@ -125,6 +160,12 @@ export function presentationContract(): string {
   lines.push('')
   lines.push('Three kinds of claim, and a reader must be able to tell them apart:')
   for (const c of CLAIM_KINDS) lines.push(`- ${c.rule}`)
+  lines.push('')
+  lines.push('Words. The reader is an investor, not a database administrator:')
+  for (const r of VOCABULARY_RULES) lines.push(`- ${r}`)
+  lines.push('')
+  lines.push('Call each record what the product calls it:')
+  lines.push(recordVocabulary())
   lines.push('')
   lines.push('Figures:')
   for (const r of FIGURE_RULES) lines.push(`- ${r}`)
