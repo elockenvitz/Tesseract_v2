@@ -906,6 +906,52 @@ const VERBOSITY_MAX_TOKENS: Record<Verbosity, number> = {
 };
 
 /**
+ * How an answer is presented.
+ *
+ * MIRRORED from `src/lib/ai/answer-format.ts`, which builds this exact string
+ * from its own parts. That file is the source of truth and is where the
+ * reasoning lives; `src/lib/ai/__tests__/answer-format.test.ts` compares the
+ * two and fails on any divergence.
+ *
+ * It is mirrored rather than imported because an Edge Function cannot import
+ * from `src`. It is a separate constant rather than inline prose because the
+ * client has to be able to assert that it can RENDER what this asks for: the
+ * ticker spelling here is the one `preprocessTickers` turns into a link, and
+ * the signed-figure rule is the one `figures` uses to decide what gets a
+ * direction colour. A quiet disagreement there produces answers that read
+ * perfectly and navigate nowhere.
+ *
+ * It sits in the stable half of the prompt, so it is cached: it is identical
+ * for every request from every user.
+ */
+const PRESENTATION_CONTRACT = `HOW TO WRITE THE ANSWER
+
+Three kinds of claim, and a reader must be able to tell them apart:
+- A fact from a record names the record it came from, inline: "the thesis (updated 4 Nov) says".
+- Your own inference is marked as yours: "my read is", "this suggests". Never phrased as something the records state.
+- What you looked for and did not find goes in a blockquote, last, one line each. Say what was searched. Never pad it, and never include it when there is nothing missing.
+
+Figures:
+- Write a change with its sign: +4.2%, -180bps. Write a level without one: 4.2%, 18.5x.
+- Keep the unit you were given. Do not convert, round further or rescale a figure from a record.
+- Never write a number that is not in a record or derivable from one in a stated step.
+- Write a company as its ticker in the form $AAPL so the reader can open it.
+
+Tables:
+- Use a table only to compare three or more objects on the same attributes. Two objects are a sentence.
+- A column must hold figures or short labels, never sentences. A table of prose is a list with extra lines.
+- Keep figures in their own columns so they align for comparison down the column.
+
+Shape. These are the forms available, not a template to fill in:
+- plain prose: the default, and correct for almost every question
+- a short list: three or more parallel items that are genuinely parallel
+- headings: the answer has more than one subject; never on a single-subject answer
+- a table: three or more objects compared on the same attributes
+- a leading summary: only when the answer runs long enough that the judgment would otherwise arrive late
+
+Do not apply a fixed skeleton to every question. An answer whose shape is the same whatever was asked carries no information in its shape.`;
+
+/**
  * The directive text for each verbosity.
  *
  * Keyed by the same union the client resolves. `src/lib/ai/response-policy.ts`
@@ -935,7 +981,12 @@ further help. Use a heading only when the answer has more than one subject.`,
 Still lead with the judgment in one sentence, so the answer is useful before
 it is finished. Then develop it properly: the evidence, the counter-case, what
 would change your mind. Headings and structure are welcome here. Do not pad —
-depth means more substance, not more words around the same substance.`,
+depth means more substance, not more words around the same substance.
+
+This is the one length where a leading summary earns its place: at this
+length the judgment would otherwise arrive after the reader has already
+scrolled. Two or three lines, the judgment and what rests on it, then the
+body. Not a list of the sections below it: a contents page is not a summary.`,
 };
 
 /**
@@ -1063,7 +1114,9 @@ Use the explicit id fields (recommendation_id, pm_ruling_id, committed_trade_id)
 
 get_workflows reports process state. When "current_stage_unresolved" or "stage_unresolved" is true, the stored stage does not match any stage in that workflow: say the stage is unrecorded rather than naming one. Honour "open_requirements_truncated" by saying more remain than are listed.
 
-Never state or imply that you have reviewed everything available. You have seen only what these results contain. If a question needs a record type you have no tool for (meeting notes, emails), say so plainly rather than answering from the records you do have.`;
+Never state or imply that you have reviewed everything available. You have seen only what these results contain. If a question needs a record type you have no tool for (meeting notes, emails), say so plainly rather than answering from the records you do have.
+
+${PRESENTATION_CONTRACT}`;
 
   if (!opts.structured) return base;
   return `${base}\n\n${buildActionDirective(opts.maxActions, opts.maxEvidence, opts.allowDeep)}`;
