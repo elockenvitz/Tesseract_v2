@@ -363,3 +363,165 @@ describe('latency', () => {
     expect(marks.complete).toBeGreaterThanOrEqual(marks.final!)
   })
 })
+
+/*
+ * ── The envelope streaming in under the wrong label ──────────────────────
+ *
+ * The filter used to match one exact string: ```tesseract-actions. A model
+ * that tagged the block ```json went straight past it, so the envelope's
+ * arrays streamed into view as prose and were only removed at completion,
+ * when the parsed answer replaced the text. The reader watched a block of
+ * machine-readable JSON appear and then disappear.
+ *
+ * The filter now holds back ANY opening fence until it can read the body's
+ * first key. The direction of the trade matters and is asserted below: a
+ * fence held one chunk too long costs a moment of a code block not yet
+ * appearing, while a fence released too early cannot be recalled, because
+ * the text has already been emitted.
+ */
+describe('a mislabelled action block never reaches the reader', () => {
+  const BODY = '{"evidence":[{"label":"stale thesis"}],"actions":[]}'
+
+  const streamAll = (chunks: string[]) => {
+    const filter = createFenceFilter()
+    let shown = ''
+    for (const c of chunks) shown += filter.push(c)
+    shown += filter.flush()
+    return { shown, filter }
+  }
+
+  for (const tag of ['json', 'JSON', '', 'javascript']) {
+    it(`suppresses a block tagged \`${tag || '(none)'}\``, () => {
+      const { shown, filter } = streamAll([
+        'Our team approved a trim.\n\n', '```' + tag + '\n', BODY, '\n```',
+      ])
+      /* Trimmed: the blank line before the fence is prose whitespace and is
+         correctly emitted. What matters is that nothing of the block is. */
+      expect(shown.trim()).toBe('Our team approved a trim.')
+      expect(shown).not.toContain('evidence')
+      expect(shown).not.toContain('```')
+      expect(filter.suppressed()).toBe(true)
+      /* The raw text keeps everything, so the parser still gets the block. */
+      expect(filter.raw()).toContain('evidence')
+    })
+  }
+
+  it('suppresses it even when the JSON arrives one character at a time', () => {
+    /* The realistic case. Tokens do not arrive on tidy boundaries, and the
+       decision has to hold until the first key is actually readable. */
+    const chunks = ('Judgment.\n\n```json\n' + BODY + '\n```').split('')
+    const { shown } = streamAll(chunks)
+    expect(shown.trim()).toBe('Judgment.')
+    expect(shown).not.toContain('"evidence"')
+  })
+
+  it('never emits the fence line before it knows what follows', () => {
+    /*
+     * The ordering property, and the one that actually prevents the flash.
+     * After the fence line has arrived but before the body has, nothing of
+     * the fence may have been shown -- there is no way to retract it.
+     */
+    const filter = createFenceFilter()
+    let shown = filter.push('Judgment.\n\n')
+    shown += filter.push('```json\n')
+    expect(shown).not.toContain('`')
+    shown += filter.push(BODY + '\n```')
+    expect(shown.trim()).toBe('Judgment.')
+  })
+})
+
+describe('a code block the reader asked for still streams', () => {
+  const streamAll = (chunks: string[]) => {
+    const filter = createFenceFilter()
+    let shown = ''
+    for (const c of chunks) shown += filter.push(c)
+    return { shown, flushed: shown + filter.flush(), filter }
+  }
+
+  it('releases JSON whose first key is not the envelope s', () => {
+    const { flushed, filter } = streamAll([
+      'As requested:\n\n```json\n', '{"symbol":"AAPL","weight":2.1}', '\n```',
+    ])
+    expect(flushed).toContain('"symbol"')
+    expect(flushed).toContain('```json')
+    expect(filter.suppressed()).toBe(false)
+  })
+
+  it('releases code that is not JSON', () => {
+    const { flushed } = streamAll(['Here:\n\n```ts\n', 'const evidence = []', '\n```'])
+    expect(flushed).toContain('const evidence')
+  })
+
+  it('does not suppress on an envelope word appearing LATER in a code block', () => {
+    /*
+     * Only the FIRST key decides, and the verdict is never revisited. So a
+     * reader's config sample that mentions `actions` further down streams
+     * intact rather than being cut off mid-flight.
+     */
+    const { flushed, filter } = streamAll([
+      '```json\n', '{"name":"pipeline","actions":["buy"]}', '\n```',
+    ])
+    expect(flushed).toContain('"actions"')
+    expect(filter.suppressed()).toBe(false)
+  })
+
+  it('still suppresses a real envelope that follows a reader s code block', () => {
+    /* Both in one message: the sample must survive and the envelope must not
+       appear. The scan clears past the first fence and keeps looking. */
+    const { flushed, filter } = streamAll([
+      'Shape:\n\n```json\n{"ticker":"AAPL"}\n```\n\n',
+      '```json\n{"actions":[],"evidence":[]}\n```',
+    ])
+    expect(flushed).toContain('"ticker"')
+    expect(filter.suppressed()).toBe(true)
+    expect(flushed).not.toContain('"evidence"')
+  })
+
+  it('releases a held fence at end of stream rather than losing it', () => {
+    /* A stream that ends mid-fence must not silently eat the tail. */
+    const filter = createFenceFilter()
+    let shown = filter.push('Answer.\n\n```js')
+    shown += filter.flush()
+    expect(shown).toContain('Answer.')
+    expect(shown).toContain('```js')
+  })
+})
+
+describe('the two key lists cannot drift apart', () => {
+  it('classifies every key the parser treats as the envelope s own', async () => {
+    /*
+     * `stream.ts` decides from the FIRST key; `envelope.ts` validates the
+     * WHOLE object. Two lists, two questions, one vocabulary. If the parser
+     * learns a new envelope field and the filter does not, that field becomes
+     * a block that streams into view and is then removed -- the original
+     * defect, reintroduced for one key.
+     *
+     * Asserted through behaviour rather than by importing a private constant:
+     * each key is fed through the real filter as a first key.
+     */
+    const { parseAiResponse } = await import('../envelope')
+    const { resolveResponsePolicy } = await import('../response-policy')
+    const opts = {
+      allowlist: [],
+      policy: resolveResponsePolicy({ message: 'deep dive please' }),
+    }
+
+    /* Keys the PARSER accepts in an envelope: established by giving it a
+       block with that key plus `actions`, and seeing it parse as structured. */
+    for (const key of ['evidence', 'actions', 'analysis', 'version', 'rejected']) {
+      const body = JSON.stringify({ [key]: key === 'version' ? 1 : [], actions: [] })
+      expect(
+        parseAiResponse('Prose.\n\n```tesseract-actions\n' + body + '\n```', opts).structured,
+        `parser rejects \`${key}\``,
+      ).toBe(true)
+
+      /* And the FILTER must suppress a block whose first key is that one. */
+      const filter = createFenceFilter()
+      const shown =
+        filter.push('Prose.\n\n```json\n')
+        + filter.push(JSON.stringify({ [key]: key === 'version' ? 1 : [] }) + '\n```')
+      expect(filter.suppressed(), `filter does not suppress first key \`${key}\``).toBe(true)
+      expect(shown.trim()).toBe('Prose.')
+    }
+  })
+})
