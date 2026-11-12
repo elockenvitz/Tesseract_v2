@@ -62,11 +62,32 @@ const PROSE_CLASSES = [
   /* Headings carry the hierarchy, so they get the space. Body copy stays
      tight: a chat reply is read in a column, not a document. */
   'prose-headings:font-semibold prose-headings:tracking-tight',
-  'prose-h1:text-[15px] prose-h1:mt-4 prose-h1:mb-1.5',
-  'prose-h2:text-[14px] prose-h2:mt-4 prose-h2:mb-1.5',
-  'prose-h3:text-[13px] prose-h3:mt-3 prose-h3:mb-1',
+  /*
+   * Three levels a reader can actually tell apart.
+   *
+   * These used to run 15px / 14px / 13px against a 14px body, so a heading
+   * was within a pixel of the text under it and the answer had no visible
+   * structure -- the reported "weak hierarchy". A heading has to be a
+   * different KIND of thing, not a slightly bolder line, so the top two get
+   * real size and the third becomes a small label.
+   */
+  'prose-h1:text-[17px] prose-h1:mt-5 prose-h1:mb-2 prose-h1:leading-tight',
+  'prose-h2:text-[15px] prose-h2:mt-5 prose-h2:mb-1.5 prose-h2:leading-snug',
+  'prose-h3:text-[11px] prose-h3:mt-4 prose-h3:mb-1.5 prose-h3:uppercase',
+  'prose-h3:tracking-[0.07em] prose-h3:text-gray-500 dark:prose-h3:text-gray-400',
   'prose-h4:text-[13px] prose-h4:mt-3 prose-h4:mb-1',
   'prose-p:my-2 prose-p:leading-[1.6]',
+  /*
+   * The judgment gets the weight.
+   *
+   * The length contract asks the model to lead with its judgment in one
+   * sentence. That sentence then rendered at exactly the size of everything
+   * after it, so the answer arrived with no top. This gives the opening
+   * paragraph -- and only an opening PARAGRAPH, so an answer that starts with
+   * a heading is untouched -- a step up in size and contrast.
+   */
+  '[&>p:first-child]:text-[15px] [&>p:first-child]:leading-[1.55]',
+  '[&>p:first-child]:text-gray-900 dark:[&>p:first-child]:text-gray-50',
   'prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-li:leading-[1.55]',
   'prose-strong:text-gray-900 dark:prose-strong:text-white',
   'prose-hr:my-4 prose-hr:border-gray-200 dark:prose-hr:border-gray-700',

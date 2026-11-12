@@ -44,6 +44,54 @@ describe('inline code', () => {
   })
 })
 
+describe('the answer has a visible hierarchy', () => {
+  /* jsdom resolves no Tailwind, so the check is on the invariant the class
+     list encodes rather than on a computed pixel: three heading levels a
+     reader can tell apart, in descending order. They used to run 15/14/13
+     against a 14px body, which is no hierarchy at all. */
+  const sizes = (container: HTMLElement) => {
+    const root = container.firstElementChild as HTMLElement
+    return [1, 2, 3].map(n => {
+      const m = root.className.match(new RegExp(`prose-h${n}:text-\\[(\\d+)px\\]`))
+      expect(m, `no size rule for h${n}`).toBeTruthy()
+      return Number(m![1])
+    })
+  }
+
+  it('gives each heading level a distinctly different size', () => {
+    const { container } = render(<AiProse content={'# A\n\n## B\n\n### C'} />)
+    const [h1, h2, h3] = sizes(container)
+    expect(new Set([h1, h2, h3]).size).toBe(3)
+    expect(h1).toBeGreaterThan(h2)
+    expect(h2).toBeGreaterThan(h3)
+  })
+
+  it('separates the top two levels from the body by more than a pixel', () => {
+    /* `prose-sm` sets a 14px body. A 15px heading above it is a bolder line,
+       not a heading. */
+    const { container } = render(<AiProse content={'# A'} />)
+    const [h1, h2] = sizes(container)
+    expect(h1).toBeGreaterThanOrEqual(16)
+    expect(h2).toBeGreaterThanOrEqual(15)
+  })
+
+  it('leads with the judgment only when the answer opens with prose', () => {
+    /*
+     * The opening paragraph is where the length contract puts the judgment,
+     * so it is styled up by a `>p:first-child` rule. An answer that opens
+     * with a heading must not have its first paragraph promoted, and this is
+     * the DOM fact that decides it.
+     */
+    const opensWithProse = render(<AiProse content={'The ruling is pending.\n\n## Detail'} />)
+    const root = opensWithProse.container.firstElementChild as HTMLElement
+    expect(root.firstElementChild?.tagName).toBe('P')
+
+    const opensWithHeading = render(<AiProse content={'## Detail\n\nThe ruling is pending.'} />)
+    const headingRoot = opensWithHeading.container.firstElementChild as HTMLElement
+    expect(headingRoot.firstElementChild?.tagName).toBe('H2')
+  })
+})
+
 describe('financial tables', () => {
   const TABLE = [
     '| Book | Weight | Change |',
