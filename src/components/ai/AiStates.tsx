@@ -110,7 +110,15 @@ export function AiErrorNotice({
 export function AiPrompts({
   suggestions, onPick, header, className, columns = 1,
 }: {
-  suggestions: string[]
+  /**
+   * The questions. A plain string, or a question with the records that
+   * justify it.
+   *
+   * The union rather than a second prop: every caller renders the same
+   * button, and a surface that has not adopted grounded prompts yet should
+   * not have to pass `{ text, reason: null }` to say so.
+   */
+  suggestions: ReadonlyArray<string | { text: string; reason?: string | null }>
   onPick: (suggestion: string) => void
   /** Anything to show above the prompts — an error, a context note. */
   header?: ReactNode
@@ -140,18 +148,42 @@ export function AiPrompts({
           wide ? 'grid max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2' : 'max-w-sm space-y-2',
         )}
       >
-        {suggestions.map((suggestion, i) => (
-          <button
-            key={i}
-            onClick={() => onPick(suggestion)}
-            className="flex h-[56px] w-full items-center rounded-lg bg-gray-100 px-3 py-2 text-left
-                       text-sm text-gray-700 transition-colors hover:bg-gray-200
-                       dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
-            title={suggestion}
-          >
-            <span className="line-clamp-2 leading-tight">{suggestion}</span>
-          </button>
-        ))}
+        {suggestions.map((entry, i) => {
+          const text = typeof entry === 'string' ? entry : entry.text
+          const reason = typeof entry === 'string' ? null : (entry.reason ?? null)
+          return (
+            <button
+              key={text || i}
+              onClick={() => onPick(text)}
+              /*
+                `min-h` rather than a fixed 56px: a reason adds a second line,
+                and a fixed height clipped it. Items with and without one sit
+                in the same grid, so the floor keeps the row heights even.
+              */
+              className="flex min-h-[56px] w-full flex-col justify-center gap-0.5 rounded-lg
+                         bg-gray-100 px-3 py-2 text-left text-sm text-gray-700
+                         transition-colors hover:bg-gray-200
+                         dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+              title={reason ? `${text}\n${reason}` : text}
+            >
+              <span className="line-clamp-2 leading-tight">{text}</span>
+              {/*
+                Why this question is being offered, in records. Quieter than
+                the question and never a substitute for it: a reader scanning
+                four buttons reads the questions, and the reason is what they
+                check when one of them surprises them.
+              */}
+              {reason && (
+                <span
+                  data-testid="ai-prompt-reason"
+                  className="line-clamp-1 text-[10.5px] font-medium text-gray-500 dark:text-gray-500"
+                >
+                  {reason}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
     </div>
   )

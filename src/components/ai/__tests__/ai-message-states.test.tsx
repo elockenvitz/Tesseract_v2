@@ -135,6 +135,76 @@ describe('AiPrompts', () => {
     )
     expect(screen.getByText('popped')).toBeTruthy()
   })
+
+  /*
+   * Grounded prompts arrive as `{ text, reason }` rather than a string, and
+   * the reason is the whole point: it is the records that justify offering
+   * the question. These assert the reader can see it, that it never stands in
+   * for the question, and that a prompt with no record behind it says nothing.
+   */
+  it('shows why a question is being offered, under the question', () => {
+    render(
+      <AiPrompts
+        suggestions={[{ text: 'What needs a decision?', reason: '4 are waiting, the longest for 9 days' }]}
+        onPick={() => {}}
+      />,
+    )
+    const reason = screen.getByTestId('ai-prompt-reason')
+    expect(reason.textContent).toBe('4 are waiting, the longest for 9 days')
+    /* Inside the button, so it reads as one thing, not a caption beside it. */
+    expect(reason.closest('button')).toBeTruthy()
+  })
+
+  it('still sends only the question when a reason is attached', () => {
+    const onPick = vi.fn()
+    render(
+      <AiPrompts
+        suggestions={[{ text: 'What needs a decision?', reason: '4 are waiting' }]}
+        onPick={onPick}
+      />,
+    )
+    /* The accessible name covers both lines, so match on the question alone. */
+    screen.getByRole('button', { name: /What needs a decision\?/ }).click()
+    expect(onPick).toHaveBeenCalledWith('What needs a decision?')
+    expect(onPick).not.toHaveBeenCalledWith(expect.stringContaining('waiting'))
+  })
+
+  it('renders no reason line for a prompt that has no record behind it', () => {
+    render(
+      <AiPrompts
+        suggestions={[{ text: 'What is in my Idea Pipeline?', reason: null }, 'Which names am I covering?']}
+        onPick={() => {}}
+      />,
+    )
+    expect(screen.queryByTestId('ai-prompt-reason')).toBeNull()
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+  })
+
+  it('accepts plain strings and grounded prompts in one list', () => {
+    render(
+      <AiPrompts
+        suggestions={['Analyze AAPL for blind spots', { text: 'What is overdue?', reason: '2 past due' }]}
+        onPick={() => {}}
+      />,
+    )
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+    expect(screen.getAllByTestId('ai-prompt-reason')).toHaveLength(1)
+  })
+
+  it('keeps a reason legible rather than clipping it', () => {
+    /* A fixed 56px height cut the second line off. The floor is a floor. */
+    render(
+      <AiPrompts
+        suggestions={[{ text: 'What needs a decision?', reason: '4 are waiting' }]}
+        onPick={() => {}}
+      />,
+    )
+    const cls = screen.getAllByRole('button')[0].className
+    expect(cls).toContain('min-h-[56px]')
+    /* The lookbehind is load-bearing: `min-h-[56px]` ends in `h-[56px]`, so
+       without it this assertion fails against the correct class list. */
+    expect(cls).not.toMatch(/(?<!min-)\bh-(14|\[56px\])\b/)
+  })
 })
 
 /*

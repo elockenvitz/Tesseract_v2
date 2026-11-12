@@ -41,6 +41,13 @@ import type { AiAction } from '../../lib/ai'
  */
 import { chatLayout, modeToggleLabel, type AiChatMode } from '../../lib/ai/chat-modes'
 import { ACT_AI_PLACEHOLDER } from '../../lib/ai/brand'
+/* Questions grounded in the reader's own open work, and the merge that puts
+   them ahead of the questions derived from the conversation's bindings. */
+import { candidatePrompts, mergePrompts } from '../../lib/ai/prompt-candidates'
+import { useGroundedPromptFacts } from '../../hooks/ai/useGroundedPrompts'
+
+/** How many questions each layout has room for. Matches `chatLayout`. */
+const LIMIT_FOR: Record<AiChatMode, number> = { compact: 4, research: 6 }
 import {
   conversationContextState, describeSendTarget, shortSubjectLabel,
   subjectsAgree, subjectTag,
@@ -174,6 +181,44 @@ export function AISection({
       : null,
     mode,
   })
+
+  /*
+   * ── The grounded half ──────────────────────────────────────────────────
+   *
+   * The questions above are derived from what this conversation is BOUND to.
+   * These come from what the reader actually has open: recommendations
+   * waiting on them, requirements past their date, ideas that have stopped
+   * moving. Each carries the records that justify it, so the panel can say
+   * why it is offering a question rather than just offering one.
+   *
+   * Fetched once per minute and cached, never recomputed per render: the old
+   * list was rebuilt on every keystroke, and a re-ranked button under a
+   * moving cursor is how a reader presses a question they did not read.
+   *
+   * Gated on the pane being open. An unopened pane reads nothing.
+   */
+  const { data: promptFacts, isLoading: isLoadingPromptFacts } =
+    useGroundedPromptFacts(isOpen)
+
+  const groundedSuggestions = useMemo(() => {
+    const grounded = candidatePrompts({
+      ...(promptFacts ?? {}),
+      subject: currentSubject
+        ? {
+            /* "AAPL" from "AAPL - Apple Inc.", the same trim the header
+               uses, so a question names the ticker rather than the row. */
+            label: shortSubjectLabel(currentSubject.label) ?? null,
+            kind: currentSubject.type === 'asset' ? 'asset'
+              : currentSubject.type === 'portfolio' ? 'portfolio'
+              : currentSubject.type === 'theme' ? 'theme'
+              : 'other',
+          }
+        : null,
+      limit: LIMIT_FOR[mode],
+    })
+    /* Grounded first, the bound-context questions to fill, generic last. */
+    return mergePrompts(grounded, suggestions, LIMIT_FOR[mode])
+  }, [promptFacts, currentSubject, suggestions, mode])
 
   const [input, setInput] = useState('')
 
@@ -650,7 +695,11 @@ export function AISection({
             centre inside once the column, rather than the scrollport, is the
             prompts' parent. */}
         <div className={clsx(layout.column, layout.threadGap, 'flex min-h-full flex-col')}>
-        {isRestoringConversation ? (
+        {/* The grounded facts join the same gate: questions paint once,
+            already grounded, rather than appearing generic and re-ranking a
+            moment later. One transition, which is the whole point of the
+            gate. A failed fetch still resolves, so this cannot hang. */}
+        {(isRestoringConversation || isLoadingPromptFacts) ? (
           /*
             Not known yet, so nothing claimed.
 
@@ -673,7 +722,7 @@ export function AISection({
              message failed and got popped, the error rides above them so it
              does not just look as though nothing happened. */
           <AiPrompts
-            suggestions={suggestions}
+            suggestions={groundedSuggestions}
             onPick={handleSuggestionClick}
             header={<AiErrorNotice error={error} onRetry={retryLastSend} />}
             columns={layout.promptColumns}

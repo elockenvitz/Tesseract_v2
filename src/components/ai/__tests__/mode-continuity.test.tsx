@@ -82,6 +82,17 @@ vi.mock('../../../hooks/useAI', () => ({
   useAISuggestions: () => ['Analyze AAPL for blind spots'],
 }))
 
+/*
+ * The grounded-prompt facts. This suite is about mode continuity and has no
+ * opinion about the suggestions, so the facts are empty and settled: the pane
+ * then falls through to the fallback questions, and nothing here is held
+ * waiting on a query that will never resolve.
+ */
+vi.mock('../../../hooks/ai/useGroundedPrompts', () => ({
+  useGroundedPromptFacts: () => ({ data: undefined, isLoading: false }),
+  groundedPromptsKey: (id: string | null) => ['ai-grounded-prompt-facts', id],
+}))
+
 vi.mock('../../../hooks/useAIConfig', () => ({
   useAIConfig: () => ({
     effectiveConfig: { provider: 'anthropic', model: 'claude-sonnet-4-6', isConfigured: true, mode: 'byok' },
