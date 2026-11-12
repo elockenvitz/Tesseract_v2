@@ -27,7 +27,7 @@ import type { AiSourceRef, MessageToolCall } from '../../lib/ai/presentation'
 /* The words, and the three-status rule they carry, live in lib so a test can
    read them without a DOM and a second surface cannot quietly reword them. */
 import {
-  SOURCE_KIND_LABEL, toolCallLabel, toolCallOutcome, trailBorderFor,
+  SOURCE_KIND_LABEL, sourceStateLabel, toolCallLabel, toolCallOutcome, trailBorderFor,
 } from '../../lib/ai/trail-text'
 
 interface ResearchTrailProps {
@@ -120,6 +120,8 @@ export function SourceRef({
       })
     : null
 
+  const state = sourceStateLabel(source.state)
+
   const body = (
     <>
       <span className="inline-block px-1 mr-1 rounded bg-gray-100 dark:bg-gray-800
@@ -127,7 +129,29 @@ export function SourceRef({
         {SOURCE_KIND_LABEL[source.kind]}
       </span>
       <span className="font-medium">{source.title}</span>
+      {/*
+        The record's own state, never the lookup's. Separated from the kind
+        chip by weight rather than another box: two chips side by side read as
+        two categories, and this is a property of the one named record.
+      */}
+      {state && (
+        <span data-testid="ai-source-state" className="ml-1 text-gray-500 dark:text-gray-400">
+          {state}
+        </span>
+      )}
       {when && <span className="text-gray-400 dark:text-gray-500 ml-1">{when}</span>}
+      {/*
+        The record in its own words. One line, clamped: enough to recognise
+        the row without turning the trail into the document.
+      */}
+      {source.excerpt && (
+        <span
+          data-testid="ai-source-excerpt"
+          className="mt-0.5 block line-clamp-2 font-normal text-gray-500 dark:text-gray-400"
+        >
+          {source.excerpt}
+        </span>
+      )}
     </>
   )
 

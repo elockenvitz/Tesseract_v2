@@ -7,6 +7,7 @@ import {
   resolveResponsePolicy,
   parseAiResponse,
   boundHistory,
+  stripStoredExcerpts,
   consumeAiStream,
   createMarks,
   deriveLatency,
@@ -739,12 +740,26 @@ export function useAI(initialTags: TagRef[] = []) {
   ): Promise<{ conversationId: string | null; isNew: boolean }> => {
     if (!user?.id) return { conversationId: null, isNew: false }
 
+    /*
+     * One place, because there are two writes below and a third would be
+     * added by whoever adds the next one.
+     *
+     * The research trail quotes each record it consulted, which is safe to
+     * show: it came back through this reader's own RLS-scoped query. Writing
+     * it here is a different act -- `ai_conversations.messages` is one jsonb
+     * column under the conversation owner's policy, so a note's words stored
+     * in it become a copy living outside that note's own policy, which
+     * nothing re-checks if the note is later restricted or deleted. The
+     * reasoning is in `stripStoredExcerpts`.
+     */
+    const storedMessages = stripStoredExcerpts(nextMessages)
+
     const nowIso = new Date().toISOString()
     if (targetConversationId) {
       const { error } = await supabase
         .from('ai_conversations')
         .update({
-          messages: nextMessages,
+          messages: storedMessages,
           last_message_at: nowIso,
           updated_at: nowIso,
         })
@@ -758,7 +773,7 @@ export function useAI(initialTags: TagRef[] = []) {
         .insert({
           user_id: user.id,
           title: deriveTitleFromMessage(firstUserMessageOnCreate),
-          messages: nextMessages,
+          messages: storedMessages,
           last_message_at: nowIso,
         })
         // Only the id. A bare `.select()` echoes the whole row back, and the

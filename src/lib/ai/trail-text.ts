@@ -10,7 +10,7 @@
  * That rule belongs somewhere a test can read it without a DOM, and somewhere
  * a second surface cannot quietly reword it.
  */
-import type { AiSourceKind, MessageToolCall } from './presentation'
+import type { AiSourceKind, AiVisibilityScope, MessageToolCall } from './presentation'
 
 /**
  * One word per kind of record.
@@ -96,19 +96,79 @@ export function toolCallOutcome(tc: MessageToolCall): { text: string; tone: stri
   }
   if (tc.status === 'empty') {
     return {
-      text: tc.searched ? `No matches for ${tc.searched}.` : 'No matching records.',
+      text: emptySentence(tc.searched, tc.scope),
       tone: 'text-amber-700 dark:text-amber-500',
     }
   }
   if (tc.status === 'ok') {
     return {
-      text: n > 0 ? `${n} ${n === 1 ? 'record' : 'records'} found.` : 'Found, with nothing linked to it.',
+      text: n > 0 ? foundSentence(n, tc.scope) : 'Found, with nothing linked to it.',
       tone: 'text-gray-500 dark:text-gray-400',
     }
   }
   /* A message produced before statuses existed. Say nothing rather than
      invent an outcome for it. */
   return { text: '', tone: '' }
+}
+
+/**
+ * "Nothing", said only as far as the lookup could see.
+ *
+ * ── The bug this closes ──────────────────────────────────────────────────
+ *
+ * This read `No matching records.` for every empty result, whatever the
+ * lookup's reach. On a permission-scoped path that is a claim the panel
+ * cannot support: the retrieval tools already declare a `visibility.scope`
+ * and the model is instructed never to turn an RLS-filtered zero into "the
+ * firm has none" -- and then the trail said it anyway, in its own voice,
+ * right underneath the model's careful sentence.
+ *
+ * So only `organization` may speak for the firm. `caller_visible` and
+ * `caller` speak for the reader. A missing scope -- an older message, or a
+ * tool the client has not learned -- speaks only about MATCHES, which is the
+ * weakest true thing available.
+ */
+export function emptySentence(
+  searched: string | undefined,
+  scope: AiVisibilityScope | undefined,
+): string {
+  const on = searched ? ` for ${searched}` : ''
+  if (scope === 'organization') return `No records${on} in your organization.`
+  if (scope === 'caller') return `None of yours${on}.`
+  if (scope === 'caller_visible') return `Nothing${on} that you have access to.`
+  /* No declaration. Say what was looked for and stop. */
+  return searched ? `No matches for ${searched}.` : 'No matching records.'
+}
+
+/**
+ * A count, with whose records it counted.
+ *
+ * The partial-answer case is the more dangerous one and the easier to miss:
+ * on 2026-11-11 the database held 84 open decision requests and this reader
+ * could see a fraction, so a bare "18 records found." reads as the whole
+ * desk. The scope is what makes the number honest.
+ */
+export function foundSentence(n: number, scope: AiVisibilityScope | undefined): string {
+  const records = `${n} ${n === 1 ? 'record' : 'records'}`
+  if (scope === 'organization') return `${records} in your organization.`
+  if (scope === 'caller') return `${records} of yours.`
+  if (scope === 'caller_visible') return `${records} you have access to.`
+  return `${records} found.`
+}
+
+/**
+ * A record's own state, as a short label beside it.
+ *
+ * Passed through rather than mapped: the server sends product words, and a
+ * second translation table here is a second place for "awaiting ruling" to
+ * drift into "pending". Only the shape is enforced, so a raw enum value
+ * (`ready_to_recommend`) reads as words.
+ */
+export function sourceStateLabel(state: string | null | undefined): string | null {
+  if (!state) return null
+  const flat = state.replace(/_/g, ' ').trim()
+  if (!flat) return null
+  return flat.charAt(0).toUpperCase() + flat.slice(1)
 }
 
 /** The left rule beside a lookup, coloured by how it went. */

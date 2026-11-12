@@ -32,6 +32,8 @@
  * with the prose that did arrive and zero actions. There is no synthesised
  * fallback action, ever.
  */
+/* Types only, erased at build. `presentation.ts` holds no client. */
+import type { AiSourceRef, AiVisibilityScope } from './presentation'
 
 /** The tools the edge function can report running. Mirrors RESEARCH_TOOLS. */
 export type AiToolName =
@@ -168,16 +170,20 @@ export interface AiStreamFinalEvent {
     status?: 'ok' | 'empty' | 'error'
     searched?: string
     result_count?: number
-    sources?: Array<{
-      kind: 'asset' | 'note' | 'contribution' | 'price_target' | 'portfolio' | 'theme'
-      | 'recommendation' | 'decision_request' | 'accepted_trade'
-      | 'decision_review' | 'outcome' | 'workflow' | 'checklist_item'
-      id: string
-      asset_id?: string | null
-      symbol?: string | null
-      title: string
-      timestamp?: string | null
-    }>
+    /**
+     * How far the lookup could see. The trail's absence sentence depends on
+     * it, so a server that sends it must not have it dropped in transit.
+     */
+    scope?: AiVisibilityScope
+    /*
+     * `AiSourceRef`, not a fourth hand-written copy of the kind union.
+     *
+     * This was spelled out inline, and the copy went stale: `idea` was added
+     * to `AiSourceKind` and to the research trail's own union, and this one
+     * was missed -- so a pipeline source arriving on the wire did not
+     * type-check as one. The shared type cannot drift from itself.
+     */
+    sources?: AiSourceRef[]
   }>
   usage: Record<string, unknown>
   timings: Record<string, number>

@@ -43,7 +43,12 @@ import {
   TERMINAL_IDEA_STATUSES as EDGE_TERMINAL,
   isLiveIdeaRow,
   DECIDED_DECISION_STATUSES as EDGE_DECIDED,
+  summarizeToolResult,
+  excerptOf,
 } from '../../../../supabase/functions/_shared/research-results'
+/* The panel's half of the same rule. Imported here rather than tested
+   separately so a scope change breaks one file, not two that agree. */
+import { emptySentence, foundSentence, sourceStateLabel, toolCallOutcome } from '../trail-text'
 import { IDEA_STAGES, LEGACY_STAGE_MAP, toIdeaStage } from '../../ideas/stage-model'
 import { TERMINAL_STATUSES } from '../../trade-status-semantics'
 import { DECIDED_DECISION_STATUSES } from '../../decisions/outcome-eligibility'
@@ -157,6 +162,209 @@ describe('the declaration travels with the result', () => {
     /* Several of these tables have a column called `status`. */
     const parsed = JSON.parse(toolOk('get_pending_decisions', { status: 'pending' }))
     expect(parsed.status).toBe('ok')
+  })
+
+  it('reaches the panel, not only the model', () => {
+    /*
+     * The summary is what the browser gets. The declaration used to stop
+     * here: it was in the tool result the model read, and `summarizeToolResult`
+     * dropped it, so the research trail wrote its own absence sentence with
+     * no idea how far the lookup had seen.
+     */
+    const empty = summarizeToolResult('get_pending_decisions', toolEmpty('get_pending_decisions', { scope: 'your inbox' }))
+    expect(empty.status).toBe('empty')
+    expect(empty.scope).toBe('caller_visible')
+
+    /* Read from the table, not hardcoded: `coverage` is org-wide readable, so
+       this tool declares `organization` and the test must follow the
+       declaration rather than assert a second opinion about it. */
+    const ok = summarizeToolResult('get_coverage', toolOk('get_coverage', { assignments: [], records_returned: 4 }))
+    expect(ok.status).toBe('ok')
+    expect(ok.scope).toBe(TOOL_VISIBILITY.get_coverage.scope)
+
+    /* Not on an error: nothing was learned, so there is no reach to report. */
+    const failed = summarizeToolResult('get_coverage', toolError('get_coverage', 'coverage'))
+    expect(failed.status).toBe('error')
+    expect(failed.scope).toBeUndefined()
+  })
+
+  it('survives a tool the client has not learned, without losing the trail', () => {
+    /* `toolVisibility` throws by design, and that is right at the call site.
+       It would be wrong here: this runs on every answer, and an unknown tool
+       must cost the reader a scope, not their whole research trail. */
+    const s = summarizeToolResult(
+      'get_something_new',
+      JSON.stringify({ tool: 'get_something_new', status: 'ok', records_returned: 2 }),
+    )
+    expect(s.status).toBe('ok')
+    expect(s.scope).toBeUndefined()
+  })
+})
+
+/*
+ * The panel is a SECOND voice, under the same rule.
+ *
+ * The model is instructed never to turn an RLS-filtered zero into a claim
+ * about the firm. The research trail renders directly underneath its answer
+ * and was making exactly that claim in its own words: "No matching records."
+ * for every empty result, whatever the reach. A careful sentence from the
+ * model and a careless one from the panel is still a reader told the firm
+ * holds nothing.
+ */
+describe('the panel says no more than the lookup could see', () => {
+  it('speaks for the firm only on an organization-wide path', () => {
+    expect(emptySentence(undefined, 'organization')).toBe('No records in your organization.')
+    expect(emptySentence('AAPL', 'organization')).toBe('No records for AAPL in your organization.')
+  })
+
+  it('speaks only for the reader on a permission-scoped path', () => {
+    const s = emptySentence('AAPL in your inbox', 'caller_visible')
+    expect(s).toBe('Nothing for AAPL in your inbox that you have access to.')
+    /* The sentences the brief forbids. */
+    expect(s).not.toMatch(/\bnone exist\b|\bthe firm has\b|\bno records exist\b/i)
+    expect(s).not.toBe('No matching records.')
+  })
+
+  it('speaks only for the reader s own rows on a caller path', () => {
+    expect(emptySentence(undefined, 'caller')).toBe('None of yours.')
+  })
+
+  it('claims nothing about the firm when no reach was declared', () => {
+    /* An older message, or a tool the client has not learned. A statement
+       about MATCHES is the weakest true thing available, so that is what it
+       says. */
+    expect(emptySentence('AAPL', undefined)).toBe('No matches for AAPL.')
+    expect(emptySentence(undefined, undefined)).toBe('No matching records.')
+  })
+
+  it('never phrases a non-organization absence as a fact about the firm', () => {
+    /* The property, over every declared tool. The table is what decides, so
+       this catches a tool whose scope changes without its sentence. */
+    for (const [tool, decl] of Object.entries(TOOL_VISIBILITY)) {
+      if (decl.scope === 'organization') continue
+      const s = emptySentence('something', decl.scope)
+      expect(s, `${tool} (${decl.scope})`).toMatch(/you have access to|of yours/)
+      expect(s, `${tool} (${decl.scope})`).not.toMatch(/organization/)
+    }
+  })
+
+  it('handles every scope the server actually declares', () => {
+    /*
+     * The mirror guard, asserted by behaviour rather than by reading the
+     * union's source text.
+     *
+     * `AiVisibilityScope` is a hand-written copy of the server's
+     * `VisibilityScope`, and types are erased, so nothing stops a fourth
+     * scope from being added server-side and silently falling through to the
+     * no-reach fallback here. That fallback is the OLD sentence, which means
+     * the regression would be invisible: the panel would keep working and
+     * keep understating what it knew.
+     *
+     * So: a scope the table declares must produce a scoped sentence, which
+     * the fallback by definition is not.
+     */
+    const FALLBACK_EMPTY = emptySentence(undefined, undefined)
+    const FALLBACK_FOUND = foundSentence(3, undefined)
+    const declared = new Set(Object.values(TOOL_VISIBILITY).map(v => v.scope))
+    expect(declared.size).toBeGreaterThan(1)
+    for (const scope of declared) {
+      expect(emptySentence(undefined, scope), `empty sentence for ${scope}`).not.toBe(FALLBACK_EMPTY)
+      expect(foundSentence(3, scope), `found sentence for ${scope}`).not.toBe(FALLBACK_FOUND)
+    }
+  })
+
+  it('says whose records a count counted', () => {
+    /* The partial-answer case. 18 of 84 reads as the whole desk otherwise. */
+    expect(foundSentence(18, 'caller_visible')).toBe('18 records you have access to.')
+    expect(foundSentence(1, 'caller_visible')).toBe('1 record you have access to.')
+    expect(foundSentence(4, 'organization')).toBe('4 records in your organization.')
+    expect(foundSentence(4, 'caller')).toBe('4 records of yours.')
+    expect(foundSentence(4, undefined)).toBe('4 records found.')
+  })
+
+  it('renders the three outcomes as three different sentences', () => {
+    /* The rule the whole layer exists for, now with scope in play: an error
+       must not read like an absence at any scope. */
+    const base = { name: 'get_pending_decisions', input: {}, scope: 'caller_visible' as const }
+    const ok = toolCallOutcome({ ...base, status: 'ok', result_count: 3 })
+    const none = toolCallOutcome({ ...base, status: 'empty' })
+    const failed = toolCallOutcome({ ...base, status: 'error' })
+
+    expect(new Set([ok.text, none.text, failed.text]).size).toBe(3)
+    expect(failed.text).toMatch(/failed/)
+    expect(failed.text).not.toMatch(/\bno\b|\bnothing\b|\bnone\b/i)
+    expect(none.text).toMatch(/you have access to/)
+    expect(ok.text).toMatch(/you have access to/)
+  })
+
+  it('reads a record s own state, never the lookup s', () => {
+    expect(sourceStateLabel('ready_to_recommend')).toBe('Ready to recommend')
+    expect(sourceStateLabel('overdue')).toBe('Overdue')
+    expect(sourceStateLabel(null)).toBeNull()
+    expect(sourceStateLabel('')).toBeNull()
+    expect(sourceStateLabel('   ')).toBeNull()
+  })
+})
+
+describe('an excerpt is the record s own words, cut to fit', () => {
+  it('collapses the editor s whitespace', () => {
+    expect(excerptOf('A thesis.\n\n  Second   paragraph.')).toBe('A thesis. Second paragraph.')
+  })
+
+  it('cuts on a word boundary and marks the cut', () => {
+    const e = excerptOf('alpha bravo charlie delta echo foxtrot', 20)
+    expect(e).toBe('alpha bravo charlie…')
+    expect(e!.length).toBeLessThanOrEqual(21)
+  })
+
+  it('still cuts text with no spaces to cut on', () => {
+    const e = excerptOf('x'.repeat(200), 20)
+    expect(e).toBe(`${'x'.repeat(20)}…`)
+  })
+
+  it('leaves short text exactly as written, with no ellipsis', () => {
+    expect(excerptOf('Short note.')).toBe('Short note.')
+  })
+
+  it('treats nothing, and nothing textual, as no excerpt', () => {
+    expect(excerptOf(null)).toBeNull()
+    expect(excerptOf(undefined)).toBeNull()
+    expect(excerptOf('')).toBeNull()
+    expect(excerptOf('   \n ')).toBeNull()
+    expect(excerptOf(42)).toBeNull()
+  })
+
+  it('carries a note s own words into the trail', () => {
+    /* End to end through the summarizer, from the shape the handler sends. */
+    const s = summarizeToolResult('search_team_notes', toolOk('search_team_notes', {
+      results: [{
+        id: 'n1', asset_id: 'a1', symbol: 'AAPL', title: 'Channel checks',
+        excerpt: 'Supplier lead times extended again in the March quarter.',
+        updated_at: '2026-11-01T00:00:00Z',
+      }],
+    }))
+    const note = s.sources?.[0]
+    expect(note?.title).toBe('Channel checks')
+    expect(note?.excerpt).toBe('Supplier lead times extended again in the March quarter.')
+  })
+
+  it('marks an overdue requirement as overdue and a dateless one as open', () => {
+    /*
+     * The absent-field case, which this product has got wrong before: a row
+     * with no due date was mapped to Overdue. The handler decides, and a row
+     * it did not flag is open.
+     */
+    const s = summarizeToolResult('get_outstanding_work', toolOk('get_outstanding_work', {
+      work: [{
+        workflow_id: 'w1', asset_id: 'a1', symbol: 'AAPL', workflow: 'Deep dive',
+        open_requirements: [
+          { id: 'r1', requirement: 'Build the model', due_date: '2026-01-01', is_overdue: true },
+          { id: 'r2', requirement: 'Call the CFO', due_date: null },
+        ],
+      }],
+    }))
+    const items = (s.sources ?? []).filter(x => x.kind === 'checklist_item')
+    expect(items.map(i => i.state)).toEqual(['overdue', 'open'])
   })
 })
 

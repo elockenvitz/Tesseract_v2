@@ -56,6 +56,25 @@ export interface ToolSourceRef {
   symbol?: string | null;
   title: string;
   timestamp?: string | null;
+  /**
+   * The RECORD's own lifecycle state, in the words the product uses: a
+   * recommendation's "awaiting ruling", an idea's stage, a requirement's
+   * "overdue". Never the lookup's outcome.
+   *
+   * The distinction is the reason this is not called `status`. `ToolStatus`
+   * is whether the search ran; this is what the found row is doing. Merging
+   * them is how "the lookup failed" starts rendering as "the trade was
+   * rejected", and this codebase has made the reverse mistake already.
+   */
+  state?: string | null;
+  /**
+   * A short quotation from the record, so a reader can tell whether it is the
+   * one they were thinking of without opening it.
+   *
+   * Trimmed server-side by `excerptOf`. Plain text only: a title plus a date
+   * identifies a row, but it does not let anyone judge it.
+   */
+  excerpt?: string | null;
 }
 
 export interface ToolResultSummary {
@@ -64,6 +83,40 @@ export interface ToolResultSummary {
   searched?: string;
   result_count?: number;
   sources?: ToolSourceRef[];
+  /**
+   * How far this lookup could see, carried through to the UI.
+   *
+   * The declaration already reaches the MODEL inside the tool result, and the
+   * system prompt tells it how to phrase an absence. The research trail is a
+   * second, independent voice: it wrote "No matching records." for every
+   * empty result regardless of reach, which is the same mistranslation stated
+   * by the panel instead of the model. One scope, both voices.
+   */
+  scope?: VisibilityScope;
+}
+
+/**
+ * A record's own words, cut to something a trail row can hold.
+ *
+ * Collapses whitespace first, because a note's body arrives with the editor's
+ * newlines in it and a raw slice of that renders as a ragged block. Cuts on a
+ * word boundary where one is near the limit, so the excerpt does not end
+ * mid-word.
+ */
+export function excerptOf(
+  text: unknown,
+  limit = 180,
+): string | null {
+  if (typeof text !== "string") return null;
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (!flat) return null;
+  if (flat.length <= limit) return flat;
+  const cut = flat.slice(0, limit);
+  const lastSpace = cut.lastIndexOf(" ");
+  /* Only honour a word boundary in the last fifth: a title with no spaces
+     should still be cut at the limit rather than thrown away. */
+  const body = lastSpace > limit * 0.8 ? cut.slice(0, lastSpace) : cut;
+  return `${body.replace(/[.,;:\s]+$/, "")}…`;
 }
 
 /** Section slugs to the words a person uses. */
@@ -623,6 +676,18 @@ export function summarizeToolResult(
   const status: ToolStatus =
     p?.status === "ok" || p?.status === "empty" ? p.status : "error";
 
+  /*
+   * The reach, for the UI's sentence.
+   *
+   * Read from the local table rather than the payload. The payload's copy is
+   * what the model sees and could in principle come from an older deploy,
+   * while `TOOL_VISIBILITY` is the version this code was reviewed against. An
+   * unknown tool gets no scope rather than a thrown error: this function runs
+   * on every answer, and a tool the client has not learned about yet must not
+   * lose the reader their whole trail.
+   */
+  const scope: VisibilityScope | undefined = TOOL_VISIBILITY[name]?.scope;
+
   const describeSearched = (s: any): string | undefined => {
     if (!s || typeof s !== "object") return undefined;
     if (s.scope && s.query) return `"${s.query}" in ${s.scope}`;
@@ -637,7 +702,11 @@ export function summarizeToolResult(
   };
 
   if (status !== "ok") {
-    return { status, searched: describeSearched(p?.searched) };
+    /* An error carries no scope: the lookup never ran, so there is no reach to
+       declare and nothing it can say about absence. An empty one does. */
+    return status === "empty"
+      ? { status, searched: describeSearched(p?.searched), scope }
+      : { status, searched: describeSearched(p?.searched) };
   }
 
   const sources: ToolSourceRef[] = [];
@@ -656,6 +725,10 @@ export function summarizeToolResult(
         // The separator is a middle dot, not an em dash: these titles render
         // in the Research panel, and em dashes are barred from app copy.
         title: `${symbol} · ${SECTION_LABELS[sec] || sec}`, timestamp: sv.updated_at ?? null,
+        /* The payload already carries the section text for the model. Reusing
+           it costs no query, and "AAPL · Thesis" alone tells a reader nothing
+           about whether it is the thesis they remember. */
+        excerpt: excerptOf((v as { text?: string }).text),
       });
     }
     for (const t of (p.price_targets || [])) {
@@ -664,6 +737,8 @@ export function summarizeToolResult(
         kind: "price_target", id: t.id, asset_id: assetId, symbol,
         title: `${symbol} ${String(t.type || "").toUpperCase()} target${t.price != null ? ` $${t.price}` : ""}`,
         timestamp: t.created_at ?? null,
+        /* The reasoning, which is the part that makes a target reviewable. */
+        excerpt: excerptOf(t.reasoning),
       });
     }
     for (const n of (p.recent_notes || [])) {
@@ -671,6 +746,10 @@ export function summarizeToolResult(
       sources.push({
         kind: "note", id: n.id, asset_id: n.asset_id ?? assetId, symbol: n.symbol ?? symbol,
         title: n.title || "Untitled note", timestamp: n.updated_at ?? null,
+        /* Already truncated by the `content_excerpt` computed column, which
+           exists because selecting `content` pulled a two-million-character
+           note on every AAPL lookup. Trimmed again for line length only. */
+        excerpt: excerptOf(n.excerpt),
       });
     }
   } else if (name === "search_team_notes") {
@@ -679,6 +758,9 @@ export function summarizeToolResult(
       sources.push({
         kind: "note", id: n.id, asset_id: n.asset_id ?? null, symbol: n.symbol ?? null,
         title: n.title || "Untitled note", timestamp: n.updated_at ?? null,
+        /* A search result especially: the title is why it matched at best, and
+           often not even that, since the query also matches the body. */
+        excerpt: excerptOf(n.excerpt),
       });
     }
   } else if (name === "search_assets") {
@@ -832,6 +914,14 @@ export function summarizeToolResult(
           kind: "checklist_item", id: it.id, asset_id: w.asset_id ?? null, symbol: w.symbol ?? null,
           title: `${w.symbol ? `${w.symbol}: ` : ""}${it.requirement || "Untitled requirement"}`,
           timestamp: it.due_date ?? null,
+          /*
+           * Read, not recomputed. The handler already decided this against
+           * the server's own date, and a second comparison here would be a
+           * second place for "overdue" to mean something slightly different.
+           * A row with no due date is open, never overdue, which is the
+           * absent-field case this product has got wrong before.
+           */
+          state: it.is_overdue === true ? "overdue" : "open",
         });
       }
     }
@@ -844,5 +934,8 @@ export function summarizeToolResult(
     : typeof p.records_returned === "number" ? p.records_returned
     : sources.length;
 
-  return { status, searched: describeSearched(p), result_count: counted, sources };
+  /* `scope` rides on OK too, not just empty. A partial answer is the more
+     dangerous case: 18 of 84 returned reads as the whole list unless the
+     trail says whose 18 they are. */
+  return { status, searched: describeSearched(p), result_count: counted, sources, scope };
 }

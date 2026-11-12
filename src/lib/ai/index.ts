@@ -93,6 +93,7 @@ export type {
 
 export {
   boundHistory,
+  stripStoredExcerpts,
   DEFAULT_HISTORY_BUDGET,
 } from './history'
 export type { HistoryMessage, HistoryBudget, BoundedHistory } from './history'

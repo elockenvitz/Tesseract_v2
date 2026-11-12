@@ -51,6 +51,27 @@ describe('the three statuses read differently', () => {
   it('invents no outcome for a message older than the status field', () => {
     expect(toolCallOutcome(call({})).text).toBe('')
   })
+
+  /*
+   * The same sentences, now scoped.
+   *
+   * `emptySentence` and `foundSentence` are asserted exhaustively beside the
+   * server's declaration table in `retrieval-visibility.test.ts`, which is
+   * where a scope change belongs. These two check the wiring: that
+   * `toolCallOutcome` reads the field at all, and that a message carrying no
+   * scope still renders the old, weaker, true sentence.
+   */
+  it('says whose records it counted, when the lookup declared its reach', () => {
+    expect(toolCallOutcome(call({ status: 'ok', result_count: 8, scope: 'caller_visible' })).text)
+      .toBe('8 records you have access to.')
+    expect(toolCallOutcome(call({ status: 'empty', scope: 'caller_visible' })).text)
+      .toBe('Nothing that you have access to.')
+  })
+
+  it('falls back to a claim about matches for a message with no reach', () => {
+    expect(toolCallOutcome(call({ status: 'empty', searched: 'AAPL in team notes' })).text)
+      .toBe('No matches for AAPL in team notes.')
+  })
 })
 
 describe('tool labels', () => {
@@ -154,5 +175,45 @@ describe('SourceRef', () => {
     render(<SourceRef source={source({ asset_id: null })} onOpen={onOpen} />)
     await userEvent.click(screen.getByRole('button'))
     expect(onOpen).toHaveBeenCalled()
+  })
+
+  /*
+   * A title and a date identify a row. They do not let anybody judge it.
+   *
+   * The trail used to print the tool's raw JSON, which was replaced by a
+   * title, a kind and a date -- readable, but still not enough to tell
+   * "Channel checks" from the other four notes called "Channel checks". The
+   * excerpt is the record in its own words, and the state is what it is doing.
+   */
+  it('shows the record in its own words', () => {
+    render(<SourceRef source={source({
+      kind: 'note', title: 'Channel checks',
+      excerpt: 'Supplier lead times extended again in the March quarter.',
+    })} />)
+    expect(screen.getByTestId('ai-source-excerpt').textContent)
+      .toBe('Supplier lead times extended again in the March quarter.')
+    /* Inside the link, so pressing the words the reader just read opens the
+       record they read them from. */
+    expect(screen.getByTestId('ai-source-excerpt').closest('button')).toBeTruthy()
+  })
+
+  it('shows the record s own state, distinct from the lookup s', () => {
+    render(<SourceRef source={source({ kind: 'idea', state: 'ready_to_recommend' })} />)
+    expect(screen.getByTestId('ai-source-state').textContent).toBe('Ready to recommend')
+  })
+
+  it('renders neither line when the record carries neither', () => {
+    render(<SourceRef source={source()} />)
+    expect(screen.queryByTestId('ai-source-excerpt')).toBeNull()
+    expect(screen.queryByTestId('ai-source-state')).toBeNull()
+  })
+
+  it('opens an idea on the decisions focus, not a vaguely related page', () => {
+    /* The brief's requirement that a citation lands on the right object. An
+       Idea Pipeline entry is a decision-chain record, so it opens where the
+       decision chain is read. */
+    render(<SourceRef source={source({ kind: 'idea', id: 'i-1' })} />)
+    screen.getByRole('button').click()
+    expect(dispatched[0].detail).toMatchObject({ assetId: 'a-1', focus: 'decisions' })
   })
 })
