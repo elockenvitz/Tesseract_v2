@@ -46,6 +46,7 @@ import { useMemo, type ReactNode } from 'react'
 import { clsx } from 'clsx'
 import { useAssetWorkspace } from '../../hooks/useAssetWorkspace'
 import { DecisionMemorySummary } from './DecisionMemorySummary'
+import { AssetBriefingSection } from './AssetBriefingSection'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
 import { OBSERVED_PROOFS, isAwaitingDecision } from '../../types/decision-timeline'
 /*
@@ -1390,6 +1391,27 @@ export function InvestmentSnapshot({
           {needsDecision}
         </div>
       ) : ourView}
+      {/*
+        ── ACT AI Briefing ─────────────────────────────────────────────────
+
+        Below the argument and what is owed, above the supporting detail.
+
+        That position is the claim it makes: the briefing is a reading of what
+        the firm already holds, so it belongs after the firm's own words and
+        before the figures a reader would check them against. Putting it at
+        the top would have the assistant speak before the analysts did.
+
+        It reads the SAME resolver the attention band reads, so the situation
+        it says it is in is the situation the band says, and nothing runs
+        until the reader asks for it.
+      */}
+      <AssetBriefingSection
+        assetId={asset.id}
+        symbol={asset.symbol ?? null}
+        companyName={asset.company_name ?? null}
+        coveringUserIds={coverage.map(c => c.user_id).filter((v): v is string => Boolean(v))}
+        spot={quotePrice ?? data.spot}
+      />
       {/*
         Both left-column blocks are now conditional — "What changed" only when
         something did, the contributor roster only when there is more than one

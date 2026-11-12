@@ -105,6 +105,15 @@ vi.mock('../../portfolio-v2/PortfolioVisual', async importOriginal => {
   const actual = await importOriginal<typeof import('../../portfolio-v2/PortfolioVisual')>()
   return { ...actual, FrameworkScale: () => <div data-testid="ladder" /> }
 })
+/*
+ * Stubbed, and that is a judgement worth stating in a hook-order suite: the
+ * briefing calls hooks of its own, but it is a CHILD component, so its hooks
+ * are not in the snapshot's hook sequence and cannot shift it. What this suite
+ * guards is the snapshot's own order.
+ */
+vi.mock('../AssetBriefingSection', () => ({
+  AssetBriefingSection: () => <div data-testid="briefing" />,
+}))
 
 const { InvestmentSnapshot } = await import('../InvestmentSnapshot')
 

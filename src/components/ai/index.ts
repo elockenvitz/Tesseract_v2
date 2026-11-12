@@ -2,9 +2,9 @@
  * The AI presentation layer.
  *
  * One set of components for every surface that shows model output: the chat
- * pane today, a contextual asset briefing next. Nothing here reads the
- * database, holds a conversation, or decides what to send — it renders what it
- * is given, which is what makes it reusable and testable.
+ * pane and the contextual asset briefing. Nothing here reads the database,
+ * holds a conversation, or decides what to send — it renders what it is
+ * given, which is what makes it reusable and testable.
  *
  * Components only. The words and the pure helpers live in `lib/ai`
  * (`trail-text`, `markdown`, `figures`, `presentation`), both because fast
@@ -18,3 +18,5 @@ export { AiMessage } from './AiMessage'
 export { AiThinking, AiErrorNotice, AiPrompts } from './AiStates'
 export { AiContextChips } from './AiContextChips'
 export type { AiContextSubject, AiContextTarget } from './AiContextChips'
+export { AiBriefing } from './AiBriefing'
+export type { AiBriefingProps } from './AiBriefing'

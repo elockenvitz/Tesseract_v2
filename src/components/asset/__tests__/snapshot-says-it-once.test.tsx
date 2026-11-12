@@ -71,6 +71,11 @@ vi.mock('../../portfolio-v2/PortfolioVisual', async importOriginal => {
   const actual = await importOriginal<typeof import('../../portfolio-v2/PortfolioVisual')>()
   return { ...actual, FrameworkScale: () => <div data-testid="ladder" /> }
 })
+/* Its own suite: `asset-briefing-wiring.test.tsx`. Stubbed so this stays a
+   test of what the snapshot says once. */
+vi.mock('../AssetBriefingSection', () => ({
+  AssetBriefingSection: () => <div data-testid="briefing" />,
+}))
 
 import { InvestmentSnapshot } from '../InvestmentSnapshot'
 
