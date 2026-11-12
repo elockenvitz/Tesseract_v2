@@ -38,6 +38,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../useAuth'
+import { useOrganization } from '../../contexts/OrganizationContext'
 import { toIdeaStage } from '../../lib/ideas/stage-model'
 import { isLiveIdea } from '../../lib/trade-status-semantics'
 import { DECIDED_DECISION_STATUSES } from '../../lib/decisions/outcome-eligibility'
@@ -56,8 +57,17 @@ export interface PromptFacts {
   recentDecisions: NonNullable<CandidateInput['recentDecisions']>
 }
 
-export const groundedPromptsKey = (userId: string | null | undefined) =>
-  ['ai-grounded-prompt-facts', userId] as const
+/*
+ * The organization is in the key, not just in the filters.
+ *
+ * Switching orgs keeps the same signed-in user, so a key on the user alone
+ * would serve one firm's desk facts as suggestions on another firm's screen
+ * until the stale time elapsed.
+ */
+export const groundedPromptsKey = (
+  userId: string | null | undefined,
+  orgId?: string | null,
+) => ['ai-grounded-prompt-facts', userId, orgId ?? null] as const
 
 const DAY_MS = 86_400_000
 
@@ -77,10 +87,24 @@ function todayISO(): string {
 export function useGroundedPromptFacts(enabled = true) {
   const { user } = useAuth()
   const userId = user?.id ?? null
+  /*
+   * Scoped explicitly, not left to RLS.
+   *
+   * Every read below is already narrowed to the reader, so RLS is not the only
+   * thing standing between orgs here. The explicit filter is there because
+   * this repo's policy coverage is audited in parts, and a suggestion is a
+   * sentence stating a count -- the one place where a policy gap would not
+   * look like a bug but like a fact.
+   *
+   * Consequence worth knowing: rows with no organization at all drop out.
+   * There are a handful of org-orphan ideas in production, and an idea that
+   * belongs to no firm cannot honestly be counted in one firm's total.
+   */
+  const { currentOrgId: orgId } = useOrganization()
 
   return useQuery<PromptFacts>({
-    queryKey: groundedPromptsKey(userId),
-    enabled: enabled && Boolean(userId),
+    queryKey: groundedPromptsKey(userId, orgId),
+    enabled: enabled && Boolean(userId) && Boolean(orgId),
     /*
      * A minute. Long enough that opening the panel twice in a row does not
      * re-read the desk, short enough that a ruling made in another tab shows
@@ -96,6 +120,9 @@ export function useGroundedPromptFacts(enabled = true) {
     retry: 1,
     queryFn: async (): Promise<PromptFacts> => {
       if (!userId) throw new Error('not signed in')
+      /* `enabled` already covers this; the throw is what narrows the type and
+         what stops a filter silently becoming `organization_id = null`. */
+      if (!orgId) throw new Error('no active organization')
 
       const answered = [...DECIDED_DECISION_STATUSES, 'withdrawn']
       const today = todayISO()
@@ -118,6 +145,7 @@ export function useGroundedPromptFacts(enabled = true) {
           .select('id, stage, status, outcome, stage_changed_at, created_at, assets:asset_id(symbol)')
           .is('deleted_at', null)
           .eq('visibility_tier', 'active')
+          .eq('organization_id', orgId)
           .or(`created_by.eq.${userId},assigned_to.eq.${userId}`)
           .limit(200),
 
@@ -138,6 +166,7 @@ export function useGroundedPromptFacts(enabled = true) {
 
         supabase.from('coverage')
           .select('asset_id', { count: 'exact', head: true })
+          .eq('organization_id', orgId)
           .eq('user_id', userId)
           .eq('is_active', true),
 
