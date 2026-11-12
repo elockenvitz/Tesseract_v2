@@ -133,7 +133,7 @@ export function AiPrompts({
   const wide = columns === 2
   return (
     <div className={clsx('flex h-full flex-col items-center justify-center px-4 text-center', className)}>
-      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full
+      <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full
                       bg-gradient-to-br from-primary-100 to-purple-100
                       dark:from-primary-900/30 dark:to-purple-900/30">
         <Sparkles className="h-5 w-5 text-primary-500" />
@@ -145,7 +145,10 @@ export function AiPrompts({
         data-testid="ai-prompts"
         className={clsx(
           'w-full',
-          wide ? 'grid max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2' : 'max-w-sm space-y-2',
+          /* Roomier than it was. Each button is now two lines of text rather
+             than one, so a 8px gutter read as a single block of grey with
+             hairlines through it rather than as four separate choices. */
+          wide ? 'grid max-w-2xl grid-cols-1 gap-2.5 sm:grid-cols-2' : 'max-w-sm space-y-2.5',
         )}
       >
         {suggestions.map((entry, i) => {
@@ -160,13 +163,13 @@ export function AiPrompts({
                 and a fixed height clipped it. Items with and without one sit
                 in the same grid, so the floor keeps the row heights even.
               */
-              className="flex min-h-[56px] w-full flex-col justify-center gap-0.5 rounded-lg
-                         bg-gray-100 px-3 py-2 text-left text-sm text-gray-700
+              className="flex min-h-[56px] w-full flex-col justify-center gap-1 rounded-lg
+                         bg-gray-100 px-3.5 py-2.5 text-left text-sm text-gray-700
                          transition-colors hover:bg-gray-200
                          dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
               title={reason ? `${text}\n${reason}` : text}
             >
-              <span className="line-clamp-2 leading-tight">{text}</span>
+              <span className="line-clamp-2 font-medium leading-snug">{text}</span>
               {/*
                 Why this question is being offered, in records. Quieter than
                 the question and never a substitute for it: a reader scanning
@@ -176,7 +179,16 @@ export function AiPrompts({
               {reason && (
                 <span
                   data-testid="ai-prompt-reason"
-                  className="line-clamp-1 text-[10.5px] font-medium text-gray-500 dark:text-gray-500"
+                  /*
+                    Bigger and lighter than it was, which is not a
+                    contradiction. It was 10.5px semibold in `gray-500` on a
+                    `gray-800` panel: too small to read comfortably and, in
+                    dark mode, too close to its own background. Now 11px at
+                    normal weight, and a step brighter in the dark theme, so
+                    the question still dominates by WEIGHT rather than by the
+                    reason being hard to see.
+                  */
+                  className="line-clamp-1 text-[11px] leading-snug text-gray-500 dark:text-gray-400"
                 >
                   {reason}
                 </span>

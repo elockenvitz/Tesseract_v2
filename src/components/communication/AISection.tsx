@@ -197,7 +197,14 @@ export function AISection({
    *
    * Gated on the pane being open. An unopened pane reads nothing.
    */
-  const { data: promptFacts, isLoading: isLoadingPromptFacts } =
+  /*
+   * `isSettling`, not `isLoading`. A disabled React Query reports
+   * `isLoading: false` -- and this query is disabled until the user AND the
+   * active organization are known, neither of which is true on the first
+   * paint. Gating on `isLoading` let the generic questions paint and then be
+   * replaced, which is the flash the gate exists to prevent.
+   */
+  const { data: promptFacts, isSettling: isLoadingPromptFacts } =
     useGroundedPromptFacts(isOpen)
 
   const groundedSuggestions = useMemo(() => {

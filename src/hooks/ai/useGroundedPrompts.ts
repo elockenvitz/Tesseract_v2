@@ -85,7 +85,7 @@ function todayISO(): string {
 }
 
 export function useGroundedPromptFacts(enabled = true) {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const userId = user?.id ?? null
   /*
    * Scoped explicitly, not left to RLS.
@@ -100,9 +100,9 @@ export function useGroundedPromptFacts(enabled = true) {
    * There are a handful of org-orphan ideas in production, and an idea that
    * belongs to no firm cannot honestly be counted in one firm's total.
    */
-  const { currentOrgId: orgId } = useOrganization()
+  const { currentOrgId: orgId, isLoading: orgLoading } = useOrganization()
 
-  return useQuery<PromptFacts>({
+  const query = useQuery<PromptFacts>({
     queryKey: groundedPromptsKey(userId, orgId),
     enabled: enabled && Boolean(userId) && Boolean(orgId),
     /*
@@ -274,4 +274,29 @@ export function useGroundedPromptFacts(enabled = true) {
       }
     },
   })
+
+  /*
+   * ── `isLoading` is the wrong question to ask this query ─────────────────
+   *
+   * React Query v5 defines `isLoading` as `isPending && isFetching`, so a
+   * query that is DISABLED reports `isLoading: false`. It is pending, but
+   * nothing is in flight, so by that measure it looks settled.
+   *
+   * This query is disabled until both the signed-in user and the active
+   * organization are known, and neither is known on the first paint -- the
+   * org list is itself a fetch. So the panel's settle gate saw "not loading",
+   * opened, painted the generic fallback questions, and then had to replace
+   * them a moment later when the real facts arrived. That is the flash.
+   *
+   * `isSettling` answers the question the gate actually needs: are the facts
+   * unknown AND still coming? It is true while auth or the org list could
+   * still produce the ids, and while the query itself is fetching. Crucially
+   * it goes FALSE once those have settled without them -- signed out, or no
+   * active organization -- because then the facts are never arriving and a
+   * gate waiting on them would hold the pane open forever.
+   */
+  const idsStillComing = authLoading || orgLoading
+  const isSettling = enabled && (idsStillComing || query.isLoading)
+
+  return { ...query, isSettling }
 }

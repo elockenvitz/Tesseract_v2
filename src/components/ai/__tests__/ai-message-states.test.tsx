@@ -205,6 +205,42 @@ describe('AiPrompts', () => {
        without it this assertion fails against the correct class list. */
     expect(cls).not.toMatch(/(?<!min-)\bh-(14|\[56px\])\b/)
   })
+
+  it('gives the reason room and a readable size', () => {
+    /*
+     * These were reported as cramped by a reader looking at the real panel,
+     * which is the only way this class of problem gets found. The numbers
+     * here are floors, not the design: the reason used to be 10.5px sitting
+     * 2px under the question, and a fractional font size under 11px is the
+     * specific thing that read as unreadable.
+     */
+    render(
+      <AiPrompts
+        suggestions={[{ text: 'What needs a decision?', reason: '4 in your decision inbox' }]}
+        onPick={() => {}}
+      />,
+    )
+    const cls = screen.getAllByRole('button')[0].className
+    /* Not `gap-0.5`, which put the two lines 2px apart. */
+    expect(cls).not.toMatch(/\bgap-0(\.5)?\b/)
+    expect(cls).toMatch(/\bgap-1\b/)
+
+    const reason = screen.getByTestId('ai-prompt-reason').className
+    const px = Number(reason.match(/text-\[([\d.]+)px\]/)?.[1] ?? NaN)
+    expect(px, `reason font size from "${reason}"`).toBeGreaterThanOrEqual(11)
+    /* And it is distinguishable from its own background in the dark theme,
+       where it was `gray-500` text on a `gray-800` panel. */
+    expect(reason).not.toMatch(/dark:text-gray-5\d\d/)
+  })
+
+  it('separates the questions from each other', () => {
+    /* A 8px gutter between two-line buttons read as one block of grey. */
+    render(
+      <AiPrompts suggestions={['One?', 'Two?', 'Three?']} onPick={() => {}} />,
+    )
+    const list = screen.getByTestId('ai-prompts').className
+    expect(list).toMatch(/space-y-2\.5|gap-2\.5/)
+  })
 })
 
 /*

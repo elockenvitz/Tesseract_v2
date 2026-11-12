@@ -89,8 +89,9 @@ vi.mock('../../../hooks/useAI', () => ({
  * waiting on a query that will never resolve.
  */
 vi.mock('../../../hooks/ai/useGroundedPrompts', () => ({
-  useGroundedPromptFacts: () => ({ data: undefined, isLoading: false }),
-  groundedPromptsKey: (id: string | null) => ['ai-grounded-prompt-facts', id],
+  useGroundedPromptFacts: () => ({ data: undefined, isLoading: false, isSettling: false }),
+  groundedPromptsKey: (id: string | null, orgId?: string | null) =>
+    ['ai-grounded-prompt-facts', id, orgId ?? null],
 }))
 
 vi.mock('../../../hooks/useAIConfig', () => ({

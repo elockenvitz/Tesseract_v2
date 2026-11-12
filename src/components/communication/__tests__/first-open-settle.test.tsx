@@ -76,9 +76,20 @@ vi.mock('../../../hooks/ai/useGroundedPrompts', () => ({
           coverage: { assetCount: 12 },
           recentDecisions: { count: 0, windowDays: 14 },
         },
-    isLoading: hook.isLoadingPromptFacts,
+    /*
+     * Both flags, and deliberately disagreeing in the way the real hook does.
+     *
+     * `isLoading` is false whenever the underlying query is disabled, which it
+     * is until the user and the active organization are both known. A mock
+     * that returned only `isSettling`, or that set both to the same value,
+     * would make the pane's gate look correct however it was wired. The pane
+     * must read `isSettling`; see `grounded-prompts-settle.test.tsx`.
+     */
+    isLoading: false,
+    isSettling: hook.isLoadingPromptFacts,
   }),
-  groundedPromptsKey: (id: string | null) => ['ai-grounded-prompt-facts', id],
+  groundedPromptsKey: (id: string | null, orgId?: string | null) =>
+    ['ai-grounded-prompt-facts', id, orgId ?? null],
 }))
 
 vi.mock('../../../hooks/useAIConfig', () => ({
