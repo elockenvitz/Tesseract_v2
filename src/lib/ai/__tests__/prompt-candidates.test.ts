@@ -22,6 +22,7 @@ import {
   compareCandidates,
   mergePrompts,
   FALLBACKS,
+  GENERIC_FLOOR,
   STALLED_IDEA_DAYS,
   type CandidateInput,
   type GroundedPrompt,
@@ -313,10 +314,46 @@ describe('merging the two sources', () => {
     expect(merged.map(c => c.text)).toContain('Analyze AAPL for blind spots')
   })
 
-  it('sorts the generic fallbacks below everything that arrived', () => {
+  it('drops the generic fallbacks entirely once anything real arrived', () => {
+    /*
+     * This used to assert that the generic questions sorted BELOW whatever
+     * arrived, and it would now pass for the wrong reason -- `every` over an
+     * empty tail is true. The claim worth making is the stronger one: a
+     * single real suggestion suppresses the generic tier completely.
+     */
     const merged = mergePrompts(candidatePrompts(empty), ['Analyze AAPL for blind spots'], 4)
-    expect(merged[0].text).toBe('Analyze AAPL for blind spots')
-    expect(merged.slice(1).every(c => c.kind === 'generic')).toBe(true)
+    expect(merged.map(c => c.text)).toEqual(['Analyze AAPL for blind spots'])
+  })
+
+  it('does not pad a grounded list with generic market questions', () => {
+    /*
+     * The reported shape: a reader with two real pieces of open work was
+     * offered those two and then "What sectors are showing momentum?" to make
+     * up the number. Four weak suggestions are worse than two good ones -- a
+     * generic question sitting beside a grounded one says the panel had
+     * nothing better, which was not true.
+     */
+    const grounded = candidatePrompts({ limit: 6, pendingDecisions: { count: 2, oldestDays: 9 } })
+    const merged = mergePrompts(grounded, [], 6)
+    expect(merged.every(c => c.kind !== 'generic')).toBe(true)
+    expect(merged.length).toBeGreaterThan(0)
+  })
+
+  it('does not pad a list the subject already filled', () => {
+    const merged = mergePrompts(
+      candidatePrompts(empty),
+      ['Analyze AAPL for blind spots', 'What are the key risks to AAPL?', 'What changed on AAPL this week?'],
+      6,
+    )
+    expect(merged.every(c => c.kind !== 'generic')).toBe(true)
+  })
+
+  it('still offers a floor of questions where there is genuinely nothing', () => {
+    /* The other half: one lonely button on an empty surface reads as a bug.
+       The generic tier is a floor, and this is the only count it reaches. */
+    const merged = mergePrompts(candidatePrompts(empty), [], 6)
+    expect(merged).toHaveLength(GENERIC_FLOOR)
+    expect(merged.every(c => c.kind === 'generic')).toBe(true)
   })
 
   it('offers the same question once, however it was phrased in', () => {

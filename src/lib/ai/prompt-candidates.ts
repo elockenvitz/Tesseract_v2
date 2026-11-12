@@ -417,6 +417,15 @@ export function candidatePromptTexts(input: CandidateInput): string[] {
 }
 
 /**
+ * How many questions are worth showing when none of them is grounded.
+ *
+ * Three, because a single button on an empty surface reads as a bug while a
+ * full grid of market questions reads as filler. This is the ONLY count the
+ * generic tier is allowed to reach.
+ */
+export const GENERIC_FLOOR = 3
+
+/**
  * The panel's final list: grounded questions first, context questions to fill.
  *
  * Two sources exist and both are worth keeping. This module's candidates are
@@ -438,6 +447,7 @@ export function mergePrompts(
   grounded: readonly GroundedPrompt[],
   contextual: readonly string[],
   limit: number,
+  floor: number = GENERIC_FLOOR,
 ): GroundedPrompt[] {
   const out: GroundedPrompt[] = []
   const seenText = new Set<string>()
@@ -453,7 +463,31 @@ export function mergePrompts(
   for (const text of contextual) {
     push({ key: keyFor('active_asset', text), text, reason: null, kind: 'active_asset', weight: 30 })
   }
-  for (const c of grounded) if (c.kind === 'generic') push(c)
+  /*
+   * A floor, and now actually used as one.
+   *
+   * This filled up to `limit` with the generic market questions, which meant
+   * a reader looking at AAPL with two real pieces of open work was offered
+   * those two and then "What sectors are showing momentum?" to make up the
+   * number. Four weak suggestions are worse than two good ones: the weak
+   * ones are what a reader reads first if they happen to sit higher, and
+   * their presence says the panel had nothing better, which was false.
+   *
+   * So generic questions appear only when there is nothing else AT ALL --
+   * not when the real list is merely short. One strong question is a better
+   * panel than one strong question and two about the market, because the two
+   * are what a reader's eye lands on while deciding whether to bother.
+   *
+   * `floor` is then how many to show in that empty case: a single lonely
+   * button reads as a bug.
+   */
+  if (out.length === 0) {
+    for (const c of grounded) {
+      if (c.kind !== 'generic') continue
+      if (out.length >= Math.max(1, floor)) break
+      push(c)
+    }
+  }
 
   return out.slice(0, Math.max(1, limit))
 }
