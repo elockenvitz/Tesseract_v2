@@ -281,7 +281,12 @@ const MAX_ERRORS = 0
 // `useAIConfig.ts`, because `rpc()` in this repo resolves `Fn['Args']` to
 // `never` for every declared function -- a pre-existing defect that roughly
 // thirty call sites already pay for inside this ceiling.
-const MAX_REPO_ERRORS = 8577
+//
+// 8577 -> 8576 (navigate-out-of-pane): the nav drawer's inline
+// `result => { ... }` callback in `Layout` had an implicitly-typed parameter.
+// Both drawer callbacks now go through `handleChromeNavigation`, whose
+// parameter is stated once.
+const MAX_REPO_ERRORS = 8576
 
 /**
  * A floor on real source files, now that they are counted as source files.

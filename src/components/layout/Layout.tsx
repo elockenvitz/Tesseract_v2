@@ -130,6 +130,41 @@ export function Layout({
     })
   }, [onSearchResult])
 
+  /**
+   * Uncover the page before taking the reader to it.
+   *
+   * ── The defect this closes ────────────────────────────────────────────────
+   *
+   * Expanded, the pane is `left-0 right-0 top-16 bottom-0`: it covers the tab
+   * strip and the entire page and leaves only the header reachable. So the
+   * header search bar, the one control still in reach, opened the asset tab
+   * BEHIND the conversation. The screen did not change. Searching an asset
+   * from inside ACT AI looked like it had navigated within ACT AI, because the
+   * only thing a reader could see afterwards was still ACT AI.
+   *
+   * Collapse, not close. On the desktop rail the pane drops back to its 384px
+   * width, so the asset page appears beside a conversation that is still
+   * open — the reader asked a question about a name and then went to look at
+   * it, and throwing the thread away would punish them for doing both. On a
+   * phone there is no narrow form (the pane is a full-height sheet), so there
+   * it is hidden instead, which is what the nav drawer already did for this
+   * same reason.
+   *
+   * It is a hide either way, never an unmount: `CommunicationPane` stays
+   * mounted and merely translated, so a half-typed question and an
+   * in-progress Quick Idea both survive the trip. See `capture-draft.test`.
+   */
+  const revealPageBehindPane = useCallback(() => {
+    if (isCommPaneFullscreen) toggleCommPaneFullscreen()
+    if (isMobile && isCommPaneOpen) toggleCommPane()
+  }, [isCommPaneFullscreen, toggleCommPaneFullscreen, isMobile, isCommPaneOpen, toggleCommPane])
+
+  /** Navigation that came from the app chrome, which the pane may be covering. */
+  const handleChromeNavigation = useCallback((result: any) => {
+    revealPageBehindPane()
+    onSearchResult?.(result)
+  }, [revealPageBehindPane, onSearchResult])
+
   // Each toolbar button toggles its own view: clicking when its view is
   // already open closes the right pane; clicking otherwise opens it on
   // that view. Previously the same click always opened, never closed —
@@ -564,7 +599,10 @@ export function Layout({
   return (
     <div className="h-viewport flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
       <Header
-        onSearchResult={onSearchResult}
+        /* Every destination the header reaches — search, the nav menus, the
+           recents lists — goes out through this one prop, and all of them
+           were landing behind an expanded pane. */
+        onSearchResult={handleChromeNavigation}
         onShowDirectMessages={handleShowDirectMessages}
         onShowNotifications={handleShowNotifications}
         onShowCoverageManager={handleShowCoverageManager}
@@ -729,16 +767,17 @@ export function Layout({
             translated off-screen, so an in-progress capture keeps its type and
             everything typed into it. Closing the pane preserves the draft;
             tearing it down would not. See `capture-draft.test`.
+
+            Both callbacks now use the shared `revealPageBehindPane`, so the
+            drawer and the header search bar cannot drift apart on what
+            "get out of the way" means.
           */
-          onSearchResult={result => {
-            if (isCommPaneOpen) toggleCommPane()
-            onSearchResult?.(result)
-          }}
+          onSearchResult={handleChromeNavigation}
           onOpenSearch={onFocusSearch}
           tabs={tabs}
           activeTabId={activeTabId}
           onTabChange={tabId => {
-            if (isCommPaneOpen) toggleCommPane()
+            revealPageBehindPane()
             onTabChange(tabId)
           }}
           onTabClose={onTabClose}
