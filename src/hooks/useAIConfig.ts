@@ -83,6 +83,19 @@ export interface EffectiveAIConfig {
   provider: AIProvider | null
   model: string | null
   isConfigured: boolean
+  /**
+   * Whether `isConfigured` is an ANSWER yet, or just the default.
+   *
+   * The resolution below is a chain of fall-throughs over three queries. While
+   * those are in flight every input is `undefined`, so the chain lands on its
+   * last reachable branch and reports `isConfigured: false` -- which reads
+   * identically to "this org has no AI configured". A surface that renders a
+   * "not configured" screen on that gets one for a moment on every open,
+   * before the real answer arrives and replaces it.
+   *
+   * So: do not render a configuration verdict while this is true.
+   */
+  isResolving: boolean
   isPlatformEnabled: boolean
   allowByok: boolean
   // Context preferences (defaults applied internally)
@@ -143,7 +156,7 @@ function sanitizeApiKey(key: string): string {
 }
 
 export function useAIConfig() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const queryClient = useQueryClient()
 
   // Fetch platform config
@@ -209,8 +222,19 @@ export function useAIConfig() {
     staleTime: 5 * 60 * 1000,
   })
 
+  /*
+   * Is the configuration question answerable yet?
+   *
+   * `authLoading` is in here and is the easy one to leave out: two of the
+   * three queries are `enabled: !!user?.id`, and a DISABLED React Query
+   * reports `isLoading: false`. So during the window where auth is still
+   * restoring, all three flags read false and the config would look resolved
+   * while two of its three inputs had not been requested.
+   */
+  const isResolving = authLoading || isPlatformLoading || isUserLoading || isOrgLoading
+
   // Compute effective config
-  const effectiveConfig: EffectiveAIConfig = (() => {
+  const resolvedConfig = (() => {
     const preferences = {
       includeThesis: userConfig?.include_thesis ?? true,
       includeOutcomes: userConfig?.include_outcomes ?? true,
@@ -294,6 +318,8 @@ export function useAIConfig() {
       ...preferences,
     }
   })()
+
+  const effectiveConfig: EffectiveAIConfig = { ...resolvedConfig, isResolving }
 
   /*
    * Update org BYOK config.

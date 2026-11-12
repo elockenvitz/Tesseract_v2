@@ -21,11 +21,17 @@ const hook: {
   conversationId: string | null
   /** Whether the grounded-prompt facts are still in flight. */
   isLoadingPromptFacts: boolean
+  /** Whether the three AI-config queries have answered yet. */
+  isConfigResolving: boolean
+  /** The verdict, once they have. */
+  isConfigured: boolean
 } = {
   messages: [],
   isRestoringConversation: true,
   conversationId: null,
   isLoadingPromptFacts: false,
+  isConfigResolving: false,
+  isConfigured: true,
 }
 
 vi.mock('../../../hooks/useAI', () => ({
@@ -33,7 +39,14 @@ vi.mock('../../../hooks/useAI', () => ({
     messages: hook.messages,
     tags: [{ type: 'asset', id: 'a1' }],
     tagLabels: { 'asset:a1': 'AAPL' },
-    isConfigured: true,
+    /*
+     * Both, and able to disagree. While the config queries are in flight the
+     * resolver's `isConfigured` is its fall-through DEFAULT of false, not an
+     * answer -- so a mock that only ever reported `isConfigured: true` could
+     * not express the state that flashed "AI Assistant Not Configured".
+     */
+    isConfigured: hook.isConfigured,
+    isConfigResolving: hook.isConfigResolving,
     configMode: 'byok',
     conversationId: hook.conversationId,
     isRestoringConversation: hook.isRestoringConversation,
@@ -136,6 +149,8 @@ beforeEach(() => {
   hook.isRestoringConversation = true
   hook.conversationId = null
   hook.isLoadingPromptFacts = false
+  hook.isConfigResolving = false
+  hook.isConfigured = true
   /* jsdom has no layout, so no `scrollIntoView`. The pane calls it whenever
      the message list changes. */
   HTMLElement.prototype.scrollIntoView = vi.fn()
@@ -219,5 +234,64 @@ describe('first open', () => {
     hook.isRestoringConversation = false
     renderPane()
     expect(screen.queryByText(/Co-?Analyst/i)).toBeNull()
+  })
+})
+
+/*
+ * ── The configure screen is a verdict, not a default ─────────────────────
+ *
+ * Reported by a reader on the real panel: "a flash of the configure screen in
+ * the side pane on open before I see the recommended prompt".
+ *
+ * `isConfigured` is resolved from three queries, and until they answer every
+ * input is undefined and the resolver falls through to false. The pane
+ * rendered its full "AI Assistant Not Configured" screen on that false, so
+ * every open showed a configuration error for a moment and then replaced it.
+ *
+ * Two of those three queries are `enabled: !!user?.id`, and a disabled React
+ * Query reports `isLoading: false`, so the flag has to count auth restoring
+ * as unresolved too. That is covered in the hook's own tests; this covers the
+ * pane's half of the contract.
+ */
+describe('it does not accuse the org of having no AI set up', () => {
+  it('shows no configuration verdict while the config is still resolving', () => {
+    hook.isConfigResolving = true
+    /* Deliberately the default the resolver would be reporting: false. */
+    hook.isConfigured = false
+    hook.isRestoringConversation = false
+    renderPane()
+    expect(screen.queryByText(/Not Configured/i)).toBeNull()
+    expect(screen.queryByText(/Configure in Settings/i)).toBeNull()
+    expect(screen.getByTestId('ai-config-resolving')).toBeTruthy()
+  })
+
+  it('shows no prompts either, so the reader sees one transition and not two', () => {
+    /* A spinner or an empty thread here would be a second full-pane state on
+       the way to the first. Nothing, then the pane. */
+    hook.isConfigResolving = true
+    hook.isConfigured = false
+    hook.isRestoringConversation = false
+    renderPane()
+    expect(screen.queryByTestId('ai-prompts')).toBeNull()
+  })
+
+  it('does say so once the queries have answered that it is not configured', () => {
+    /* The screen must still exist. An org with no AI configured has to be
+       told, or the pane just looks broken. */
+    hook.isConfigResolving = false
+    hook.isConfigured = false
+    hook.isRestoringConversation = false
+    renderPane()
+    expect(screen.getByText(/Not Configured/i)).toBeTruthy()
+    expect(screen.queryByTestId('ai-config-resolving')).toBeNull()
+  })
+
+  it('shows the pane once the config resolves as configured', () => {
+    hook.isConfigResolving = false
+    hook.isConfigured = true
+    hook.isRestoringConversation = false
+    renderPane()
+    expect(screen.getByTestId('ai-prompts')).toBeTruthy()
+    expect(screen.queryByText(/Not Configured/i)).toBeNull()
   })
 })

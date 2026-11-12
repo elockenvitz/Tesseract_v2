@@ -123,6 +123,7 @@ export function AISection({
     messages,
     tags,
     isConfigured,
+    isConfigResolving,
     configMode,
     conversationId,
     /* Whether this pane yet knows what it is showing. See the thread area. */
@@ -467,6 +468,25 @@ export function AISection({
       if (found) return found.name
     }
     return model
+  }
+
+  /*
+   * ── Not configured, once we actually know that ──────────────────────────
+   *
+   * `isConfigured` is resolved from three queries, and until they land every
+   * input is undefined and the resolver falls through to `false`. That false
+   * is a DEFAULT, not a verdict, and rendering this whole screen on it is
+   * what put a flash of "AI Assistant Not Configured" in front of every
+   * reader who opened the pane.
+   *
+   * Nothing is rendered in its place. The pane's chrome is drawn by the
+   * caller and this branch replaces the entire body, so a spinner here would
+   * be a second full-pane state on the way to the first -- two flashes rather
+   * than none. The resolve is three cached queries; the thread area's own
+   * settle gate covers the rest.
+   */
+  if (isConfigResolving) {
+    return <div data-testid="ai-config-resolving" className="h-full" aria-busy="true" />
   }
 
   // Not configured state

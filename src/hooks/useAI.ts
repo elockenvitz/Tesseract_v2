@@ -922,6 +922,12 @@ export function useAI(initialTags: TagRef[] = []) {
     conversationId,
     isRestoringConversation,
     isConfigured: effectiveConfig.isConfigured,
+    /*
+     * Whether `isConfigured` is an answer yet. While this is true it is the
+     * resolver's default, not a verdict, so a surface must not render a
+     * "not configured" state on it. See `EffectiveAIConfig.isResolving`.
+     */
+    isConfigResolving: effectiveConfig.isResolving,
     configMode: effectiveConfig.mode,
 
     // Send
