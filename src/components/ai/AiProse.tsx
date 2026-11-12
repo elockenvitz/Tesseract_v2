@@ -37,7 +37,8 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Check, Copy } from 'lucide-react'
 import { clsx } from 'clsx'
-import { isFigure, figureTone, numericColumns } from '../../lib/ai/figures'
+import { figureTone, cellKind, valueColumns } from '../../lib/ai/figures'
+import type { ColumnKind } from '../../lib/ai/figures'
 import { preprocessTickers, extractText, tableBodyRows } from '../../lib/ai/markdown'
 
 interface AiProseProps {
@@ -53,8 +54,8 @@ interface AiProseProps {
   className?: string
 }
 
-/** Which columns of the table currently being rendered are numeric. */
-const NumericCols = createContext<Set<number>>(new Set())
+/** Which columns of the table currently being rendered hold values, and how. */
+const ValueCols = createContext<Map<number, ColumnKind>>(new Map())
 
 const PROSE_CLASSES = [
   'prose prose-sm dark:prose-invert max-w-none',
@@ -94,9 +95,9 @@ export function AiProse({ content, onTickerClick, className }: AiProseProps) {
 
 /* ── cells ───────────────────────────────────────────────────────────────── */
 
-function useNumeric(col: number): boolean {
-  const cols = useContext(NumericCols)
-  return col >= 0 && cols.has(col)
+function useColumn(col: number): ColumnKind | null {
+  const cols = useContext(ValueCols)
+  return col >= 0 ? cols.get(col) ?? null : null
 }
 
 function colOf(props: unknown): number {
@@ -104,7 +105,7 @@ function colOf(props: unknown): number {
 }
 
 function Th({ children, ...props }: { children?: ReactNode }) {
-  const right = useNumeric(colOf(props))
+  const right = useColumn(colOf(props)) !== null
   return (
     <th
       className={clsx(
@@ -119,19 +120,38 @@ function Th({ children, ...props }: { children?: ReactNode }) {
 }
 
 function Td({ children, ...props }: { children?: ReactNode }) {
-  const right = useNumeric(colOf(props))
+  const column = useColumn(colOf(props))
   const text = extractText(children)
   const tone = figureTone(text)
+  const kind = cellKind(text)
+  /*
+   * A word in a column of values is not one of the values.
+   *
+   * This is the `3.2% / unknown / reduced` case. The number stays a number:
+   * tabular figures, full contrast, so a reader can run an eye down the
+   * column. The word is right-aligned with it, because it belongs to that
+   * column, but it is rendered as a LABEL -- smaller, quieter, proportional
+   * figures -- so nothing invites comparing it to 3.2%.
+   *
+   * No tone, ever. "reduced" is the kind of word that would read as a
+   * negative change, and colouring it would assert a direction the model did
+   * not put a sign on, which is the same discipline `figureTone` applies to
+   * numbers.
+   */
+  const asLabel = column !== null && kind === 'token'
   return (
     <td
       className={clsx(
         'px-2.5 py-1.5 align-top',
-        right && 'text-right tabular-nums whitespace-nowrap',
+        column !== null && 'text-right whitespace-nowrap',
+        column !== null && kind === 'figure' && 'tabular-nums',
+        asLabel && 'text-[11px] text-gray-500 dark:text-gray-400',
         /* Only a figure the model signed gets a direction. */
         tone === 'up' && 'text-emerald-700 dark:text-emerald-400',
         tone === 'down' && 'text-red-700 dark:text-red-400',
-        !tone && isFigure(text) && 'text-gray-900 dark:text-gray-100',
+        !tone && kind === 'figure' && 'text-gray-900 dark:text-gray-100',
       )}
+      data-cell={column !== null ? kind : undefined}
     >
       {children}
     </td>
@@ -204,8 +224,8 @@ const STABLE_COMPONENTS: Components = {
 }
 
 function NumericColsProvider({ node, children }: { node: unknown; children: ReactNode }) {
-  const cols = useMemo(() => numericColumns(tableBodyRows(node)), [node])
-  return <NumericCols.Provider value={cols}>{children}</NumericCols.Provider>
+  const cols = useMemo(() => valueColumns(tableBodyRows(node)), [node])
+  return <ValueCols.Provider value={cols}>{children}</ValueCols.Provider>
 }
 
 function linkRenderer(onTickerClick?: (symbol: string) => void): Components['a'] {

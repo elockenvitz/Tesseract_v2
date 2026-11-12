@@ -88,6 +88,71 @@ describe('financial tables', () => {
     expect(level.className).not.toMatch(/text-red/)
   })
 
+  describe('a word in a weight column is not a weight', () => {
+    /*
+     * The reported defect, verbatim in shape: one column holding `3.2%`,
+     * `unknown` and `reduced`, with nothing to tell a reader that only the
+     * first of those is a weight.
+     */
+    const MIXED = [
+      '| Book | Weight |',
+      '| --- | --- |',
+      '| Large Cap Growth | 3.2% |',
+      '| Vision Fund | unknown |',
+      '| Global Equity | reduced |',
+    ].join('\n')
+
+    const cells = (content: string) =>
+      [...render(<AiProse content={content} />).container.querySelectorAll('tbody tr')]
+        .map(r => [...r.querySelectorAll('td')][1])
+
+    it('still lines the column up, so the figures can be compared', () => {
+      /* The old behaviour sent the whole column down the prose path, which
+         lost the alignment AND left the word sitting where a number goes. */
+      for (const c of cells(MIXED)) expect(c.className).toMatch(/text-right/)
+    })
+
+    it('gives tabular figures to the number and not to the words', () => {
+      const [figure, unknown, reduced] = cells(MIXED)
+      expect(figure.className).toMatch(/tabular-nums/)
+      expect(unknown.className).not.toMatch(/tabular-nums/)
+      expect(reduced.className).not.toMatch(/tabular-nums/)
+    })
+
+    it('renders the words as quieter labels than the figure', () => {
+      const [figure, unknown] = cells(MIXED)
+      expect(unknown.getAttribute('data-cell')).toBe('token')
+      expect(figure.getAttribute('data-cell')).toBe('figure')
+      expect(unknown.className).toMatch(/text-gray-500/)
+      expect(figure.className).not.toMatch(/text-gray-500/)
+    })
+
+    it('never tones a status word, however much it sounds like a direction', () => {
+      /* "reduced" is the trap: colouring it red would assert a change the
+         model put no sign on, which is the discipline figures.ts applies to
+         numbers and must apply to words too. */
+      const reduced = cells(MIXED)[2]
+      expect(reduced.className).not.toMatch(/text-red/)
+      expect(reduced.className).not.toMatch(/emerald/)
+    })
+
+    it('keeps the model s own word, never a substitute for it', () => {
+      /* Provenance. "unknown" may be the only true answer available, and the
+         renderer is not entitled to turn it into a dash. */
+      expect(cells(MIXED)[1].textContent).toBe('unknown')
+    })
+
+    it('falls back to prose for a column carrying a sentence', () => {
+      const withProse = [
+        '| Book | Weight |',
+        '| --- | --- |',
+        '| Large Cap Growth | 3.2% |',
+        '| Vision Fund | The position was trimmed ahead of earnings. |',
+      ].join('\n')
+      for (const c of cells(withProse)) expect(c.className).not.toMatch(/text-right/)
+    })
+  })
+
   it('leaves a column of words left-aligned', () => {
     const { container } = render(<AiProse content={[
       '| Book | Owner |',
