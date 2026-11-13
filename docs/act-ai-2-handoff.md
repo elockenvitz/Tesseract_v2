@@ -911,3 +911,412 @@ In rough order of how likely they are to bite:
     `AISection.tsx`, inside the 8,579 ceiling.
 12. **The parked Work-mode redesign** still needs a decision. Deliberately not
     absorbed.
+
+---
+---
+
+# ACT AI 2.2 — composer, organization, artifacts, intelligence, dot commands
+
+Nine of the ten mandated steps are done and pushed. One step is blocked on a
+decision only you can make, and it is named below with what it is blocked on.
+
+**Nothing has been merged or deployed.** PR #291 is still open and unmerged,
+and this branch is not deployed. The visual review is yours.
+
+**I have not opened any of this in a browser.** The Chrome extension was not
+connected; I tried once and stopped, per the standing instruction. Every claim
+below is either a test artifact or a reading of the code, and where that is
+not enough to know something, it says so. The checklist at the end is the part
+only you can do.
+
+---
+
+## 1. The written case is rendered, not printed (`e7747dd6`)
+
+**What you saw.** In the AAPL workspace, a risk read as
+`**iPhone weakness**` — asterisks and all. Same for `**Regulation**`,
+`**Innovation risk**`, `**Per-user monetization**`. The text was stored with
+Markdown emphasis and the pane was printing the characters.
+
+**What changed.** The pane now renders through `SmartInputRenderer`, the same
+safe renderer every other research surface already used. It emits React
+elements with string children only, so there is no path for stored HTML to
+execute: markup in the content is shown as characters, deliberately.
+
+The reading width was also wrong. The case was set to `max-w-[74ch]`, which
+in a work pane reads as a narrow strip down the left of a wide panel. It is
+now 90ch, roughly 700px, and defined once as `CASE_MEASURE` so the read and
+supporting-detail blocks cannot drift apart.
+
+A density option was added to the shared renderer — `reading` for the case
+body, `compact` everywhere else. The defaults keep every existing caller's
+classes byte-identical, so nothing else on the renderer moved.
+
+**What could break.** This is the renderer the rest of the app uses, so the
+risk is not in the rendering — it is that a case written with an accidental
+asterisk now shows emphasis instead of the asterisk. That is the correct
+behaviour and the same behaviour notes already have.
+
+**One thing I had wrong and corrected.** This file's own header said
+"PARKED / EXPERIMENTAL — not reachable… Nothing renders this today." That was
+stale. `DashboardNext.tsx:624` → `IdeasWorkPane` mounts it: it is parked as a
+*page* and live as a *pane*. Believing the header cost me a wrong conclusion
+about which file to fix. The header now says both things.
+
+---
+
+## 2. A control is called what it says (`38e6125b`)
+
+**What you saw.** Literal `svg3 sources svg`, `svgKeep`, `svgCopy` in the UI.
+
+**What changed.** Every icon inside a labelled control is now
+`aria-hidden="true"`, and the evidence toggle's failed-lookup warning moved
+out of the button and became a labelled image, so pressing the toggle no
+longer reads the warning as part of its own name.
+
+**Being straight about this one.** `aria-hidden` on a decorative glyph is
+correct markup and it is now correct in all three places. But it is **not** a
+verified account of what produced your capture, and I will not claim it is:
+jsdom's name computation already ignored a bare `<svg>`, so the tests I wrote
+pass both before and after the fix. Something else — most likely an icon
+library rendering a text fallback — may be the real cause. **This is the
+first thing to look at in the browser**, and if the literals are still there,
+that is the lead.
+
+---
+
+## 3. One composer, and a Stop that exists while it matters (`e0a8a849`)
+
+**What changed.** The composer is one component. It grows with the text to a
+220px ceiling and then scrolls; Enter sends, Shift+Enter makes a newline; Send
+is disabled on empty or whitespace-only input.
+
+**The real defect it fixed.** There was no Stop control mid-stream at all.
+The thread's Stop disappeared as soon as prose started arriving, which is
+exactly when you want it. The composer's button now becomes Stop while a
+response is streaming, and it is wired to the existing `cancelGeneration` —
+not a decorative button.
+
+---
+
+## 4. A conversation can be opened without a mouse (`54baa3cf`)
+
+**What changed.** The conversation title was a `div` with a click handler on
+an ancestor: the primary action in the list was mouse-only while all five
+secondary actions (rename, pin, archive, delete, move) were keyboard
+reachable. It is now a real button with `aria-current` on the active thread.
+The tag count became a labelled image naming which objects are attached, and
+the action group reveals on focus as well as hover, so tabbing to a control
+does not leave it invisible.
+
+---
+
+## 5. Add Context and object chips — verified, not rebuilt
+
+Delivered in 2.1 (`be75d866`, `96c85d94`) and left alone. The attach control
+writes the conversation's tags, which is the canonical input the server reads;
+all four typed reference kinds lead somewhere; an unreachable reference says
+so rather than vanishing. I re-read the path and its suites rather than
+rebuilding it, which is what "do not restart features that are already
+implemented" asks for.
+
+---
+
+## 6. Independent artifacts — AUTHORED, NOT APPLIED. **Needs your decision.**
+
+`supabase/migrations/20261113120000_ai_artifacts.sql`, its rollback, and
+`supabase/tests/ai-artifacts-authorization.sql` are committed (`da7b63ca`).
+**The migration has not been applied and the test has not been run.** There is
+no UI shipped against it, deliberately: UI against an unapplied migration is a
+feature that works in a test and 500s for you.
+
+**What it is.** A pointer table — `user_id`, `organization_id`,
+`conversation_id`, `message_id`, `title`. **No content column.** The answer
+text stays in `ai_conversations.messages`, because this codebase has already
+decided twice that a second copy of an answer is two versions of one sentence
+(see "Known incomplete, by choice" above, and `src/lib/ai/artifacts.ts`).
+
+**The decision you have to make, and why I could not make it.**
+`ai_conversations` has **no `organization_id`** in the live database — that is
+deliberate and recorded. But Standing Rule 5 requires every new
+org-owned entity to carry a stable `organization_id` with tenant-scoped
+policies and an isolation test. So an artifacts table pointing at a
+conversation is either:
+
+- **org-scoped** (what I authored): correct by Rule 5, but it can point at a
+  conversation that is not org-scoped, so an artifact and its conversation can
+  disagree about which org they belong to; or
+- **user-scoped like its parent**: consistent, but a new entity outside the
+  tenant model, which Rule 5 forbids shipping.
+
+I authored the first and added a `SECURITY DEFINER` trigger that refuses an
+artifact whose conversation is not the caller's own (raises 42501, EXECUTE
+revoked from `PUBLIC`, `anon` and `authenticated`), which closes the
+cross-user hole but not the org-disagreement one. Four named policies, each
+`USING (user_id = auth.uid() AND is_member_of_org(organization_id))`, `anon`
+revoked. The 12-assertion test names its two required injections in its own
+header.
+
+**It needs your approval to apply, and the org question answered first.** The
+honest third option is to give `ai_conversations` an `organization_id` and fix
+the root, which is a bigger change than this initiative should absorb.
+
+---
+
+## 7. A three-part question does not get a one-paragraph answer (`92a3b012`)
+
+**What you saw.** The real LRCX conversation: "Let's analyze LRCX, come up
+with what the market is thinking about it and where we are with it in our
+process", then "What about in general, come up with a bear and bull case for
+it." Both got one short paragraph.
+
+**Why.** `resolveResponsePolicy` routed both to `brief` (700 output tokens).
+Neither matched a depth pattern, so both fell to the default.
+
+**What changed.** Two shape rules, after the vocabulary rules and before the
+default: a **paired** request (bear/bull, pros and cons, both sides, for and
+against, upside and downside, risks and opportunities, best and worst case)
+and a **multi-part** request (three or more asks in one message) now resolve
+to `standard` (1200). No new verbosity was added, so the edge function's
+directive text is unchanged, the `prompt-drift` guard still passes, and **no
+function deploy is needed**.
+
+**What it does not do.** It does not make the model invent figures. The
+retrieval path and the provenance rule are untouched.
+
+---
+
+## 8. Tesseract's dot commands, in chat (`25588b42`)
+
+The editor defines the commands once, in `DotCommandSuggestionExtension`,
+which cannot be imported into the chat bundle — it pulls in TipTap,
+ProseMirror, tippy and a React DOM root. So chat **classifies** them by id
+rather than redefining them, and a drift test reads the extension's source and
+fails if an id exists there with no classification. Same arrangement as
+`prompt-drift` and the edge function, for the same reason.
+
+**Seven work.** The six data commands become the question they mean —
+`.price.LRCX` becomes "What is the current price of LRCX?" — which the model
+answers with its own lookup, so the figure arrives with a source attached
+rather than being composed by the client. Templates expand to their stored
+body. `.help` lists this set, not the editor's.
+
+**Twenty-four are declined by name, with the reason shown to you.** A chart
+needs a ProseMirror node and chat has no renderer for one, so
+`.chart.price.AAPL` says charts work in a note or research editor. It does not
+draw a degraded chart, show an empty box, or do nothing.
+
+**Nothing is sent.** Every command resolves to text in the composer, under
+your hands, and you press Send.
+
+**One regression this found and fixed.** `useTemplates` resolves its org
+through `useOrganization`, which *throws* outside its provider rather than
+returning null, so the pane gained its first hard dependency on
+`OrganizationProvider`. Production always has one (`App.tsx:124` wraps the
+routes), so there is no user-facing breakage — but three existing suites
+mounted the pane bare and went red. They now stub `useTemplates` alongside the
+four hooks they already stub.
+
+---
+
+## 9. What 2.2 costs per request (`07e42f18`)
+
+One thing in this initiative spends tokens: step 7's tier change. Everything
+else is presentation and sends what it always sent.
+
+Over a corpus of seventeen real-shaped questions, weighted toward short ones
+because that is what a chat pane receives:
+
+| count | ceiling | tier | why |
+|---|---|---|---|
+| 12 | 700 | brief | default |
+| 3 | 1200 | standard | paired-case-request |
+| 1 | 1200 | standard | multi-part-request |
+| 1 | 4096 | deep | explicit-depth-request |
+
+**Mean ceiling 1017, against 900 before 2.2. +117, about 13%.** That is the
+whole token delta, and it buys a three-part question an answer with three
+parts in it.
+
+These are **provider ceilings, not consumption**. A ceiling is what pure
+functions can be held to deterministically; most answers come in well under
+it. Real spend needs the provider's usage figures, which no test here can see
+and none of them claim to.
+
+The suite also pins the properties worth more than the mean: nothing reaches
+the 4096 tier without you asking for depth in words you typed; the evidence
+count rises only where the answer length does; the history budget (12
+messages / 24,000 chars) and the context budget (12,000 tokens / 4 objects)
+still bind and still hold the numbers 2.2 found them at; and a dot command
+costs the request side nothing, because its expansion resolves to the same
+policy as the question you could have typed by hand.
+
+**One performance fix.** `parseDotCommand` sorted its 31-id list on every
+call, which is every keystroke in the composer. Hoisted to module scope.
+
+---
+
+## 10. The required check now runs both unit projects (`853f26c7`)
+
+Found while finishing step 7, and worth knowing on its own.
+
+Vitest has two unit projects: `unit` (jsdom) and `unit-node` (node). A pure
+`.ts` test is auto-excluded from `unit` and runs in `unit-node`. **CI's
+required `Unit tests` check only ran `unit`.** So 403 files and about 7,400
+assertions — including every suite in `src/lib/ai`, among them the one I had
+just written for step 7 — were outside the gate that protects `main`.
+
+CI now runs both. Proven by injecting a failure into a `unit-node` suite and
+confirming the step exits 1.
+
+---
+
+## 2.2 non-vacuity
+
+Standing Rule 3, every gate, by injection:
+
+| Step | Injection | Caught |
+|---|---|---|
+| 1 | renderer bypassed; measure reverted to 74ch; density ignored | 8 / 1 / 1 failures |
+| 2 | `aria-hidden` removed | 1 failure (and see the honest note in step 2) |
+| 3 | Send enabled on empty; Enter not handled; Stop unwired | 2 / 2 / 3 failures |
+| 4 | title reverted to a `div` | 4 of 7 failures |
+| 7 | shape rules removed | 10 of 19 failures |
+| 8 | pane stops mounting the menu | 4 integration failures |
+| 8 | editor-only notice returns null | 2 failures |
+| 8 | `.price` expands to a figure, not a question | 3 rendered + 2 pure failures |
+| 8 | `toc` removed from the classification | drift guard fails by name |
+| 9 | one short question routed to `deep` | 4 failures; mean 1017 → 1217 |
+| 10 | failure injected into a `unit-node` suite | CI step exits 1 |
+
+**One of my own gates was vacuous when written, and three cases caught it.**
+`resolveResponsePolicy` takes an input *object*; the budget suite called it
+with a bare string, which resolves `message: undefined`, which every
+heuristic reads as the empty string and routes to `brief`. The mean read 700
+and the ratchet held comfortably while measuring nothing. There is a note in
+the file so the next reader does not reintroduce it.
+
+---
+
+## 2.2 RLS posture
+
+**No data path changed, and no policy was widened.**
+
+- Steps 1–5, 7, 8: presentation and pure functions. No new table, view, RPC
+  or query path. `asset_contributions` and `ai_conversations` are read exactly
+  as before.
+- Step 6: a new table with RLS enabled, four named tenant-scoped policies,
+  `anon` revoked, and a definer trigger whose EXECUTE is revoked from
+  `PUBLIC`, `anon` and `authenticated`. **Not applied**, so it has no live
+  posture yet, and its regression test is unexecuted.
+- Step 9: tests only.
+
+**What I could not run.** `tenant:lint:all` needs `SUPABASE_URL` and
+`SUPABASE_SERVICE_KEY`; this worktree has no `.env.local`, so the live tenant
+lints did not run. I did not work around it.
+
+---
+
+## Gates, run clean at `07e42f18`
+
+- `guard:types` — 8579 repo-wide errors against a ceiling of 8579; 0 on card
+  surfaces. One new error appeared during step 1 (`sec.content` is
+  `string | null`) and was **fixed, not ratcheted**.
+- `guard:copy` — 338 em dashes against a ceiling of 339; 2394 files scanned
+  against a floor of 1800.
+- `unit` — 325 files, 5,645 passed.
+- `unit-node` — 405 files, 7,431 passed.
+- `eslint` — clean on every new file.
+
+---
+
+## The 2.2 visual review — about 12 minutes
+
+This is the part I cannot do. Work it in order; the first item is the one
+most likely to find something.
+
+### A. The three `svg` literals (3 minutes) — **start here**
+
+1. Open ACT AI, ask anything, and wait for an answer with sources.
+2. Look at the evidence toggle, the Keep control and the Copy control.
+3. **If you still see `svg3 sources svg`, `svgKeep` or `svgCopy`, the cause is
+   not what I fixed** — the markup is now correct, so the text is coming from
+   somewhere else, most likely an icon rendering a text fallback. Tell me and
+   I will chase it with that as the lead.
+4. Tab to the evidence toggle. Its name should be the source count, with no
+   warning text attached. The warning, if there is one, is a separate item.
+
+### B. The AAPL case (2 minutes)
+
+1. Open AAPL and go to the workspace pane from the Dashboard.
+2. Risks should read **iPhone weakness**, **Regulation**, **Innovation risk**
+   as bold text. No asterisks anywhere.
+3. The case should read as a paragraph of about 700px, not a narrow column
+   down the left of the panel.
+
+### C. The composer (3 minutes)
+
+1. Type a long multi-line question. The box should grow and then scroll, not
+   push the thread off screen.
+2. Shift+Enter makes a newline; Enter sends.
+3. Send should be dead on an empty box and on spaces alone.
+4. **Send a long question and press Stop mid-answer.** The answer should stop
+   arriving. This is the one in this section most worth doing: it is the
+   control that did not exist before.
+
+### D. The conversation list (2 minutes)
+
+1. Tab into the list. You should be able to reach and open a conversation
+   with Enter or Space, without a mouse.
+2. The active conversation should be marked as current to a screen reader.
+3. Tab to a row's actions — they should become visible on focus, not only on
+   hover.
+
+### E. Dot commands (2 minutes)
+
+1. Type `.` in the composer. Seven commands, no charts among them.
+2. Type `.price.LRCX`. It should offer the question, not a number. Press it,
+   then Send, and the figure in the answer should carry a source.
+3. Type `.chart.price.AAPL`. It should tell you charts work in a note or
+   research editor. **No chart, no empty box.**
+4. If you have a template with a shortcut, type `.template.<shortcut>` and
+   check the body lands in the box.
+
+### F. Answer length (2 minutes)
+
+1. Ask "come up with a bear and bull case for LRCX". You should get both
+   cases, not one paragraph.
+2. Ask a short factual question. It should stay short — the point was not to
+   make everything longer.
+
+---
+
+## What is left for 2.2
+
+1. **Work the checklist above.** It is the only outstanding acceptance work,
+   and section A may change what I do next.
+2. **Answer the artifacts org question** in step 6, then decide whether to
+   apply that migration. Nothing else is blocked on it.
+3. **Merge, when you have looked.** Not before.
+
+## Adjacent problems found in 2.2, left unfixed
+
+Per Standing Rule 4, found and not bundled:
+
+1. **The pane now requires `OrganizationProvider` to mount.** Production
+   always provides it, so this is latent rather than live — but
+   `useOrganization` throwing instead of returning null means any hook that
+   reaches it makes its host unmountable in isolation, which is how three
+   suites went red at once. A tolerant read for consumers that only want the
+   id would remove a whole class of this.
+2. **`AISection` is 1,000+ lines and holds the pane's entire state.** Every
+   step in this initiative that touched the pane touched this file. It is the
+   reason step 8's regression hit three unrelated suites.
+3. **`parseDotCommand` has no shared syntax with the editor's parser.** Two
+   parsers for one syntax, joined only by the drift test on the id list. If
+   the editor changes its symbol separator, the test will not notice.
+4. **`.template.*` ids are invisible to the drift guard**, because the editor
+   generates them at runtime from your templates. The guard covers the static
+   registry only, which is stated in its own comment.
+5. **The `chart` family is five ids with one reason between them.** If charts
+   ever come to chat, five entries move rather than one.
