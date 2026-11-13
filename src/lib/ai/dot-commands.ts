@@ -138,6 +138,22 @@ export const DOT_UNAVAILABLE: Readonly<Record<string, DotUnavailableReason>> =
     divider: 'editor-only',
   })
 
+/**
+ * Every known id, longest first, built once.
+ *
+ * Longest-first so `chart.price.AAPL` reads as `chart.price` + `AAPL` rather
+ * than `chart` + `price.AAPL` — the same ordering the editor's own symbol-mode
+ * detection uses, for the same reason.
+ *
+ * At module scope because `parseDotCommand` runs on every keystroke in the
+ * composer. Sorting 31 strings is cheap, and doing it per keypress is still
+ * work with no result that changes.
+ */
+const KNOWN_IDS_LONGEST_FIRST: readonly string[] = Object.freeze(
+  [...Object.keys(DOT_UNAVAILABLE), ...DOT_CHAT_COMMANDS.map(c => c.id)]
+    .sort((a, b) => b.length - a.length),
+)
+
 export interface ParsedDotCommand {
   /** The command id, lower-cased. May be unknown to either list. */
   id: string
@@ -172,16 +188,8 @@ export function parseDotCommand(text: string): ParsedDotCommand | null {
 
   if (!head) return { id: '', symbol: null, partial: true }
 
-  /*
-   * Longest-first, so `chart.price.AAPL` reads as `chart.price` + `AAPL`
-   * rather than `chart` + `price.AAPL`. The same ordering the editor's own
-   * symbol-mode detection uses, for the same reason.
-   */
-  const known = [...Object.keys(DOT_UNAVAILABLE), ...DOT_CHAT_COMMANDS.map(c => c.id)]
-    .sort((a, b) => b.length - a.length)
-
   const lower = head.toLowerCase()
-  for (const id of known) {
+  for (const id of KNOWN_IDS_LONGEST_FIRST) {
     if (lower === id) {
       return { id, symbol: symbolOf(tail), partial: tail.length === 0 && spaceAt === -1 }
     }
