@@ -153,6 +153,16 @@ beforeEach(() => {
   asked.length = 0
 })
 
+/**
+ * Open the orientation's disclosure.
+ *
+ * The supporting blocks are unmounted while it is closed, so a test about
+ * the ladder or the exposure has to ask for them the way a reader does.
+ */
+async function openDetail() {
+  await userEvent.click(screen.getByTestId('entry-detail-toggle'))
+}
+
 /* ------------------------------------------------- 1. the target review */
 
 describe('arriving from the target-reached card', () => {
@@ -161,8 +171,39 @@ describe('arriving from the target-reached card', () => {
 
     const band = screen.getByTestId('entry-target-review')
     expect(band).toBeInTheDocument()
-    expect(within(band).getByText('Why you are here')).toBeInTheDocument()
-    expect(within(band).getByText(/passed the Bull case you set for AAPL/)).toBeInTheDocument()
+    /* The eyebrow names the asset AND the task, which is the orientation a
+       reader needs before any figure: which name, and what kind of question. */
+    expect(within(band).getByText('AAPL · Valuation review')).toBeInTheDocument()
+    expect(within(band).getByText(/passed the Bull case you set/)).toBeInTheDocument()
+  })
+
+  /**
+   * The band's own height, as a count of what it renders unasked.
+   *
+   * The reported defect was not a wrong fact, it was a right fact taking the
+   * whole first viewport: the ladder, exposure, the waiting request and three
+   * sentence-long questions all rendered on arrival, and the working surface
+   * started below the fold. So the compact state is now asserted -- the
+   * supporting blocks must be ABSENT until a reader asks for them, and
+   * present the moment they do.
+   */
+  it('holds the supporting detail behind one disclosure, closed on arrival', async () => {
+    render(pane({ entryContext: contextFromPress(targetEntry()) }))
+
+    expect(screen.queryByTestId('target-scenarios')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('target-exposure')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('target-case-age')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('target-ai-questions')).not.toBeInTheDocument()
+
+    /* What a reader DOES get without asking: the event, its four figures,
+       what the record cannot say, and the actions. */
+    expect(screen.getByTestId('target-comparison')).toBeInTheDocument()
+    expect(screen.getByTestId('target-reading-age')).toBeInTheDocument()
+    expect(screen.getByTestId('target-assess')).toBeInTheDocument()
+
+    await openDetail()
+    expect(screen.getByTestId('target-scenarios')).toBeInTheDocument()
+    expect(screen.getByTestId('target-exposure')).toBeInTheDocument()
   })
 
   it('shows the recorded target, the mark it was compared against, and the difference', () => {
@@ -180,7 +221,7 @@ describe('arriving from the target-reached card', () => {
     /* The source of the number, on the number. The page's own chart draws a
        different measurement and both are on screen. */
     expect(within(comparison).getByText('Book mark')).toBeInTheDocument()
-    expect(within(comparison).getByText(/holdings snapshot/)).toBeInTheDocument()
+    expect(within(comparison).getByText(/^snapshot\b/)).toBeInTheDocument()
     expect(within(comparison).getByText('+18.7%')).toBeInTheDocument()
   })
 
@@ -192,15 +233,31 @@ describe('arriving from the target-reached card', () => {
     expect(age.textContent).not.toMatch(/today/i)
   })
 
-  it('names the price-history close separately from the book mark', () => {
+  /**
+   * Four figures, four measurements, four sources.
+   *
+   * The mark and the close are the pair a reader will otherwise conflate --
+   * one is what the book carries a position at on a snapshot date, the other
+   * is the last close in price history -- so they stand beside each other,
+   * each naming its own origin, and the figures differ.
+   */
+  it('shows the latest close as its own figure, never as the book mark', () => {
     render(pane({ entryContext: contextFromPress(targetEntry()) }))
-    const note = screen.getByTestId('target-spot-note')
-    expect(note).toHaveTextContent('$268.20')
-    expect(note).toHaveTextContent(/different\s+measurement/)
+    const comparison = screen.getByTestId('target-comparison')
+
+    expect(within(comparison).getByText('Last close')).toBeInTheDocument()
+    expect(within(comparison).getByText('$268.20')).toBeInTheDocument()
+    expect(within(comparison).getByText(/^price history\b/)).toBeInTheDocument()
+
+    /* Both readings are on screen and they are not the same number. */
+    expect(within(comparison).getByText('$272.95')).toBeInTheDocument()
+    const figures = comparison.querySelectorAll('[data-slot="entry-figure"]')
+    expect(figures).toHaveLength(4)
   })
 
-  it('shows the scenarios on record and which the mark has passed', () => {
+  it('shows the scenarios on record and which the mark has passed', async () => {
     render(pane({ entryContext: contextFromPress(targetEntry()) }))
+    await openDetail()
     const rungs = screen.getByTestId('target-scenarios').querySelectorAll('[data-slot="scenario-rung"]')
     expect(Array.from(rungs).map(r => r.textContent)).toEqual([
       expect.stringContaining('Bear'),
@@ -213,10 +270,11 @@ describe('arriving from the target-reached card', () => {
     expect(alertCase).toHaveTextContent('$230.00')
   })
 
-  it('marks a case the mark has not reached as still above it', () => {
+  it('marks a case the mark has not reached as still above it', async () => {
     /* The same event with a lower mark. Nothing about the rendering may
        quietly promote a rung the price has not passed. */
     render(pane({ entryContext: contextFromPress(targetEntry({ price: 200, target: 195, caseName: 'Base', overshootPct: (200 - 195) / 195 })) }))
+    await openDetail()
     const bull = Array.from(
       screen.getByTestId('target-scenarios').querySelectorAll('[data-slot="scenario-rung"]'),
     ).find(r => r.textContent?.includes('Bull'))!
@@ -243,13 +301,52 @@ describe('arriving from the target-reached card', () => {
       .toHaveTextContent(/no longer hold a case at \$230\.00/)
   })
 
-  it('states the age of the case and the exposure behind it', () => {
+  /**
+   * Base versus Bull, disclosed rather than reconciled.
+   *
+   * The alert fired on a case it called Bull at $230. If the ladder now files
+   * $230 as the Base case, two things are true of two different moments, and
+   * both ways of hiding that are wrong: adopting the current name rewrites
+   * what the Dashboard told the reader, and keeping the old one silently
+   * leaves the band and the ladder naming one price two ways on one screen.
+   */
+  it('discloses a case the record has since renamed, without rewriting the alert', async () => {
+    data = {
+      ...data,
+      ladder: {
+        ...(data.ladder as any),
+        cases: [
+          { id: 'c-bear', name: 'Bear', price: 150 },
+          { id: 'c-base', name: 'Base', price: 230 },
+          { id: 'c-bull', name: 'Bull', price: 310 },
+        ],
+      } as never,
+    }
+    render(pane({ entryContext: contextFromPress(targetEntry()) }))
+
+    const note = screen.getByTestId('target-case-renamed')
+    expect(note).toHaveTextContent(/alert calls \$230\.00 the Bull case/)
+    expect(note).toHaveTextContent(/on record now the same price is the Base case/i)
+
+    /* The alert keeps its own words above the note, and the record keeps
+       its own words in the ladder below it. */
+    expect(screen.getByText(/passed the Bull case you set/)).toBeInTheDocument()
+    await openDetail()
+    const alertRung = screen.getByTestId('target-scenarios').querySelector('[data-alert-case="true"]')
+    expect(alertRung).toHaveTextContent('Base')
+
+    /* And this is not the "no longer on record" case: the price is still there. */
+    expect(screen.queryByTestId('target-record-changed')).not.toBeInTheDocument()
+  })
+
+  it('states the age of the case and the exposure behind it', async () => {
     data = { ...data, positions: [{
       portfolioId: 'p-vision', portfolioName: 'Vision Fund', shares: 1000, price: 272.95,
       marketValue: 272_950, weightPct: 4.21, avgCost: 120, unrealisedGain: null,
       unrealisedPct: null, asOf: daysAgo(5),
     }] }
     render(pane({ portfolioId: 'p-vision', entryContext: contextFromPress(targetEntry()) }))
+    await openDetail()
     expect(screen.getByTestId('target-case-age')).toHaveTextContent(/253 days ago/)
     const exposure = screen.getByTestId('target-exposure')
     expect(exposure).toHaveTextContent('Vision Fund carries 4.21%')
@@ -292,8 +389,9 @@ describe('a pending recommendation on the same name', () => {
     expect(target.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('is still surfaced inside the orientation, as supporting context', () => {
+  it('is still surfaced inside the orientation, as supporting context', async () => {
     render(pane({ entryContext: contextFromPress(targetEntry()) }))
+    await openDetail()
     const also = screen.getByTestId('target-pending-decision')
     expect(also).toHaveTextContent('Add to 4.5%')
     expect(also).toHaveTextContent('Vision Fund')
@@ -307,7 +405,8 @@ describe('a pending recommendation on the same name', () => {
       }),
     }))
     const prep = screen.getByTestId('entry-decision-prep')
-    expect(prep).toHaveTextContent('A. Analyst is asking you to answer a add on AAPL in Vision Fund')
+    expect(within(prep).getByText('AAPL · Decision preparation')).toBeInTheDocument()
+    expect(prep).toHaveTextContent('A. Analyst is asking you to answer a add in Vision Fund')
     expect(screen.getByTestId('recommendation-sizing')).toHaveTextContent('4.50%')
     expect(screen.getByTestId('recommendation-sizing')).toHaveTextContent('2.10%')
     expect(screen.getByTestId('recommendation-rationale'))
@@ -387,26 +486,65 @@ describe('the orientation actions', () => {
     expect(opened[0].issue).toMatch(/reached the target/)
   })
 
-  it('offers no request control when no request is waiting', () => {
+  it('offers no request control when no request is waiting', async () => {
     render(pane({ entryContext: contextFromPress(targetEntry()) }))
+    /* Opened first on purpose. The control now lives inside the disclosure,
+       so asserting its absence on the closed band would pass whether or not
+       the control exists -- a check that cannot fail is not a check. */
+    await openDetail()
+    expect(screen.getByTestId('entry-detail')).toBeInTheDocument()
+    expect(screen.queryByTestId('target-pending-decision')).not.toBeInTheDocument()
     expect(screen.queryByTestId('target-open-pending')).not.toBeInTheDocument()
   })
 
-  it('carries the target event into ACT AI, and asks nothing about buying or selling', async () => {
+  /**
+   * One named assessment, not three links to read.
+   *
+   * The three sentence-long blue questions were the reported defect: at the
+   * moment a target breaks, a reader has one question, and three paragraphs
+   * of alternatives is work rather than help. So the lead action has a name,
+   * and the prompt behind it carries the figures on screen -- the mark, the
+   * case and its price, the close, the age of the written case -- so the
+   * answer is about this event and not about the ticker.
+   */
+  it('offers one primary assessment, carrying the event and refusing the trade question', async () => {
     render(pane({ entryContext: contextFromPress(targetEntry()) }))
-    const questions = screen.getByTestId('target-ai-questions')
-      .querySelectorAll('[data-slot="entry-ai-question"]')
+
+    const assess = screen.getByTestId('target-assess')
+    expect(assess).toHaveTextContent('Assess the target breach')
+
+    await userEvent.click(assess)
+    expect(asked).toHaveLength(1)
+    const prompt: string = asked[0].seedPrompt
+    expect(prompt).toMatch(/Bull case at \$230\.00/)
+    expect(prompt).toMatch(/\$272\.95/)
+    expect(prompt).toMatch(/\$268\.20/)
+    expect(prompt).toMatch(/253 days old/)
+    expect(prompt).toMatch(/Do not recommend buying or selling/)
+    /* The assistant is never asked to form a view on the position. */
+    expect(prompt).not.toMatch(/\b(should I|should we|trim|take profits)\b/i)
+    expect(asked[0].assetId).toBe('a-aapl')
+    expect(asked[0].origin).toMatchObject({ surface: 'asset-entry-orientation' })
+  })
+
+  it('keeps its follow-ups short, behind the disclosure, and free of trade advice', async () => {
+    render(pane({ entryContext: contextFromPress(targetEntry()) }))
+    await openDetail()
+
+    const questions = Array.from(
+      screen.getByTestId('target-ai-questions').querySelectorAll('[data-slot="entry-ai-question"]'),
+    )
     expect(questions.length).toBeGreaterThanOrEqual(2)
-    for (const q of Array.from(questions)) {
-      expect(q.textContent ?? '').not.toMatch(/\b(should I|sell|buy|trim)\b/i)
+    for (const q of questions) {
+      /* A chip, not a paragraph: the label is short even though the prompt
+         it sends is not. */
+      expect((q.textContent ?? '').length).toBeLessThan(40)
+      expect(q.getAttribute('data-prompt') ?? '').not.toMatch(/\b(should I|sell|buy|trim)\b/i)
     }
 
     await userEvent.click(questions[0] as HTMLElement)
     expect(asked).toHaveLength(1)
-    expect(asked[0].seedPrompt).toMatch(/\$272\.95/)
     expect(asked[0].seedPrompt).toMatch(/Bull case at \$230\.00/)
-    expect(asked[0].assetId).toBe('a-aapl')
-    expect(asked[0].origin).toMatchObject({ surface: 'asset-entry-orientation' })
   })
 
   it('hands the waiting request off to the object that answers it', async () => {
@@ -423,6 +561,7 @@ describe('the orientation actions', () => {
     window.addEventListener('decision-engine-action', listener)
     try {
       render(pane({ entryContext: contextFromPress(targetEntry()) }))
+      await openDetail()
       await userEvent.click(screen.getByTestId('target-open-pending'))
       expect(dispatched).toHaveLength(1)
       expect(JSON.stringify(dispatched[0])).toContain('idea-1')

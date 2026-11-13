@@ -147,7 +147,8 @@ describe('the target-reached card', () => {
 
     /* The pane beside the feed, oriented around what was pressed. */
     const band = await screen.findByTestId('entry-target-review')
-    expect(within(band).getByText(/passed the Bull case you set for AAPL/)).toBeInTheDocument()
+    expect(within(band).getByText('AAPL · Valuation review')).toBeInTheDocument()
+    expect(within(band).getByText(/passed the Bull case you set/)).toBeInTheDocument()
 
     const comparison = within(band).getByTestId('target-comparison')
     expect(comparison).toHaveTextContent('$230.00')
