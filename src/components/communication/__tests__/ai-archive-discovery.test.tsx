@@ -292,7 +292,32 @@ describe('restoring, and finding it again afterwards', () => {
       archivedConversations: ARCHIVED.slice(1),
     }))
 
-    expect(screen.getByTestId('ai-conversation-list').textContent).toContain('NVDA supply chain')
+    /*
+     * Looked for across the whole rail, not only the flat list below the
+     * projects: the restored thread is filed in "Earnings season", so it
+     * comes back INSIDE that project rather than into the loose list. A
+     * search opens every project holding a hit, which is what keeps
+     * filtering from hiding the thing being searched for.
+     */
+    expect(screen.getByTestId('ai-folder-threads-f-earnings').textContent)
+      .toContain('NVDA supply chain')
+  })
+
+  it('opens the project holding a search hit rather than hiding it', async () => {
+    /*
+     * The failure this guards. With the tree collapsed by default, a thread
+     * filed in a project matched the search and was drawn nowhere: the
+     * reader was told "No conversations match the current filter" while the
+     * match sat one closed disclosure away.
+     */
+    const user = userEvent.setup()
+    render(list({ conversations: [...LIVE, { ...ARCHIVED[0]!, is_archived: false }] }))
+
+    expect(screen.queryByTestId('ai-folder-threads-f-earnings')).not.toBeInTheDocument()
+    await user.type(search(), 'NVDA')
+
+    expect(screen.getByTestId('ai-folder-threads-f-earnings').textContent)
+      .toContain('NVDA supply chain')
   })
 
   it('leaves the archived list empty of it', async () => {

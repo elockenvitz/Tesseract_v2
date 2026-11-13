@@ -1,11 +1,12 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import {
-  Plus, Pin, PinOff, Archive, ArchiveRestore, Trash2, Pencil, MessageSquare, Search, X, Tag,
-  Folder, FolderOpen, FolderInput, ChevronRight, Check,
+  Plus, Archive, ArchiveRestore, Trash2, Pencil, MessageSquare, Search, X, Tag,
+  Folder, FolderOpen, ChevronRight,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { AIConversationSummary, TagRef } from '../../hooks/useAI'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { AiConversationMenu } from './AiConversationMenu'
 import {
   UNFILED, folderCounts, folderDeletionWarning, validateFolderName,
   type AIProjectFolder, type FolderSelection,
@@ -108,7 +109,9 @@ export function AIConversationList({
      feature", the second means "you have no folders yet", and the second one
      still needs the New folder control. */
   const hasFolders = Array.isArray(folders)
-  const folderList = folders ?? []
+  /* Memoised because the tree's per-project grouping depends on it, and a
+     fresh `[]` every render would rebuild that grouping every render. */
+  const folderList = useMemo(() => folders ?? [], [folders])
 
   /*
    * The reference chips, over live AND archived threads.
@@ -142,6 +145,51 @@ export function AIConversationList({
   const counts = useMemo(() => folderCounts(conversations), [conversations])
 
   /*
+   * ── Projects now CONTAIN their conversations ────────────────────────────
+   *
+   * This rail was flat on purpose, and said so: "a nested tree is the
+   * obvious shape and the wrong one at this width". That judgement has been
+   * overruled by the product owner, who could not tell from a flat filter
+   * which project a thread was in or how to put it in one -- which is a
+   * fair complaint about a rail where selecting a project and filing into
+   * one looked identical.
+   *
+   * So the folder row is a disclosure, and its conversations are nested
+   * under it. Expansion is view state and is deliberately NOT persisted:
+   * a reader's open projects are not a document, and restoring a tree from
+   * a previous session is a surprise, not a convenience.
+   */
+  const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(new Set())
+
+  const toggleFolder = useCallback((id: string) => {
+    setExpandedFolders(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  /*
+   * A project opens itself when it holds the open conversation.
+   *
+   * Without this, selecting a thread from search and then clearing the
+   * search left the reader looking at a collapsed project with no sign of
+   * where the thread they are reading lives. It only ever opens: collapsing
+   * a project the reader opened by hand would be the surprise above.
+   */
+  const activeFolderOfConversation = useMemo(() => {
+    if (!activeConversationId) return null
+    return conversations.find(c => c.id === activeConversationId)?.folder_id ?? null
+  }, [conversations, activeConversationId])
+
+  useEffect(() => {
+    if (!activeFolderOfConversation) return
+    setExpandedFolders(prev =>
+      prev.has(activeFolderOfConversation) ? prev : new Set(prev).add(activeFolderOfConversation))
+  }, [activeFolderOfConversation])
+
+  /*
    * One filter, both lists.
    *
    * The live list and the archive below it are filtered by the same three
@@ -154,10 +202,79 @@ export function AIConversationList({
     [query, activeFolderId, activeTagFilter, hasFolders],
   )
 
-  const groups = useMemo(
-    () => groupConversations(conversations, filter),
-    [conversations, filter],
+  /*
+   * What each project holds, after the search and tag criteria.
+   *
+   * Built with the folder axis switched OFF and the grouping done here, so a
+   * project's contents obey the same query and tag the flat list does
+   * without the folder SELECTION narrowing them to one project. Running the
+   * selection through here as well is how a nested tree ends up showing one
+   * project's threads under every project's heading.
+   */
+  const conversationsByFolder = useMemo(() => {
+    const textAndTag: ConversationFilter = { query, tag: activeTagFilter, foldersEnabled: false }
+    const matched = filterConversations(conversations, textAndTag)
+    const by = new Map<string, AIConversationSummary[]>()
+    for (const c of matched) {
+      const id = c.folder_id
+      if (!id) continue
+      const list = by.get(id)
+      if (list) list.push(c)
+      else by.set(id, [c])
+    }
+    /* Pinned first inside a project, same rule as the flat list. */
+    for (const list of by.values()) {
+      list.sort((a, b) => Number(!!b.is_pinned) - Number(!!a.is_pinned))
+    }
+    return by
+  }, [conversations, query, activeTagFilter])
+
+  /*
+   * A search opens every project that has a hit.
+   *
+   * Otherwise filtering HIDES results: a reader who types the name of a
+   * thread filed in a collapsed project is told nothing matches, while the
+   * match sits one closed disclosure away. Search exists to reveal.
+   *
+   * Derived rather than written into state, so clearing the search returns
+   * the tree to whatever the reader had open themselves.
+   */
+  const effectiveExpanded = useMemo(() => {
+    const searchingOrFiltering = query.trim().length > 0 || activeTagFilter !== null
+    if (!searchingOrFiltering) return expandedFolders
+    const withHits = new Set(expandedFolders)
+    for (const [folderId, list] of conversationsByFolder) {
+      if (list.length > 0) withHits.add(folderId)
+    }
+    return withHits
+  }, [expandedFolders, query, activeTagFilter, conversationsByFolder])
+
+  /*
+   * The list below the projects: everything the tree above does not show.
+   *
+   * NOT simply "unfiled". A thread whose project has been archived or
+   * deleted still carries a `folder_id`, and no visible project will draw
+   * it -- so filtering this list to `folder_id IS NULL` makes those threads
+   * invisible in both places at once. That is how a reader loses a
+   * conversation by archiving a project, and it is what the first version
+   * of this change did.
+   *
+   * So the rule is "not inside a project the reader can currently open",
+   * which is a different question from "unfiled" and the only one that
+   * leaves every thread reachable.
+   */
+  const visibleFolderIds = useMemo(
+    () => new Set(folderList.map(f => f.id)),
+    [folderList],
   )
+
+  const groups = useMemo(() => {
+    const base = groupConversations(conversations, filter)
+    if (!hasFolders || activeFolderId !== null) return base
+    const loose = (c: AIConversationSummary) =>
+      !c.folder_id || !visibleFolderIds.has(c.folder_id)
+    return { pinned: base.pinned.filter(loose), rest: base.rest.filter(loose) }
+  }, [conversations, filter, hasFolders, activeFolderId, visibleFolderIds])
 
   const archivedShown = useMemo(
     () => (archivedConversations ? filterConversations(archivedConversations, filter) : undefined),
@@ -241,6 +358,17 @@ export function AIConversationList({
           total={conversations.length}
           activeFolderId={activeFolderId}
           error={folderError}
+          expanded={effectiveExpanded}
+          onToggleExpanded={toggleFolder}
+          conversationsFor={conversationsByFolder}
+          activeConversationId={activeConversationId}
+          tagLabels={tagLabels}
+          onSelectConversation={onSelect}
+          onRenameConversation={onRename}
+          onArchiveConversation={onArchive}
+          onTogglePinConversation={onTogglePin}
+          onMoveConversation={onMoveConversation}
+          onRequestDeleteConversation={(id, title) => setDeletePrompt({ id, title })}
           onSelectFolder={onSelectFolder}
           onCreateFolder={onCreateFolder}
           onRenameFolder={onRenameFolder}
@@ -450,15 +578,33 @@ export function AIConversationList({
 // ─── The folder rail ────────────────────────────────────────────────────────
 
 /**
- * The shelves, above the threads.
+ * The projects, and the conversations inside them.
  *
- * Flat on purpose. A nested tree is the obvious shape and the wrong one at
- * this width: it costs a disclosure triangle per level and buys an
- * organization nobody asked for. One level, counted, with "All" and
- * "Unfiled" as the two rows that always exist.
+ * ── A reversal, recorded ────────────────────────────────────────────────
+ *
+ * This was flat on purpose, and the previous version of this comment said
+ * so: "a nested tree is the obvious shape and the wrong one at this width
+ * -- it costs a disclosure triangle per level and buys an organization
+ * nobody asked for."
+ *
+ * That has been overruled by the product owner, and the complaint behind it
+ * is a fair one. A flat rail of shelves answers "show me one project" and
+ * answers neither "which project is this thread in" nor "how do I put it in
+ * one" -- and worse, SELECTING a project and FILING into one looked like the
+ * same gesture on the same row. A tree answers all three by showing the
+ * containment directly.
+ *
+ * So: one disclosure per project, its conversations nested under it, and the
+ * unfiled threads in the list below. The counted flat selection still works
+ * underneath -- `onSelectFolder` is unchanged -- because the existing filter
+ * contract has its own suite and this is a presentation change.
  */
 function FolderRail({
   folders, archivedFolders, counts, total, activeFolderId, error,
+  expanded, onToggleExpanded, conversationsFor,
+  activeConversationId, tagLabels,
+  onSelectConversation, onRenameConversation, onArchiveConversation,
+  onTogglePinConversation, onMoveConversation, onRequestDeleteConversation,
   onSelectFolder, onCreateFolder, onRenameFolder, onArchiveFolder, onRequestDeleteFolder,
 }: {
   folders: AIProjectFolder[]
@@ -467,6 +613,17 @@ function FolderRail({
   total: number
   activeFolderId: FolderSelection
   error: string | null
+  expanded: ReadonlySet<string>
+  onToggleExpanded: (id: string) => void
+  conversationsFor: Map<string, AIConversationSummary[]>
+  activeConversationId: string | null
+  tagLabels: Record<string, string>
+  onSelectConversation: (id: string) => void
+  onRenameConversation: (id: string, title: string) => void
+  onArchiveConversation: (id: string) => void
+  onTogglePinConversation: (id: string, pinned: boolean) => void
+  onMoveConversation?: (id: string, folderId: string | null) => void
+  onRequestDeleteConversation: (id: string, title: string) => void
   onSelectFolder?: (selection: FolderSelection) => void
   onCreateFolder?: (name: string) => void | Promise<unknown>
   onRenameFolder?: (id: string, name: string) => void
@@ -501,15 +658,15 @@ function FolderRail({
     <div className="border-b border-gray-200 dark:border-gray-700 px-1 py-1.5" data-testid="ai-folder-rail">
       <div className="flex items-center justify-between px-2 pb-1">
         <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-          Folders
+          Projects
         </span>
         <button
           type="button"
           data-testid="ai-folder-new"
           onClick={() => { setCreating(c => !c); setLocalError(null) }}
           className="p-0.5 rounded text-gray-400 hover:bg-gray-200 hover:text-gray-700 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-          title="New folder"
-          aria-label="New folder"
+          title="New project"
+          aria-label="New project"
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
@@ -539,36 +696,76 @@ function FolderRail({
       )}
 
       <ul>
-        <FolderRow
-          label="All conversations"
-          count={total}
-          icon={<MessageSquare className="w-3.5 h-3.5" />}
-          isActive={activeFolderId === null}
-          onSelect={() => onSelectFolder?.(null)}
-        />
-        {folders.map(f => (
-          <FolderRow
-            key={f.id}
-            label={f.name}
-            count={counts.get(f.id) ?? 0}
-            icon={activeFolderId === f.id
-              ? <FolderOpen className="w-3.5 h-3.5" />
-              : <Folder className="w-3.5 h-3.5" />}
-            isActive={activeFolderId === f.id}
-            onSelect={() => onSelectFolder?.(f.id)}
-            onRename={onRenameFolder ? (name) => onRenameFolder(f.id, name) : undefined}
-            onArchive={onArchiveFolder ? () => onArchiveFolder(f.id, true) : undefined}
-            onDelete={() => onRequestDeleteFolder(f.id, f.name)}
-          />
-        ))}
-        <FolderRow
-          label="Unfiled"
-          count={counts.get(UNFILED) ?? 0}
-          icon={<Folder className="w-3.5 h-3.5 opacity-50" />}
-          isActive={activeFolderId === UNFILED}
-          onSelect={() => onSelectFolder?.(UNFILED)}
-        />
+        {folders.length === 0 && !creating && (
+          <li
+            data-testid="ai-folder-empty"
+            className="px-2 py-1.5 text-[11px] italic text-gray-400 dark:text-gray-500"
+          >
+            No projects yet. Group related conversations with the + above.
+          </li>
+        )}
+        {folders.map(f => {
+          const isOpen = expanded.has(f.id)
+          const inside = conversationsFor.get(f.id) ?? []
+          return (
+            <li key={f.id}>
+              <FolderRow
+                label={f.name}
+                count={counts.get(f.id) ?? 0}
+                icon={isOpen
+                  ? <FolderOpen className="w-3.5 h-3.5" />
+                  : <Folder className="w-3.5 h-3.5" />}
+                isActive={activeFolderId === f.id}
+                /* The row IS the disclosure. The project no longer doubles
+                   as a filter you might have meant to file into. */
+                isExpanded={isOpen}
+                onSelect={() => onToggleExpanded(f.id)}
+                testId={`ai-folder-row-${f.id}`}
+                onRename={onRenameFolder ? (name) => onRenameFolder(f.id, name) : undefined}
+                onArchive={onArchiveFolder ? () => onArchiveFolder(f.id, true) : undefined}
+                onDelete={() => onRequestDeleteFolder(f.id, f.name)}
+              />
+              {isOpen && (
+                <ul data-testid={`ai-folder-threads-${f.id}`} className="ml-3 border-l border-gray-200 dark:border-gray-700">
+                  {inside.length === 0 ? (
+                    <li className="px-3 py-1 text-[11px] italic text-gray-400">
+                      Nothing in this project yet.
+                    </li>
+                  ) : inside.map(c => (
+                    <ConversationItem
+                      key={c.id}
+                      conversation={c}
+                      tagLabels={tagLabels}
+                      folders={folders}
+                      isActive={c.id === activeConversationId}
+                      onSelect={() => onSelectConversation(c.id)}
+                      onRename={(title) => onRenameConversation(c.id, title)}
+                      onArchive={() => onArchiveConversation(c.id)}
+                      onTogglePin={() => onTogglePinConversation(c.id, !c.is_pinned)}
+                      onMove={onMoveConversation ? (fid) => onMoveConversation(c.id, fid) : undefined}
+                      onRequestDelete={() => onRequestDeleteConversation(c.id, c.title || '')}
+                    />
+                  ))}
+                </ul>
+              )}
+            </li>
+          )
+        })}
       </ul>
+      {/* "All conversations" is what clears a project selection. It sits
+          below the tree rather than above it, because the tree is now the
+          primary thing and this is an escape from a narrowed view. */}
+      {activeFolderId !== null && (
+        <button
+          type="button"
+          data-testid="ai-folder-clear"
+          onClick={() => onSelectFolder?.(null)}
+          className="mt-1 flex w-full items-center gap-1.5 px-2 py-1 text-[11px] text-primary-600 hover:underline dark:text-primary-400"
+        >
+          <MessageSquare className="h-3 w-3" aria-hidden="true" />
+          Show all conversations ({total})
+        </button>
+      )}
 
       {archivedFolders.length > 0 && (
         <div className="mt-1">
@@ -611,12 +808,16 @@ function FolderRail({
 }
 
 function FolderRow({
-  label, count, icon, isActive, onSelect, onRename, onArchive, onDelete,
+  label, count, icon, isActive, isExpanded, testId,
+  onSelect, onRename, onArchive, onDelete,
 }: {
   label: string
   count: number
   icon: React.ReactNode
   isActive: boolean
+  /** Undefined for a row that is not a disclosure. */
+  isExpanded?: boolean
+  testId?: string
   onSelect: () => void
   onRename?: (name: string) => void
   onArchive?: () => void
@@ -638,9 +839,9 @@ function FolderRow({
   }
 
   return (
-    <li>
       <div
         data-slot="ai-folder-row"
+        data-testid={testId}
         data-folder-active={isActive || undefined}
         onClick={() => !editing && onSelect()}
         className={clsx(
@@ -650,6 +851,23 @@ function FolderRow({
             : 'text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800',
         )}
       >
+        {/* The disclosure, when this row is one. A real button, so a project
+            can be opened from the keyboard -- which the flat rail's rows,
+            being clickable divs, could not be. */}
+        {isExpanded !== undefined && (
+          <button
+            type="button"
+            aria-expanded={isExpanded}
+            aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${label}`}
+            onClick={e => { e.stopPropagation(); onSelect() }}
+            className="shrink-0 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          >
+            <ChevronRight
+              className={clsx('h-3 w-3 transition-transform', isExpanded && 'rotate-90')}
+              aria-hidden="true"
+            />
+          </button>
+        )}
         <span className={clsx('shrink-0', isActive ? 'text-primary-600 dark:text-primary-300' : 'text-gray-400')}>
           {icon}
         </span>
@@ -694,7 +912,6 @@ function FolderRow({
           </>
         )}
       </div>
-    </li>
   )
 }
 
@@ -761,7 +978,6 @@ function ConversationItem({
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(conversation.title || '')
-  const [moving, setMoving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -871,71 +1087,30 @@ function ConversationItem({
             </span>
           )}
           {!editing && (
-            /* `focus-within`, so tabbing into the row reveals the controls.
-               Without it a keyboard reader focused five invisible buttons. */
-            <div className="ml-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 flex items-center gap-0.5 transition-opacity">
-              {canMove && (
-                <IconBtn
-                  title="Move to folder"
-                  testId={`ai-move-${conversation.id}`}
-                  onClick={() => setMoving(m => !m)}
-                >
-                  <FolderInput className="w-3 h-3" />
-                </IconBtn>
-              )}
-              <IconBtn title={conversation.is_pinned ? 'Unpin' : 'Pin'} onClick={onTogglePin}>
-                {conversation.is_pinned ? <PinOff className="w-3 h-3" /> : <Pin className="w-3 h-3" />}
-              </IconBtn>
-              <IconBtn title="Rename" onClick={() => { setDraft(conversation.title || ''); setEditing(true) }}>
-                <Pencil className="w-3 h-3" />
-              </IconBtn>
-              <IconBtn title="Archive" onClick={onArchive}>
-                <Archive className="w-3 h-3" />
-              </IconBtn>
-              <IconBtn title="Delete" variant="danger" onClick={onRequestDelete}>
-                <Trash2 className="w-3 h-3" />
-              </IconBtn>
+            /*
+             * One control, where five used to be.
+             *
+             * `focus-within` so tabbing into the row reveals it; without it
+             * a keyboard reader focused an invisible button. The menu itself
+             * is always in the tree so its own focus management works -- only
+             * its opacity is tied to hover.
+             */
+            <div className="ml-auto flex items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+              <AiConversationMenu
+                conversationId={conversation.id}
+                title={conversation.title || ''}
+                isPinned={!!conversation.is_pinned}
+                folderId={currentFolderId}
+                folders={folders}
+                onRename={() => { setDraft(conversation.title || ''); setEditing(true) }}
+                onTogglePin={onTogglePin}
+                onArchive={onArchive}
+                onMove={canMove ? onMove : undefined}
+                onRequestDelete={onRequestDelete}
+              />
             </div>
           )}
         </div>
-
-        {moving && canMove && (
-          <div
-            data-testid={`ai-move-menu-${conversation.id}`}
-            onClick={e => e.stopPropagation()}
-            className="ml-[22px] mt-1 rounded border border-gray-200 bg-white py-1 shadow-sm dark:border-gray-700 dark:bg-gray-900"
-          >
-            <p className="px-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-              Move to
-            </p>
-            {folders.map(f => (
-              <button
-                key={f.id}
-                type="button"
-                data-slot="ai-move-option"
-                onClick={() => { setMoving(false); if (f.id !== currentFolderId) onMove?.(f.id) }}
-                className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[12px] text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
-              >
-                {f.id === currentFolderId
-                  ? <Check className="w-3 h-3 shrink-0 text-primary-600" />
-                  : <Folder className="w-3 h-3 shrink-0 text-gray-400" />}
-                <span className="truncate">{f.name}</span>
-              </button>
-            ))}
-            {currentFolderId !== null && (
-              <button
-                type="button"
-                data-slot="ai-move-option"
-                data-testid={`ai-unfile-${conversation.id}`}
-                onClick={() => { setMoving(false); onMove?.(null) }}
-                className="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[12px] text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-              >
-                <X className="w-3 h-3 shrink-0 text-gray-400" />
-                Remove from folder
-              </button>
-            )}
-          </div>
-        )}
       </div>
     </li>
   )

@@ -96,33 +96,71 @@ beforeEach(() => {
   for (const fn of Object.values(handlers)) fn.mockReset()
 })
 
-describe('the folder rail', () => {
-  it('lists every shelf with the count a reader can actually reach', () => {
+describe('the project tree', () => {
+  /*
+   * This rail was a flat list of shelves with "All conversations" and
+   * "Unfiled" always present, and selecting a shelf filtered the list below.
+   * The product owner could not tell from it which project a thread was in
+   * or how to put one there -- a fair complaint about a rail where SELECTING
+   * a project and FILING into one were the same gesture on the same row.
+   *
+   * It is a tree now: one disclosure per project, conversations nested
+   * inside, unfiled threads in the list underneath. These cases were
+   * rewritten rather than deleted, so what replaced each behaviour is on the
+   * record.
+   */
+  it('lists every project with the count a reader can actually reach', () => {
     render(list())
 
     /* Counted from the conversations on screen, not from the folder table: a
-       number beside a shelf is a promise the list has to keep. */
+       number beside a project is a promise the list has to keep. */
     expect(rows().map(r => r.textContent)).toEqual([
-      expect.stringContaining('All conversations'),
       expect.stringContaining('Apple investment case'),
       expect.stringContaining('Earnings season'),
-      expect.stringContaining('Unfiled'),
     ])
-    expect(rows()[0]).toHaveTextContent('4')
-    expect(rows()[1]).toHaveTextContent('1')
-    expect(rows()[2]).toHaveTextContent('2')
-    expect(rows()[3]).toHaveTextContent('1')
+    expect(rows()[0]).toHaveTextContent('1')
+    expect(rows()[1]).toHaveTextContent('2')
   })
 
-  it('offers the two rows that always exist even with no folders at all', () => {
+  it('shows the unfiled threads in the list below, not as a shelf', () => {
+    /* "Unfiled" was a row you selected. The unfiled threads are simply what
+       the list holds when no project is selected, because the filed ones are
+       visible inside their projects and showing both would duplicate them. */
+    render(list())
+    expect(titles()).toEqual(['A thought about rates'])
+  })
+
+  it('says so, and still offers the create control, with no projects at all', () => {
     render(list({ folders: [] }))
-    expect(rows().map(r => r.textContent)).toEqual([
-      expect.stringContaining('All conversations'),
-      expect.stringContaining('Unfiled'),
-    ])
-    /* And the control to make the first one. An empty shelf list is not an
-       absent feature. */
+    expect(rows()).toHaveLength(0)
+    expect(screen.getByTestId('ai-folder-empty')).toHaveTextContent('No projects yet')
+    /* An empty project list is not an absent feature. */
     expect(screen.getByTestId('ai-folder-new')).toBeInTheDocument()
+    /* And every thread is reachable, because none of them is filed away
+       behind a project that does not exist. */
+    expect(titles()).toHaveLength(4)
+  })
+
+  it('still shows a thread whose project has been archived away', () => {
+    /*
+     * The bug the first version of this tree had, and the reason the list
+     * below is "not in a VISIBLE project" rather than "unfiled".
+     *
+     * Archiving a project leaves its threads carrying its `folder_id`. No
+     * visible project draws them, so filtering the list to `folder_id IS
+     * NULL` made them invisible in both places -- a reader could lose a
+     * conversation by tidying up.
+     */
+    render(list({ folders: [] }))
+    expect(titles()).toEqual(expect.arrayContaining([
+      'AAPL target review', 'MSFT Q4 setup', 'NVDA supply chain', 'A thought about rates',
+    ]))
+  })
+
+  it('names the section Projects, not Folders', () => {
+    render(list())
+    expect(rail()).toHaveTextContent('Projects')
+    expect(screen.getByLabelText('New project')).toBeInTheDocument()
   })
 
   it('renders no rail at all for a surface that was never wired for folders', () => {
@@ -134,15 +172,24 @@ describe('the folder rail', () => {
   })
 
   it('scopes the conversation list to the selected shelf', () => {
+    /* Folder SELECTION still works and still narrows the list -- it is the
+       filter contract, it has its own suite, and search results rely on it.
+       What changed is that pressing a project row no longer invokes it. */
     render(list({ activeFolderId: 'f-earnings' }))
     expect(titles()).toEqual(['MSFT Q4 setup', 'NVDA supply chain'])
-
-    expect(rows()[2].getAttribute('data-folder-active')).toBe('true')
+    expect(rows()[1].getAttribute('data-folder-active')).toBe('true')
+    /* And there is a way back out of the narrowed view. */
+    expect(screen.getByTestId('ai-folder-clear')).toHaveTextContent('Show all conversations (4)')
   })
 
-  it('shows only the unfiled threads for the unfiled row', () => {
+  it('shows only the unfiled threads for the unfiled selection', () => {
     render(list({ activeFolderId: UNFILED }))
     expect(titles()).toEqual(['A thought about rates'])
+  })
+
+  it('offers no escape control when nothing is narrowed', () => {
+    render(list({ activeFolderId: null }))
+    expect(screen.queryByTestId('ai-folder-clear')).not.toBeInTheDocument()
   })
 
   it('names the shelf in its own empty state', () => {
@@ -153,16 +200,65 @@ describe('the folder rail', () => {
       .toHaveTextContent('Nothing is filed in Earnings season yet.')
   })
 
-  it('reports the selection back to the host', async () => {
+  it('opens a project to show what is in it, and does not filter', async () => {
+    render(list())
+    /* The whole point of the change. Pressing a project reveals its
+       contents in place rather than narrowing the view to it, so the reader
+       can see containment without losing everything else. */
+    expect(screen.queryByTestId('ai-folder-threads-f-earnings')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('Earnings season'))
+
+    const inside = screen.getByTestId('ai-folder-threads-f-earnings')
+    expect(inside).toHaveTextContent('MSFT Q4 setup')
+    expect(inside).toHaveTextContent('NVDA supply chain')
+    expect(handlers.onSelectFolder).not.toHaveBeenCalled()
+  })
+
+  it('closes it again', async () => {
     render(list())
     await userEvent.click(screen.getByText('Earnings season'))
-    expect(handlers.onSelectFolder).toHaveBeenCalledWith('f-earnings')
+    expect(screen.getByTestId('ai-folder-threads-f-earnings')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('Earnings season'))
+    expect(screen.queryByTestId('ai-folder-threads-f-earnings')).not.toBeInTheDocument()
+  })
 
-    await userEvent.click(screen.getByText('Unfiled'))
-    expect(handlers.onSelectFolder).toHaveBeenLastCalledWith(UNFILED)
+  it('can be opened from the keyboard', async () => {
+    /* The flat rail's rows were clickable divs, so a project could not be
+       opened without a mouse. The disclosure is a real button. */
+    render(list())
+    const toggle = screen.getByRole('button', { name: 'Expand Earnings season' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    toggle.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(screen.getByTestId('ai-folder-threads-f-earnings')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse Earnings season' }))
+      .toHaveAttribute('aria-expanded', 'true')
+  })
 
-    await userEvent.click(screen.getByText('All conversations'))
-    expect(handlers.onSelectFolder).toHaveBeenLastCalledWith(null)
+  it('says a project is empty rather than drawing nothing', async () => {
+    render(list({ conversations: [conversations[3]] }))
+    await userEvent.click(screen.getByText('Earnings season'))
+    expect(screen.getByTestId('ai-folder-threads-f-earnings'))
+      .toHaveTextContent('Nothing in this project yet.')
+  })
+
+  it('opens the project holding the conversation being read', () => {
+    /* Otherwise a reader who arrived from search is looking at a collapsed
+       tree with no sign of where the thread they are reading lives. */
+    render(list({ activeConversationId: 'c-msft' }))
+    expect(screen.getByTestId('ai-folder-threads-f-earnings')).toBeInTheDocument()
+  })
+
+  it('shows a project only its own threads, not every thread', () => {
+    /* The failure a nested tree invites: running the folder SELECTION
+       through the per-project grouping shows one project's contents under
+       every project's heading. */
+    render(list({ activeConversationId: 'c-msft' }))
+    const inside = screen.getByTestId('ai-folder-threads-f-earnings')
+    expect(inside).toHaveTextContent('MSFT Q4 setup')
+    expect(inside).not.toHaveTextContent('A thought about rates')
+    expect(inside).not.toHaveTextContent('AAPL thesis review')
   })
 })
 
@@ -197,7 +293,7 @@ describe('creating and renaming a shelf', () => {
   it('renames one in place', async () => {
     render(list())
     await userEvent.click(screen.getByRole('button', { name: 'Rename Earnings season' }))
-    const input = within(rows()[2]).getByRole('textbox')
+    const input = within(rows()[1]).getByRole('textbox')
     await userEvent.clear(input)
     await userEvent.type(input, 'Q4 earnings{Enter}')
 
@@ -243,51 +339,154 @@ describe('creating and renaming a shelf', () => {
   })
 })
 
-describe('moving a conversation', () => {
-  it('files it onto another shelf', async () => {
+/**
+ * Moving a conversation into a project.
+ *
+ * This existed and was not discoverable: it was a folder-shaped icon among
+ * five 12px icons revealed on hover, identified by a tooltip, and it looked
+ * like the control that FILTERED by folder. It is a named item now --
+ * `···` -> Move to project -> pick one -- which is the path the brief asks
+ * for, and these cases go through that path rather than through a test id
+ * that no longer exists on its own.
+ */
+describe('moving a conversation into a project', () => {
+  /**
+   * Open a row's overflow menu and step into Move to project.
+   *
+   * Expands every project first: a filed thread now lives inside its
+   * project's disclosure rather than in one flat list, so its row does not
+   * exist in the DOM until the project is open.
+   */
+  const openMove = async (id: string) => {
+    for (const toggle of screen.queryAllByRole('button', { name: /^Expand / })) {
+      await userEvent.click(toggle)
+    }
+    await userEvent.click(screen.getByTestId(`ai-conv-menu-${id}`))
+    await userEvent.click(screen.getByTestId(`ai-move-${id}`))
+    return screen.getByTestId(`ai-conv-menu-panel-${id}`)
+  }
+
+  it('is reachable as a named item, not an icon', async () => {
     render(list())
-    await userEvent.click(screen.getByTestId('ai-move-c-loose'))
+    await userEvent.click(screen.getByTestId('ai-conv-menu-c-loose'))
+    const panel = screen.getByTestId('ai-conv-menu-panel-c-loose')
+    /* The words, on screen. A tooltip on a folder glyph is what failed. */
+    expect(panel).toHaveTextContent('Move to project')
+    expect(panel).toHaveTextContent('Rename')
+    expect(panel).toHaveTextContent('Archive')
+    expect(panel).toHaveTextContent('Delete')
+  })
 
-    const menu = screen.getByTestId('ai-move-menu-c-loose')
-    expect(within(menu).getAllByText(/Earnings season|Apple investment case/)).toHaveLength(2)
+  it('files it into another project', async () => {
+    render(list())
+    const panel = await openMove('c-loose')
+    expect(within(panel).getAllByText(/Earnings season|Apple investment case/)).toHaveLength(2)
 
-    await userEvent.click(within(menu).getByText('Earnings season'))
+    await userEvent.click(within(panel).getByText('Earnings season'))
     expect(handlers.onMoveConversation).toHaveBeenCalledWith('c-loose', 'f-earnings')
   })
 
-  it('takes it off a shelf without touching the thread', async () => {
+  it('takes it out of a project without touching the thread', async () => {
     render(list())
-    await userEvent.click(screen.getByTestId('ai-move-c-msft'))
+    await openMove('c-msft')
     await userEvent.click(screen.getByTestId('ai-unfile-c-msft'))
     expect(handlers.onMoveConversation).toHaveBeenCalledWith('c-msft', null)
   })
 
-  it('offers no unfile control for a thread that is already unfiled', async () => {
+  it('offers no remove control for a thread in no project', async () => {
     render(list())
-    await userEvent.click(screen.getByTestId('ai-move-c-loose'))
+    await openMove('c-loose')
     expect(screen.queryByTestId('ai-unfile-c-loose')).not.toBeInTheDocument()
   })
 
-  it('sends nothing when the chosen shelf is the one it is already on', async () => {
-    render(list())
-    await userEvent.click(screen.getByTestId('ai-move-c-msft'))
-    const menu = screen.getByTestId('ai-move-menu-c-msft')
-    await userEvent.click(within(menu).getByText('Earnings season'))
+  it('sends nothing when the chosen project is the one it is already in', async () => {
+    render(list({ activeConversationId: 'c-msft' }))
+    const panel = await openMove('c-msft')
+    /* Shown with a tick and disabled, rather than hidden: the reader asked
+       where it is as much as where it could go. */
+    const current = within(panel).getByText('Earnings season').closest('button')!
+    expect(current).toBeDisabled()
+    await userEvent.click(current)
     expect(handlers.onMoveConversation).not.toHaveBeenCalled()
   })
 
-  it('hides the control entirely when there is nowhere to move to', () => {
-    /* No folders and the thread is unfiled: there is no move to make, and an
-       enabled control that does nothing is worse than no control. */
+  it('hides the item entirely when there is nowhere to move to', async () => {
+    /* No projects and the thread is unfiled: there is no move to make, and
+       an enabled item that does nothing is worse than no item. */
     render(list({ folders: [], conversations: [conversations[3]] }))
+    await userEvent.click(screen.getByTestId('ai-conv-menu-c-loose'))
     expect(screen.queryByTestId('ai-move-c-loose')).not.toBeInTheDocument()
   })
 
-  it('still offers the control for a filed thread when every folder is gone', () => {
-    /* The shelf was archived out of the list; the thread is still on it, so
-       taking it off has to stay possible. */
+  it('still offers it for a filed thread when every project is gone', async () => {
+    /* The project was archived out of the list; the thread is still in it,
+       so taking it out has to stay possible. */
     render(list({ folders: [], conversations: [conversations[1]] }))
+    await userEvent.click(screen.getByTestId('ai-conv-menu-c-msft'))
     expect(screen.getByTestId('ai-move-c-msft')).toBeInTheDocument()
+  })
+})
+
+describe('one overflow menu, not five hover icons', () => {
+  it('shows a single control on the row', () => {
+    render(list())
+    /*
+     * The literal complaint: "hovering a conversation reveals too many small
+     * buttons". Five icon buttons -- move, pin, rename, archive, delete --
+     * with Delete adjacent to Archive, which is the arrangement where a
+     * mis-click is destructive.
+     */
+    const row = screen.getByTestId('ai-conv-menu-c-loose').closest('li')!
+    const buttons = within(row).getAllByRole('button')
+    /* The title, and the menu trigger. Nothing else. */
+    expect(buttons).toHaveLength(2)
+    expect(buttons.map(b => b.getAttribute('data-testid')))
+      .toContain('ai-conversation-title')
+  })
+
+  it('names the conversation it acts on', () => {
+    render(list())
+    expect(screen.getByLabelText('More actions for A thought about rates'))
+      .toBeInTheDocument()
+  })
+
+  it('confirms before deleting rather than deleting on click', async () => {
+    render(list())
+    await userEvent.click(screen.getByTestId('ai-conv-menu-c-loose'))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    expect(handlers.onDelete).not.toHaveBeenCalled()
+    /* The app's own dialog, naming the thread and that it cannot be undone. */
+    expect(await screen.findByText(/This can't be undone/)).toHaveTextContent(
+      'A thought about rates',
+    )
+  })
+
+  it('closes on Escape and gives focus back to the trigger', async () => {
+    render(list())
+    const trigger = screen.getByTestId('ai-conv-menu-c-loose')
+    await userEvent.click(trigger)
+    await userEvent.keyboard('{Escape}')
+    expect(screen.queryByTestId('ai-conv-menu-panel-c-loose')).not.toBeInTheDocument()
+    expect(trigger).toHaveFocus()
+  })
+
+  it('opens from the keyboard with focus on the first item', async () => {
+    render(list())
+    const trigger = screen.getByTestId('ai-conv-menu-c-loose')
+    trigger.focus()
+    await userEvent.keyboard('{ArrowDown}')
+    expect(screen.getByTestId('ai-conv-menu-panel-c-loose')).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: 'Rename' })).toHaveFocus()
+  })
+
+  it('moves between items with the arrow keys', async () => {
+    render(list())
+    const trigger = screen.getByTestId('ai-conv-menu-c-loose')
+    trigger.focus()
+    await userEvent.keyboard('{ArrowDown}{ArrowDown}')
+    expect(screen.getByRole('menuitem', { name: 'Move to project' })).toHaveFocus()
+    await userEvent.keyboard('{ArrowUp}')
+    expect(screen.getByRole('menuitem', { name: 'Rename' })).toHaveFocus()
   })
 })
 
@@ -367,9 +566,16 @@ describe('what the rail does not do', () => {
   })
 
   it('never claims a selection the host did not make', () => {
+    /*
+     * There is no "All conversations" row to carry the null selection any
+     * more -- the tree shows containment and the list below shows what is
+     * not in a project, so "all" is the resting state rather than a row.
+     * What still matters is that no PROJECT is highlighted when none is
+     * selected: a tree that marks one anyway tells the reader their view is
+     * narrowed when it is not.
+     */
     const selection: FolderSelection = null
     render(list({ activeFolderId: selection }))
-    expect(rows().filter(r => r.getAttribute('data-folder-active') === 'true')).toHaveLength(1)
-    expect(rows()[0]).toHaveTextContent('All conversations')
+    expect(rows().filter(r => r.getAttribute('data-folder-active') === 'true')).toHaveLength(0)
   })
 })
