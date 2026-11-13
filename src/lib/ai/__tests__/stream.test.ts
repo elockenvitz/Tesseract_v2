@@ -525,3 +525,53 @@ describe('the two key lists cannot drift apart', () => {
     }
   })
 })
+
+describe('the context manifest survives the wire', () => {
+  /*
+   * A `final` frame's unknown fields are dropped by `toStreamEvent`, so a
+   * field the server sends and the parser does not know about reaches the
+   * pane as nothing at all. That is how the chip would have gone on
+   * asserting the client's own tag write even after the server started
+   * reporting the truth: nothing would have failed, and the pane would
+   * simply never have heard.
+   */
+  const frame = (context: unknown) => toStreamEvent({
+    type: 'final',
+    raw: 'Answer.', model: 'claude', citations: [], tool_calls: [],
+    usage: {}, timings: {}, context,
+  })
+
+  it('carries the outcomes through', () => {
+    const e = frame([{ type: 'portfolio', id: 'p1', outcome: 'unavailable', detail: 'Not found.' }])
+    expect(e).toMatchObject({ type: 'final' })
+    expect((e as { context: unknown[] }).context).toEqual([
+      { type: 'portfolio', id: 'p1', outcome: 'unavailable', detail: 'Not found.' },
+    ])
+  })
+
+  it('reports nothing when an older server sends no manifest', () => {
+    /* Absent must mean "nothing reported", not a gap. A deployed client
+       predates the function deploy by definition. */
+    expect((frame(undefined) as { context: unknown[] }).context).toEqual([])
+  })
+
+  it('drops an outcome this build does not recognise', () => {
+    /* Rather than handing the chip a status it has no sentence for. A future
+       sixth outcome must not make an old client render a label it cannot
+       explain. */
+    const e = frame([
+      { type: 'asset', id: 'a1', outcome: 'quantum' },
+      { type: 'asset', id: 'a2', outcome: 'resolved' },
+    ])
+    expect((e as { context: Array<{ id: string }> }).context.map(c => c.id)).toEqual(['a2'])
+  })
+
+  it('drops entries that are not shaped like entries', () => {
+    const e = frame(['nope', null, 42, { outcome: 'resolved' }, { type: 'asset', id: 'a1', outcome: 'resolved' }])
+    expect((e as { context: unknown[] }).context).toHaveLength(1)
+  })
+
+  it('ignores a manifest that is not an array', () => {
+    expect((frame({ portfolio: 'unavailable' }) as { context: unknown[] }).context).toEqual([])
+  })
+})

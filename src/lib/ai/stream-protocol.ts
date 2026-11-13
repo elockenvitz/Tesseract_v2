@@ -34,6 +34,7 @@
  */
 /* Types only, erased at build. `presentation.ts` holds no client. */
 import type { AiSourceRef, AiVisibilityScope } from './presentation'
+import { parseContextManifest, type ContextEntry as AiContextEntry } from './context-outcome'
 
 /** The tools the edge function can report running. Mirrors RESEARCH_TOOLS. */
 export type AiToolName =
@@ -187,6 +188,16 @@ export interface AiStreamFinalEvent {
   }>
   usage: Record<string, unknown>
   timings: Record<string, number>
+  /**
+   * What the server could actually read, per attached object.
+   *
+   * It has to cross the wire for the same reason `tool_calls.status` does: a
+   * client that cannot see this reports a context read that failed as a
+   * context read that happened. The chip was asserting the client's own tag
+   * write, so an answer built without the attached portfolio looked exactly
+   * like one built with it.
+   */
+  context: AiContextEntry[]
 }
 
 export interface AiStreamErrorEvent {
@@ -252,6 +263,9 @@ export function toStreamEvent(payload: unknown): AiStreamEvent | null {
         tool_calls: Array.isArray(p.tool_calls) ? p.tool_calls as AiStreamFinalEvent['tool_calls'] : [],
         usage: p.usage && typeof p.usage === 'object' ? p.usage as Record<string, unknown> : {},
         timings: isNumberMap(p.timings) ? p.timings : {},
+        /* Validated, not cast. An older server sends no `context` at all,
+           which must read as "nothing reported" rather than as a gap. */
+        context: parseContextManifest(p.context),
       }
 
     case 'error':

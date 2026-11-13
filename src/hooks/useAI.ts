@@ -28,6 +28,7 @@ import {
   type ViewState,
 } from '../lib/ai'
 import { isThreadSettling } from '../lib/ai/restore-gate'
+import { contextKey, type ContextEntry } from '../lib/ai/context-outcome'
 import type {
   AiSourceKind, AiSourceRef, MessageCitation, MessageToolCall, AiRenderableMessage,
 } from '../lib/ai/presentation'
@@ -532,6 +533,15 @@ export function useAI(initialTags: TagRef[] = []) {
   const [error, setError] = useState<Error | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [latency, setLatency] = useState<AiLatency | null>(null)
+  /*
+   * What the server reported it could actually read, for the last answer.
+   *
+   * Keyed per attached object, and NOT cleared when a new tag is attached:
+   * an object with no entry reads as `unknown`, which is the honest state
+   * for something nothing has been asked about yet. Clearing on attach
+   * would discard a real gap report about the OTHER chips.
+   */
+  const [contextManifest, setContextManifest] = useState<ContextEntry[]>([])
   const inFlightRef = useRef<AiInFlightRequest | null>(null)
 
   // A ref mirror of the state the completion path must compare against.
@@ -717,6 +727,28 @@ export function useAI(initialTags: TagRef[] = []) {
 
       request.status = 'done'
       setLatency(deriveLatency(marks, serverTimings, streamed))
+      /*
+       * Merged, not replaced.
+       *
+       * The server reports only the tags THIS request carried. A chip
+       * attached after the send has no entry and must stay `unknown`, and a
+       * gap reported about another chip two answers ago is still true until
+       * something contradicts it. Replacing the map would silently clear a
+       * standing problem every time the reader asked an unrelated question.
+       *
+       * An entry for the same object always wins, so a retry that succeeds
+       * clears its own warning.
+       */
+      if (shouldApplyToView(context, viewRef.current)) {
+        const fresh = outcome.final?.context ?? []
+        if (fresh.length > 0) {
+          setContextManifest(prev => {
+            const merged = new Map(prev.map(e => [contextKey(e), e]))
+            for (const e of fresh) merged.set(contextKey(e), e)
+            return [...merged.values()]
+          })
+        }
+      }
     } catch (e) {
       // An abort is the reader's own decision, not a failure to report.
       const aborted = request.status === 'cancelled'
@@ -982,6 +1014,15 @@ export function useAI(initialTags: TagRef[] = []) {
     cancelGeneration,
     /** Measured latency for the last completed request. TTFU is the one. */
     latency,
+    /**
+     * What the server could actually read, per attached object.
+     *
+     * The pane draws its chips from this rather than from its own tag write,
+     * so a chip can no longer claim an object the answer was built without.
+     * Empty until the first answer comes back, which is why an absent entry
+     * means `unknown` and not a problem.
+     */
+    contextManifest,
 
     // Tag actions
     addTag,

@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   Maximize2,
   Minimize2,
+  AlertTriangle,
 } from 'lucide-react'
 import { useAI, useAISuggestions, type TagRef, type AIConversationSummary } from '../../hooks/useAI'
 /* Project folders: the shelves, and the two sentinel selections ("all" is
@@ -24,6 +25,7 @@ import { useTemplates } from '../../hooks/useTemplates'
    canonical page rather than on a page that happens to be open. */
 import { useReferenceTargets } from '../../hooks/ai/useReferenceTargets'
 import { openReference, referenceKey } from '../../lib/ai/reference-targets'
+import { manifestIndex, retrievalBanner, type ChipRetrieval } from '../../lib/ai/context-outcome'
 import { UNFILED, type FolderSelection } from '../../lib/ai/folders'
 import { useAIConfig, AI_MODELS, AI_PROVIDERS, type AIProvider } from '../../hooks/useAIConfig'
 import { Button } from '../ui/Button'
@@ -145,6 +147,18 @@ export function AISection({
     // Stage 2: grounded activity text and the stop control.
     status,
     cancelGeneration,
+    /*
+     * What the server reported it could actually read, per attached object.
+     *
+     * The chips were drawn from this pane's own tag write, so one said
+     * "Large Cap Growth" while the answer beside it had been built from no
+     * portfolio. A chip is now the server's claim, not the client's.
+     *
+     * Defaulted, because an absent manifest must mean "nothing reported"
+     * rather than throwing. That is the real state against a server that
+     * predates the field, and the honest state in a test that stubs the hook.
+     */
+    contextManifest = [],
     // Tag labels are still used for read-only display (e.g. "About: AAPL"
     // hint in the header) — but the user no longer adds or removes tags
     // directly. They're inferred from whatever page launched the panel.
@@ -233,6 +247,36 @@ export function AISection({
       return isResolvingReferences ? 'checking' : 'gone'
     },
     [referenceTargets, isResolvingReferences],
+  )
+
+  /*
+   * The server's verdict for one chip.
+   *
+   * Separate from `referenceStatus` above on purpose -- see the prop's own
+   * note in `AiContextAttach`. `unknown` for anything the server has not
+   * spoken about, which is every chip until the first answer returns.
+   */
+  const servedIndex = useMemo(() => manifestIndex(contextManifest), [contextManifest])
+
+  const retrieval = useCallback(
+    (tag: TagRef): ChipRetrieval => servedIndex.get(referenceKey(tag))?.outcome ?? 'unknown',
+    [servedIndex],
+  )
+
+  /*
+   * The line the reader cannot miss.
+   *
+   * A tooltip alone is not enough: finding out that the answer in front of
+   * you was built without the portfolio you attached should not require
+   * hovering the right chip. Labels come from the chip's own vocabulary so
+   * the banner names the same thing the chip does.
+   */
+  const retrievalWarning = useMemo(
+    () => retrievalBanner(
+      contextManifest,
+      e => tagLabels[`${e.type}:${e.id}`] || tags.find(t => t.id === e.id)?.label || `this ${e.type}`,
+    ),
+    [contextManifest, tagLabels, tags],
   )
 
   const openTaggedObject = useCallback(
@@ -973,6 +1017,29 @@ export function AISection({
           Above the container rather than inside it, because it is a picker
           over the box, not a part of it.
         */}
+        {/*
+          What the last answer could not see, stated once, above the box.
+
+          This is the part of the context fix a reader cannot miss. The chips
+          carry the same information per object, but only on hover, and the
+          reader has no reason to hover a chip that looks attached. It sits
+          above the composer rather than beside the answer because it is also
+          a reason to ask again.
+
+          `role="status"` rather than `alert`: it is the consequence of an
+          action the reader just took, not an interruption, so it should be
+          announced after the answer rather than over it.
+        */}
+        {retrievalWarning && (
+          <div
+            role="status"
+            data-testid="ai-context-warning"
+            className="mb-1.5 flex items-start gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11.5px] leading-snug text-amber-900 dark:border-amber-500/50 dark:bg-amber-900/20 dark:text-amber-200"
+          >
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>{retrievalWarning}</span>
+          </div>
+        )}
         <AiDotMenu value={input} onPick={setInput} templateBody={templateBody} />
         {/*
           ONE composer. The box, the attachments, the model picker, Settings
@@ -1101,6 +1168,7 @@ export function AISection({
             onDetach={removeTag}
             onOpenObject={openTaggedObject}
             referenceStatus={referenceStatus}
+            retrieval={retrieval}
           />
         </AiComposer>
         </div> {/* reading column */}

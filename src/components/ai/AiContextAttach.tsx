@@ -33,11 +33,12 @@
  * own RLS, so a reader can only attach an object they can already open. The
  * attachment is not a grant.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
-import { Briefcase, FileText, Layers, Plus, Search, TrendingUp, X } from 'lucide-react'
+import { AlertTriangle, Briefcase, FileText, Layers, Plus, Search, TrendingUp, X } from 'lucide-react'
 import { useEntitySearch, type EntitySearchResult } from '../../hooks/useEntitySearch'
 import { referenceUnavailableTitle } from '../../lib/ai/reference-targets'
+import { isRetrievalGap, retrievalTitle, type ChipRetrieval } from '../../lib/ai/context-outcome'
 import type { TagRef } from '../../hooks/useAI'
 
 /** The four the tag table accepts. Not a style choice: a CHECK constraint. */
@@ -49,6 +50,21 @@ const ICON: Record<string, React.ReactNode> = {
   portfolio: <Briefcase className="h-3 w-3" />,
   theme: <Layers className="h-3 w-3" />,
   note: <FileText className="h-3 w-3" />,
+}
+
+/*
+ * Named headings, because an icon is not a type label.
+ *
+ * An asset called "Growth" and a theme called "Growth" were two rows
+ * distinguished by a 12px glyph, so attaching the wrong one was silent and
+ * the conversation then drew its context from an object the reader had not
+ * meant to pick.
+ */
+const GROUP_LABEL: Record<AttachableType, string> = {
+  asset: 'Assets',
+  portfolio: 'Portfolios',
+  theme: 'Themes',
+  note: 'Notes',
 }
 
 const tagKey = (t: { type: string; id: string }) => `${t.type}:${t.id}`
@@ -81,37 +97,132 @@ export interface AiContextAttachProps {
    * that object, and removing the chip would rewrite what the reader asked.
    */
   referenceStatus?: (tag: TagRef) => 'open' | 'checking' | 'gone'
+  /**
+   * What the SERVER reported it could read, per object, for the last answer.
+   *
+   * A different question from `referenceStatus`, and neither answers the
+   * other. `referenceStatus` asks "can the READER open this", resolved
+   * client-side under the reader's own RLS, and it decides whether the chip
+   * is a link. This asks "did the SERVER load it for the answer", and it
+   * decides whether the chip is making a claim the answer supports.
+   *
+   * They disagree in both directions. The failure that prompted this had a
+   * portfolio the reader could open perfectly well and that `ai-chat` could
+   * not read, because its holdings query named a column that does not
+   * exist. `referenceStatus` said `open`, the chip looked attached, and the
+   * answer was built from no portfolio at all.
+   *
+   * `unknown` is the default and is NOT drawn as a problem: it means nothing
+   * has been asked about this object yet, which is true of every chip before
+   * the first send.
+   */
+  retrieval?: (tag: TagRef) => ChipRetrieval
   className?: string
 }
 
 export function AiContextAttach({
   attached, inheritedKeys = [], labels = {}, onAttach, onDetach, onOpenObject,
-  referenceStatus = () => 'open', className,
+  referenceStatus = () => 'open', retrieval = () => 'unknown', className,
 }: AiContextAttachProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  /** Index into the FLATTENED candidate list, or -1 for nothing selected. */
+  const [cursor, setCursor] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
 
   useEffect(() => {
     if (open) inputRef.current?.focus()
   }, [open])
 
+  const searchable = query.trim().length >= 2
+
   const { results, isLoading } = useEntitySearch({
     query,
     types: [...ATTACHABLE_TYPES],
-    limit: 6,
+    /* Raised from 6. Six across four kinds is one or two of each, so the
+       grouped list below could not show a reader that there were other
+       portfolios matching "growth" -- it showed one and looked complete. */
+    limit: 12,
     /* Two characters, so opening the control does not issue a search for the
        empty string across four tables. */
-    enabled: open && query.trim().length >= 2,
+    enabled: open && searchable,
   })
 
   const inherited = new Set(inheritedKeys)
   const already = new Set(attached.map(tagKey))
 
+  /*
+   * Grouped by kind, in a fixed order, and FLATTENED back for the keyboard.
+   *
+   * The list was flat with a 12px icon as the only type signal, so an asset
+   * called "Growth" and a theme called "Growth" were two identical rows and
+   * attaching the wrong one was silent. Grouping puts a named heading above
+   * each kind.
+   *
+   * The order is fixed rather than by relevance: a list that reorders its
+   * sections between keystrokes cannot be navigated, because the row under
+   * the cursor changes meaning as the reader types.
+   */
+  const groups = useMemo(() => {
+    const byType = new Map<AttachableType, EntitySearchResult[]>()
+    for (const t of ATTACHABLE_TYPES) byType.set(t, [])
+    for (const r of results) byType.get(r.type as AttachableType)?.push(r)
+    return ATTACHABLE_TYPES
+      .map(type => ({ type, items: byType.get(type) ?? [] }))
+      .filter(g => g.items.length > 0)
+  }, [results])
+
+  /** The same rows the reader sees, in the same order, for arrow keys. */
+  const flat = useMemo(() => groups.flatMap(g => g.items), [groups])
+
+  /* A new result set invalidates the cursor. Keeping the index would leave
+     it pointing at whatever now occupies that position. */
+  useEffect(() => { setCursor(flat.length > 0 ? 0 : -1) }, [flat])
+
   const attach = (r: EntitySearchResult) => {
     setQuery('')
     setOpen(false)
+    setCursor(-1)
     onAttach({ type: r.type as TagRef['type'], id: r.id, label: r.title })
+  }
+
+  const close = () => { setOpen(false); setQuery(''); setCursor(-1) }
+
+  const move = (delta: number) => {
+    if (flat.length === 0) return
+    setCursor(c => {
+      const next = (c + delta + flat.length) % flat.length
+      /* Scroll the row into view in the overflow container, because the list
+         is 56px tall and the fourth match is otherwise selected off-screen. */
+      requestAnimationFrame(() => {
+        const row = listRef.current
+          ?.querySelector<HTMLElement>(`[data-candidate-index="${next}"]`)
+        /* Guarded rather than called optionally. `scrollIntoView` is absent
+           in jsdom and in older embedded webviews, and an unguarded call
+           throws from inside a frame callback, where nothing catches it and
+           the whole pane unmounts. */
+        if (typeof row?.scrollIntoView === 'function') {
+          row.scrollIntoView({ block: 'nearest' })
+        }
+      })
+      return next
+    })
+  }
+
+  const onSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') { close(); return }
+    if (e.key === 'ArrowDown') { e.preventDefault(); move(1); return }
+    if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); return }
+    if (e.key === 'Enter') {
+      /* Only when something is selected AND attachable. Enter on an already
+         added object did nothing visible, which reads as a broken control
+         rather than as a no-op. */
+      const pick = flat[cursor]
+      if (!pick) return
+      e.preventDefault()
+      if (!already.has(`${pick.type}:${pick.id}`)) attach(pick)
+    }
   }
 
   return (
@@ -121,25 +232,47 @@ export function AiContextAttach({
         const isInherited = inherited.has(key)
         const label = t.label || labels[key] || t.id.slice(0, 6)
         const status = referenceStatus(t)
+        const served = retrieval(t)
+        const gap = isRetrievalGap(served)
         return (
           <span
             key={key}
             data-slot="ai-context-chip"
             data-attach-origin={isInherited ? 'inherited' : 'attached'}
             data-reference-status={status}
+            /* The server's verdict, exposed so a test can assert the chip is
+               not just repeating the client's own tag write. */
+            data-retrieval={served}
             className={clsx(
               'inline-flex items-center gap-1 rounded-full py-0.5 pl-2 pr-1 text-[11px] font-medium',
-              isInherited
-                ? 'border border-dashed border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-400'
-                : 'border border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-900/30 dark:text-primary-200',
+              /*
+               * A retrieval gap outranks the attached/inherited styling.
+               *
+               * Those two say where the chip came from, which stops mattering
+               * the moment the object was not in the answer: the reader's
+               * question is no longer "did I add this" but "was it used".
+               */
+              gap
+                ? 'border border-amber-400 bg-amber-50 text-amber-900 dark:border-amber-500/60 dark:bg-amber-900/20 dark:text-amber-200'
+                : isInherited
+                  ? 'border border-dashed border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-400'
+                  : 'border border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-900/30 dark:text-primary-200',
             )}
-            title={status !== 'open'
-              ? referenceUnavailableTitle(label, status === 'checking')
-              : isInherited
-                ? `${label} comes from the page you opened this from`
-                : `${label} was added to this conversation`}
+            /* The server's sentence wins when there is one: "you can open
+               this but the answer did not use it" is the more surprising and
+               more actionable of the two facts. */
+            title={retrievalTitle(label, served)
+              ?? (status !== 'open'
+                ? referenceUnavailableTitle(label, status === 'checking')
+                : isInherited
+                  ? `${label} comes from the page you opened this from`
+                  : `${label} was added to this conversation`)}
           >
-            <span className="shrink-0 opacity-70">{ICON[t.type] ?? <FileText className="h-3 w-3" />}</span>
+            <span className="shrink-0 opacity-70">
+              {gap
+                ? <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                : ICON[t.type] ?? <FileText className="h-3 w-3" />}
+            </span>
             {onOpenObject && status === 'open' ? (
               <button
                 type="button"
@@ -186,50 +319,102 @@ export function AiContextAttach({
             value={query}
             data-testid="ai-context-search"
             placeholder="Asset, portfolio, theme or note"
+            role="combobox"
+            aria-expanded={searchable}
+            aria-controls="ai-context-results"
+            aria-autocomplete="list"
+            aria-activedescendant={cursor >= 0 && flat[cursor]
+              ? `ai-context-option-${cursor}`
+              : undefined}
             onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Escape') { setOpen(false); setQuery('') }
-            }}
+            onKeyDown={onSearchKeyDown}
             className="w-[15rem] rounded-full border border-gray-300 py-0.5 pl-7 pr-2 text-[12px] outline-none focus:border-primary-400 dark:border-gray-600 dark:bg-gray-800"
           />
-          {query.trim().length >= 2 && (
+          {/* Opening the control and typing one character used to show
+              nothing at all, which looks like a search that found nothing
+              rather than one that has not run. */}
+          {!searchable && query.trim().length > 0 && (
+            <p
+              data-testid="ai-context-minlength"
+              className="absolute bottom-full left-0 z-20 mb-1 w-[18rem] rounded-md border border-gray-200 bg-white px-2 py-1 text-[11px] italic text-gray-400 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            >
+              Keep typing, two characters at least.
+            </p>
+          )}
+          {searchable && (
             <ul
+              ref={listRef}
+              id="ai-context-results"
+              role="listbox"
+              aria-label="Objects you can attach"
               data-testid="ai-context-results"
               className="absolute bottom-full left-0 z-20 mb-1 max-h-56 w-[18rem] overflow-y-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
             >
               {isLoading ? (
                 <li className="px-2 py-1 text-[11px] italic text-gray-400">Searching…</li>
-              ) : results.length === 0 ? (
+              ) : flat.length === 0 ? (
                 <li className="px-2 py-1 text-[11px] italic text-gray-400">
                   Nothing you can open matches that.
                 </li>
               ) : (
-                results.map(r => {
-                  const taken = already.has(`${r.type}:${r.id}`)
-                  return (
-                    <li key={`${r.type}:${r.id}`}>
-                      <button
-                        type="button"
-                        data-slot="ai-context-candidate"
-                        disabled={taken}
-                        onClick={() => attach(r)}
-                        className={clsx(
-                          'flex w-full items-center gap-1.5 px-2 py-1 text-left text-[12px]',
-                          taken
-                            ? 'cursor-default text-gray-400'
-                            : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800',
-                        )}
-                      >
-                        <span className="shrink-0 opacity-60">{ICON[r.type] ?? <FileText className="h-3 w-3" />}</span>
-                        <span className="flex-1 truncate">{r.title}</span>
-                        {r.subtitle && (
-                          <span className="max-w-[8rem] shrink-0 truncate text-[10px] text-gray-400">{r.subtitle}</span>
-                        )}
-                        {taken && <span className="shrink-0 text-[10px]">already added</span>}
-                      </button>
-                    </li>
-                  )
-                })
+                groups.map(group => (
+                  /*
+                   * `role="group"` on an `<li>`, not a nested `<ul>`: a
+                   * listbox's options must be its own descendants for
+                   * `aria-activedescendant` to address them, and a second
+                   * `<ul>` inside breaks that for a screen reader.
+                   */
+                  <li key={group.type} role="group" aria-labelledby={`ai-context-group-${group.type}`}>
+                    <p
+                      id={`ai-context-group-${group.type}`}
+                      data-slot="ai-context-group"
+                      className="px-2 pb-0.5 pt-1.5 text-[9.5px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500"
+                    >
+                      {GROUP_LABEL[group.type]}
+                    </p>
+                    <ul role="none" className="contents">
+                      {group.items.map(r => {
+                        const taken = already.has(`${r.type}:${r.id}`)
+                        const index = flat.indexOf(r)
+                        const active = index === cursor
+                        return (
+                          <li key={`${r.type}:${r.id}`} role="none">
+                            <button
+                              type="button"
+                              id={`ai-context-option-${index}`}
+                              role="option"
+                              aria-selected={active}
+                              aria-disabled={taken || undefined}
+                              data-slot="ai-context-candidate"
+                              data-candidate-index={index}
+                              data-candidate-type={r.type}
+                              disabled={taken}
+                              /* Pointer moves the cursor too, so the keyboard
+                                 and the mouse never disagree about which row
+                                 Enter would take. */
+                              onMouseEnter={() => setCursor(index)}
+                              onClick={() => attach(r)}
+                              className={clsx(
+                                'flex w-full items-center gap-1.5 px-2 py-1 text-left text-[12px]',
+                                taken
+                                  ? 'cursor-default text-gray-400'
+                                  : 'text-gray-700 dark:text-gray-200',
+                                active && !taken && 'bg-gray-100 dark:bg-gray-800',
+                              )}
+                            >
+                              <span className="shrink-0 opacity-60">{ICON[r.type] ?? <FileText className="h-3 w-3" />}</span>
+                              <span className="flex-1 truncate">{r.title}</span>
+                              {r.subtitle && (
+                                <span className="max-w-[8rem] shrink-0 truncate text-[10px] text-gray-400">{r.subtitle}</span>
+                              )}
+                              {taken && <span className="shrink-0 text-[10px]">already added</span>}
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </li>
+                ))
               )}
             </ul>
           )}

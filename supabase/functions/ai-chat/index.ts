@@ -73,6 +73,15 @@ import {
   categorizeIdeas,
   degradedNote,
 } from "../_shared/portfolio-ideas.ts";
+import {
+  type ContextEntry,
+  CONTEXT_TABLE,
+  classifyContext,
+  contextGapPrompt,
+  describeLoaded,
+  isRetrievableType,
+  manifestLogLine,
+} from "../_shared/context-manifest.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -396,29 +405,89 @@ Deno.serve(async (req) => {
     // strings into the system prompt.
     let contextPrompt = "";
     let documents: SourceDocument[] = [];
+    /* One entry per attached tag, returned to the client so a chip can show
+       what the SERVER resolved rather than what the client wrote. */
+    const contextManifest: ContextEntry[] = [];
     const isAnthropic = aiConfig.provider === "anthropic";
 
     // Tags are independent of one another, so a two-tag conversation used to
     // pay for eight serial round-trips where four would do. Fan out.
     await phase("context", async () => {
       const parts = await Promise.all(tags.map(async (tag) => {
-        if (isAnthropic) {
-          const docs = await buildContextDocuments(supabase, tag, user.id, aiConfig);
-          if (docs.length > 0) return { docs, text: "" };
-          // For tag types without document support (theme/portfolio so
-          // far), fall back to the embedded-string context — still gives
-          // the model something to work with, just no inline citations.
-          const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
-          return { docs: [] as SourceDocument[], text: part ? part + "\n" : "" };
+        /*
+         * Each tag now reports an OUTCOME, not just whatever it managed to
+         * load.
+         *
+         * A tag that resolved to nothing used to return an empty string and
+         * disappear here. The chip in the interface stayed, so the reader
+         * believed the object was in play, and the model -- given neither
+         * the object nor any statement that it was missing -- answered as
+         * though the question had been general. That is how an answer about
+         * a portfolio got built from no portfolio.
+         */
+        const nothing = { docs: [] as SourceDocument[], text: "" };
+
+        if (!isRetrievableType(tag.type)) {
+          return { ...nothing, entry: classifyContext({ type: tag.type, id: tag.id, found: false }) };
         }
-        const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
-        return { docs: [] as SourceDocument[], text: part ? part + "\n" : "" };
+
+        try {
+          let docs: SourceDocument[] = [];
+          let text = "";
+
+          if (isAnthropic) {
+            docs = await buildContextDocuments(supabase, tag, user.id, aiConfig);
+            if (docs.length === 0) {
+              // For tag types without document support (theme/portfolio so
+              // far), fall back to the embedded-string context — still gives
+              // the model something to work with, just no inline citations.
+              const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
+              text = part ? part + "\n" : "";
+            }
+          } else {
+            const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
+            text = part ? part + "\n" : "";
+          }
+
+          const loaded = describeLoaded(docs.map(d => d.kind ?? "document"), text.trim().length);
+          if (loaded.length > 0) {
+            return { docs, text, entry: classifyContext({ type: tag.type, id: tag.id, found: true, loaded }) };
+          }
+
+          /* Nothing came back, and "the object is gone" and "the object is
+             bare" are different answers to the reader. One existence read,
+             under the caller's own RLS, decides which — and only on this
+             branch, so the normal path pays nothing for it. */
+          const table = CONTEXT_TABLE[tag.type];
+          let found = false;
+          if (table) {
+            const probe = await supabase.from(table).select("id").eq("id", tag.id).limit(1);
+            if (probe.error) throw probe.error;
+            found = (probe.data?.length ?? 0) > 0;
+          }
+          return { docs, text, entry: classifyContext({ type: tag.type, id: tag.id, found }) };
+        } catch (err) {
+          /* Swallowed deliberately, and RECORDED. A context read that throws
+             used to take the whole request down with it; reporting it as a
+             failed object lets the answer name the gap instead. */
+          console.error("ai-chat context read failed", tag.type, tag.id, err);
+          return { ...nothing, entry: classifyContext({ type: tag.type, id: tag.id, found: false, errored: true }) };
+        }
       }));
       for (const p of parts) {
         documents.push(...p.docs);
         contextPrompt += p.text;
+        contextManifest.push(p.entry);
       }
     });
+
+    /* The model is told what it is missing, in the variable half of the
+       prompt so it does not poison the cached stable prefix. */
+    const gapPrompt = contextGapPrompt(contextManifest);
+    if (gapPrompt) contextPrompt += `\n${gapPrompt}\n`;
+    if (contextManifest.length > 0) {
+      console.log("ai-chat context_gaps", manifestLogLine(contextManifest));
+    }
 
     // The document path never had a total ceiling — MAX_CONTEXT_CHARS is
     // applied inside buildContextPrompt only, which is the branch Anthropic
@@ -552,6 +621,10 @@ Deno.serve(async (req) => {
               tool_calls: result.tool_calls || [],
               usage: result.usageRaw ?? {},
               timings: { ...timings },
+              /* Same manifest as the JSON path. Omitting it here would make
+                 the chip's honesty depend on whether the reader's request
+                 happened to stream. */
+              context: contextManifest,
             });
           } catch (e) {
             const errMsg = (e as Error).message || "";
@@ -651,6 +724,10 @@ Deno.serve(async (req) => {
         // show what it was given and how long each phase took.
         verbosity,
         timings,
+        /* What the server resolved, per attached object. The pane draws its
+           chips from THIS, not from its own tag write, so a chip can no
+           longer claim an object the answer was built without. */
+        context: contextManifest,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
