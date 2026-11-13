@@ -294,6 +294,20 @@ export const GATED_DIRS = [
      recursive walk. */
   'src/hooks/ai/__tests__',
   'src/components/communication',
+  /*
+   * How stored research is RENDERED, and the promoted draft that reaches the
+   * capture form.
+   *
+   * Both gated because both fail by being plausible. The prose renderer's
+   * safety property is that no element is ever created from markup in a
+   * stored note, which is a property a reader cannot see holding; its
+   * absence looks like ordinary text until the day a note contains a tag.
+   * The capture form's is that a promotion arrives with its words AND its
+   * provenance, and a draft that lands with neither is an empty form the
+   * reader can still type into -- indistinguishable from working.
+   */
+  'src/components/smart-input/__tests__',
+  'src/components/thoughts/__tests__',
 
   /*
    * Gated on the lanes that introduced them.

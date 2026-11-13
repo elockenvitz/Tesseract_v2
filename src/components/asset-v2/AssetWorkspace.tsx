@@ -76,10 +76,16 @@ import { anchoredWindow, PriceSinceReview } from '../research-v2/ResearchVisual'
 import { useThesisReviews } from '../../hooks/useThesisReview'
 import { ThesisContainer } from '../contributions'
 import { useState } from 'react'
-import { EntryOrientation, type OrientationPageFacts } from './EntryOrientation'
+import { EntryOrientation } from './EntryOrientation'
+/* The one reshape of a workspace read into the band's facts, shared with the
+   canonical Asset page so the four labelled measurements cannot drift. */
+import { orientationFactsFrom } from '../../lib/asset-workspace/orientation-facts'
 import {
-  contextAppliesTo, type WorkspaceEntryContext, type LadderRung,
+  contextAppliesTo, type WorkspaceEntryContext,
 } from '../../lib/asset-workspace/entry-context'
+/* The arrival travels with the reader into the canonical page. In memory and
+   for one navigation only -- see the module's own note on why not tab data. */
+import { offerEntryContext } from '../../lib/asset-workspace/entry-handoff'
 
 export interface AssetWorkspaceProps {
   asset: { id: string; symbol?: string | null; company_name?: string | null } & Record<string, any>
@@ -515,8 +521,31 @@ export function AssetWorkspacePane({
    * would be a table with one value repeated seven times, which is a thing
    * to keep in step rather than a distinction.
    */
+  /*
+   * The context, only if it still describes what is on screen.
+   *
+   * `contextAppliesTo` is identity, not a heuristic: a context built for
+   * another name, or in another organisation, applies to nothing and the page
+   * renders exactly as it would have with nothing carried. Both defects it
+   * guards against have shipped in this app before.
+   *
+   * Declared here rather than beside the orientation it feeds, because the
+   * two ways out of this pane -- the header's verb and the band's own action
+   * -- both hand it to the next surface, and a handler that closes over a
+   * `const` declared below it is the use-before-define this codebase has a
+   * lint for.
+   */
+  const entry = contextAppliesTo(entryContext, {
+    assetId: asset.id, organizationId: organizationId ?? null,
+  }) ? entryContext! : null
+
   const primaryFocus: AssetFocus = 'research'
   const runPrimary = () => {
+    /* The arrival goes with them, where there was one. The header's verb is
+       the other way out of this pane to the canonical page, and a reader who
+       followed a target breach here should not have to restate why they went
+       just because they left by the header rather than by the band. */
+    offerEntryContext(entry)
     openAsset({
       assetId: asset.id,
       symbol,
@@ -531,49 +560,19 @@ export function AssetWorkspacePane({
 
   /* ------------------------------------------------ why you are here */
 
-  /*
-   * The context, only if it still describes what is on screen.
-   *
-   * `contextAppliesTo` is identity, not a heuristic: a context built for
-   * another name, or in another organisation, applies to nothing and the page
-   * renders exactly as it would have with nothing carried. Both defects it
-   * guards against have shipped in this app before.
-   */
-  const entry = contextAppliesTo(entryContext, {
-    assetId: asset.id, organizationId: organizationId ?? null,
-  }) ? entryContext! : null
-
   const pendingRequest = data.decisions.find(d => (d.status ?? '').toLowerCase() === 'pending') ?? null
 
   const orientation = entry?.event ? (() => {
     /* The canonical figures, from this page's own org-scoped reads. The event
-       carries what the Dashboard item knew; everything below is what the
-       record says now, which is how the band can report a divergence between
-       the two rather than silently preferring one. */
-    const facts: OrientationPageFacts = {
-      ladder: (data.ladder?.cases ?? []).map<LadderRung>(c => ({
-        id: c.id, name: c.name, price: c.price,
-      })),
-      officialTarget: data.target,
-      spot: data.spot,
-      spotAsOf: data.history.length ? data.history[data.history.length - 1].date : null,
-      caseWrittenAt: data.caseWrittenAt ?? null,
-      position: position
-        ? {
-          portfolioName: position.portfolioName,
-          weightPct: position.weightPct,
-          valueUsd: position.marketValue ?? null,
-        }
-        : null,
-      alsoHeldIn: others.map(p => p.portfolioName),
-      pending: pendingRequest
-        ? {
-          label: pendingRequest.action ?? 'Decision request',
-          note: pendingRequest.decisionNote ?? null,
-          portfolioName: pendingRequest.portfolioName ?? null,
-        }
-        : null,
-    }
+       carries what the Dashboard item knew; the reshape is what the record
+       says now, which is how the band can report a divergence between the two
+       rather than silently preferring one.
+
+       `orientationFactsFrom` rather than a local object: the canonical Asset
+       page draws the same band from the same hook, and two copies of this
+       mapping would be two ways to fill four slots the band labels with four
+       different sources. */
+    const facts = orientationFactsFrom(data, portfolioId ?? null)!
 
     return (
       <EntryOrientation
@@ -586,16 +585,24 @@ export function AssetWorkspacePane({
           /* The canonical asset page at its scenarios, which is where a
              target is actually edited. The event travels with the hop so the
              reader does not have to restate why they went. */
-          openScenarios: () => openAsset({
-            assetId: asset.id,
-            symbol,
-            companyName: asset.company_name ?? null,
-            focus: 'framework',
-            portfolioId: entry.portfolioId ?? portfolioId ?? null,
-            portfolioName: entry.portfolioName ?? portfolioName ?? null,
-            issue: entry.why?.headline ?? issue ?? null,
-            origin: entry.sourceItem?.family ?? origin ?? null,
-          }),
+          openScenarios: () => {
+            /* The event goes with the reader, in memory, for this one
+               navigation. The ids below are what a tab can hold; the reading
+               -- which target, which mark, how far through -- cannot live in
+               tab data without being restated as current every time the
+               reader returns to that tab. See `entry-handoff`. */
+            offerEntryContext(entry)
+            openAsset({
+              assetId: asset.id,
+              symbol,
+              companyName: asset.company_name ?? null,
+              focus: 'framework',
+              portfolioId: entry.portfolioId ?? portfolioId ?? null,
+              portfolioName: entry.portfolioName ?? portfolioName ?? null,
+              issue: entry.why?.headline ?? issue ?? null,
+              origin: entry.sourceItem?.family ?? origin ?? null,
+            })
+          },
           openFullWorkspace: onOpenLegacy,
           /* Only where a request is actually waiting. An action with nothing
              behind it is the inert card this work exists to avoid. */

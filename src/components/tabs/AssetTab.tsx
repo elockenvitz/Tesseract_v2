@@ -88,6 +88,18 @@ import { scrollToSection } from '../../lib/asset-workspace/scroll-to-section'
 import { stripTarget, type StripCell } from '../../lib/asset-workspace/strip-targets'
 import { focusIntentKey, shouldApplyFocus } from '../../lib/asset-workspace/arrival-focus'
 import { resolveEntry } from '../../lib/asset-workspace/entry'
+/*
+ * The arrival a reader was sent here with, and the band that states it.
+ *
+ * The same component the Dashboard's workspace pane draws, on the same
+ * contract: the context says what the sending surface knew, this page's own
+ * reads say what the record holds now, and the band reports the difference.
+ * The context travels in memory for one navigation -- see `entry-handoff`.
+ */
+import { takeEntryContext } from '../../lib/asset-workspace/entry-handoff'
+import type { WorkspaceEntryContext } from '../../lib/asset-workspace/entry-context'
+import { orientationFactsFrom } from '../../lib/asset-workspace/orientation-facts'
+import { EntryOrientation } from '../asset-v2/EntryOrientation'
 import { useAssetListMemberships } from '../../hooks/lists/useAssetListMemberships'
 import { useAssetConversations } from '../../hooks/ai/useAssetConversations'
 import { askAI } from '../../lib/engagement'
@@ -1030,6 +1042,35 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       consumedFocusIntent: intent,
     })
   }, [asset.focus, asset.focusRequestId, asset.id])
+
+  /*
+   * ── The arrival the reader came in with ────────────────────────────────
+   *
+   * A reader sent here from the Dashboard's workspace pane by a target breach
+   * was arriving at a page that could only re-derive the asset's CURRENT
+   * state, which is a different question from the EVENT they pressed. The
+   * pane leaves the typed context in `entry-handoff` immediately before
+   * calling `openAsset`; this takes it.
+   *
+   * Keyed on `focusRequestId` as well as the asset, for the same reason the
+   * effect above is: a fresh `openAsset` call lands even when this tab was
+   * already open and no mount occurs. Deliberately NOT persisted anywhere --
+   * the band states a reading of one moment, and a reading written into tab
+   * state would be restated as current every time the reader came back.
+   * Leaving the tab therefore drops it, which is correct: the orientation
+   * belongs to the arrival, not to the page.
+   *
+   * The org id is waited for rather than defaulted. `takeEntryContext`
+   * discards a context whose organisation does not match, and a null
+   * organisation matches nothing, so taking early would consume the offer and
+   * throw it away.
+   */
+  const [arrivalContext, setArrivalContext] = useState<WorkspaceEntryContext | null>(null)
+  useEffect(() => {
+    if (!assetExploredOrgId) return
+    const taken = takeEntryContext({ assetId: asset.id, organizationId: assetExploredOrgId })
+    if (taken) setArrivalContext(taken)
+  }, [asset.id, asset.focusRequestId, assetExploredOrgId])
 
   // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
   useEffect(() => {
@@ -3004,6 +3045,29 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * Work shows what exists and hands off. Research still owns writing it.
    */
   const workspaceForResearch = useAssetWorkspace(asset.id, asset.symbol ?? null, 'overview')
+
+  /*
+   * ── The orientation band, where the reader arrived on an event ──────────
+   *
+   * The same component the Dashboard pane draws, on the same contract, from
+   * THIS page's own org-scoped reads. That is the point of the shape: the
+   * context carries what the sending surface knew, the facts below are what
+   * the record says here, and the band reports a divergence between the two
+   * rather than silently preferring one.
+   *
+   * No new query. `workspaceForResearch` is already loaded above for Work,
+   * and the facts are a reshape of it.
+   *
+   * Two of the band's actions are deliberately not passed. `openScenarios`
+   * has no separate destination on this page -- the framework is a section of
+   * Research, which "Review the case" already reaches -- and
+   * `openFullWorkspace` would be a link to the page the reader is standing
+   * on. The band draws neither when it is not given one.
+   */
+  const arrivalFacts = React.useMemo(
+    () => orientationFactsFrom(workspaceForResearch.data, asset.portfolioId ?? null),
+    [workspaceForResearch.data, asset.portfolioId],
+  )
   /*
    * Starting an idea from a list or a book.
    *
@@ -4399,6 +4463,45 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
       {/* Sub-page Content */}
       <div className="flex-1 overflow-auto px-8 py-4">
+
+        {/*
+          Why the reader is here, where they arrived on an event.
+
+          Above the mode's own content and inside the scroller, so it is the
+          first thing read and then scrolls away. It is not sticky: an
+          orientation is read once, and a band pinned over a page the reader
+          has moved on to is chrome.
+        */}
+        {arrivalContext && arrivalFacts && (
+          <div className="mb-4" data-slot="asset-arrival-orientation">
+            <EntryOrientation
+              context={arrivalContext}
+              facts={arrivalFacts}
+              actions={{
+                /* Research is where the case and the framework under it both
+                   live, so this is the one destination the page has for both
+                   of the band's case verbs. */
+                reviewCase: () => goToMode('research'),
+                openPending: arrivalFacts.pending
+                  ? () => goToSubPage('decisions')
+                  : undefined,
+                ask: (question: string) => askAI({
+                  ...assetEngagementTarget,
+                  origin: { itemId: asset.id, surface: 'asset-entry-orientation' },
+                  ...(arrivalContext.why
+                    ? {
+                      issue: {
+                        title: arrivalContext.why.headline,
+                        reason: `entry:${arrivalContext.intent}`,
+                      },
+                    }
+                    : {}),
+                  seedPrompt: question,
+                }),
+              }}
+            />
+          </div>
+        )}
 
         {/* UX2 Phase 1 — the attention surface moved to the header ⚡ popover
             (same A1 resolver, signals, grouping, counts, priorities, deep-links).

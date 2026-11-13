@@ -92,10 +92,21 @@ export interface OrientationPageFacts {
 }
 
 export interface OrientationActions {
-  /** Open the case for editing, in place. */
-  reviewCase: () => void
-  /** Open the asset page at its scenarios. */
-  openScenarios: () => void
+  /**
+   * Open the case for editing.
+   *
+   * Optional, like `openScenarios` below, because the band now renders on two
+   * surfaces with different destinations. In the Dashboard pane the case is
+   * edited in place and the scenarios live one hop away on the canonical
+   * page, so both exist and mean different things. ON that canonical page the
+   * scenarios are a section of Research, which is where "review the case"
+   * already lands -- so it passes one and not the other, and the control it
+   * did not give is not drawn. Two buttons doing the same thing is the
+   * duplicate control this band was rewritten to remove.
+   */
+  reviewCase?: () => void
+  /** Open the asset page at its scenarios, where that is a separate place. */
+  openScenarios?: () => void
   /** The full canonical asset page, where the host offers one. */
   openFullWorkspace?: () => void
   /** Hand off to where the waiting request is answered. */
@@ -399,12 +410,16 @@ function TargetReview({ context, event, facts, actions, now }: {
         >
           <Sparkles className="h-3.5 w-3.5" />Assess the target breach
         </Action>
-        <Action testId="target-review-case" onClick={actions.reviewCase}>
-          <PencilLine className="h-3.5 w-3.5" />Review the case
-        </Action>
-        <Action testId="target-open-scenarios" onClick={actions.openScenarios}>
-          <Target className="h-3.5 w-3.5" />Update the scenarios
-        </Action>
+        {actions.reviewCase && (
+          <Action testId="target-review-case" onClick={actions.reviewCase}>
+            <PencilLine className="h-3.5 w-3.5" />Review the case
+          </Action>
+        )}
+        {actions.openScenarios && (
+          <Action testId="target-open-scenarios" onClick={actions.openScenarios}>
+            <Target className="h-3.5 w-3.5" />Update the scenarios
+          </Action>
+        )}
         {actions.openFullWorkspace && (
           <Action testId="target-open-full" onClick={actions.openFullWorkspace}>
             Full workspace<ArrowUpRight className="h-3.5 w-3.5" />
@@ -598,9 +613,11 @@ function DecisionPrep({ context, event, facts, actions, now }: {
         <Action testId="recommendation-assess" onClick={() => actions.ask(question)}>
           <Sparkles className="h-3.5 w-3.5" />Assess this request
         </Action>
-        <Action testId="recommendation-review-case" onClick={actions.reviewCase}>
-          <PencilLine className="h-3.5 w-3.5" />Review the case
-        </Action>
+        {actions.reviewCase && (
+          <Action testId="recommendation-review-case" onClick={actions.reviewCase}>
+            <PencilLine className="h-3.5 w-3.5" />Review the case
+          </Action>
+        )}
       </div>
 
       <Detail summary="The case behind it and the book it is for">

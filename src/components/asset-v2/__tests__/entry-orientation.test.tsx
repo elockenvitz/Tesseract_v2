@@ -23,6 +23,12 @@ import type { AssetWorkspaceData } from '../../../hooks/useAssetWorkspace'
 import { buildTargetHitCard } from '../../../lib/signals/builders/legacy-kinds'
 import { selectionFor } from '../../../lib/desktop-ideas/selection'
 import { entryContextFor } from '../../../lib/asset-workspace/entry-context'
+/* The real handoff, not a spy: what the canonical page will take is exactly
+   what these cases take. `clearEntryContext` keeps one case's offer out of
+   the next one. */
+import {
+  takeEntryContext, clearEntryContext, hasPendingEntryContext,
+} from '../../../lib/asset-workspace/entry-handoff'
 import type { AttentionEntry } from '../../../hooks/useDesktopAttentionFeed'
 
 const DAY = 86_400_000
@@ -75,6 +81,9 @@ vi.mock('../../../lib/engagement', async importOriginal => {
 })
 
 import { AssetWorkspacePane } from '../AssetWorkspace'
+/* Rendered directly in section 6, where the subject is the band's contract
+   with a host rather than this pane's wiring. */
+import { EntryOrientation } from '../EntryOrientation'
 
 const ORG = 'org-a'
 const asset = { id: 'a-aapl', symbol: 'AAPL', company_name: 'Apple Inc.' }
@@ -151,6 +160,9 @@ beforeEach(() => {
   }
   opened.length = 0
   asked.length = 0
+  /* The handoff is module state by design (two surfaces, never mounted at
+     once), so one case's unclaimed offer must not reach the next. */
+  clearEntryContext()
 })
 
 /**
@@ -486,6 +498,31 @@ describe('the orientation actions', () => {
     expect(opened[0].issue).toMatch(/reached the target/)
   })
 
+  it('leaves the whole event for the page it is opening, not just the ids', async () => {
+    /*
+     * The hop used to carry the headline as `issue` and nothing else, so the
+     * canonical page could only re-derive the asset's CURRENT state -- a
+     * different question from the event the reader pressed. The typed context
+     * is offered in memory immediately before the navigation and the page
+     * takes it on arrival; see `entry-handoff` for why not tab data.
+     */
+    render(pane({ entryContext: contextFromPress(targetEntry()) }))
+    expect(hasPendingEntryContext()).toBe(false)
+
+    await userEvent.click(screen.getByTestId('target-open-scenarios'))
+
+    const carried = takeEntryContext({ assetId: 'a-aapl', organizationId: ORG })
+    expect(carried?.event?.kind).toBe('target_reached')
+    expect(carried?.symbol).toBe('AAPL')
+  })
+
+  it('offers the same event when the reader leaves by the headers verb instead', async () => {
+    render(pane({ entryContext: contextFromPress(targetEntry()) }))
+    await userEvent.click(document.querySelector('[data-slot="asset-primary"]') as HTMLElement)
+    expect(takeEntryContext({ assetId: 'a-aapl', organizationId: ORG })?.event?.kind)
+      .toBe('target_reached')
+  })
+
   it('offers no request control when no request is waiting', async () => {
     render(pane({ entryContext: contextFromPress(targetEntry()) }))
     /* Opened first on purpose. The control now lives inside the disclosure,
@@ -568,5 +605,63 @@ describe('the orientation actions', () => {
     } finally {
       window.removeEventListener('decision-engine-action', listener)
     }
+  })
+})
+
+/* ------------------------- 6. the same band where the hops are different */
+
+/**
+ * The band now renders on the canonical Asset page too, and that page has
+ * fewer places to send a reader: the scenarios are a section of Research,
+ * which "Review the case" already reaches, and "Full workspace" would be a
+ * link to the page they are standing on.
+ *
+ * So the two case verbs are optional and the band draws what it was given.
+ * These cases render `EntryOrientation` directly, because what is being
+ * asserted is the component's contract with a host rather than this pane's
+ * wiring, which the cases above cover.
+ */
+describe('a host with fewer destinations', () => {
+  const EMPTY_FACTS = {
+    ladder: [], officialTarget: null, spot: null, spotAsOf: null,
+    caseWrittenAt: null, position: null, alsoHeldIn: [], pending: null,
+  }
+
+  const direct = (actions: Record<string, unknown>) => render(
+    <EntryOrientation
+      context={contextFromPress(targetEntry())!}
+      facts={EMPTY_FACTS}
+      actions={actions as never}
+    />,
+  )
+
+  it('draws only the controls it was handed', async () => {
+    const reviewCase = vi.fn()
+    direct({ reviewCase, ask: () => {} })
+
+    await userEvent.click(screen.getByTestId('target-review-case'))
+    expect(reviewCase).toHaveBeenCalledTimes(1)
+    /* The two the canonical page does not have. A button that re-lands the
+       reader where they already are is the inert control this band was
+       rewritten to remove. */
+    expect(screen.queryByTestId('target-open-scenarios')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('target-open-full')).not.toBeInTheDocument()
+  })
+
+  it('still states the event and still offers the assessment', () => {
+    direct({ ask: () => {} })
+    /* The reading is the band's reason to exist, so it survives a host that
+       offers no navigation at all. */
+    expect(screen.getByTestId('entry-target-review')).toBeInTheDocument()
+    expect(screen.getByTestId('target-assess')).toBeInTheDocument()
+    expect(screen.queryByTestId('target-review-case')).not.toBeInTheDocument()
+  })
+
+  it('keeps the assessment required rather than optional', async () => {
+    const ask = vi.fn()
+    direct({ ask })
+    await userEvent.click(screen.getByTestId('target-assess'))
+    expect(ask).toHaveBeenCalledTimes(1)
+    expect(String(ask.mock.calls[0][0])).toContain('Do not recommend buying or selling')
   })
 })
