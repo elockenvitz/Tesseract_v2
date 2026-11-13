@@ -113,7 +113,9 @@ export function AiKeep({ message, conversationTitle, subject, onPromoted, classN
           className,
         )}
       >
-        <BookmarkPlus className="h-3 w-3" />Keep
+        {/* Decorative: "Keep" is the name of this control. See the note in
+            `AiMessage` on what the unhidden icon did to it. */}
+        <BookmarkPlus className="h-3 w-3" aria-hidden="true" />Keep
       </button>
 
       {open && (

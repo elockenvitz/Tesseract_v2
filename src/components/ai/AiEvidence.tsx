@@ -64,16 +64,33 @@ export function AiEvidence({
       data-testid="ai-evidence"
       className={clsx('mt-3 border-t border-gray-200 pt-2 dark:border-gray-700/60', className)}
     >
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 text-[11px] font-medium text-gray-600
-                   hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
-        aria-expanded={open}
-        title={open ? 'Hide sources' : 'Show sources'}
-      >
-        <FileText className="h-3 w-3" />
-        <span data-testid="ai-evidence-heading">{evidenceHeading(evidence)}</span>
+      {/*
+        The warning sits BESIDE the toggle rather than inside it.
+        Inside, its own label joined the button's name, which came out as
+        "1 sourceA lookup failed, so the answer may be incomplete" -- the
+        same two things welded together that this pass is here to fix. It is
+        still on the same line and still visible without opening the section,
+        which is the behaviour it exists for.
+      */}
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          className="flex items-center gap-1.5 text-[11px] font-medium text-gray-600
+                     hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+          aria-expanded={open}
+          title={open ? 'Hide sources' : 'Show sources'}
+        >
+          {/* Decorative, and hidden for the reason given in `AiMessage`: with
+              both icons part of the name, this control read as "svg3 sources
+              svg" to anything that flattens it to text. */}
+          <FileText className="h-3 w-3" aria-hidden="true" />
+          <span data-testid="ai-evidence-heading">{evidenceHeading(evidence)}</span>
+          <ChevronRight
+            className={clsx('h-3 w-3 transition-transform', open && 'rotate-90')}
+            aria-hidden="true"
+          />
+        </button>
         {/*
           The only thing that gets colour at this level. A failed lookup means
           the answer may be missing something, which is the reader's call to
@@ -84,12 +101,16 @@ export function AiEvidence({
             data-testid="ai-evidence-failed"
             className="inline-flex items-center gap-0.5 text-red-600 dark:text-red-400"
             title="A lookup failed, so the answer may be incomplete"
+            /* This one carries meaning, so it is named rather than hidden:
+               the colour is the whole signal and a `title` alone is a
+               tooltip, not a name. The glyph inside it is then decoration. */
+            role="img"
+            aria-label="A lookup failed, so the answer may be incomplete"
           >
-            <AlertCircle className="h-3 w-3" />
+            <AlertCircle className="h-3 w-3" aria-hidden="true" />
           </span>
         )}
-        <ChevronRight className={clsx('h-3 w-3 transition-transform', open && 'rotate-90')} />
-      </button>
+      </div>
 
       {open && (
         <div className="mt-2 space-y-2">

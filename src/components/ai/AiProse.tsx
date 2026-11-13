@@ -320,7 +320,10 @@ function CodeBlock({ text }: { text: string }) {
                    opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
         title="Copy code"
       >
-        {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+        {/* Decorative, as in the message footer: the word is the name. */}
+        {copied
+          ? <Check className="w-3 h-3" aria-hidden="true" />
+          : <Copy className="w-3 h-3" aria-hidden="true" />}
         {copied ? 'Copied' : 'Copy'}
       </button>
     </div>

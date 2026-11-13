@@ -176,7 +176,17 @@ export function AiMessage({
               )}
               title="Copy response"
             >
-              {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+              {/*
+                `aria-hidden`, because the word next to it already says what
+                this does. Without it the icon is part of the control's name:
+                every text reading of this footer came out as "svgCopy", and
+                the same shape gave "svgKeep" and "svg3 sources svg" on the
+                two controls beside it. A reader using assistive technology
+                was hearing the element, not the label.
+              */}
+              {copied
+                ? <Check className="w-3 h-3" aria-hidden="true" />
+                : <Copy className="w-3 h-3" aria-hidden="true" />}
               {copied ? 'Copied' : 'Copy'}
             </button>
             </div>
