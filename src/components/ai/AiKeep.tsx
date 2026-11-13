@@ -41,6 +41,7 @@ import {
   type ArtifactPromotionSpec,
   type PromotionSubject,
 } from '../../lib/ai/artifacts'
+import { ARTIFACT_KEEP_OPTION } from '../../lib/ai/artifact-store'
 import { dispatchCaptureOpen } from '../../lib/capture/prefill'
 import type { AiRenderableMessage } from '../../lib/ai/presentation'
 
@@ -52,10 +53,27 @@ export interface AiKeepProps {
   subject?: PromotionSubject | null
   /** Told what was promoted, for a toast or a log. Never required. */
   onPromoted?: (id: ArtifactPromotionId) => void
+  /**
+   * Keeping it as an artifact: offered FIRST, and only when it can work.
+   *
+   * Two props rather than one, because "off" and "failed" must look
+   * different. When `canKeepArtifact` is false the row is not rendered at
+   * all -- the table does not exist in any environment yet, and a menu item
+   * that throws is worse than one that is absent.
+   *
+   * This component still reaches no database: the caller owns the write, so
+   * the confirmation, the validation and the capture dispatch here stay
+   * testable without one.
+   */
+  canKeepArtifact?: boolean
+  onKeepArtifact?: () => void
   className?: string
 }
 
-export function AiKeep({ message, conversationTitle, subject, onPromoted, className }: AiKeepProps) {
+export function AiKeep({
+  message, conversationTitle, subject, onPromoted,
+  canKeepArtifact = false, onKeepArtifact, className,
+}: AiKeepProps) {
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState<ArtifactPromotionSpec | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -124,6 +142,34 @@ export function AiKeep({ message, conversationTitle, subject, onPromoted, classN
           className="absolute bottom-full right-0 z-20 mb-1 w-64 rounded-md border border-gray-200
                      bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
         >
+          {/*
+            First, and separated by a rule, because it is the only option
+            that asserts nothing about the answer. The three below file it as
+            research in the reader's own name; this one says only that they
+            wanted it again. Absent entirely when it cannot work.
+          */}
+          {canKeepArtifact && onKeepArtifact && (
+            <li className="mb-1 border-b border-gray-200 pb-1 dark:border-gray-700">
+              <button
+                type="button"
+                data-slot="ai-keep-option"
+                data-promotion={ARTIFACT_KEEP_OPTION.id}
+                onClick={() => {
+                  setOpen(false)
+                  onKeepArtifact()
+                }}
+                className="flex w-full flex-col items-start gap-0.5 px-3 py-1.5 text-left
+                           hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                <span className="text-[12px] font-medium text-gray-800 dark:text-gray-100">
+                  {ARTIFACT_KEEP_OPTION.label}
+                </span>
+                <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                  {ARTIFACT_KEEP_OPTION.hint}
+                </span>
+              </button>
+            </li>
+          )}
           {ARTIFACT_PROMOTIONS.map(promotion => (
             <li key={promotion.id}>
               <button

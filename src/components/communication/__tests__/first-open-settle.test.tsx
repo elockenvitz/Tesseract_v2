@@ -48,6 +48,17 @@ vi.mock('../../../hooks/useTemplates', () => ({
    this suite is about what paints on first open, and the rail has its own
    suite. The provider below covers the data hooks this suite does not name,
    so a new one does not fail the held-frame assertions. */
+/* Mocked for the same reason `useAIFolders` is: it reads the session, and
+   this suite's supabase stub has no `auth`. Off, which is its real state in
+   every environment today -- the artifacts table is not applied. */
+vi.mock('../../../hooks/ai/useAiArtifacts', () => ({
+  useAiArtifacts: () => ({
+    available: false, artifacts: [], isLoading: false, organizationId: null,
+    keep: async () => null, rename: async () => undefined, remove: async () => undefined,
+    lastError: null,
+  }),
+}))
+
 vi.mock('../../../hooks/ai/useAIFolders', () => ({
   useAIFolders: () => ({
     folders: [],

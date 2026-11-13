@@ -50,6 +50,17 @@ vi.mock('../../../hooks/useTemplates', () => ({
   useTemplates: () => ({ templates: [], getByShortcut: () => undefined }),
 }))
 
+/* Mocked for the same reason `useAIFolders` is: it reads the session, and
+   this suite's supabase stub has no `auth`. Off, which is its real state in
+   every environment today -- the artifacts table is not applied. */
+vi.mock('../../../hooks/ai/useAiArtifacts', () => ({
+  useAiArtifacts: () => ({
+    available: false, artifacts: [], isLoading: false, organizationId: null,
+    keep: async () => null, rename: async () => undefined, remove: async () => undefined,
+    lastError: null,
+  }),
+}))
+
 vi.mock('../../../hooks/ai/useAIFolders', () => ({
   useAIFolders: () => ({
     folders: [], archivedFolders: [], isLoading: false, organizationId: null,

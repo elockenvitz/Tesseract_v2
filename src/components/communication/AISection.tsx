@@ -59,6 +59,9 @@ import { candidatePrompts, mergePrompts } from '../../lib/ai/prompt-candidates'
 import { useGroundedPromptFacts } from '../../hooks/ai/useGroundedPrompts'
 import { useSlashReading } from '../../hooks/ai/useSlashReading'
 import { parseSlashCommand } from '../../lib/ai/slash-commands'
+import { useAiArtifacts } from '../../hooks/ai/useAiArtifacts'
+import { suggestArtifactTitle } from '../../lib/ai/artifact-store'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
 
 /** How many questions each layout has room for. Matches `chatLayout`. */
 const LIMIT_FOR: Record<AiChatMode, number> = { compact: 4, research: 6 }
@@ -467,6 +470,36 @@ export function AISection({
   })
   const openConversationTitle =
     conversations.find(c => c.id === conversationId)?.title ?? null
+
+  /*
+   * Kept answers.
+   *
+   * `available` is false in every environment today -- the table's migration
+   * is authored and unapplied -- so the Keep menu's artifact row is absent
+   * rather than broken. Applying the migration turns it on with no change
+   * here: the hook probes instead of reading a flag.
+   */
+  const artifacts = useAiArtifacts()
+  const keptMessageIds = useMemo(
+    () => new Set(
+      artifacts.artifacts
+        .filter(a => a.conversation_id === conversationId)
+        .map(a => a.message_id),
+    ),
+    [artifacts.artifacts, conversationId],
+  )
+  const [keeping, setKeeping] = useState<{ messageId: string; title: string } | null>(null)
+
+  const confirmKeepArtifact = async () => {
+    if (!keeping || !conversationId) return
+    const pending = keeping
+    setKeeping(null)
+    await artifacts.keep({
+      conversationId,
+      messageId: pending.messageId,
+      title: pending.title,
+    })
+  }
   const subjectName = shortSubjectLabel(currentSubject?.label)
 
   /*
@@ -994,6 +1027,15 @@ export function AISection({
                     message={message}
                     conversationTitle={openConversationTitle}
                     subject={currentSubject ?? null}
+                    /* Needs a thread to point at: an artifact is a pointer,
+                       and an unsaved conversation has no id to point with. */
+                    canKeepArtifact={
+                      artifacts.available && !!conversationId && !keptMessageIds.has(message.id)
+                    }
+                    onKeepArtifact={() => setKeeping({
+                      messageId: message.id,
+                      title: suggestArtifactTitle(message.content, openConversationTitle),
+                    })}
                   />
                 }
               />
@@ -1216,6 +1258,31 @@ export function AISection({
         </div> {/* reading column */}
       </div>
       </div> {/* main pane */}
+
+      {/*
+        Keeping an answer as an artifact, confirmed.
+        The sentence says what it is and what it is NOT, because the thing a
+        reader has to understand is that an artifact is not firm-approved
+        research: it is a pointer to an answer they wanted again, readable
+        only by them.
+      */}
+      <ConfirmDialog
+        isOpen={!!keeping}
+        onClose={() => setKeeping(null)}
+        onConfirm={confirmKeepArtifact}
+        title="Keep this answer?"
+        message={
+          keeping
+            ? `It will be saved as "${keeping.title}", findable outside this thread. `
+              + 'It stays private to you, it is not filed as research, and it is not a '
+              + 'decision or an approved firm view. The answer itself is not copied: '
+              + 'deleting this conversation removes it.'
+            : ''
+        }
+        confirmText="Keep it"
+        cancelText="Cancel"
+        variant="info"
+      />
     </div>
   )
 }

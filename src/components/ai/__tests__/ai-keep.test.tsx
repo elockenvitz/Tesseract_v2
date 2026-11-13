@@ -187,3 +187,76 @@ describe('unopened', () => {
     expect(within(view.container).queryByText(/ACT AI wrote it/)).toBeNull()
   })
 })
+
+describe('keeping it as an artifact', () => {
+  /*
+   * This feature is OFF in every environment: `public.ai_artifacts` does
+   * not exist yet, its migration is authored and unapplied, and the hook
+   * that feeds `canKeepArtifact` probes for the table rather than reading a
+   * flag. So both states are asserted here -- the one that ships today, and
+   * the one applying the migration produces.
+   *
+   * The off case is the one worth having. A menu row that is present and
+   * throws, or present and silently writes nothing, is worse than a row
+   * that is not there: the reader believes they kept something.
+   */
+  const open = async (props: Partial<React.ComponentProps<typeof AiKeep>> = {}) => {
+    const user = userEvent.setup()
+    keep(props)
+    await user.click(screen.getByTestId('ai-keep'))
+    return user
+  }
+
+  it('offers no artifact row while the table does not exist', async () => {
+    await open()
+    const menu = screen.getByTestId('ai-keep-menu')
+    expect(menu.querySelector('[data-promotion="artifact"]')).toBeNull()
+    /* And the three research promotions are untouched by the gate. */
+    expect(menu.querySelectorAll('[data-slot="ai-keep-option"]')).toHaveLength(3)
+  })
+
+  it('offers no artifact row when it is available but nothing can be written', async () => {
+    /* Available with no handler is a wiring mistake, and it must fail closed
+       rather than render a row that does nothing when pressed. */
+    await open({ canKeepArtifact: true })
+    expect(screen.getByTestId('ai-keep-menu').querySelector('[data-promotion="artifact"]'))
+      .toBeNull()
+  })
+
+  it('offers it FIRST once it can work', async () => {
+    /*
+     * Named in the brief as the primary Keep option, and the order carries
+     * the meaning: it is the only option that asserts nothing about the
+     * answer. The three below file it as research in the reader's own name.
+     */
+    await open({ canKeepArtifact: true, onKeepArtifact: () => {} })
+    const options = screen.getByTestId('ai-keep-menu')
+      .querySelectorAll('[data-slot="ai-keep-option"]')
+    expect(options).toHaveLength(4)
+    expect(options[0].getAttribute('data-promotion')).toBe('artifact')
+  })
+
+  it('hands the write to the caller and dispatches no capture', async () => {
+    /*
+     * An artifact is not a research record, so it must not travel the
+     * capture channel: that channel opens the quick-thought form, which
+     * would file the answer as research in the reader's name.
+     */
+    const kept = vi.fn()
+    const user = await open({ canKeepArtifact: true, onKeepArtifact: kept })
+    await user.click(screen.getByTestId('ai-keep-menu').querySelector('[data-promotion="artifact"]')!)
+    expect(kept).toHaveBeenCalledTimes(1)
+    expect(requests).toEqual([])
+    /* And the menu closes, so the next click is not a second keep. */
+    expect(screen.queryByTestId('ai-keep-menu')).toBeNull()
+  })
+
+  it('still reaches no database of its own', async () => {
+    /* The property that makes this component reviewable. The caller owns
+       the write; nothing here does. */
+    const source = await import('node:fs').then(fs =>
+      fs.readFileSync('src/components/ai/AiKeep.tsx', 'utf8'))
+    expect(source).not.toMatch(/from '.*lib\/supabase'/)
+    expect(source).not.toMatch(/useAiArtifacts/)
+  })
+})
