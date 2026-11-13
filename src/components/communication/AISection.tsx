@@ -3,9 +3,7 @@ import { EngagementContextHeader } from './EngagementContextHeader'
 import type { EngagementTarget } from '../../lib/engagement'
 import {
   Bot,
-  Send,
   Settings,
-  Loader2,
   Sparkles,
   ChevronDown,
   PanelLeftOpen,
@@ -37,7 +35,7 @@ import { clsx } from 'clsx'
  * failed" starts rendering as "no records found" on one surface and not the
  * other.
  */
-import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips, AiContextAttach, AiKeep } from '../ai'
+import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips, AiContextAttach, AiKeep, AiComposer } from '../ai'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
@@ -484,7 +482,6 @@ export function AISection({
   }
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
   const modelSelectorRef = useRef<HTMLDivElement>(null)
 
   // Current model — effectiveConfig already resolves: user pref →
@@ -526,13 +523,6 @@ export function AISection({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Auto-resize textarea
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value)
-    e.target.style.height = 'auto'
-    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`
-  }
-
   /*
    * What was last sent, so a failed turn can be sent again.
    *
@@ -548,13 +538,11 @@ export function AISection({
     sendMessage(text)
   }
 
-  const handleSend = () => {
-    if (!input.trim() || isLoading) return
-    send(input.trim())
+  /* The composer hands over already-trimmed text and decides for itself when
+     sending is allowed; this clears the box, which is what shrinks it. */
+  const handleComposerSend = (text: string) => {
+    send(text)
     setInput('')
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto'
-    }
   }
 
   /* Offered only while we still hold the exact text. A Retry that sends
@@ -562,13 +550,6 @@ export function AISection({
   const retryLastSend = lastSentRef.current && !isLoading
     ? () => send(lastSentRef.current as string)
     : undefined
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
 
   // When the AI mentions a $TICKER in its response, dispatch a CustomEvent
   // (same pattern as `open-shared-simulation` elsewhere). Any dashboard
@@ -932,8 +913,11 @@ export function AISection({
                 streaming into the bubble above, a second spinner underneath it
                 says nothing the reader cannot already see. The label is a
                 grounded activity from the stream, never model text. */}
+            {/* No Stop here any more. The composer owns it, so there is one
+                Stop in one place for the whole generation rather than one that
+                vanishes the moment prose starts arriving. */}
             {isLoading && !messages.some(m => m.streaming && m.content) && (
-              <AiThinking status={status} onStop={cancelGeneration} />
+              <AiThinking status={status} />
             )}
 
             {/* Error message */}
@@ -971,32 +955,20 @@ export function AISection({
           referenceStatus={referenceStatus}
           className="mb-2"
         />
-        <div className="flex items-end space-x-2">
-          <div className="flex-1 relative">
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={ACT_AI_PLACEHOLDER}
-              className="w-full px-4 py-3 pr-12 border border-gray-300 dark:border-gray-600 rounded-lg resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-gray-800 dark:text-white"
-              rows={1}
-              disabled={isLoading}
-            />
-          </div>
-          <Button
-            variant="primary"
-            onClick={handleSend}
-            disabled={!input.trim() || isLoading}
-            className="h-12 w-12 p-0 flex items-center justify-center"
-          >
-            {isLoading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : (
-              <Send className="h-5 w-5" />
-            )}
-          </Button>
-        </div>
+        {/*
+          The composer owns the box, the keys and the one control that starts
+          or stops a turn -- including while an answer is streaming, which is
+          the whole period that previously had no Stop at all. Its own file
+          carries the four faults it replaces.
+        */}
+        <AiComposer
+          value={input}
+          onChange={setInput}
+          onSend={handleComposerSend}
+          onStop={cancelGeneration}
+          isStreaming={isLoading}
+          placeholder={ACT_AI_PLACEHOLDER}
+        />
 
         {/* Model selector and settings */}
         <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">

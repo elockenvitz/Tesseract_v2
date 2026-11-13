@@ -36,5 +36,10 @@ export type { AiContextAttachProps, AttachableType } from './AiContextAttach'
    writes nothing itself -- see its own note on why it still confirms. */
 export { AiKeep } from './AiKeep'
 export type { AiKeepProps } from './AiKeep'
+/* The box, the keys and the Send/Stop control. It holds no conversation: it
+   is handed a value and two handlers, which is what lets a test press Stop
+   without standing up the hook. */
+export { AiComposer } from './AiComposer'
+export type { AiComposerProps } from './AiComposer'
 export { AiBriefing } from './AiBriefing'
 export type { AiBriefingProps } from './AiBriefing'
