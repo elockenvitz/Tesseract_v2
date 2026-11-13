@@ -40,7 +40,7 @@ import { clsx } from 'clsx'
  * failed" starts rendering as "no records found" on one surface and not the
  * other.
  */
-import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips, AiContextAttach, AiKeep, AiComposer, AiDotMenu } from '../ai'
+import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips, AiContextAttach, AiKeep, AiComposer, AiSlashMenu, slashRowText } from '../ai'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
@@ -403,6 +403,18 @@ export function AISection({
   }, [promptFacts, currentSubject, suggestions, mode])
 
   const [input, setInput] = useState('')
+  /*
+   * Slash Command keyboard state, held here because it spans two children.
+   *
+   * `AiSlashMenu` knows how many rows it is showing and `AiComposer` has the
+   * focus that sees the arrow keys, so neither can own this alone. The
+   * cursor resets whenever the row count changes: keeping the index would
+   * leave it pointing at whatever now occupies that position, which is the
+   * same defect the Add Context picker had.
+   */
+  const [slashRows, setSlashRows] = useState(0)
+  const [slashCursor, setSlashCursor] = useState(0)
+  useEffect(() => { setSlashCursor(0) }, [slashRows])
 
   /**
    * Place the surface's suggested question in the composer.
@@ -1040,7 +1052,13 @@ export function AISection({
             <span>{retrievalWarning}</span>
           </div>
         )}
-        <AiDotMenu value={input} onPick={setInput} templateBody={templateBody} />
+        <AiSlashMenu
+          value={input}
+          onPick={setInput}
+          templateBody={templateBody}
+          activeIndex={slashRows > 0 ? slashCursor : undefined}
+          onRowCountChange={setSlashRows}
+        />
         {/*
           ONE composer. The box, the attachments, the model picker, Settings
           and the send control are all inside a single bordered container
@@ -1056,6 +1074,12 @@ export function AISection({
           onStop={cancelGeneration}
           isStreaming={isLoading}
           placeholder={ACT_AI_PLACEHOLDER}
+          /* The Slash Command keyboard. The menu above owns the list; the
+             composer owns the keys, because it is what has focus. */
+          slashRows={slashRows}
+          slashCursor={slashCursor}
+          onSlashCursorChange={setSlashCursor}
+          onSlashPick={i => slashRowText(input, i, templateBody)}
           toolbar={
             <>
               <div className="relative shrink-0" ref={modelSelectorRef}>

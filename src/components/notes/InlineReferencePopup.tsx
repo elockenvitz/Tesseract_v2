@@ -26,16 +26,23 @@ const ACCENT_COLORS = {
 
 // ─── Dot Commands ───────────────────────────────────────────────────
 
-type DotCommand = '.chart' | '.price' | '.volume' | '.marketcap' | '.change' | '.thesis' | '.overview'
+/*
+ * Slash Commands, for the inline reference popup.
+ *
+ * These literals are COMPONENT STATE, never persisted and never parsed out
+ * of stored text, so the trigger change here is a label change and nothing
+ * more -- no saved note holds one of these strings.
+ */
+type SlashCommand = '/chart' | '/price' | '/volume' | '/marketcap' | '/change' | '/thesis' | '/overview'
 
-const DOT_COMMANDS: { cmd: DotCommand; label: string }[] = [
-  { cmd: '.chart', label: 'Price chart' },
-  { cmd: '.price', label: 'Price details' },
-  { cmd: '.volume', label: 'Volume' },
-  { cmd: '.marketcap', label: 'Market cap' },
-  { cmd: '.change', label: 'Price change' },
-  { cmd: '.thesis', label: 'Investment thesis' },
-  { cmd: '.overview', label: 'Overview' },
+const SLASH_COMMANDS: { cmd: SlashCommand; label: string }[] = [
+  { cmd: '/chart', label: 'Price chart' },
+  { cmd: '/price', label: 'Price details' },
+  { cmd: '/volume', label: 'Volume' },
+  { cmd: '/marketcap', label: 'Market cap' },
+  { cmd: '/change', label: 'Price change' },
+  { cmd: '/thesis', label: 'Investment thesis' },
+  { cmd: '/overview', label: 'Overview' },
 ]
 
 // ─── Formatters ─────────────────────────────────────────────────────
@@ -67,8 +74,8 @@ function CommandInput({
   value,
   onChange,
 }: {
-  value: DotCommand
-  onChange: (cmd: DotCommand) => void
+  value: SlashCommand
+  onChange: (cmd: SlashCommand) => void
 }) {
   const [inputValue, setInputValue] = useState(value)
   const [showDropdown, setShowDropdown] = useState(false)
@@ -77,9 +84,9 @@ function CommandInput({
 
   const filtered = useMemo(() => {
     const q = inputValue.toLowerCase()
-    if (!q || q === '.') return DOT_COMMANDS
-    return DOT_COMMANDS.filter(
-      (c) => c.cmd.startsWith(q) || c.label.toLowerCase().includes(q.replace(/^\./, ''))
+    if (!q || q === '/') return SLASH_COMMANDS
+    return SLASH_COMMANDS.filter(
+      (c) => c.cmd.startsWith(q) || c.label.toLowerCase().includes(q.replace(/^\//, ''))
     )
   }, [inputValue])
 
@@ -88,7 +95,7 @@ function CommandInput({
   }, [filtered.length])
 
   const selectCommand = useCallback(
-    (cmd: DotCommand) => {
+    (cmd: SlashCommand) => {
       setInputValue(cmd)
       setShowDropdown(false)
       onChange(cmd)
@@ -440,7 +447,7 @@ function AssetContent({
 }) {
   const assetId = attrs['data-id']
   const symbol = attrs['data-symbol'] || ''
-  const [activeCmd, setActiveCmd] = useState<DotCommand>('.chart')
+  const [activeCmd, setActiveCmd] = useState<SlashCommand>('/chart')
 
   // Fetch asset basic info
   const { data: asset, isLoading: assetLoading } = useQuery({
@@ -461,7 +468,7 @@ function AssetContent({
   const resolvedSymbol = asset?.symbol || symbol
 
   // Fetch quote (needed for chart, price, volume, marketcap, change)
-  const needsQuote = ['.chart', '.price', '.volume', '.marketcap', '.change'].includes(activeCmd)
+  const needsQuote = ['/chart', '/price', '/volume', '/marketcap', '/change'].includes(activeCmd)
   const { data: quote, isLoading: quoteLoading } = useQuery({
     queryKey: ['inline-ref-quote', resolvedSymbol],
     queryFn: () => financialDataService.getQuote(resolvedSymbol),
@@ -495,13 +502,13 @@ function AssetContent({
         <LoadingSpinner />
       ) : (
         <>
-          {activeCmd === '.chart' && <ChartView symbol={resolvedSymbol} quote={quote} />}
-          {activeCmd === '.price' && <PriceView quote={quote} />}
-          {activeCmd === '.volume' && <VolumeView quote={quote} />}
-          {activeCmd === '.marketcap' && <MarketCapView quote={quote} />}
-          {activeCmd === '.change' && <ChangeView quote={quote} />}
-          {activeCmd === '.thesis' && <ThesisView assetId={assetId} />}
-          {activeCmd === '.overview' && <OverviewView asset={asset} />}
+          {activeCmd === '/chart' && <ChartView symbol={resolvedSymbol} quote={quote} />}
+          {activeCmd === '/price' && <PriceView quote={quote} />}
+          {activeCmd === '/volume' && <VolumeView quote={quote} />}
+          {activeCmd === '/marketcap' && <MarketCapView quote={quote} />}
+          {activeCmd === '/change' && <ChangeView quote={quote} />}
+          {activeCmd === '/thesis' && <ThesisView assetId={assetId} />}
+          {activeCmd === '/overview' && <OverviewView asset={asset} />}
         </>
       )}
 

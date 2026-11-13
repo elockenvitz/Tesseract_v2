@@ -1320,3 +1320,155 @@ Per Standing Rule 4, found and not bundled:
    registry only, which is stated in its own comment.
 5. **The `chart` family is five ids with one reason between them.** If charts
    ever come to chat, five entries move rather than one.
+
+---
+
+# ACT AI 2.3 — context reliability, Slash Commands, Markdown
+
+Four changes so far, each pushed, none merged, none deployed.
+
+## 1. The Large Cap Growth failure (`b8259b88`)
+
+**What was wrong.** You attached the Large Cap Growth portfolio and asked
+what active ideas were in it. The answer was built from no portfolio at all.
+The chip said the portfolio was attached, so there was nothing on screen to
+tell you the answer had nothing behind it.
+
+**The cause, from the production log rather than from guessing:** the
+holdings query asked for a column called `weight`, and
+`portfolio_holdings` has no such column. It has `shares` and `price`. So the
+query failed, the tag resolved to nothing, and the whole thing was dropped
+silently.
+
+**What the right answer is.** Against the live database: ONE live idea. Not
+three. Two of the three rows are executed history, not open ideas.
+
+**What could break.** Weights are now computed as `shares x price` over the
+snapshot total, on the newest stored snapshot. Those are the stored marks on
+that date, not live prices, and the answer says so. An unpriced holding is
+kept with a null weight rather than dropped or counted as zero -- dropping
+it would quietly change every other holding's percentage.
+
+## 2. The composer (`98d22426`)
+
+One container now holds the box, the attachments, the model picker,
+Settings and Send. Two of the five things you flagged were real bugs rather
+than taste: an empty box showed a scrollbar because the height calculation
+was short by exactly the border width, and there were two focus rings
+stacked because nothing turned the inner one off.
+
+## 3. Conversations and projects (`1074b6fc`)
+
+Five hover icons became one `···` menu. Projects are a real tree you can
+expand, and "Move to project" is a named item instead of a folder glyph that
+looked like the control that filtered.
+
+**Three real bugs the tests found while building it**, all fixed: a thread
+whose project was archived became invisible everywhere; search found matches
+in collapsed projects and then drew nothing, telling you no conversations
+matched; and Escape did not close the menu.
+
+## 4. Markdown in research (`1c6a73e1`)
+
+**What was wrong.** You saw `**iPhone weakness**` with its asterisks. The
+Asset Workspace was not the culprit -- it renders correctly, which I proved
+by rendering the real stored AAPL content and inspecting the output. Nine
+OTHER surfaces printed the stored Markdown raw.
+
+The reason only one surface was right: the function that strips markup lived
+inside a component file, so nothing else could import it. It now lives in
+`src/lib/text/rich-text-plain.ts`.
+
+**What could break.** Clamped excerpts lose their bullet markers and bold
+runs, by design -- they are pointers, not reading surfaces. The research-v2
+detail page went the other way: it now RENDERS, so a long section there will
+look different (properly formatted) rather than wrong.
+
+Nothing stored changed. No migration.
+
+## 5. A context chip is now the server's claim (`e910d4e1`)
+
+**The thing worth understanding.** A chip used to prove only that the
+browser had written a row. It said nothing about whether the server found
+the object. That is exactly how change 1 above was invisible.
+
+The server now reports one of five outcomes per attached object, the model
+is TOLD which objects it could not read (and told that you believe it has
+them), and the chip turns amber with its own sentence. A banner above the
+composer says the same thing where you cannot miss it.
+
+`unavailable` deliberately does not distinguish "deleted" from "not yours".
+It cannot, without a privileged read, and that read would itself disclose
+that someone else's portfolio exists.
+
+**NOT YET REACHABLE.** The server half is in `supabase/functions/ai-chat`
+and does nothing until that function is deployed. That is a production
+deploy and your call. Until then every chip reads `unknown`, which is the
+old behaviour minus the false confidence.
+
+## 6. Slash Commands (this change)
+
+**The product decision, applied.** The trigger is `/`. The dot is gone, not
+kept as a second way in.
+
+A leading dot is punctuation: it ends every sentence, it is the decimal
+point in every figure, and it is the separator in `BRK.B` and in every
+domain. A trigger that collides with the most common character in financial
+prose fires when nobody asked.
+
+**What did not change.** The command ids. `chart.price` is still
+`chart.price`, and the dot inside an id is still a dot -- it is a namespace
+separator, and `/chart/price` would read as a URL path, which is one of the
+things the trigger must never fire on. So the syntax is `/chart.price.AAPL`:
+slash to start, dots to qualify. Nothing stored changed, no persisted node
+type changed, and no saved document was rewritten.
+
+**Four parsers, one trigger.** The character was a literal in about twenty
+places across four files, and the DISPLAY names were a separate list from
+the PARSERS -- so the menu could have advertised one trigger while the
+editor listened for another. All four now import `SLASH` from one module,
+and a test reads their source to prove it.
+
+**Two real bugs found while migrating**, both of which would have been
+visible regressions:
+
+- The highlighter had no word boundary at all, so with a slash every URL
+  path in every note would have been decorated as a command.
+- The smart-input parser had a fallback that took the LAST separator on the
+  line regardless of what preceded it. With a dot that meant `BRK.B` opened
+  the menu mid-word; with a slash it would mean every link did. Removed --
+  the main scan already handled everything it was there for.
+
+**What must never trigger**, each with its own test: a date (`2026/11/13`),
+a date fragment (`/2026`), a quarter (`3/26`), division (`10/2`, `/ 50`), a
+ratio (`P/E`, `debt/equity`), a URL, a protocol-relative URL, a path, an
+either-or (`bull / bear`) and a fraction (`1/2`). The rule doing the work is
+narrow: a LETTER must follow the slash, and the slash must start the line or
+follow whitespace.
+
+**The keyboard now works**, which it did not before. Arrow keys move, Enter
+takes the row, Tab takes it too, Escape clears. The seam is worth knowing
+about: the menu draws the list but the COMPOSER owns the keystrokes, because
+your focus never leaves the box while the menu is open. Two components both
+acting on Enter is how choosing a command also sends the message, and there
+is a test for exactly that -- it failed when I deliberately broke it.
+
+**Historical documents.** Old notes hold `.price.AAPL` as ordinary text. It
+stays ordinary text: not highlighted, and not rewritten. Embedded objects
+are ProseMirror nodes rather than text, so they are untouched and reopen
+exactly as before.
+
+## What to look at, in ten minutes
+
+1. **Slash Commands.** Type `/` in ACT AI. Arrow down, press Enter. Then
+   type `/price.LRCX` and Enter twice. Then type `2026/11/13` and `P/E of
+   28x` and confirm nothing opens. Then the same `/` in a note editor.
+2. **The research page.** Open a name with a bolded thesis in research-v2.
+   No asterisks, and the bullets are bullets.
+3. **A list rail.** The case excerpt should read as prose with no markers.
+4. **The composer.** Empty box: no scrollbar, one focus ring.
+5. **Projects.** Make one, move a conversation into it with `···`, reload.
+6. **Add Context.** Type two letters. Grouped headings, arrow keys, Enter.
+
+Context chips will all read `unknown` until `ai-chat` is deployed. That is
+expected and is the one thing on this list you cannot check yet.

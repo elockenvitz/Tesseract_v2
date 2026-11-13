@@ -106,11 +106,31 @@ export interface AiComposerProps {
    * Add Context, Slash Commands, the model picker.
    */
   toolbar?: React.ReactNode
+  /*
+   * ── Slash Command keyboard, delegated here ─────────────────────────────
+   *
+   * The menu renders above this component and the reader keeps focus in the
+   * textarea while using it, so only this component sees the keys. These
+   * three props are the whole protocol: how many rows there are, which one
+   * is current, and what text a row inserts. The menu owns the list; this
+   * owns the keystrokes.
+   *
+   * All optional, so a host that does not mount the menu is unaffected and
+   * every existing caller keeps working.
+   */
+  /** Rows the menu is currently showing. 0 disables the whole branch. */
+  slashRows?: number
+  /** The row the keyboard is on. */
+  slashCursor?: number
+  onSlashCursorChange?: (index: number) => void
+  /** The text for a row, or null when that row cannot be picked. */
+  onSlashPick?: (index: number) => string | null
 }
 
 export function AiComposer({
   value, onChange, onSend, onStop,
   isStreaming = false, disabled = false, placeholder, className, children, toolbar,
+  slashRows = 0, slashCursor = 0, onSlashCursorChange, onSlashPick,
 }: AiComposerProps) {
   const ref = useRef<HTMLTextAreaElement>(null)
   /** True only once the text genuinely exceeds the cap. */
@@ -163,6 +183,56 @@ export function AiComposer({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    /*
+     * The Slash Command menu gets the arrow keys and Enter first.
+     *
+     * It lives above this box and the reader's focus never leaves the
+     * textarea while it is open -- they are still typing the command -- so
+     * the menu cannot see the keystrokes itself. The alternative, a second
+     * key listener in the menu, means two components both act on Enter and
+     * choosing a command also sends the message.
+     *
+     * `slashRows` is 0 in every state with nothing selectable: a bare
+     * statement like "needs a ticker" or "works in the editor". So Enter
+     * falls through to sending, which is right -- there is no row to pick.
+     */
+    if (slashRows > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        onSlashCursorChange?.((slashCursor + 1) % slashRows)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        onSlashCursorChange?.((slashCursor - 1 + slashRows) % slashRows)
+        return
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        const native = e.nativeEvent as KeyboardEvent & { isComposing?: boolean }
+        /* An IME commit is never a menu selection. Same rule as sending. */
+        if (!native.isComposing && native.keyCode !== 229) {
+          const text = onSlashPick?.(slashCursor)
+          if (text != null) {
+            e.preventDefault()
+            onChange(text)
+            return
+          }
+        }
+      }
+      if (e.key === 'Escape') {
+        /*
+         * Clears the slash, which is the only thing that closes the menu.
+         *
+         * A "dismissed" flag would be a second piece of state saying the
+         * menu is shut while the text that opens it is still in the box, and
+         * the next keystroke would reopen it anyway.
+         */
+        e.preventDefault()
+        onChange('')
+        return
+      }
+    }
+
     if (e.key !== 'Enter') return
     /*
      * Mid-composition Enter belongs to the input method, not to us.

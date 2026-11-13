@@ -41,9 +41,9 @@ export type { AiKeepProps } from './AiKeep'
    without standing up the hook. */
 export { AiComposer } from './AiComposer'
 export type { AiComposerProps } from './AiComposer'
-/* Tesseract's own dot commands, for the few that can be honoured in a chat
+/* Tesseract's own Slash Commands, for the few that can be honoured in a chat
    message. It names the ones that cannot, rather than degrading them. */
-export { AiDotMenu } from './AiDotMenu'
-export type { AiDotMenuProps } from './AiDotMenu'
+export { AiSlashMenu, slashRowText } from './AiSlashMenu'
+export type { AiSlashMenuProps } from './AiSlashMenu'
 export { AiBriefing } from './AiBriefing'
 export type { AiBriefingProps } from './AiBriefing'

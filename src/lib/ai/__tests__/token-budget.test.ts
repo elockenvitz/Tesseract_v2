@@ -34,7 +34,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { resolveResponsePolicy } from '../response-policy'
-import { expandDotCommand, parseDotCommand } from '../dot-commands'
+import { expandSlashCommand, parseSlashCommand } from '../slash-commands'
 import { boundHistory, DEFAULT_HISTORY_BUDGET } from '../history'
 import { DEFAULT_BUDGET } from '../context-selection'
 
@@ -202,13 +202,13 @@ describe('the input side still binds', () => {
     expect(DEFAULT_BUDGET.maxObjects).toBe(4)
   })
 
-  it('sends nothing extra for a dot command', () => {
+  it('sends nothing extra for a slash command', () => {
     /*
-     * The dot menu's whole output is text in the composer. So a command and
-     * the question a reader could have typed themselves cost the same, and
-     * the feature's request-side cost is zero.
+     * The Slash Command menu's whole output is text in the composer. So a
+     * command and the question a reader could have typed themselves cost the
+     * same, and the feature's request-side cost is zero.
      */
-    const expansion = expandDotCommand(parseDotCommand('.price.LRCX')!)
+    const expansion = expandSlashCommand(parseSlashCommand('/price.LRCX')!)
     expect(expansion.kind).toBe('text')
     if (expansion.kind !== 'text') return
 
@@ -229,14 +229,15 @@ describe('the composer parse is not work per keystroke', () => {
      * identity below: repeated parses return equal results from the same
      * frozen source.
      */
-    const prefixes = '.chart.price.AAPL'.split('').map((_, i) => '.chart.price.AAPL'.slice(0, i + 1))
-    const results = prefixes.map(p => parseDotCommand(p))
+    const full = '/chart.price.AAPL'
+    const prefixes = full.split('').map((_, i) => full.slice(0, i + 1))
+    const results = prefixes.map(p => parseSlashCommand(p))
     expect(results).toHaveLength(17)
     expect(results[results.length - 1]).toEqual({ id: 'chart.price', symbol: 'AAPL', partial: false })
 
     /* And the long id wins over its own prefix at every length, which is the
        property the ordering exists for. */
-    expect(parseDotCommand('.chart.price.AAPL')!.id).toBe('chart.price')
-    expect(parseDotCommand('.chart AAPL')!.id).toBe('chart')
+    expect(parseSlashCommand('/chart.price.AAPL')!.id).toBe('chart.price')
+    expect(parseSlashCommand('/chart AAPL')!.id).toBe('chart')
   })
 })
