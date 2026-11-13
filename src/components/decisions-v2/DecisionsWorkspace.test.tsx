@@ -2367,6 +2367,27 @@ describe('outcome chips are categories, not grades', () => {
  * price and a complete record was 64px of reserved visual over a claim and two
  * figures -- the oversized, whitespace-heavy card this pass is about.
  */
+/*
+ * ── Why every date in this block is relative ──────────────────────────────
+ *
+ * These nine fixtures used absolute instants in September 2026. Every one of
+ * them means an INTERVAL -- requested four days before the answer, filled the
+ * same day, one record older than another -- and none of them means a
+ * calendar date. But the lens only shows a committed decision for
+ * `RECENT_DAYS` (60) after it was decided, measured against the real clock,
+ * so a fixed fixture walks out of the window while the assertion stays
+ * behind.
+ *
+ * It did exactly that. `decidedAt: '2026-09-14T10:00:00Z'` left the window at
+ * 2026-11-13T10:00:00Z; CI passed at 04:54Z that morning and failed at
+ * 15:23Z the same afternoon, on a documentation commit that touched no code.
+ * The two cases that assert a tile is PRESENT failed. Worse, the two that
+ * assert something is ABSENT had already gone quietly vacuous -- an empty
+ * board satisfies them -- and would never have failed at all.
+ *
+ * Relative dates keep the intervals, which are the subject, and keep the
+ * record inside the window, which is the precondition.
+ */
 describe('the hero slot is earned by having something to fill it', () => {
   beforeEach(() => { decisions = []; outcomeFacts = {} })
 
@@ -2381,7 +2402,7 @@ describe('the hero slot is earned by having something to fill it', () => {
      each other and "0d" twice. The lengths ARE the finding; with no lengths
      there is no finding. */
   it('does not draw the track when every interval is zero', () => {
-    const sameDay = '2026-09-15T10:00:00Z'
+    const sameDay = daysAgo(10)
     decisions = [committed({
       requestedAt: sameDay, decidedAt: sameDay,
       execution: { id: 'e', status: 'completed', completedAt: sameDay, executedByName: 'PM' },
@@ -2391,10 +2412,11 @@ describe('the hero slot is earned by having something to fill it', () => {
   })
 
   it('draws the track once one interval is real', () => {
+    const decidedTen = daysAgo(10)
     decisions = [committed({
-      requestedAt: '2026-09-10T10:00:00Z',
-      decidedAt: '2026-09-14T10:00:00Z',
-      execution: { id: 'e', status: 'completed', completedAt: '2026-09-14T10:00:00Z', executedByName: 'PM' },
+      requestedAt: daysAgo(14),
+      decidedAt: decidedTen,
+      execution: { id: 'e', status: 'completed', completedAt: decidedTen, executedByName: 'PM' },
       // No symbol, so no price series and no price column. The track is the
       // FALLBACK object, and this is what still exercises it.
       symbol: null,
@@ -2406,7 +2428,7 @@ describe('the hero slot is earned by having something to fill it', () => {
   /* The band is a ceiling, not an allocation: a record with no object takes
      `large`, which is the same width and less height. Order is untouched. */
   it('demotes the newest record out of hero when it has no object to draw', () => {
-    const sameDay = '2026-09-15T10:00:00Z'
+    const sameDay = daysAgo(10)
     // Nothing cached for the name, so there is no move and no chart either --
     // which is the real case this covers: COIN, CLOV, CROX, GH, LRCX, PARA
     // and TGT all have zero rows in `price_history_cache`.
@@ -2422,8 +2444,8 @@ describe('the hero slot is earned by having something to fill it', () => {
 
   it('keeps hero where the record does have one', () => {
     decisions = [committed({
-      requestedAt: '2026-09-10T10:00:00Z', decidedAt: '2026-09-14T10:00:00Z',
-      execution: { id: 'e', status: 'completed', completedAt: '2026-09-15T10:00:00Z', executedByName: 'PM' },
+      requestedAt: daysAgo(14), decidedAt: daysAgo(10),
+      execution: { id: 'e', status: 'completed', completedAt: daysAgo(9), executedByName: 'PM' },
     })]
     render(<DecisionsWorkspace />)
     expect(screen.getByTestId('decision-tile')).toHaveAttribute('data-size', 'hero')
@@ -2431,13 +2453,17 @@ describe('the hero slot is earned by having something to fill it', () => {
 
   /* Demotion must not reorder: the newest record is still the first tile. */
   it('changes how much room the newest record gets, never which record is newest', () => {
-    const sameDay = '2026-09-15T10:00:00Z'
+    const sameDay = daysAgo(10)
     tileCloses = []
     decisions = [
       committed({ id: 'new', ideaId: 'tq-new', requestedAt: sameDay, decidedAt: sameDay,
         sizingWeight: null, baselineWeight: null,
         execution: { id: 'e1', status: 'completed', completedAt: sameDay, executedByName: 'PM' } }),
-      committed({ id: 'old', ideaId: 'tq-old', decidedAt: '2026-08-01T10:00:00Z' }),
+      /* Older than the newest, and still inside `RECENT_DAYS` -- otherwise it
+         is filtered off the board and "the newest record is still the first
+         tile" is a claim about a list of one. With the old absolute date it
+         WAS a list of one. */
+      committed({ id: 'old', ideaId: 'tq-old', decidedAt: daysAgo(30) }),
     ]
     render(<DecisionsWorkspace />)
     const tiles = screen.getAllByTestId('decision-tile')
