@@ -21,6 +21,8 @@
  * component must preserve what the hook already had.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { AiRenderableMessage } from '../../../lib/ai/presentation'
@@ -55,9 +57,10 @@ const selectConversation = vi.fn()
 /*
  * The pane gained a second data hook when conversations gained folders.
  *
- * This suite mounts AISection with `useAI` mocked and no QueryClientProvider,
- * so the folder hook is stubbed the same way and for the same reason: folders
- * are not the subject here, and the rail has its own suite.
+ * Still stubbed rather than left to the provider below: `useAIFolders` reads
+ * the org from a membership query, and folders are not the subject here --
+ * the rail has its own suite. The provider exists for the hooks this suite
+ * does NOT name, so growing a third data path does not break it.
  */
 vi.mock('../../../hooks/ai/useAIFolders', () => ({
   useAIFolders: () => ({
@@ -131,8 +134,25 @@ import { AISection } from '../../communication/AISection'
 
 const subject = { type: 'asset', id: 'a1', label: 'AAPL - Apple Inc.' }
 
+/*
+ * A real query client, not another stub.
+ *
+ * The pane reaches react-query through more hooks every time it grows one --
+ * the conversation list, the folders, and now the attach control's entity
+ * search. Stubbing each new one in turn is how this suite kept failing for a
+ * reason that had nothing to do with mode continuity. Nothing here hits the
+ * network: the hooks that matter are mocked, and the attach search is
+ * disabled until someone types two characters.
+ *
+ * Every render AND rerender goes through `wrap`, with the same provider
+ * element in the same position, so the node-identity assertion below still
+ * measures the pane rather than the wrapper.
+ */
+const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+const wrap = (node: ReactNode) => <QueryClientProvider client={client}>{node}</QueryClientProvider>
+
 function renderPane(mode: 'compact' | 'research') {
-  return render(
+  return render(wrap(
     <AISection
       isOpen
       onToggle={() => {}}
@@ -142,7 +162,7 @@ function renderPane(mode: 'compact' | 'research') {
       onToggleMode={() => {}}
       currentSubject={subject}
     />,
-  )
+  ))
 }
 
 beforeEach(() => {
@@ -159,12 +179,12 @@ describe('compact ↔ research', () => {
     const view = renderPane('compact')
     const before = screen.getByText('The PM ruling is pending.')
 
-    view.rerender(
+    view.rerender(wrap(
       <AISection
         isOpen onToggle={() => {}} isFullscreen onToggleFullscreen={() => {}}
         mode="research" onToggleMode={() => {}} currentSubject={subject}
       />,
-    )
+    ))
 
     const after = screen.getByText('The PM ruling is pending.')
     /* Identity, not equality: a remount returns the same words in a new node
@@ -177,12 +197,12 @@ describe('compact ↔ research', () => {
     const view = renderPane('compact')
     await user.type(screen.getByPlaceholderText(ACT_AI_PLACEHOLDER), 'and what about the risks')
 
-    view.rerender(
+    view.rerender(wrap(
       <AISection
         isOpen onToggle={() => {}} isFullscreen onToggleFullscreen={() => {}}
         mode="research" onToggleMode={() => {}} currentSubject={subject}
       />,
-    )
+    ))
 
     expect((screen.getByPlaceholderText(ACT_AI_PLACEHOLDER) as HTMLTextAreaElement).value)
       .toBe('and what about the risks')
@@ -191,12 +211,12 @@ describe('compact ↔ research', () => {
 
   it('does not re-select or reload the conversation on a mode change', () => {
     const view = renderPane('compact')
-    view.rerender(
+    view.rerender(wrap(
       <AISection
         isOpen onToggle={() => {}} isFullscreen onToggleFullscreen={() => {}}
         mode="research" onToggleMode={() => {}} currentSubject={subject}
       />,
-    )
+    ))
     expect(selectConversation).not.toHaveBeenCalled()
   })
 
@@ -239,12 +259,12 @@ describe('compact ↔ research', () => {
   it('switches mode through the pane callback rather than its own state', async () => {
     const user = userEvent.setup()
     const onToggleMode = vi.fn()
-    render(
+    render(wrap(
       <AISection
         isOpen onToggle={() => {}} isFullscreen={false} onToggleFullscreen={() => {}}
         mode="compact" onToggleMode={onToggleMode} currentSubject={subject}
       />,
-    )
+    ))
     await user.click(screen.getByTestId('ai-mode-toggle'))
     expect(onToggleMode).toHaveBeenCalledTimes(1)
     /* Still compact: the pane owns the width, so the mode cannot change
@@ -253,12 +273,12 @@ describe('compact ↔ research', () => {
   })
 
   it('offers no mode control where there is nothing to switch to', () => {
-    render(
+    render(wrap(
       <AISection
         isOpen onToggle={() => {}} isFullscreen={false} onToggleFullscreen={() => {}}
         mode="compact" currentSubject={subject}
       />,
-    )
+    ))
     expect(screen.queryByTestId('ai-mode-toggle')).toBeNull()
   })
 })

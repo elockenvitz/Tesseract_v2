@@ -11,6 +11,8 @@
  * through the arrival sequence a real open goes through.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen } from '@testing-library/react'
 import type { AiRenderableMessage } from '../../../lib/ai/presentation'
 
@@ -35,8 +37,9 @@ const hook: {
 }
 
 /* The pane gained a folder hook; stubbed for the same reason `useAI` is --
-   this suite is about what paints on first open, and it mounts without a
-   QueryClientProvider. The rail has its own suite. */
+   this suite is about what paints on first open, and the rail has its own
+   suite. The provider below covers the data hooks this suite does not name,
+   so a new one does not fail the held-frame assertions. */
 vi.mock('../../../hooks/ai/useAIFolders', () => ({
   useAIFolders: () => ({
     folders: [],
@@ -147,8 +150,14 @@ const restored: AiRenderableMessage[] = [
   },
 ]
 
+/* A real client rather than a stub per hook: the pane now reaches
+   react-query through the attach control's entity search as well, and that
+   search is disabled until someone types, so nothing here goes anywhere. */
+const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+const wrap = (node: ReactNode) => <QueryClientProvider client={client}>{node}</QueryClientProvider>
+
 function renderPane() {
-  return render(
+  return render(wrap(
     <AISection
       isOpen
       onToggle={() => {}}
@@ -159,7 +168,7 @@ function renderPane() {
       initialTags={[{ type: 'asset', id: 'a1' }]}
       currentSubject={{ type: 'asset', id: 'a1', label: 'AAPL' }}
     />,
-  )
+  ))
 }
 
 beforeEach(() => {
@@ -207,7 +216,7 @@ describe('first open', () => {
     hook.messages = restored
     hook.conversationId = 'c1'
     hook.isRestoringConversation = false
-    rerender(
+    rerender(wrap(
       <AISection
         isOpen
         onToggle={() => {}}
@@ -218,7 +227,7 @@ describe('first open', () => {
         initialTags={[{ type: 'asset', id: 'a1' }]}
         currentSubject={{ type: 'asset', id: 'a1', label: 'AAPL' }}
       />,
-    )
+    ))
 
     expect(screen.getByText('The PM ruling is still pending.')).toBeTruthy()
     expect(screen.queryByTestId('ai-prompts')).toBeNull()

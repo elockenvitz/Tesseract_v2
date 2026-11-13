@@ -27,5 +27,10 @@ export { AiMessage } from './AiMessage'
 export { AiThinking, AiErrorNotice, AiPrompts } from './AiStates'
 export { AiContextChips } from './AiContextChips'
 export type { AiContextSubject, AiContextTarget } from './AiContextChips'
+/* The one context component that WRITES. It changes the conversation's tags,
+   which is the canonical input the server reads — see its own note for why
+   that is not a contradiction of the display-only rule above. */
+export { AiContextAttach, ATTACHABLE_TYPES } from './AiContextAttach'
+export type { AiContextAttachProps, AttachableType } from './AiContextAttach'
 export { AiBriefing } from './AiBriefing'
 export type { AiBriefingProps } from './AiBriefing'

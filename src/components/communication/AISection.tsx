@@ -18,6 +18,10 @@ import { useAI, useAISuggestions, type TagRef, type AIConversationSummary } from
 /* Project folders: the shelves, and the two sentinel selections ("all" is
    null, "unfiled" is UNFILED) that the rail always offers. */
 import { useAIFolders } from '../../hooks/ai/useAIFolders'
+/* The one opener the application has for a tagged object. It dispatches the
+   tab descriptor and the typed event together, so a chip press lands on the
+   canonical page rather than on a page that happens to be open. */
+import { openAsset } from '../../lib/desktop-asset/navigate'
 import { UNFILED, type FolderSelection } from '../../lib/ai/folders'
 import { useAIConfig, AI_MODELS, AI_PROVIDERS, type AIProvider } from '../../hooks/useAIConfig'
 import { Button } from '../ui/Button'
@@ -32,7 +36,7 @@ import { clsx } from 'clsx'
  * failed" starts rendering as "no records found" on one surface and not the
  * other.
  */
-import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips } from '../ai'
+import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips, AiContextAttach } from '../ai'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
@@ -153,6 +157,17 @@ export function AISection({
     archiveConversation,
     togglePin,
     deleteConversation,
+    /*
+     * Attaching an object is now a reader action again.
+     *
+     * These two were in the hook and unused by this pane: the comment above
+     * said tags are "inferred from whatever page launched the panel", which
+     * left a reader who wanted a second name in the conversation with no way
+     * to say so. Both persist to `ai_conversation_tags`, which is what the
+     * server reads, so this changes the sources rather than a label.
+     */
+    addTag,
+    removeTag,
     // Project folders: the thread's one organizational home.
     moveConversationToFolder,
     // Archiving had no way back in the UI. These two are it.
@@ -175,6 +190,41 @@ export function AISection({
   const handleUnarchive = (id: string) => {
     unarchiveConversation(id)
     setArchivedConversations(prev => prev?.filter(c => c.id !== id))
+  }
+
+  /*
+   * Which of the conversation's objects the READER chose.
+   *
+   * Everything in `initialTags` arrived with the pane, from whatever page
+   * opened it. The rest the reader attached. The distinction is not
+   * cosmetic: it is the difference between "you asked about this" and "you
+   * happen to be standing here", and a reader deciding whether ACT AI has
+   * the right sources needs to see which is which.
+   */
+  const inheritedTagKeys = useMemo(
+    () => initialTags.map(t => `${t.type}:${t.id}`),
+    [initialTags],
+  )
+
+  /*
+   * Opening the object a chip names.
+   *
+   * Assets only, because `openAsset` is the one opener this application
+   * actually has: it dispatches the tab descriptor AND the typed event, so a
+   * chip press lands on the canonical page. A portfolio or a theme has no
+   * equivalent single call yet, so those chips stay text rather than
+   * pretending to be links.
+   */
+  const openTaggedObject = (tag: TagRef) => {
+    if (tag.type !== 'asset') return
+    openAsset({
+      assetId: tag.id,
+      symbol: tagLabels[`asset:${tag.id}`] ?? null,
+      /* No `focus`: a chip press means "show me this name", not "put me in a
+         particular section of it". Sending one would move a reader who is
+         already on that page away from wherever they were. */
+      origin: 'act-ai-context',
+    })
   }
 
   /*
@@ -880,6 +930,25 @@ export function AISection({
       {/* Input */}
       <div className={clsx('border-t border-gray-200 dark:border-gray-700', mode === 'research' ? 'px-6 py-4' : 'p-4')}>
         <div className={layout.column}>
+        {/*
+          What this conversation may use, and the control that adds to it.
+
+          Unlike the chip row above the thread, this one WRITES: it changes
+          `ai_conversation_tags`, which is the canonical input `ai-chat` reads
+          to build its document blocks. Attached, inherited and merely
+          mentioned are three different things and only the first two are
+          drawn — see the component's own note.
+        */}
+        <AiContextAttach
+          attached={tags}
+          inheritedKeys={inheritedTagKeys}
+          labels={tagLabels}
+          onAttach={addTag}
+          onDetach={removeTag}
+          onOpenObject={openTaggedObject}
+          openable={t => t.type === 'asset'}
+          className="mb-2"
+        />
         <div className="flex items-end space-x-2">
           <div className="flex-1 relative">
             <textarea
