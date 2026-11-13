@@ -251,7 +251,10 @@ export function AIConversationList({
 
       {/* Tag filter chips — click to scope the list to one tag at a time. */}
       {tagFilterChips.length > 0 && (
-        <div className="px-2 py-1.5 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-1">
+        <div
+          data-testid="ai-tag-filters"
+          className="px-2 py-1.5 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-1"
+        >
           {activeTagFilter && (
             <button
               type="button"
@@ -819,9 +822,29 @@ function ConversationItem({
               className="flex-1 text-sm px-1 py-0 rounded border border-primary-300 dark:border-primary-700 bg-white dark:bg-gray-900 outline-none"
             />
           ) : (
-            <div className="flex-1 text-sm truncate" title={conversation.title || 'Untitled conversation'}>
+            /*
+             * A real button, not a div inside a clickable row.
+             *
+             * Selecting a conversation was mouse-only: the row carried the
+             * `onClick` and nothing in it was focusable, so a reader could
+             * Tab to Rename and Archive on a thread they had no way to OPEN
+             * from the keyboard. It is a sibling of those controls rather
+             * than their ancestor, so the row stays valid -- a button cannot
+             * contain buttons.
+             *
+             * The row's own `onClick` stays for the mouse, which is why this
+             * does not need to fill the row.
+             */
+            <button
+              type="button"
+              onClick={e => { e.stopPropagation(); onSelect() }}
+              data-testid="ai-conversation-title"
+              aria-current={isActive || undefined}
+              className="flex-1 truncate rounded text-left text-sm"
+              title={conversation.title || 'Untitled conversation'}
+            >
               {conversation.title || 'Untitled conversation'}
-            </div>
+            </button>
           )}
         </div>
 
@@ -830,19 +853,27 @@ function ConversationItem({
         <div className="flex items-center gap-1.5 mt-0.5 ml-[22px] text-[10px] text-gray-500 dark:text-gray-400 min-h-[18px]">
           <span className="shrink-0">{ago}</span>
           {tagCount > 0 && (
-            <button
-              type="button"
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex items-center gap-0.5 px-1 py-0 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400"
+            /*
+             * A label, not a button. It was a `<button>` whose only handler
+             * stopped propagation, so it looked pressable, took a tab stop,
+             * and did nothing at all -- the shape this file already rejects
+             * two screens up ("an enabled button that does nothing is worse
+             * than no button"). The tooltip and the name carry what it knows.
+             */
+            <span
+              className="inline-flex items-center gap-0.5 px-1 py-0 text-gray-500 dark:text-gray-400"
               title={tagSummary}
-              aria-label={`${tagCount} tag${tagCount === 1 ? '' : 's'} — hover to see`}
+              role="img"
+              aria-label={`${tagCount} attached object${tagCount === 1 ? '' : 's'}: ${tagSummary.replace(/\n/g, ', ')}`}
             >
-              <Tag className="w-3 h-3" />
+              <Tag className="w-3 h-3" aria-hidden="true" />
               <span className="text-[10px]">{tagCount}</span>
-            </button>
+            </span>
           )}
           {!editing && (
-            <div className="ml-auto opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
+            /* `focus-within`, so tabbing into the row reveals the controls.
+               Without it a keyboard reader focused five invisible buttons. */
+            <div className="ml-auto opacity-0 group-hover:opacity-100 focus-within:opacity-100 flex items-center gap-0.5 transition-opacity">
               {canMove && (
                 <IconBtn
                   title="Move to folder"

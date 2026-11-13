@@ -83,9 +83,14 @@ function list(overrides: Partial<Parameters<typeof AIConversationList>[0]> = {})
 
 const rail = () => screen.getByTestId('ai-folder-rail')
 const rows = () => Array.from(rail().querySelectorAll<HTMLElement>('[data-slot="ai-folder-row"]'))
+/* By test id rather than by `li > div > div > div.truncate`. The title is now
+   a real button so it can be reached from the keyboard, and a selector
+   written against the nesting broke on that without anything being wrong. */
 const titles = () =>
-  Array.from(screen.getByTestId('ai-conversation-list').querySelectorAll('li > div > div > div.truncate'))
-    .map(n => n.textContent)
+  Array.from(
+    screen.getByTestId('ai-conversation-list')
+      .querySelectorAll('[data-testid="ai-conversation-title"]'),
+  ).map(n => n.textContent)
 
 beforeEach(() => {
   for (const fn of Object.values(handlers)) fn.mockReset()

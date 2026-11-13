@@ -104,6 +104,11 @@ const archivedTitles = () =>
 const openArchive = async (user: ReturnType<typeof userEvent.setup>) => {
   if (toggle().getAttribute('aria-expanded') !== 'true') await user.click(toggle())
 }
+/* Scoped to the chip row, because a conversation TITLE is a button now too --
+   it had to become one to be reachable from the keyboard -- and "AAPL target
+   review" matches `/^AAPL/` exactly as the chip does. */
+const chip = (name: RegExp) =>
+  within(screen.getByTestId('ai-tag-filters')).getByRole('button', { name })
 
 beforeEach(() => {
   onUnarchive.mockClear()
@@ -225,21 +230,21 @@ describe('the archive respects the reference chips', () => {
      * thread in this fixture.
      */
     render(list())
-    expect(screen.getByRole('button', { name: /^NVDA/ })).toBeTruthy()
+    expect(chip(/^NVDA/)).toBeTruthy()
   })
 
   it('counts a reference across both lists, not just the live one', () => {
     render(list())
     /* One live AAPL thread; the count is what the reader's conversations
        hold, archived ones included. */
-    expect(screen.getByRole('button', { name: /^AAPL/ }).textContent).toContain('1')
-    expect(screen.getByRole('button', { name: /^NVDA/ }).textContent).toContain('1')
+    expect(chip(/^AAPL/).textContent).toContain('1')
+    expect(chip(/^NVDA/).textContent).toContain('1')
   })
 
   it('shows only the archived threads carrying the chosen reference', async () => {
     const user = userEvent.setup()
     render(list())
-    await user.click(screen.getByRole('button', { name: /^NVDA/ }))
+    await user.click(chip(/^NVDA/))
     await openArchive(user)
 
     expect(archivedTitles().some(t => t.includes('NVDA supply chain'))).toBe(true)
@@ -249,7 +254,7 @@ describe('the archive respects the reference chips', () => {
   it('says so when no archived thread carries it', async () => {
     const user = userEvent.setup()
     render(list())
-    await user.click(screen.getByRole('button', { name: /^AAPL/ }))
+    await user.click(chip(/^AAPL/))
     await openArchive(user)
 
     expect(screen.getByTestId('ai-archived-empty').textContent)
