@@ -62,6 +62,18 @@ const selectConversation = vi.fn()
  * the rail has its own suite. The provider exists for the hooks this suite
  * does NOT name, so growing a third data path does not break it.
  */
+/*
+ * The dot menu reads the reader's own templates, and `useTemplates` resolves
+ * its org through `useOrganization`, which THROWS outside its provider rather
+ * than returning null. Production always has one (`App.tsx` wraps the routes),
+ * so this is the harness catching up with the tree, not a guard against a
+ * real configuration. Stubbed rather than provided for the reason above: the
+ * templates are not the subject here.
+ */
+vi.mock('../../../hooks/useTemplates', () => ({
+  useTemplates: () => ({ templates: [], getByShortcut: () => undefined }),
+}))
+
 vi.mock('../../../hooks/ai/useAIFolders', () => ({
   useAIFolders: () => ({
     folders: [],

@@ -16,6 +16,9 @@ import { useAI, useAISuggestions, type TagRef, type AIConversationSummary } from
 /* Project folders: the shelves, and the two sentinel selections ("all" is
    null, "unfiled" is UNFILED) that the rail always offers. */
 import { useAIFolders } from '../../hooks/ai/useAIFolders'
+/* The same templates the editor's dot menu reads, so a shortcut means one
+   thing in both places. */
+import { useTemplates } from '../../hooks/useTemplates'
 /* The one opener the application has for a tagged object. It dispatches the
    tab descriptor and the typed event together, so a chip press lands on the
    canonical page rather than on a page that happens to be open. */
@@ -35,7 +38,7 @@ import { clsx } from 'clsx'
  * failed" starts rendering as "no records found" on one surface and not the
  * other.
  */
-import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips, AiContextAttach, AiKeep, AiComposer } from '../ai'
+import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips, AiContextAttach, AiKeep, AiComposer, AiDotMenu } from '../ai'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
@@ -251,6 +254,7 @@ export function AISection({
     folders, archivedFolders, createFolder, renameFolder, setFolderArchived, deleteFolder,
     lastError: folderError, organizationId: folderOrgId,
   } = useAIFolders()
+  const { getByShortcut: getTemplateByShortcut } = useTemplates()
   const [folderSelection, setFolderSelection] = useState<FolderSelection>(null)
 
   useEffect(() => {
@@ -537,6 +541,20 @@ export function AISection({
     lastSentRef.current = text
     sendMessage(text)
   }
+
+  /*
+   * The reader's own templates, for `.template.<shortcut>` in the composer.
+   *
+   * The same `getByShortcut` the editor's dot menu uses, so a shortcut means
+   * one thing in both places. It returns the stored text; nothing here
+   * substitutes a variable, because a template's variables are filled in the
+   * editor's own flow and a half-filled one in a question would read as the
+   * reader's words.
+   */
+  const templateBody = useCallback(
+    (shortcut: string) => getTemplateByShortcut(shortcut)?.content ?? null,
+    [getTemplateByShortcut],
+  )
 
   /* The composer hands over already-trimmed text and decides for itself when
      sending is allowed; this clears the box, which is what shrinks it. */
@@ -961,6 +979,14 @@ export function AISection({
           the whole period that previously had no Stop at all. Its own file
           carries the four faults it replaces.
         */}
+        {/*
+          Tesseract's own dot commands, for the few that mean something in a
+          chat message. It names the ones that do not -- a chart needs an
+          editor node and chat has no renderer for one -- rather than drawing
+          a degraded version. Nothing it offers sends anything: the expansion
+          lands in the box under the reader's hands.
+        */}
+        <AiDotMenu value={input} onPick={setInput} templateBody={templateBody} />
         <AiComposer
           value={input}
           onChange={setInput}

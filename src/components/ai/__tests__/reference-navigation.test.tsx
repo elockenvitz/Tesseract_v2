@@ -43,6 +43,13 @@ vi.mock('../../../lib/supabase', () => ({
   },
 }))
 
+/* The dot menu's template lookup reaches `useOrganization`, which throws
+   outside its provider. Production always has one; stubbed because templates
+   are not the subject here. */
+vi.mock('../../../hooks/useTemplates', () => ({
+  useTemplates: () => ({ templates: [], getByShortcut: () => undefined }),
+}))
+
 vi.mock('../../../hooks/ai/useAIFolders', () => ({
   useAIFolders: () => ({
     folders: [], archivedFolders: [], isLoading: false, organizationId: null,

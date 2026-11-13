@@ -36,6 +36,14 @@ const hook: {
   isConfigured: true,
 }
 
+/* The pane also gained a template lookup for the dot menu, and
+   `useTemplates` reaches `useOrganization`, which throws outside its provider.
+   Stubbed rather than provided: a real org provider would add a query to a
+   suite whose whole subject is which frame paints while queries settle. */
+vi.mock('../../../hooks/useTemplates', () => ({
+  useTemplates: () => ({ templates: [], getByShortcut: () => undefined }),
+}))
+
 /* The pane gained a folder hook; stubbed for the same reason `useAI` is --
    this suite is about what paints on first open, and the rail has its own
    suite. The provider below covers the data hooks this suite does not name,
