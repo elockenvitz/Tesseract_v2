@@ -32,5 +32,9 @@ export type { AiContextSubject, AiContextTarget } from './AiContextChips'
    that is not a contradiction of the display-only rule above. */
 export { AiContextAttach, ATTACHABLE_TYPES } from './AiContextAttach'
 export type { AiContextAttachProps, AttachableType } from './AiContextAttach'
+/* Keeping an answer. It opens the canonical capture form prefilled and
+   writes nothing itself -- see its own note on why it still confirms. */
+export { AiKeep } from './AiKeep'
+export type { AiKeepProps } from './AiKeep'
 export { AiBriefing } from './AiBriefing'
 export type { AiBriefingProps } from './AiBriefing'

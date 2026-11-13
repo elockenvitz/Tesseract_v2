@@ -32,6 +32,15 @@ interface AiMessageProps {
   /** Suggested actions, or anything else the chat wants under the body. */
   footer?: ReactNode
   /**
+   * Controls that sit beside Copy on the meta row, for an assistant turn.
+   *
+   * A slot rather than a prop per control: what can be done with an answer
+   * belongs to the chat, which knows the thread and the subject. This
+   * component still owns where those controls live and when they appear,
+   * which is why a streaming turn gets neither this nor Copy.
+   */
+  metaActions?: ReactNode
+  /**
    * A briefing opens its evidence; a chat reply folds it away.
    *
    * Left undefined, the mode decides: research mode is where someone is
@@ -50,7 +59,8 @@ interface AiMessageProps {
 }
 
 export function AiMessage({
-  message, modelLabel, onTickerClick, onOpenSource, footer, evidenceOpen, mode = 'compact',
+  message, modelLabel, onTickerClick, onOpenSource, footer, metaActions, evidenceOpen,
+  mode = 'compact',
 }: AiMessageProps) {
   const layout = chatLayout(mode)
   const showEvidenceOpen = evidenceOpen ?? layout.evidenceOpen
@@ -148,6 +158,14 @@ export function AiMessage({
             )}
           </div>
           {isAssistant && !message.streaming && (
+            <div className={clsx(
+              'flex items-center gap-1 shrink-0',
+              /* The whole group appears on hover, as Copy always has: a row
+                 of controls under every answer is a row of chrome between
+                 the reader and the next paragraph. */
+              'opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity',
+            )}>
+              {metaActions}
             <button
               type="button"
               onClick={handleCopy}
@@ -155,13 +173,13 @@ export function AiMessage({
                 'inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded shrink-0',
                 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200',
                 'hover:bg-gray-200 dark:hover:bg-gray-700',
-                'opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity',
               )}
               title="Copy response"
             >
               {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
               {copied ? 'Copied' : 'Copy'}
             </button>
+            </div>
           )}
         </div>
       </div>

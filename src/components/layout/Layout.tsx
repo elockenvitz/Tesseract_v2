@@ -13,6 +13,9 @@ import { isNavigableNotificationTarget } from '../../lib/notifications/routing'
 import { useCommunication } from '../../hooks/useCommunication'
 import { useNotifications } from '../../hooks/useNotifications'
 import { useSidebarStore, type InspectableItemType } from '../../stores/sidebarStore'
+/* The capture channel's one parser. See its note for why the listener below
+   does not read `event.detail` directly. */
+import { readCaptureOpen } from '../../lib/capture/prefill'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { MobileNavDrawer } from '../mobile/MobileNavDrawer'
@@ -392,7 +395,18 @@ export function Layout({
   // Listen for custom event to open thoughts capture (from Attention Dashboard)
   useEffect(() => {
     const handleOpenThoughtsCapture = (event: CustomEvent) => {
-      const { contextType, contextId, contextTitle, captureType } = event.detail || {}
+      /*
+       * Parsed, not destructured.
+       *
+       * This listener used to pull four fields off `event.detail` and drop the
+       * rest, which is why `prefillText` -- dispatched by the AI action
+       * catalogue since it was written -- never reached a form. `readCaptureOpen`
+       * validates the whole request in one place and says which prefills the
+       * forms can actually honour.
+       */
+      const request = readCaptureOpen(event.detail)
+      if (!request) return
+      const { contextType, contextId, contextTitle, captureType, prefill } = request
 
       // Set context if provided
       if (contextType && contextId) {
@@ -400,7 +414,7 @@ export function Layout({
       }
 
       // Use store to open in capture mode (with optional auto-select type)
-      openCaptureSidebar(captureType || null)
+      openCaptureSidebar(captureType, prefill ?? null)
 
       // Switch to thoughts view
       setCommPaneView('thoughts')

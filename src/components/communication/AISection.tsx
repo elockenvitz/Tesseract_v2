@@ -36,7 +36,7 @@ import { clsx } from 'clsx'
  * failed" starts rendering as "no records found" on one surface and not the
  * other.
  */
-import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips, AiContextAttach } from '../ai'
+import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips, AiContextAttach, AiKeep } from '../ai'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
@@ -902,6 +902,16 @@ export function AISection({
                 footer={message.actions && message.actions.length > 0
                   ? <AISuggestedActions actions={message.actions} />
                   : null}
+                /* Keeping an answer. It opens the canonical capture form with
+                   the text in it and saves nothing on its own -- the thread's
+                   title rides along as the record's provenance. */
+                metaActions={
+                  <AiKeep
+                    message={message}
+                    conversationTitle={openConversationTitle}
+                    subject={currentSubject ?? null}
+                  />
+                }
               />
             ))}
 

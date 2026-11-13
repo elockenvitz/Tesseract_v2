@@ -154,3 +154,21 @@ export type {
   AiTag,
   AiTagType,
 } from './context-selection'
+
+/* Keeping an answer: which objects one can become, and the capture request
+   that opens the canonical form prefilled. Writes nothing itself. */
+export {
+  ARTIFACT_PROMOTIONS,
+  artifactPromotion,
+  promotable,
+  buildArtifactPromotion,
+  promotionConfirmation,
+} from './artifacts'
+export type {
+  ArtifactPromotionId,
+  ArtifactPromotionSpec,
+  PromotionRefusal,
+  PromotionSubject,
+  BuildPromotionInput,
+  PromotionConfirmation,
+} from './artifacts'
