@@ -239,6 +239,32 @@ describe('what the listener will not pass on', () => {
   })
 })
 
+describe('the conversation survives a trip to an object', () => {
+  it('stays open when a reference opens a tab behind it', () => {
+    /*
+     * Pressing a reference chip dispatches a tab descriptor on the shell's
+     * own channel (`lib/ai/reference-targets`). Nothing in that path touches
+     * pane state, and `Layout` renders the pane unconditionally rather than
+     * conditionally, so the thread -- and anything typed into it -- is still
+     * there when the reader comes back. Asserted here because the opposite
+     * is a silent loss: a conditional pane would pass every other test in
+     * this file.
+     */
+    renderShell()
+    act(() => { dispatchCaptureOpen(KEEP) })
+    expect(at('data-open')).toBe('yes')
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent('decision-engine-action', {
+        detail: { id: 'p-core', title: 'Core Equity', type: 'portfolio', data: { id: 'p-core' } },
+      }))
+    })
+
+    expect(at('data-open')).toBe('yes')
+    expect(at('data-prefill-text')).toBe(KEEP.prefill.text)
+  })
+})
+
 describe('the listener belongs to the shell', () => {
   it('stops answering the event once Layout unmounts', () => {
     renderShell()

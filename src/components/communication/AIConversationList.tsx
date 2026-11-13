@@ -7,9 +7,13 @@ import { clsx } from 'clsx'
 import type { AIConversationSummary, TagRef } from '../../hooks/useAI'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import {
-  UNFILED, filterByFolder, folderCounts, folderDeletionWarning, validateFolderName,
+  UNFILED, folderCounts, folderDeletionWarning, validateFolderName,
   type AIProjectFolder, type FolderSelection,
 } from '../../lib/ai/folders'
+import {
+  groupConversations, filterConversations, archiveEmptyReason,
+  type ConversationFilter,
+} from '../../lib/ai/conversation-filter'
 
 interface Props {
   /*
@@ -106,11 +110,23 @@ export function AIConversationList({
   const hasFolders = Array.isArray(folders)
   const folderList = folders ?? []
 
-  // Build the set of unique tags across all conversations, with counts —
-  // drives the filter chip row at the top.
+  /*
+   * The reference chips, over live AND archived threads.
+   *
+   * The row used to be built from the live list alone, which made the
+   * archive's reference filter unusable in the one case it matters: a
+   * reference carried only by threads you have archived had no chip, so
+   * there was nothing to press to find them. The archive is counted here
+   * once it has been loaded -- which, since searching now loads it, is
+   * whenever the reader is actually looking for something.
+   *
+   * The count is across both, because it answers "how many of my
+   * conversations were about this", and a reader who archived four of five
+   * AAPL threads is not helped by being told there is one.
+   */
   const tagFilterChips = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const c of conversations) {
+    for (const c of [...conversations, ...(archivedConversations ?? [])]) {
       for (const t of (c.tags || [])) {
         const k = tagKey(t)
         counts.set(k, (counts.get(k) || 0) + 1)
@@ -119,33 +135,58 @@ export function AIConversationList({
     return [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([key, count]) => ({ key, count }))
-  }, [conversations])
+  }, [conversations, archivedConversations])
 
   /* Counted from the conversations the reader can actually see, so the number
      beside a folder is a number they can reach. */
   const counts = useMemo(() => folderCounts(conversations), [conversations])
 
-  // Apply folder, then text search + tag filter, then bucket into pinned
-  // vs recent.
-  const groups = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    let filtered = hasFolders ? filterByFolder(conversations, activeFolderId) : [...conversations]
-    if (q) {
-      filtered = filtered.filter(c => (c.title || '').toLowerCase().includes(q))
-    }
-    if (activeTagFilter) {
-      filtered = filtered.filter(c => (c.tags || []).some(t => tagKey(t) === activeTagFilter))
-    }
-    const pinned: AIConversationSummary[] = []
-    const rest:   AIConversationSummary[] = []
-    for (const c of filtered) {
-      if (c.is_pinned) pinned.push(c)
-      else             rest.push(c)
-    }
-    return { pinned, rest }
-  }, [conversations, query, activeTagFilter, activeFolderId, hasFolders])
+  /*
+   * One filter, both lists.
+   *
+   * The live list and the archive below it are filtered by the same three
+   * criteria through the same function, so a thread cannot be findable in
+   * one and invisible in the other. See `lib/ai/conversation-filter` for why
+   * that used to be two implementations and what it cost.
+   */
+  const filter: ConversationFilter = useMemo(
+    () => ({ query, folder: activeFolderId, tag: activeTagFilter, foldersEnabled: hasFolders }),
+    [query, activeFolderId, activeTagFilter, hasFolders],
+  )
+
+  const groups = useMemo(
+    () => groupConversations(conversations, filter),
+    [conversations, filter],
+  )
+
+  const archivedShown = useMemo(
+    () => (archivedConversations ? filterConversations(archivedConversations, filter) : undefined),
+    [archivedConversations, filter],
+  )
+
+  /*
+   * Searching reaches the archive without the reader knowing to look there.
+   *
+   * The archive is fetched on first disclosure, which was fine while it was
+   * a shelf you went to deliberately. It is not fine for search: a reader
+   * who types the name of a thread they archived last week would see "no
+   * conversations" and a collapsed row that could not even show a count,
+   * because nothing had been loaded to count. So typing loads it, and if the
+   * live list has nothing while the archive has something, the archive opens
+   * itself -- once, and never closing a disclosure the reader opened.
+   */
+  const searching = query.trim().length > 0
+  useEffect(() => {
+    if (searching && archivedConversations === undefined) void onLoadArchived?.()
+  }, [searching, archivedConversations, onLoadArchived])
 
   const totalShown = groups.pinned.length + groups.rest.length
+
+  useEffect(() => {
+    if (searching && totalShown === 0 && (archivedShown?.length ?? 0) > 0) {
+      setShowArchivedThreads(true)
+    }
+  }, [searching, totalShown, archivedShown])
   const selectedFolderName = activeFolderId && activeFolderId !== UNFILED
     ? folderList.find(f => f.id === activeFolderId)?.name ?? null
     : null
@@ -305,16 +346,28 @@ export function AIConversationList({
           >
             <ChevronRight className={clsx('w-3 h-3 transition-transform', showArchivedThreads && 'rotate-90')} />
             Archived conversations
-            {archivedConversations ? ` (${archivedConversations.length})` : ''}
+            {/* The count is what the filters leave, out of what is archived,
+                so a reader can tell a narrowed list from an empty archive
+                without opening it. */}
+            {archivedShown && archivedConversations
+              ? archivedShown.length === archivedConversations.length
+                ? ` (${archivedConversations.length})`
+                : ` (${archivedShown.length} of ${archivedConversations.length})`
+              : ''}
           </button>
           {showArchivedThreads && (
             <ul data-testid="ai-archived-list" className="max-h-40 overflow-y-auto">
-              {!archivedConversations ? (
+              {!archivedConversations || !archivedShown ? (
                 <li className="px-2 py-1 text-[11px] italic text-gray-400">Loading…</li>
-              ) : archivedConversations.length === 0 ? (
-                <li className="px-2 py-1 text-[11px] italic text-gray-400">Nothing is archived.</li>
+              ) : archivedShown.length === 0 ? (
+                <li
+                  className="px-2 py-1 text-[11px] italic text-gray-400"
+                  data-testid="ai-archived-empty"
+                >
+                  {archiveEmptyReason(archivedConversations.length, filter)}
+                </li>
               ) : (
-                archivedConversations.map(c => (
+                archivedShown.map(c => (
                   <li key={c.id} className="flex items-center gap-1.5 px-2 py-1 text-[12px] text-gray-600 dark:text-gray-300">
                     <Archive className="w-3 h-3 shrink-0 text-gray-400" />
                     <span className="flex-1 truncate" title={c.title || 'Untitled conversation'}>

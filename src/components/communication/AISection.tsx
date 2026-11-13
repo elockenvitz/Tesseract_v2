@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { EngagementContextHeader } from './EngagementContextHeader'
 import type { EngagementTarget } from '../../lib/engagement'
 import {
@@ -21,7 +21,8 @@ import { useAIFolders } from '../../hooks/ai/useAIFolders'
 /* The one opener the application has for a tagged object. It dispatches the
    tab descriptor and the typed event together, so a chip press lands on the
    canonical page rather than on a page that happens to be open. */
-import { openAsset } from '../../lib/desktop-asset/navigate'
+import { useReferenceTargets } from '../../hooks/ai/useReferenceTargets'
+import { openReference, referenceKey } from '../../lib/ai/reference-targets'
 import { UNFILED, type FolderSelection } from '../../lib/ai/folders'
 import { useAIConfig, AI_MODELS, AI_PROVIDERS, type AIProvider } from '../../hooks/useAIConfig'
 import { Button } from '../ui/Button'
@@ -209,23 +210,34 @@ export function AISection({
   /*
    * Opening the object a chip names.
    *
-   * Assets only, because `openAsset` is the one opener this application
-   * actually has: it dispatches the tab descriptor AND the typed event, so a
-   * chip press lands on the canonical page. A portfolio or a theme has no
-   * equivalent single call yet, so those chips stay text rather than
-   * pretending to be links.
+   * All four kinds now, each through the destination the application already
+   * has for it -- see `lib/ai/reference-targets`, which holds the
+   * descriptors and the reason none of them is invented here.
+   *
+   * The reference is resolved by READING the object, not by trusting the
+   * cached label beside it, so a chip is a link exactly when the object is
+   * still there and still visible to this reader. That is also what makes a
+   * deleted reference degrade into text saying so instead of a link to a tab
+   * that cannot render.
+   *
+   * The pane is not unmounted by any of this: a chip press dispatches a tab
+   * descriptor, and the conversation is still open behind it when the reader
+   * comes back.
    */
-  const openTaggedObject = (tag: TagRef) => {
-    if (tag.type !== 'asset') return
-    openAsset({
-      assetId: tag.id,
-      symbol: tagLabels[`asset:${tag.id}`] ?? null,
-      /* No `focus`: a chip press means "show me this name", not "put me in a
-         particular section of it". Sending one would move a reader who is
-         already on that page away from wherever they were. */
-      origin: 'act-ai-context',
-    })
-  }
+  const { targets: referenceTargets, isLoading: isResolvingReferences } = useReferenceTargets(tags)
+
+  const referenceStatus = useCallback(
+    (tag: TagRef): 'open' | 'checking' | 'gone' => {
+      if (referenceTargets.has(referenceKey(tag))) return 'open'
+      return isResolvingReferences ? 'checking' : 'gone'
+    },
+    [referenceTargets, isResolvingReferences],
+  )
+
+  const openTaggedObject = useCallback(
+    (tag: TagRef) => { openReference(referenceTargets.get(referenceKey(tag))) },
+    [referenceTargets],
+  )
 
   /*
    * The reader's shelves, for the organization they are in.
@@ -956,7 +968,7 @@ export function AISection({
           onAttach={addTag}
           onDetach={removeTag}
           onOpenObject={openTaggedObject}
-          openable={t => t.type === 'asset'}
+          referenceStatus={referenceStatus}
           className="mb-2"
         />
         <div className="flex items-end space-x-2">

@@ -37,6 +37,7 @@ import { useEffect, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Briefcase, FileText, Layers, Plus, Search, TrendingUp, X } from 'lucide-react'
 import { useEntitySearch, type EntitySearchResult } from '../../hooks/useEntitySearch'
+import { referenceUnavailableTitle } from '../../lib/ai/reference-targets'
 import type { TagRef } from '../../hooks/useAI'
 
 /** The four the tag table accepts. Not a style choice: a CHECK constraint. */
@@ -63,21 +64,29 @@ export interface AiContextAttachProps {
   /** Open the canonical object. Omitted where the host has no route for it. */
   onOpenObject?: (tag: TagRef) => void
   /**
-   * Which chips are links.
+   * Whether each reference can be followed, per OBJECT rather than per type.
    *
-   * Per TYPE, because the application does not have one opener for all four:
-   * assets have `openAsset`, and a portfolio or a theme has no single call a
-   * host can be trusted to honour yet. A chip that looks like a link and goes
-   * nowhere is the inert control this pass is meant to remove, so the
-   * unopenable ones render as text.
+   * It began as a per-type predicate, because only assets had an opener. All
+   * four now do, and the question that remains is not "can this kind of
+   * thing be opened" but "is this particular one still there, and still
+   * mine" -- which only a read of the object answers. So the host resolves
+   * the references and reports one of three states:
+   *
+   *   open      resolved; the chip is a link
+   *   checking  the read is in flight; text, and the title says so
+   *   gone      deleted, or no longer visible to this reader; text, and the
+   *             title says that instead
+   *
+   * `gone` is shown rather than hidden. The conversation really was about
+   * that object, and removing the chip would rewrite what the reader asked.
    */
-  openable?: (tag: TagRef) => boolean
+  referenceStatus?: (tag: TagRef) => 'open' | 'checking' | 'gone'
   className?: string
 }
 
 export function AiContextAttach({
   attached, inheritedKeys = [], labels = {}, onAttach, onDetach, onOpenObject,
-  openable = () => true, className,
+  referenceStatus = () => 'open', className,
 }: AiContextAttachProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -111,23 +120,27 @@ export function AiContextAttach({
         const key = tagKey(t)
         const isInherited = inherited.has(key)
         const label = t.label || labels[key] || t.id.slice(0, 6)
+        const status = referenceStatus(t)
         return (
           <span
             key={key}
             data-slot="ai-context-chip"
             data-attach-origin={isInherited ? 'inherited' : 'attached'}
+            data-reference-status={status}
             className={clsx(
               'inline-flex items-center gap-1 rounded-full py-0.5 pl-2 pr-1 text-[11px] font-medium',
               isInherited
                 ? 'border border-dashed border-gray-300 text-gray-600 dark:border-gray-600 dark:text-gray-400'
                 : 'border border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-900/30 dark:text-primary-200',
             )}
-            title={isInherited
-              ? `${label} comes from the page you opened this from`
-              : `${label} was added to this conversation`}
+            title={status !== 'open'
+              ? referenceUnavailableTitle(label, status === 'checking')
+              : isInherited
+                ? `${label} comes from the page you opened this from`
+                : `${label} was added to this conversation`}
           >
             <span className="shrink-0 opacity-70">{ICON[t.type] ?? <FileText className="h-3 w-3" />}</span>
-            {onOpenObject && openable(t) ? (
+            {onOpenObject && status === 'open' ? (
               <button
                 type="button"
                 data-slot="ai-context-open"
@@ -137,7 +150,11 @@ export function AiContextAttach({
                 {label}
               </button>
             ) : (
-              <span className="max-w-[14ch] truncate">{label}</span>
+              <span
+                className={clsx('max-w-[14ch] truncate', status === 'gone' && 'line-through opacity-60')}
+              >
+                {label}
+              </span>
             )}
             <button
               type="button"

@@ -1016,7 +1016,29 @@ export function useAI(initialTags: TagRef[] = []) {
             .order('last_message_at', { ascending: false, nullsFirst: false })
             .limit(200)
           if (err) throw err
-          return (data || []) as unknown as AIConversationSummary[]
+          const rows = (data || []) as unknown as AIConversationSummary[]
+          /*
+           * Archived threads carry their references too.
+           *
+           * The live list is decorated with tags by its own query; the
+           * archive was not, so the sidebar's reference filter could not see
+           * an archived thread even when the chip it was filtering on came
+           * from that thread. One extra read of the same table the live list
+           * uses, over at most two hundred ids.
+           */
+          const ids = rows.map(r => r.id)
+          if (ids.length === 0) return rows
+          const { data: tagRows } = await supabase
+            .from('ai_conversation_tags')
+            .select('conversation_id, tag_type, tag_id')
+            .in('conversation_id', ids)
+          const byId = new Map<string, TagRef[]>()
+          for (const row of (tagRows || []) as any[]) {
+            const arr = byId.get(row.conversation_id) || []
+            arr.push({ type: row.tag_type as TagType, id: row.tag_id })
+            byId.set(row.conversation_id, arr)
+          }
+          return rows.map(r => ({ ...r, tags: byId.get(r.id) || [] }))
         },
       })
     },

@@ -174,24 +174,46 @@ describe('adding one', () => {
 })
 
 describe('opening what a chip names', () => {
-  it('makes an asset chip a link to the canonical page', async () => {
-    attach({ onOpenObject, openable: t => t.type === 'asset' })
+  it('makes a resolved chip a link to the canonical object', async () => {
+    attach({ onOpenObject })
     await userEvent.click(screen.getByRole('button', { name: 'AAPL' }))
     expect(onOpenObject).toHaveBeenCalledWith({ type: 'asset', id: 'a-aapl', label: 'AAPL' })
   })
 
-  it('leaves a type with no opener as plain text', () => {
-    /* The inert-control rule: the application has `openAsset` and no
-       equivalent single call for a portfolio, so that chip does not pretend
-       to be a link. */
+  it('makes a portfolio chip a link too, now that there is somewhere to go', async () => {
+    /*
+     * This case used to assert the opposite. Only assets had an opener, so a
+     * portfolio chip was deliberately text -- correct then, and the whole
+     * point of this pass is that it is no longer true. All four kinds route
+     * through `lib/ai/reference-targets`.
+     */
     attach({
       attached: [{ type: 'portfolio', id: 'p-1', label: 'Vision Fund' }],
       inheritedKeys: [],
       onOpenObject,
-      openable: t => t.type === 'asset',
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Vision Fund' }))
+    expect(onOpenObject).toHaveBeenCalledWith({ type: 'portfolio', id: 'p-1', label: 'Vision Fund' })
+  })
+
+  it('leaves a reference the reader can no longer reach as plain text', () => {
+    /* The inert-control rule, now decided per object rather than per type:
+       a deleted portfolio, or one this reader has lost, is not a link. */
+    attach({
+      attached: [{ type: 'portfolio', id: 'p-1', label: 'Vision Fund' }],
+      inheritedKeys: [],
+      onOpenObject,
+      referenceStatus: () => 'gone',
     })
     expect(screen.queryByRole('button', { name: 'Vision Fund' })).not.toBeInTheDocument()
     expect(chips()[0]).toHaveTextContent('Vision Fund')
+    expect(chips()[0]).toHaveAttribute('data-reference-status', 'gone')
+  })
+
+  it('does not offer a link while the object is still being checked', () => {
+    attach({ onOpenObject, referenceStatus: () => 'checking' })
+    expect(screen.queryByRole('button', { name: 'AAPL' })).not.toBeInTheDocument()
+    expect(chips()[0]).toHaveAttribute('title', expect.stringContaining('Checking whether'))
   })
 
   it('leaves every chip as text when the host offers no opener at all', () => {
