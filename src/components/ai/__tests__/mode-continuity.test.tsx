@@ -52,6 +52,28 @@ const messages: AiRenderableMessage[] = [
 const sendMessage = vi.fn()
 const selectConversation = vi.fn()
 
+/*
+ * The pane gained a second data hook when conversations gained folders.
+ *
+ * This suite mounts AISection with `useAI` mocked and no QueryClientProvider,
+ * so the folder hook is stubbed the same way and for the same reason: folders
+ * are not the subject here, and the rail has its own suite.
+ */
+vi.mock('../../../hooks/ai/useAIFolders', () => ({
+  useAIFolders: () => ({
+    folders: [],
+    archivedFolders: [],
+    isLoading: false,
+    organizationId: null,
+    canManage: false,
+    createFolder: async () => null,
+    renameFolder: async () => undefined,
+    setFolderArchived: async () => undefined,
+    deleteFolder: async () => undefined,
+    lastError: null,
+  }),
+}))
+
 vi.mock('../../../hooks/useAI', () => ({
   useAI: () => ({
     messages,

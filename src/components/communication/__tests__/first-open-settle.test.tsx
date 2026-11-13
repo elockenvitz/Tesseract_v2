@@ -34,6 +34,24 @@ const hook: {
   isConfigured: true,
 }
 
+/* The pane gained a folder hook; stubbed for the same reason `useAI` is --
+   this suite is about what paints on first open, and it mounts without a
+   QueryClientProvider. The rail has its own suite. */
+vi.mock('../../../hooks/ai/useAIFolders', () => ({
+  useAIFolders: () => ({
+    folders: [],
+    archivedFolders: [],
+    isLoading: false,
+    organizationId: null,
+    canManage: false,
+    createFolder: async () => null,
+    renameFolder: async () => undefined,
+    setFolderArchived: async () => undefined,
+    deleteFolder: async () => undefined,
+    lastError: null,
+  }),
+}))
+
 vi.mock('../../../hooks/useAI', () => ({
   useAI: () => ({
     messages: hook.messages,

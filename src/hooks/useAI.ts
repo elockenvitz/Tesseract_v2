@@ -128,6 +128,15 @@ export interface AIConversation {
   last_message_at: string | null
   created_at: string
   updated_at: string
+  /**
+   * The project folder this thread is filed under, or null for unfiled.
+   *
+   * One home, not many: the alternative is a membership table, which buys
+   * multi-filing and costs the reader the only question a filing system
+   * exists to answer. Cross-cutting relationships stay in
+   * `ai_conversation_tags`.
+   */
+  folder_id?: string | null
   // Populated client-side from a separate query against ai_conversation_tags.
   tags?: TagRef[]
 }
@@ -164,7 +173,7 @@ export type AIConversationSummary = Omit<AIConversation, 'messages'>
  * second, subtly different shape.
  */
 const CONVERSATION_SUMMARY_COLUMNS =
-  'id, user_id, context_type, context_id, title, is_archived, is_pinned, last_message_at, created_at, updated_at'
+  'id, user_id, context_type, context_id, title, is_archived, is_pinned, last_message_at, created_at, updated_at, folder_id'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -842,6 +851,35 @@ export function useAI(initialTags: TagRef[] = []) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ai-conversations'] }),
   })
 
+  /**
+   * File a conversation on a shelf, or take it off one.
+   *
+   * The server has the last word twice over: the conversation's policy
+   * decides whose thread this is, and a definer trigger refuses a folder the
+   * owner does not own. So this sends the id and lets a rejection surface --
+   * it does not pre-check ownership client-side and then trust itself.
+   *
+   * `moveTarget` keeps a no-op move from becoming a write: the menu offers
+   * the folder a thread is already in, and accepting that would invalidate
+   * three queries to change nothing.
+   */
+  const moveConversationMutation = useMutation({
+    mutationFn: async ({ id, folderId }: { id: string; folderId: string | null }) => {
+      /* Cast for the same reason every other write in this file would need
+         one: `ai_conversations` is absent from the hand-maintained Database
+         type, so its update parameter resolves to `never`. The payload above
+         the cast is typed; see the note in hooks/ai/useAIFolders.ts. */
+      const patch: { folder_id: string | null } = { folder_id: folderId }
+      const { error } = await supabase
+        .from('ai_conversations').update(patch as never).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ai-conversations'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-conversations-archived'] })
+    },
+  })
+
   const deleteConversationMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('ai_conversations').delete().eq('id', id)
@@ -956,6 +994,37 @@ export function useAI(initialTags: TagRef[] = []) {
     isLoadingList,
     selectConversation,
     newConversation,
+    /**
+     * The archived threads, fetched only when something asks for them.
+     *
+     * Archiving existed and was one-way in practice: the sidebar's list
+     * filters `is_archived = false`, so an archived thread was reachable by
+     * id and by nothing a reader could click. `unarchiveConversation` has
+     * always been there; this is the list it needs.
+     */
+    loadArchived: async (): Promise<AIConversationSummary[]> => {
+      if (!user?.id) return []
+      return queryClient.fetchQuery({
+        queryKey: ['ai-conversations-archived', user.id],
+        staleTime: 30_000,
+        queryFn: async () => {
+          const { data, error: err } = await supabase
+            .from('ai_conversations')
+            .select(CONVERSATION_SUMMARY_COLUMNS)
+            .eq('user_id', user.id)
+            .eq('is_archived', true)
+            .order('last_message_at', { ascending: false, nullsFirst: false })
+            .limit(200)
+          if (err) throw err
+          return (data || []) as unknown as AIConversationSummary[]
+        },
+      })
+    },
+
+    /** Move a thread onto a folder, or off one with null. */
+    moveConversationToFolder: (id: string, folderId: string | null) =>
+      moveConversationMutation.mutateAsync({ id, folderId }),
+
     renameConversation: (id: string, title: string) => renameConversationMutation.mutate({ id, title }),
     archiveConversation: (id: string) => archiveConversationMutation.mutate({ id }),
     unarchiveConversation: (id: string) => archiveConversationMutation.mutate({ id, archived: false }),

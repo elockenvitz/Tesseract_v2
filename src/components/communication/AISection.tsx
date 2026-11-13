@@ -14,7 +14,11 @@ import {
   Maximize2,
   Minimize2,
 } from 'lucide-react'
-import { useAI, useAISuggestions, type TagRef } from '../../hooks/useAI'
+import { useAI, useAISuggestions, type TagRef, type AIConversationSummary } from '../../hooks/useAI'
+/* Project folders: the shelves, and the two sentinel selections ("all" is
+   null, "unfiled" is UNFILED) that the rail always offers. */
+import { useAIFolders } from '../../hooks/ai/useAIFolders'
+import { UNFILED, type FolderSelection } from '../../lib/ai/folders'
 import { useAIConfig, AI_MODELS, AI_PROVIDERS, type AIProvider } from '../../hooks/useAIConfig'
 import { Button } from '../ui/Button'
 import { clsx } from 'clsx'
@@ -149,7 +153,69 @@ export function AISection({
     archiveConversation,
     togglePin,
     deleteConversation,
+    // Project folders: the thread's one organizational home.
+    moveConversationToFolder,
+    // Archiving had no way back in the UI. These two are it.
+    loadArchived,
+    unarchiveConversation,
   } = useAI(initialTags)
+
+  /*
+   * The archived threads, held only once a reader opens the disclosure.
+   *
+   * `undefined` means "not asked yet" and `[]` means "asked, nothing there",
+   * which the list renders differently. Collapsing the two is the defect
+   * this product has shipped three times: a default rendered as a verdict.
+   */
+  const [archivedConversations, setArchivedConversations] = useState<AIConversationSummary[] | undefined>(undefined)
+  const handleLoadArchived = async () => {
+    const rows = await loadArchived()
+    setArchivedConversations(rows)
+  }
+  const handleUnarchive = (id: string) => {
+    unarchiveConversation(id)
+    setArchivedConversations(prev => prev?.filter(c => c.id !== id))
+  }
+
+  /*
+   * The reader's shelves, for the organization they are in.
+   *
+   * Private per reader and checked against live membership on every verb --
+   * see the RLS note on the hook. The selection is component state because
+   * it is a view, not a fact about the data: switching organizations
+   * replaces the folder list, so the effect below drops a selection that no
+   * longer names anything rather than leaving the list filtered by a folder
+   * from the other firm.
+   */
+  const {
+    folders, archivedFolders, createFolder, renameFolder, setFolderArchived, deleteFolder,
+    lastError: folderError, organizationId: folderOrgId,
+  } = useAIFolders()
+  const [folderSelection, setFolderSelection] = useState<FolderSelection>(null)
+
+  useEffect(() => {
+    if (folderSelection === null || folderSelection === UNFILED) return
+    if (!folders.some(f => f.id === folderSelection)) setFolderSelection(null)
+  }, [folders, folderSelection, folderOrgId])
+
+  /** Everything the list needs to show and change folders, in one object. */
+  const folderProps = {
+    folders,
+    archivedFolders,
+    activeFolderId: folderSelection,
+    onSelectFolder: setFolderSelection,
+    onCreateFolder: createFolder,
+    onRenameFolder: renameFolder,
+    onArchiveFolder: setFolderArchived,
+    onDeleteFolder: deleteFolder,
+    onMoveConversation: (id: string, folderId: string | null) => {
+      void moveConversationToFolder(id, folderId)
+    },
+    folderError,
+    archivedConversations,
+    onLoadArchived: handleLoadArchived,
+    onUnarchive: handleUnarchive,
+  }
 
   const { effectiveConfig, updateUserPrefs } = useAIConfig()
   /*
@@ -586,6 +652,7 @@ export function AISection({
             onDelete={deleteConversation}
             isLoading={isLoadingList}
             fullWidth
+            {...folderProps}
           />
         </div>
       </div>
@@ -608,6 +675,7 @@ export function AISection({
           onTogglePin={togglePin}
           onDelete={deleteConversation}
           isLoading={isLoadingList}
+          {...folderProps}
         />
       )}
 
