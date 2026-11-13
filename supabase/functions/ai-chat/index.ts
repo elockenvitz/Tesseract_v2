@@ -63,6 +63,16 @@ import {
   isLiveIdeaRow,
   DECIDED_DECISION_STATUSES,
 } from "../_shared/research-results.ts";
+/* Holdings arithmetic and a portfolio's ideas. Pure, so vitest imports the
+   same module these tools do -- see its header for the three defects behind
+   the reported Large Cap Growth failure. */
+import {
+  type HoldingRow,
+  weightHoldings,
+  sectorBreakdown,
+  categorizeIdeas,
+  degradedNote,
+} from "../_shared/portfolio-ideas.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1493,21 +1503,39 @@ async function buildContextPrompt(
 
     if (portfolio) {
       prompt += `PORTFOLIO: ${portfolio.name}\n`;
+      /*
+       * The id, which this prompt used to omit.
+       *
+       * Without it the model knew only a NAME for an object the server had
+       * already resolved, so any follow-up lookup went back through a
+       * case-insensitive name match -- an attached canonical reference
+       * degraded into a natural-language label on its way to the model. It
+       * is handed the id and told to use it.
+       */
+      prompt += `Portfolio id: ${context.id}\n`;
+      prompt += `When you look this portfolio up, or ask for its ideas, pass this id — not the name.\n`;
       if (portfolio.description) prompt += `Description: ${truncate(portfolio.description, 500)}\n`;
     }
 
+    /* Same columns and same snapshot rule as `get_portfolio`. `weight` is
+       not a column here either, and ordering by it is what made this query
+       return nothing useful. */
     const { data: holdings } = await supabase
       .from("portfolio_holdings")
-      .select("*, asset:assets(symbol, company_name)")
+      .select("asset_id, portfolio_id, date, shares, price, " +
+              "asset:assets(id, symbol, company_name, sector)")
       .eq("portfolio_id", context.id)
-      .order("weight", { ascending: false })
-      .limit(10);
+      .order("date", { ascending: false, nullsFirst: false })
+      .limit(500);
 
-    if (holdings?.length) {
-      prompt += `\nTOP HOLDINGS:\n`;
-      holdings.forEach((h: any) => {
-        if (h.asset) prompt += `• ${h.asset.symbol}: ${h.weight ? h.weight.toFixed(1) + "%" : "N/A"}\n`;
+    const snapshot = weightHoldings(holdings as HoldingRow[] | null, 10);
+    if (snapshot.holdings.length) {
+      prompt += `\nTOP HOLDINGS${snapshot.as_of ? ` (as of ${snapshot.as_of})` : ""}:\n`;
+      snapshot.holdings.forEach((h) => {
+        const w = h.weight_pct === null ? "weight unknown" : `${h.weight_pct.toFixed(1)}%`;
+        prompt += `• ${h.symbol ?? "unknown"}: ${w}\n`;
       });
+      if (snapshot.weight_basis) prompt += `${snapshot.weight_basis}\n`;
     }
 
     return truncate(prompt, MAX_CONTEXT_CHARS);
@@ -1750,7 +1778,12 @@ const RESEARCH_TOOLS = [
       "working on, what ideas are in flight, or what is ready to recommend. The pipeline measures " +
       "MATURITY and stops at ready-to-recommend: whether a recommendation was submitted, ruled on " +
       "or traded is a separate record, so use get_pending_decisions or get_decisions for that and " +
-      "never report a pipeline stage as a decision.",
+      "never report a pipeline stage as a decision. " +
+      "Pass `portfolio` when the reader asks about the ideas on a particular book — including " +
+      "when a portfolio is attached to the conversation. The result then splits ideas by their " +
+      "ACTUAL relationship to it: ideas associated with that portfolio, ideas about assets it " +
+      "holds that are not associated with it, and unrelated ideas. Report those groups " +
+      "separately; only the first group is an idea for that portfolio.",
     input_schema: {
       type: "object",
       properties: {
@@ -1758,12 +1791,18 @@ const RESEARCH_TOOLS = [
           type: "string",
           enum: ["mine", "organization"],
           description:
-            "'mine' (default) for ideas the reader created or is assigned, 'organization' for every idea visible to them.",
+            "'mine' (default) for ideas the reader created or is assigned, 'organization' for every idea visible to them. " +
+            "When `portfolio` is given, prefer 'organization': a colleague's idea on the reader's book is still an idea on that book.",
         },
         stage: {
           type: "string",
           enum: ["exploring", "researching", "developing", "ready_to_recommend"],
           description: "Optional. Only ideas at this canonical stage.",
+        },
+        portfolio: {
+          type: "string",
+          description:
+            "Optional. A portfolio name or id. Groups the result by each idea's real relationship to it.",
         },
       },
       required: [],
@@ -1931,33 +1970,54 @@ async function executeResearchTool(
       const pf = found.data;
       if (!pf) return toolEmpty("get_portfolio", { name_or_id: ref, looked_in: "portfolios" });
 
+      /*
+       * `weight` is not a column. `portfolio_holdings` holds shares, price,
+       * cost and date, and weight is derived -- which is what the frontend
+       * has always done. Asking for `weight` made Postgres reject the query,
+       * and because a holdings failure used to return a flat error, the
+       * portfolio this tool had ALREADY RESOLVED was thrown away with it.
+       * That is the whole of the reported Large Cap Growth failure: the
+       * model was told the lookup failed and would not answer a question
+       * about ideas that never needed holdings.
+       *
+       * So: real columns, every dated row (collapsed in `weightHoldings`,
+       * because the table holds one row per asset per date and summing them
+       * double-counts), and a holdings failure that degrades instead of
+       * discarding.
+       */
       const held = await runQuery<any[]>("get_portfolio", "holdings",
         supabase
           .from("portfolio_holdings")
-          .select("id, weight, asset:assets(id, symbol, company_name, sector)")
+          .select("asset_id, portfolio_id, date, shares, price, cost, " +
+                  "asset:assets(id, symbol, company_name, sector)")
           .eq("portfolio_id", pf.id)
-          .order("weight", { ascending: false }).limit(15));
-      if (held.failed) return toolError("get_portfolio", "holdings");
-      const holdings = held.data || [];
+          .order("date", { ascending: false, nullsFirst: false })
+          .limit(500));
 
-      const sectorMap: Record<string, number> = {};
-      for (const h of holdings as any[]) {
-        const sec = h.asset?.sector || "Unknown";
-        sectorMap[sec] = (sectorMap[sec] || 0) + (Number(h.weight) || 0);
-      }
+      const snapshot = held.failed
+        ? null
+        : weightHoldings(held.data as HoldingRow[] | null, 15);
+      const holdings = snapshot?.holdings ?? [];
+
       return toolOk("get_portfolio", {
         portfolio_id: pf.id,
         name: pf.name,
         description: pf.description,
         updated_at: pf.updated_at ?? pf.created_at ?? null,
         holdings_returned: holdings.length,
-        top_holdings: holdings.map((h: any) => ({
-          asset_id: h.asset?.id, symbol: h.asset?.symbol, company: h.asset?.company_name,
-          sector: h.asset?.sector, weight_pct: h.weight,
-        })),
-        sector_breakdown: Object.entries(sectorMap)
-          .sort((a, b) => b[1] - a[1])
-          .map(([sec, w]) => ({ sector: sec, weight_pct: Number(w.toFixed(2)) })),
+        ...(held.failed
+          ? { holdings_unavailable: true, degraded: degradedNote(["the portfolio's holdings"]) }
+          : {}),
+        ...(snapshot?.as_of ? { holdings_as_of: snapshot.as_of } : {}),
+        ...(snapshot?.weight_basis ? { weight_basis: snapshot.weight_basis } : {}),
+        ...(snapshot && snapshot.rows_without_price > 0
+          ? { unpriced_holdings: snapshot.rows_without_price }
+          : {}),
+        ...(snapshot && snapshot.superseded_rows > 0
+          ? { superseded_snapshot_rows: snapshot.superseded_rows }
+          : {}),
+        top_holdings: holdings,
+        sector_breakdown: sectorBreakdown(holdings),
       });
     }
 
@@ -2759,7 +2819,18 @@ async function executeResearchTool(
      * moves it back, so an executed idea can still read `ready_for_decision`.
      */
     if (name === "get_idea_pipeline") {
-      const scope = input.scope === "organization" ? "organization" : "mine";
+      const wantPortfolio = String(input.portfolio || "").trim();
+      /*
+       * A portfolio question widens the default. `mine` filters to ideas the
+       * reader created or is assigned, and a colleague's idea on the
+       * reader's own book is still an idea on that book -- answering "your
+       * ideas for this portfolio" from the `mine` slice would under-report
+       * it. RLS still decides what is visible; this only stops the tool
+       * narrowing further than the reader asked.
+       */
+      const scope = input.scope === "organization" || wantPortfolio
+        ? "organization"
+        : "mine";
       const wantStage = typeof input.stage === "string" ? toIdeaStage(input.stage) : null;
 
       let q = supabase.from("trade_queue_items")
@@ -2812,8 +2883,11 @@ async function executeResearchTool(
         return Number.isFinite(t) ? Math.floor((now - t) / 86_400_000) : null;
       };
 
-      const byStage = IDEA_STAGES.map((st) => {
-        const mine = inScope.filter((s) => s.stage === st);
+      /* Grouping, over any subset. It used to close over `inScope`; it takes
+         a subset now so the portfolio split below can group its own group
+         without a second copy of the row shape. */
+      const groupByStage = (subset: typeof inScope) => IDEA_STAGES.map((st) => {
+        const mine = subset.filter((s) => s.stage === st);
         return {
           stage: st,
           stage_label: IDEA_STAGE_LABEL[st],
@@ -2844,15 +2918,101 @@ async function executeResearchTool(
         };
       }).filter((g) => g.count > 0);
 
+      const maturityNote =
+        "These stages describe how well understood each idea is. They do not say whether a recommendation was submitted, ruled on or traded; that is a decision_requests fact.";
+
+      /*
+       * ── The portfolio split ────────────────────────────────────────────
+       *
+       * Asked for by name or id, resolved here rather than taken on trust,
+       * and the three relationships are kept APART. Merging them would tell
+       * a reader their book has fourteen ideas against it when it has
+       * three: an idea about an asset the portfolio happens to hold is a
+       * reason to care, not an association, and this codebase does not
+       * invent a relationship the data has not recorded.
+       *
+       * Every sub-lookup here degrades rather than failing the tool. The
+       * reported defect was a tool that threw away a good answer because an
+       * unrelated part of it broke, and the ideas above are already in hand
+       * by this point.
+       */
+      if (wantPortfolio) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          .test(wantPortfolio);
+        const pq = supabase.from("portfolios").select("id, name");
+        const pfFound = await runQuery<any>("get_idea_pipeline", "portfolio",
+          isUuid
+            ? pq.eq("id", wantPortfolio).maybeSingle()
+            : pq.ilike("name", wantPortfolio).limit(1).maybeSingle());
+
+        const pf = pfFound.failed ? null : pfFound.data;
+        const failures: string[] = [];
+        if (pfFound.failed) failures.push(`the lookup of portfolio "${wantPortfolio}"`);
+
+        let heldAssetIds: string[] = [];
+        if (pf?.id) {
+          const heldRows = await runQuery<any[]>("get_idea_pipeline", "holdings",
+            supabase.from("portfolio_holdings")
+              .select("asset_id, portfolio_id, date")
+              .eq("portfolio_id", pf.id)
+              .order("date", { ascending: false, nullsFirst: false })
+              .limit(500));
+          if (heldRows.failed) {
+            failures.push(`the holdings of ${pf.name}`);
+          } else {
+            heldAssetIds = weightHoldings(heldRows.data as HoldingRow[] | null, 1000)
+              .holdings.map((h) => h.asset_id)
+              .filter((id): id is string => Boolean(id));
+          }
+        }
+
+        const split = categorizeIdeas(
+          inScope.map((s) => ({ ...s, portfolio_id: s.row.portfolio_id, asset_id: s.row.asset_id })),
+          pf?.id ?? null,
+          heldAssetIds,
+        );
+
+        return toolOk("get_idea_pipeline", {
+          ...searched,
+          portfolio_requested: wantPortfolio,
+          portfolio_resolved: pf ? { id: pf.id, name: pf.name } : null,
+          /* Not found is not the same as not looked for, and neither is the
+             same as a failed lookup. The model is told which it was. */
+          ...(pf || pfFound.failed
+            ? {}
+            : { portfolio_not_found: `No portfolio matching "${wantPortfolio}" is visible to you.` }),
+          ...(failures.length ? { degraded: degradedNote(failures) } : {}),
+          records_returned: inScope.length,
+          ideas_returned: inScope.length,
+          ...(all.length > live.length ? { finished_ideas_excluded: all.length - live.length } : {}),
+          note_pipeline_is_maturity: maturityNote,
+          note_relationships:
+            "These three groups are different relationships and must be reported separately. " +
+            "`associated_with_portfolio` are the ideas recorded against this portfolio. " +
+            "`on_assets_it_holds` are ideas about names the portfolio holds that are recorded " +
+            "against another portfolio or none -- they are NOT ideas for this portfolio. " +
+            "`unrelated_to_portfolio` are the rest. Never present them as one list.",
+          associated_with_portfolio: {
+            count: split.associated.length,
+            by_stage: groupByStage(split.associated),
+          },
+          on_assets_it_holds: {
+            count: split.held.length,
+            holdings_considered: heldAssetIds.length,
+            by_stage: groupByStage(split.held),
+          },
+          unrelated_to_portfolio: { count: split.elsewhere.length },
+        });
+      }
+
       return toolOk("get_idea_pipeline", {
         ...searched,
         records_returned: inScope.length,
         ideas_returned: inScope.length,
         ...(all.length > live.length ? { finished_ideas_excluded: all.length - live.length } : {}),
         /* Stated because the pipeline is the maturity axis only. */
-        note_pipeline_is_maturity:
-          "These stages describe how well understood each idea is. They do not say whether a recommendation was submitted, ruled on or traded; that is a decision_requests fact.",
-        by_stage: byStage,
+        note_pipeline_is_maturity: maturityNote,
+        by_stage: groupByStage(inScope),
       });
     }
 
