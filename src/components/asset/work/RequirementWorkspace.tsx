@@ -9,6 +9,7 @@ import {
 } from '../../../lib/asset-work/requirement-guidance'
 import { readPerformance, describeBasis, PERIODS } from '../../../lib/asset-work/performance'
 import { ACT_AI_ANALYZE } from '../../../lib/ai/brand'
+import { richTextToPlain } from '../../../lib/text/rich-text-plain'
 
 /**
  * The requirement as an assignment rather than a checkbox.
@@ -344,7 +345,7 @@ function RequirementResearch({
               and a later `block` silently overrode it, so a long section
               rendered its full text down the margin. */}
           <span className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-gray-700 hover:text-primary-600 dark:text-gray-200">
-            {s.content}
+            {richTextToPlain(s.content)}
           </span>
           <span className="mt-0.5 block text-[10px] text-gray-400">
             {[s.authorName, shortDate(s.updatedAt)].filter(Boolean).join(' · ')}

@@ -55,6 +55,7 @@ import { useTradeIdeaService } from '../../../hooks/useTradeIdeaService'
 import { useAuth } from '../../../hooks/useAuth'
 import { supabase } from '../../../lib/supabase'
 import { canEditIdea, type IdeaEditSubject } from '../../../lib/asset-work/idea-edit'
+import { richTextToPlainBlock } from '../../../lib/text/rich-text-plain'
 
 const EYEBROW = 'text-[10px] font-semibold uppercase tracking-wide text-gray-400'
 const FIELD =
@@ -197,11 +198,24 @@ function Section({
   )
 }
 
-const Prose = ({ text }: { text: string | null | undefined }) => (
-  <p className="max-w-[68ch] whitespace-pre-wrap text-[13px] leading-relaxed text-gray-800 dark:text-gray-200">
-    {text?.trim() || <span className="text-gray-400">Nothing written yet.</span>}
-  </p>
-)
+/*
+ * `richTextToPlainBlock`, because a thesis is authored in Markdown and this
+ * printed the markers: `**Per-user monetisation**` reached the reader with
+ * its asterisks. Block, not the collapsing variant, because the box is
+ * `whitespace-pre-wrap` and the paragraph breaks are the author's.
+ *
+ * This flattens rather than renders. Rendering would be better and is listed
+ * as a follow-up; it changes the box from a `<p>` to a block tree, which is
+ * more than this fix is allowed to touch.
+ */
+const Prose = ({ text }: { text: string | null | undefined }) => {
+  const flat = richTextToPlainBlock(text)
+  return (
+    <p className="max-w-[68ch] whitespace-pre-wrap text-[13px] leading-relaxed text-gray-800 dark:text-gray-200">
+      {flat || <span className="text-gray-400">Nothing written yet.</span>}
+    </p>
+  )
+}
 
 const Chips = <T extends string>({
   options, value, onChange, disabled,
