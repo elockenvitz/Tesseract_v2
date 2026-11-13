@@ -51,11 +51,14 @@
  *
  * What is left is what can be honoured with the machinery chat already has:
  *
- *   * THE DATA COMMANDS. `/price.AAPL` becomes the question it means, and
- *     the model answers it with its own `get_price` lookup, which lands in
- *     the message's evidence section with a source. The figure is retrieved,
- *     never composed: nothing here puts a number in front of the reader, and
- *     nothing asks the model to recall one.
+ *   * THE DATA COMMANDS. `/price.AAPL` resolves to a READ, not to a
+ *     question. It used to expand into "What is the current price of AAPL?"
+ *     and that was wrong twice over: a deterministic command became a model
+ *     request, with its latency and its cost, and the answer could come back
+ *     hedged, rounded, or about a different day. Three of the six can be
+ *     answered from `price_history_cache`; the other three name the exact
+ *     input they are missing. `slash-market-data.ts` owns which is which,
+ *     and the read is a hook, because it needs Supabase.
  *   * THE TEMPLATES. A template is text. Its body goes into the composer for
  *     the reader to edit and send, which is the same act as in the editor.
  *   * `/help`. Which lists exactly this, rather than the editor's full set.
@@ -70,6 +73,10 @@
  * Pure. No React, no Supabase, no network.
  */
 
+import {
+  isRetrievableData, fallbackQuestion, SLASH_DATA_BLOCKER,
+} from './slash-market-data'
+
 /** The character that starts a command. One, deliberately. */
 export const SLASH = '/'
 
@@ -78,6 +85,12 @@ export type SlashUnavailableReason =
   | 'editor-only'
   | 'already-here'
   | 'not-applicable'
+  /**
+   * A chart. Separated from `editor-only` because the reason is different
+   * and more specific, and "works in the editor" was not enough to tell a
+   * reader whether to expect it here later.
+   */
+  | 'needs-canvas'
 
 export interface SlashChatCommand {
   /** The registry id, exactly as the editor defines it. */
@@ -97,24 +110,36 @@ export const SLASH_UNAVAILABLE_TEXT: Readonly<Record<SlashUnavailableReason, str
     'editor-only': 'Works in a note or research editor, not in chat.',
     'already-here': 'You are already talking to ACT AI.',
     'not-applicable': 'Sets who can see stored content. A question has no audience.',
+    /*
+     * The exact incompatibility, not a category.
+     *
+     * The chart commands end in `insertContent` of a ProseMirror node that
+     * the editor then mounts a React chart into, and it stays interactive
+     * because the document is live. A chat message is a stored string. So
+     * the gap is not styling or screen space -- there is no node to insert
+     * and nothing to mount into. Use the asset page's own chart, which is
+     * reading the same stored closes `/price` reads.
+     */
+    'needs-canvas': 'Draws an interactive chart into a live document. A chat message is text, so there is nothing to draw into. The asset page chart reads the same stored closes.',
   })
 
-/**
- * The data commands, and the question each one means.
+/*
+ * There is deliberately no table of questions here any more.
  *
- * The question is a QUESTION, not an instruction to state a number: the
- * model answers it by looking the figure up, and the lookup is what the
- * evidence section then shows. `{SYMBOL}` is substituted with what the
- * reader chose.
+ * `/price.AAPL` used to expand into "What is the current price of AAPL?" and
+ * the reader sent it. That turned a deterministic command into a model
+ * request, and it is the thing this module must not do. A data command now
+ * resolves to one of two outcomes, both in `slash-market-data.ts`:
+ *
+ *   retrievable      the store answers it -- `kind: 'reading'`, and the
+ *                    caller performs the read
+ *   not retrievable  the store cannot -- `kind: 'data-blocked'`, naming the
+ *                    missing input, with the model lookup offered as a
+ *                    clearly separate thing the reader may choose
+ *
+ * Which is which is a property of what `price_history_cache` holds, not a
+ * preference, and it lives in one place so it cannot drift.
  */
-const DATA_QUESTIONS: Readonly<Record<string, string>> = Object.freeze({
-  price: 'What is the current price of {SYMBOL}?',
-  volume: 'What is the latest trading volume for {SYMBOL}?',
-  marketcap: 'What is the market capitalisation of {SYMBOL}?',
-  change: 'How has {SYMBOL} moved, and over what period?',
-  pe: 'What is the P/E ratio for {SYMBOL}?',
-  dividend: 'What is the dividend yield on {SYMBOL}?',
-})
 
 /**
  * Every registry id that does something in chat.
@@ -124,12 +149,15 @@ const DATA_QUESTIONS: Readonly<Record<string, string>> = Object.freeze({
  * growing is a decision rather than an accident.
  */
 export const SLASH_CHAT_COMMANDS: readonly SlashChatCommand[] = Object.freeze([
-  { id: 'price', kind: 'question', label: '/price', hint: 'Ask for the current price, looked up.', takesSymbol: true },
-  { id: 'volume', kind: 'question', label: '/volume', hint: 'Ask for the latest volume, looked up.', takesSymbol: true },
-  { id: 'marketcap', kind: 'question', label: '/marketcap', hint: 'Ask for market capitalisation.', takesSymbol: true },
-  { id: 'change', kind: 'question', label: '/change', hint: 'Ask how it has moved.', takesSymbol: true },
-  { id: 'pe', kind: 'question', label: '/pe', hint: 'Ask for the P/E ratio.', takesSymbol: true },
-  { id: 'dividend', kind: 'question', label: '/dividend', hint: 'Ask for the dividend yield.', takesSymbol: true },
+  /* The hint says where the figure comes FROM, because that is the
+     difference the reader is choosing between. "Looked up" described a model
+     call and read like a guarantee. */
+  { id: 'price', kind: 'question', label: '/price', hint: 'Last stored close, with its source.', takesSymbol: true },
+  { id: 'volume', kind: 'question', label: '/volume', hint: 'Volume on the last stored session.', takesSymbol: true },
+  { id: 'marketcap', kind: 'question', label: '/marketcap', hint: 'Not stored. Says why.', takesSymbol: true },
+  { id: 'change', kind: 'question', label: '/change', hint: 'Move between the last two stored closes.', takesSymbol: true },
+  { id: 'pe', kind: 'question', label: '/pe', hint: 'Not stored. Says why.', takesSymbol: true },
+  { id: 'dividend', kind: 'question', label: '/dividend', hint: 'Not stored. Says why.', takesSymbol: true },
   { id: 'help', kind: 'help', label: '/help', hint: 'What works in chat.', takesSymbol: false },
 ])
 
@@ -152,12 +180,12 @@ export const SLASH_UNAVAILABLE: Readonly<Record<string, SlashUnavailableReason>>
     data: 'editor-only',
     table: 'editor-only',
     metric: 'editor-only',
-    chart: 'editor-only',
-    'chart.price': 'editor-only',
-    'chart.volume': 'editor-only',
-    'chart.performance': 'editor-only',
-    'chart.comparison': 'editor-only',
-    'chart.technicals': 'editor-only',
+    chart: 'needs-canvas',
+    'chart.price': 'needs-canvas',
+    'chart.volume': 'needs-canvas',
+    'chart.performance': 'needs-canvas',
+    'chart.comparison': 'needs-canvas',
+    'chart.technicals': 'needs-canvas',
     task: 'editor-only',
     event: 'editor-only',
     note: 'editor-only',
@@ -284,8 +312,27 @@ export function slashSuggestions(query: string): readonly SlashChatCommand[] {
 }
 
 export type SlashExpansion =
+  /** Text for the composer. A template body, and nothing else now. */
   | { kind: 'text'; text: string }
+  /** Rendered, never sent. See the help branch below. */
+  | { kind: 'help'; text: string }
   | { kind: 'needs-symbol'; command: SlashChatCommand }
+  /**
+   * A figure the store can answer. NOT text, deliberately.
+   *
+   * `text` would mean the command had produced something to send, and the
+   * whole point is that it produces a VALUE instead. The caller performs the
+   * read -- it needs Supabase, and this module is pure.
+   */
+  | { kind: 'reading'; id: string; symbol: string }
+  /**
+   * A figure the store cannot answer, with the missing input named.
+   *
+   * `fallback` is the model question, carried but not substituted: the
+   * reader has to choose it, having been told the store cannot answer. A
+   * command that silently became this question is the defect.
+   */
+  | { kind: 'data-blocked'; id: string; symbol: string; blocker: string; fallback: string }
   | { kind: 'unavailable'; id: string; reason: SlashUnavailableReason }
   | { kind: 'unknown'; id: string }
 
@@ -319,14 +366,26 @@ export function expandSlashCommand(
   if (!command) return { kind: 'unknown', id }
 
   if (command.kind === 'help') {
-    return { kind: 'text', text: helpText() }
+    /*
+     * A STATEMENT, not composer text.
+     *
+     * `/help` used to expand into "Which Tesseract commands work in this
+     * chat?" and the reader sent it -- a model call to answer a question the
+     * registry already answers, which the model cannot actually know. The
+     * answer is rendered; there is nothing to send.
+     */
+    return { kind: 'help', text: helpText() }
   }
 
   if (command.takesSymbol) {
     if (!symbol) return { kind: 'needs-symbol', command }
-    const question = DATA_QUESTIONS[id]
-    if (!question) return { kind: 'unknown', id }
-    return { kind: 'text', text: question.replace('{SYMBOL}', symbol) }
+    if (isRetrievableData(id)) return { kind: 'reading', id, symbol }
+    const blocker = SLASH_DATA_BLOCKER[id]
+    const fallback = fallbackQuestion(id, symbol)
+    /* Both or neither. A blocked command with no stated reason would be an
+       apology, and a fallback with no reason would be the old behaviour. */
+    if (!blocker || !fallback) return { kind: 'unknown', id }
+    return { kind: 'data-blocked', id, symbol, blocker, fallback }
   }
 
   return { kind: 'unknown', id }
@@ -342,5 +401,5 @@ export function expandSlashCommand(
  */
 export function helpText(): string {
   const names = SLASH_CHAT_COMMANDS.filter(c => c.kind === 'question').map(c => c.label)
-  return `Which Tesseract commands work in this chat? (${names.join(', ')}, plus my templates)`
+  return `These work in chat: ${names.join(', ')}, and any of your templates. Everything else belongs to a note or research editor.`
 }

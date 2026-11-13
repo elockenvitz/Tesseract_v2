@@ -31,6 +31,7 @@ import {
   parseSlashCommand, expandSlashCommand, slashSuggestions, chatCommand, helpText,
   SLASH, SLASH_CHAT_COMMANDS, SLASH_UNAVAILABLE, SLASH_UNAVAILABLE_TEXT,
 } from '../slash-commands'
+import { isRetrievableData, SLASH_DATA_BLOCKER } from '../slash-market-data'
 
 const REGISTRY_SOURCE = readFileSync(
   resolve(
@@ -190,32 +191,88 @@ describe('the dot no longer triggers', () => {
 })
 
 describe('what is honoured in chat', () => {
-  it('turns a price command into the question it means', () => {
+  it('turns a price command into a read, not a question', () => {
+    /*
+     * This is the 2.3 correction. `/price.AAPL` used to produce "What is the
+     * current price of AAPL?" for the reader to send -- a deterministic
+     * command turned into a model request, answerable hedged, rounded, or
+     * about a different day. It now names a read for the caller to perform.
+     */
     const parsed = parseSlashCommand('/price.AAPL')!
     expect(parsed.id).toBe('price')
     expect(parsed.symbol).toBe('AAPL')
     expect(expandSlashCommand(parsed)).toEqual({
-      kind: 'text',
-      text: 'What is the current price of AAPL?',
+      kind: 'reading', id: 'price', symbol: 'AAPL',
     })
   })
 
-  it('states no figure of its own', () => {
+  it('never turns a retrievable figure into a model question', () => {
     /*
-     * The provenance rule. Every data command expands into a QUESTION, so
-     * the number the reader sees came from the model's own lookup with a
-     * source attached. A figure produced here would have no provenance path.
+     * The regression guard, stated as the defect. A `text` expansion is
+     * composer text the reader sends, so any retrievable data command
+     * producing one has reintroduced exactly what was removed -- including
+     * by way of a "helpful" fallback when the cache looks empty.
+     */
+    for (const command of SLASH_CHAT_COMMANDS) {
+      if (!command.takesSymbol || !isRetrievableData(command.id)) continue
+      const expansion = expandSlashCommand(
+        parseSlashCommand(`/${command.id}.LRCX`)!,
+      )
+      expect(expansion.kind).toBe('reading')
+      expect(JSON.stringify(expansion)).not.toMatch(/\?/)
+    }
+  })
+
+  it('composes no number itself, in any state', () => {
+    /*
+     * Provenance. The figure arrives from `price_history_cache` wrapped in
+     * `Observed`; nothing in this pure module may put a digit in front of a
+     * reader, because a number originating here would have no source and no
+     * as-of date.
      */
     for (const command of SLASH_CHAT_COMMANDS) {
       if (!command.takesSymbol) continue
       const expansion = expandSlashCommand(
         parseSlashCommand(`/${command.id}.LRCX`)!,
       )
-      expect(expansion.kind).toBe('text')
-      const text = (expansion as { text: string }).text
-      expect(text).toMatch(/\?$/)
-      expect(text).not.toMatch(/\d/)
+      expect(JSON.stringify(expansion)).not.toMatch(/\d/)
     }
+  })
+
+  it('names the missing input for a figure the store does not hold', () => {
+    /* Not "unavailable". The exact input, so the gap is reportable. */
+    const expansion = expandSlashCommand(parseSlashCommand('/pe.AAPL')!)
+    expect(expansion.kind).toBe('data-blocked')
+    const blocked = expansion as { blocker: string; fallback: string }
+    expect(blocked.blocker).toMatch(/earnings/i)
+    /* The model lookup is still offered -- as a separate, labelled choice. */
+    expect(blocked.fallback).toMatch(/AAPL/)
+    expect(blocked.fallback).toMatch(/source/i)
+  })
+
+  it('splits the six data commands by what the cache actually holds', () => {
+    /* Three retrievable, three not. A change to this split is a change to
+       what the store contains, so it should fail here first. */
+    const retrievable = SLASH_CHAT_COMMANDS
+      .filter(c => c.takesSymbol && isRetrievableData(c.id))
+      .map(c => c.id)
+    expect(retrievable.sort()).toEqual(['change', 'price', 'volume'])
+    for (const id of ['marketcap', 'pe', 'dividend']) {
+      expect(SLASH_DATA_BLOCKER[id]).toBeTruthy()
+    }
+  })
+
+  it('answers /help from the registry instead of asking the model', () => {
+    /*
+     * `/help` used to expand into "Which Tesseract commands work in this
+     * chat?" and the reader sent it: a model call to answer a question only
+     * the registry can answer, and the model cannot actually know.
+     */
+    const expansion = expandSlashCommand(parseSlashCommand('/help')!)
+    expect(expansion.kind).toBe('help')
+    const text = (expansion as { text: string }).text
+    expect(text).not.toMatch(/\?/)
+    expect(text).toMatch(/\/price/)
   })
 
   it('accepts a space as well as the editors dot separator', () => {
@@ -285,8 +342,29 @@ describe('what is declined, and said so', () => {
      */
     for (const id of ['chart', 'chart.price', 'chart.technicals']) {
       const expansion = expandSlashCommand(parseSlashCommand(`/${id}.AAPL`)!)
-      expect(expansion).toEqual({ kind: 'unavailable', id, reason: 'editor-only' })
+      expect(expansion).toEqual({ kind: 'unavailable', id, reason: 'needs-canvas' })
     }
+  })
+
+  it('gives the chart commands their own reason, not a category', () => {
+    /*
+     * 2.3 asks for the EXACT incompatibility. "Works in the editor" is a
+     * location, and it left a reader unable to tell whether a chart was
+     * coming to chat later. The reason now says what is actually missing --
+     * a live document to insert a node into -- and points at the surface
+     * that reads the same stored closes.
+     */
+    const every = new Set(Object.values(SLASH_UNAVAILABLE))
+    expect(every.has('needs-canvas')).toBe(true)
+    for (const [id, reason] of Object.entries(SLASH_UNAVAILABLE)) {
+      expect(id.startsWith('chart') ? reason : 'x', id)
+        .toBe(id.startsWith('chart') ? 'needs-canvas' : 'x')
+    }
+    const text = SLASH_UNAVAILABLE_TEXT['needs-canvas']
+    expect(text).toMatch(/chat message is text/i)
+    expect(text).toMatch(/asset page/i)
+    /* And it must not promise one. */
+    expect(text).not.toMatch(/soon|coming|will be/i)
   })
 
   it('reads a long id as the long id, not as its prefix', () => {

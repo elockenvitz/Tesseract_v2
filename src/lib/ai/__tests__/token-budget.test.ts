@@ -202,19 +202,29 @@ describe('the input side still binds', () => {
     expect(DEFAULT_BUDGET.maxObjects).toBe(4)
   })
 
-  it('sends nothing extra for a slash command', () => {
+  it('sends no request at all for a retrievable figure', () => {
     /*
-     * The Slash Command menu's whole output is text in the composer. So a
-     * command and the question a reader could have typed themselves cost the
-     * same, and the feature's request-side cost is zero.
+     * Stronger than it was. `/price.LRCX` used to become a question in the
+     * composer, which cost one request to answer; it is now a database read,
+     * so the model cost is not "the same as typing it" -- it is nothing.
+     * A `text` expansion here would mean the request came back.
      */
     const expansion = expandSlashCommand(parseSlashCommand('/price.LRCX')!)
-    expect(expansion.kind).toBe('text')
-    if (expansion.kind !== 'text') return
+    expect(expansion.kind).toBe('reading')
+  })
 
-    const typed = policy('What is the current price of LRCX?')
-    const viaCommand = policy(expansion.text)
-    expect(viaCommand).toEqual(typed)
+  it('costs the same as typing it when the figure is not stored', () => {
+    /*
+     * The three commands the cache cannot answer still offer the model
+     * lookup, and that route must cost what the reader would have paid
+     * typing the question themselves -- no hidden preamble bundled in.
+     */
+    const expansion = expandSlashCommand(parseSlashCommand('/pe.LRCX')!)
+    expect(expansion.kind).toBe('data-blocked')
+    if (expansion.kind !== 'data-blocked') return
+
+    const typed = policy('What is the P/E ratio for LRCX, and what is your source?')
+    expect(policy(expansion.fallback)).toEqual(typed)
   })
 })
 

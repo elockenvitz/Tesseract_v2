@@ -341,6 +341,19 @@ export const GATED_DIRS = [
   'src/lib/onboarding',
 
   /*
+   * `src/lib/text` is the rich-text flattener, and it is gated because its
+   * suite is half behaviour and half a source-wiring check over nine other
+   * components. Those two halves only mean something together: the flattener
+   * can be correct while a surface still interpolates a stored field raw,
+   * which is the defect that put `**Bear case**` in front of readers.
+   *
+   * It arrived with that fix and was caught by this guard's own
+   * unclassified-scope check, not by anyone remembering to add it -- which
+   * is the third time that check has earned its place.
+   */
+  'src/lib/text',
+
+  /*
    * `src/lib/messaging` is the read seam the direct-messaging panel uses.
    * Gated rather than deferred because what its tests assert is the NUMBER of
    * queries each read makes, and that is the whole reason the code was moved

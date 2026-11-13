@@ -30,8 +30,45 @@ import { useState } from 'react'
 
 import { AiSlashMenu } from '../AiSlashMenu'
 
+import type { SlashReading } from '../../../lib/ai/slash-market-data'
+
+/**
+ * A figure as the hook actually returns one.
+ *
+ * Built out rather than loosely cast: the provenance line is assembled from
+ * `source` and `effectiveAt`, so a fixture missing either would make the
+ * assertions below pass against a component that never reads them.
+ */
+const LRCX_CLOSE: SlashReading = {
+  state: 'ok',
+  id: 'price',
+  symbol: 'LRCX',
+  observed: {
+    value: 712.34,
+    source: { provider: 'yahoo', feed: 'chart_v8', via: 'cache' },
+    observedAt: '2026-11-12T22:03:00.000Z',
+    effectiveAt: '2026-11-12',
+    adjustment: 'unknown',
+    currency: 'USD',
+  },
+  verdict: {
+    state: 'fresh',
+    dataClass: 'daily_close',
+    basis: 'calendar',
+    ageMs: 0,
+    ageDays: 0,
+    observationAgeMs: 0,
+    reason: null,
+  },
+  label: 'Last close',
+}
+
 /** The menu with a composer behind it, as the pane wires the pair. */
-function Harness({ initial = '', templates = {} as Record<string, string> }) {
+function Harness({
+  initial = '',
+  templates = {} as Record<string, string>,
+  reading = null as SlashReading | null,
+}) {
   const [value, setValue] = useState(initial)
   return (
     <>
@@ -39,6 +76,7 @@ function Harness({ initial = '', templates = {} as Record<string, string> }) {
         value={value}
         onPick={setValue}
         templateBody={s => templates[s] ?? null}
+        reading={reading}
       />
       <textarea data-testid="box" value={value} onChange={e => setValue(e.target.value)} />
     </>
@@ -123,29 +161,88 @@ describe('choosing a command puts text in the box and sends nothing', () => {
     expect(screen.getByTestId('ai-slash-needs-symbol').textContent).toContain('needs a ticker')
   })
 
-  it('turns the command plus a ticker into the question it means', async () => {
+  it('shows the stored figure rather than a question to send', async () => {
+    /*
+     * The 2.3 correction, on screen. This used to put "What is the current
+     * price of LRCX?" in the box; the figure now comes from the store, and
+     * what the row inserts is the figure WITH its source.
+     */
     const user = userEvent.setup()
-    render(<Harness initial="/price.LRCX" />)
+    render(<Harness initial="/price.LRCX" reading={LRCX_CLOSE} />)
 
-    await user.click(screen.getByTestId('ai-slash-ready').querySelector('button')!)
+    const panel = screen.getByTestId('ai-slash-reading')
+    expect(panel.textContent).toContain('$712.34')
+    expect(panel.textContent).not.toContain('?')
 
-    expect(box().value).toBe('What is the current price of LRCX?')
+    await user.click(screen.getByTestId('ai-slash-reading-row'))
+    expect(box().value).toContain('$712.34')
+    expect(box().value).toContain('yahoo')
+    expect(box().value).toContain('2026-11-12')
   })
 
   it('accepts a space before the ticker as well', async () => {
     const user = userEvent.setup()
-    render(<Harness initial="/price LRCX" />)
-    await user.click(screen.getByTestId('ai-slash-ready').querySelector('button')!)
-    expect(box().value).toBe('What is the current price of LRCX?')
+    render(<Harness initial="/price LRCX" reading={LRCX_CLOSE} />)
+    await user.click(screen.getByTestId('ai-slash-reading-row'))
+    expect(box().value).toContain('$712.34')
   })
 
-  it('puts no figure in the box', () => {
-    render(<Harness initial="/price.LRCX" />)
-    /* The provenance rule, visible: the expansion is a question, so the
-       number the reader ends up seeing came from the model's own lookup. */
-    const ready = screen.getByTestId('ai-slash-ready').textContent ?? ''
-    expect(ready).toMatch(/\?/)
-    expect(ready.replace(/LRCX/g, '')).not.toMatch(/\d/)
+  it('never puts the figure in the box without its source', async () => {
+    /*
+     * The provenance rule, as the defect it prevents: a number inserted
+     * alone would be quoted into a message, and then into a note, with
+     * nothing saying where it came from or what day it was true.
+     */
+    const user = userEvent.setup()
+    render(<Harness initial="/price.LRCX" reading={LRCX_CLOSE} />)
+    await user.click(screen.getByTestId('ai-slash-reading-row'))
+    expect(box().value).not.toBe('$712.34')
+    expect(box().value).toMatch(/yahoo.*2026-11-12/)
+  })
+
+  it('says it is looking, and offers nothing to press, until the figure lands', () => {
+    /* A row during the read would insert a placeholder the reader sends. */
+    render(<Harness initial="/price.LRCX" reading={{ state: 'loading', id: 'price', symbol: 'LRCX' }} />)
+    expect(screen.getByTestId('ai-slash-reading').textContent).toContain('Looking up LRCX')
+    expect(screen.queryByTestId('ai-slash-reading-row')).toBeNull()
+  })
+
+  it('gives the readers own reason when nothing is stored', () => {
+    render(
+      <Harness
+        initial="/price.ZZZZ"
+        reading={{
+          state: 'empty', id: 'price', symbol: 'ZZZZ',
+          detail: 'No instrument called ZZZZ is in your universe.',
+        }}
+      />,
+    )
+    /* Verbatim, never "something went wrong" -- the two are different
+       findings and only one is about the data. */
+    expect(screen.getByTestId('ai-slash-reading-detail').textContent)
+      .toBe('No instrument called ZZZZ is in your universe.')
+    expect(screen.queryByTestId('ai-slash-reading-row')).toBeNull()
+  })
+
+  it('names the missing input for a figure the store does not hold', async () => {
+    const user = userEvent.setup()
+    render(<Harness initial="/pe.LRCX" />)
+
+    const panel = screen.getByTestId('ai-slash-data-blocked')
+    expect(panel.textContent).toMatch(/earnings/i)
+
+    /* The model lookup is still reachable, labelled as what it is. */
+    await user.click(screen.getByTestId('ai-slash-data-fallback'))
+    expect(box().value).toMatch(/P\/E ratio for LRCX/)
+  })
+
+  it('answers /help itself instead of composing a question about itself', () => {
+    render(<Harness initial="/help" />)
+    const panel = screen.getByTestId('ai-slash-help')
+    expect(panel.textContent).toContain('/price')
+    expect(panel.textContent).not.toContain('?')
+    /* Nothing to press: there is nothing to send. */
+    expect(panel.querySelector('button')).toBeNull()
   })
 
   it('expands one of the readers own templates', async () => {
@@ -173,11 +270,14 @@ describe('choosing a command puts text in the box and sends nothing', () => {
 })
 
 describe('a command that belongs to the editor is named, not dropped', () => {
-  it('tells the reader where /chart works', () => {
+  it('tells the reader exactly why /chart cannot draw here', () => {
     render(<Harness initial="/chart.price.AAPL" />)
     const notice = screen.getByTestId('ai-slash-unavailable')
     expect(notice.textContent).toContain('/chart.price')
-    expect(notice.textContent).toContain('note or research editor')
+    /* The incompatibility, not the location: there is no live document in a
+       chat message to insert a chart node into. */
+    expect(notice.textContent).toMatch(/chat message is text/i)
+    expect(notice.textContent).toMatch(/asset page/i)
   })
 
   it('draws no chart, and no empty box where one would go', () => {
@@ -318,16 +418,39 @@ describe('the real pane consumes the menu', () => {
     const user = userEvent.setup()
     renderPane()
 
-    await user.type(input(), '/price.LRCX')
-    await user.click(screen.getByTestId('ai-slash-ready').querySelector('button')!)
+    /*
+     * `/pe` rather than `/price`, deliberately. `/price` no longer produces
+     * anything to send -- it performs a read, and a read needs a database
+     * this suite does not have. `/pe` is the command whose figure is NOT
+     * stored, so its route is still composer text, and it is the one that
+     * exercises the pane's send path end to end.
+     */
+    await user.type(input(), '/pe.LRCX')
+    await user.click(screen.getByTestId('ai-slash-data-fallback'))
     await user.click(screen.getByTestId('ai-composer-send'))
 
     /*
-     * End to end, through the pane's own send path: the command became a
-     * question and the question reached the hook. A menu that filled the box
-     * but could not be sent would pass every case above this one.
+     * A menu that filled the box but could not be sent would pass every
+     * case above this one.
      */
-    expect(sent).toEqual(['What is the current price of LRCX?'])
+    expect(sent).toEqual(['What is the P/E ratio for LRCX, and what is your source?'])
+  })
+
+  it('does not send a figure the pane could not read', async () => {
+    /*
+     * The pane has no database here, so the read fails. What must NOT happen
+     * is the old fallback: quietly composing "What is the current price of
+     * LRCX?" and letting the reader send it as though the command had
+     * worked. Nothing to press, and nothing sent.
+     */
+    const user = userEvent.setup()
+    renderPane()
+
+    await user.type(input(), '/price.LRCX')
+    expect(screen.getByTestId('ai-slash-reading')).toBeInTheDocument()
+    expect(screen.queryByTestId('ai-slash-reading-row')).toBeNull()
+    expect(input().value).toBe('/price.LRCX')
+    expect(sent).toEqual([])
   })
 
   it('reads the readers own templates through the pane', async () => {
@@ -346,7 +469,7 @@ describe('the real pane consumes the menu', () => {
 
     await user.type(input(), '/chart.price.AAPL')
     expect(screen.getByTestId('ai-slash-unavailable').textContent)
-      .toContain('note or research editor')
+      .toMatch(/chat message is text/i)
     expect(sent).toEqual([])
   })
 })
@@ -406,14 +529,16 @@ describe('the keyboard drives the menu without sending', () => {
   it('sends on Enter once the command is complete', async () => {
     const user = userEvent.setup()
     renderPane()
-    await user.type(input(), '/price.LRCX')
-    /* One row, and it is the expansion. Enter takes it. */
+    /* `/pe` again: the command with composer text to take. See the send case
+       above for why `/price` has none here. */
+    await user.type(input(), '/pe.LRCX')
+    /* One row, and it is the fallback. Enter takes it. */
     await user.keyboard('{Enter}')
-    expect(input().value).toBe('What is the current price of LRCX?')
+    expect(input().value).toBe('What is the P/E ratio for LRCX, and what is your source?')
     expect(sent).toEqual([])
     /* A second Enter, with no menu left to consume it, sends. */
     await user.keyboard('{Enter}')
-    expect(sent).toEqual(['What is the current price of LRCX?'])
+    expect(sent).toEqual(['What is the P/E ratio for LRCX, and what is your source?'])
   })
 
   it('lets Enter send when the menu has nothing to select', async () => {

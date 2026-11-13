@@ -57,6 +57,8 @@ import { ACT_AI_PLACEHOLDER } from '../../lib/ai/brand'
    them ahead of the questions derived from the conversation's bindings. */
 import { candidatePrompts, mergePrompts } from '../../lib/ai/prompt-candidates'
 import { useGroundedPromptFacts } from '../../hooks/ai/useGroundedPrompts'
+import { useSlashReading } from '../../hooks/ai/useSlashReading'
+import { parseSlashCommand } from '../../lib/ai/slash-commands'
 
 /** How many questions each layout has room for. Matches `chatLayout`. */
 const LIMIT_FOR: Record<AiChatMode, number> = { compact: 4, research: 6 }
@@ -599,7 +601,7 @@ export function AISection({
   }
 
   /*
-   * The reader's own templates, for `.template.<shortcut>` in the composer.
+   * The reader's own templates, for `/template.<shortcut>` in the composer.
    *
    * The same `getByShortcut` the editor's dot menu uses, so a shortcut means
    * one thing in both places. It returns the stored text; nothing here
@@ -611,6 +613,21 @@ export function AISection({
     (shortcut: string) => getTemplateByShortcut(shortcut)?.content ?? null,
     [getTemplateByShortcut],
   )
+
+  /*
+   * The figure behind a market-data command.
+   *
+   * Read HERE rather than in the menu, because the composer's Enter key has
+   * to insert exactly what the menu is showing: two components each doing
+   * their own read is two answers, and the one the reader presses would not
+   * be the one they saw. The hook returns null unless the command is one the
+   * store can actually answer, so `/pe.AAPL` costs no query.
+   */
+  const slashParsed = useMemo(() => parseSlashCommand(input), [input])
+  const slashReading = useSlashReading({
+    id: slashParsed && !slashParsed.partial ? slashParsed.id : null,
+    symbol: slashParsed?.symbol ?? null,
+  })
 
   /* The composer hands over already-trimmed text and decides for itself when
      sending is allowed; this clears the box, which is what shrinks it. */
@@ -1056,6 +1073,7 @@ export function AISection({
           value={input}
           onPick={setInput}
           templateBody={templateBody}
+          reading={slashReading}
           activeIndex={slashRows > 0 ? slashCursor : undefined}
           onRowCountChange={setSlashRows}
         />
@@ -1079,7 +1097,7 @@ export function AISection({
           slashRows={slashRows}
           slashCursor={slashCursor}
           onSlashCursorChange={setSlashCursor}
-          onSlashPick={i => slashRowText(input, i, templateBody)}
+          onSlashPick={i => slashRowText(input, i, { templateBody, reading: slashReading })}
           toolbar={
             <>
               <div className="relative shrink-0" ref={modelSelectorRef}>
