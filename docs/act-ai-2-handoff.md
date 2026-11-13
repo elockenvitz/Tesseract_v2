@@ -609,27 +609,264 @@ on; the demo corpus is junk and is not evidence either way.
    thought by hand. It must be empty. A promoted paragraph turning up in an
    unrelated capture is the defect the handoff suite pins.
 
-### One hop not covered by a test
+### ~~One hop not covered by a test~~ — closed
 
-`Layout`'s listener handing the parsed capture request to the store. Five
+~~`Layout`'s listener handing the parsed capture request to the store. Five
 lines between two tested ends; mounting `Layout` costs more than it proves, so
-it is read rather than asserted.
+it is read rather than asserted.~~
+
+Closed by `150fdeb7`. `capture-open-listener.test.tsx` mounts the real
+`Layout` with the real `useSidebarStore` and the real parser and dispatches
+the actual event; the judgement that mounting Layout "costs more than it
+proves" was wrong, and `navigate-out-of-pane.test.tsx` had already shown how
+cheap it is. The same commit closed the other read-not-asserted hop by moving
+`AssetTab`'s arrival code into `useArrivalOrientation` and
+`ArrivalOrientationBand`, and found a defect doing it: a second open of the
+same name with no event behind it left the previous orientation on screen.
+
+---
+
+## ACT AI 2.1 — the last two gaps (`96c85d94`)
+
+### All four typed references lead somewhere
+
+`lib/ai/reference-targets` holds the destination for each kind, and none is
+invented — every descriptor is the one an existing surface already dispatches:
+
+| Reference | Destination | Taken from |
+| --- | --- | --- |
+| asset | `openAsset` | `lib/desktop-asset/navigate`, the one contract |
+| portfolio | `{ type: 'portfolio', data: { id, name } }` | `PortfolioCommandCenter` |
+| theme | `{ type: 'theme', data: <row> }` | what `ThemeTab` takes |
+| note | `{ id: 'note-<entity>-<entityId>', data: { id, entityType, … } }` | `NotesListPage` |
+
+The note is the awkward one. Its id does not say which of four tables holds
+it, the editor is chosen by which entity owns the note, and the tab id is
+built from that entity — so the note is looked up. `custom_notebook_notes` is
+deliberately **not** resolved: the shell's note tab renders asset, portfolio
+and theme notes, so a notebook reference has no destination and stays as text
+rather than becoming a link to a tab reading "Note data not available".
+
+**Permission and staleness are one mechanism, not two.**
+`useReferenceTargets` reads the objects through the caller's own RLS. A row
+that comes back is one they may open; a row that does not is deleted or no
+longer theirs, which from here is the same answer. A chip is a link exactly
+when its object resolved, and the three states are drawn honestly:
+
+- `open` — a link
+- `checking` — text, title says the object is being checked
+- `gone` — struck through, title says it is no longer available **and that it
+  was part of this conversation**. The chip is not hidden: the thread really
+  was about that object, and dropping it would rewrite what the reader asked.
+
+This replaced the per-TYPE `openable` predicate with a per-OBJECT status. One
+existing test case asserted the opposite claim — that a portfolio chip must be
+text — and was rewritten with a note saying why it was right before.
+
+### Archived conversations can be found
+
+Archiving was reversible only in principle. The search box, the folder rail
+and the reference chips filtered the live list; the archive honoured none of
+them and was fetched only on manual disclosure. A reader who archived "NVDA
+supply chain" and later typed NVDA saw an empty list and a collapsed row that
+could not even show a count, because nothing had been loaded to count.
+
+`lib/ai/conversation-filter` is now the one filter both lists use. Four
+behaviours follow from that:
+
+1. Typing **loads** the archive, and **opens** it when the live list has
+   nothing and the archive has something — otherwise the reader has to
+   already suspect the thread is archived in order to look for it there.
+2. Archived rows are decorated with their references, and the chip row is
+   built across both lists: a reference carried only by archived threads
+   previously had no chip to press.
+3. The empty line names the criterion ("No archived conversation matches
+   Tesla.") rather than claiming the archive is empty.
+4. The count reads "(2 of 3)" when something is filtering.
+
+No message-body search and no new backend. Titles only, which is what the
+list has loaded and what the reader sees.
+
+### Non-vacuity, 2.1's last pass
+
+| Injection | Result |
+| --- | --- |
+| archive ignores the filters again | 9 of 19 fail |
+| a missing `folder_id` counts as a match | 1 of 27 fails, **after** adding the absent-key case |
+| report every reference as followable | 4 of 8 fail |
+| open the tag instead of the resolved object | 4 of 8 fail |
+
+The second is worth naming. The injection initially caught **nothing**,
+because every fixture row carried `folder_id` explicitly. An absent key is
+what a partial select or a cached older row gives you, and a thread of unknown
+filing must not appear on a shelf. The case was added, and then the injection
+failed.
+
+### RLS posture, 2.1's last pass
+
+Reads only. No new table, column, policy, grant or RPC. The reads
+`useReferenceTargets` makes all go through existing paths: `assets` (global
+reference data by design), `portfolios` (its own permission predicate),
+`org_themes_v` (the org-scoped view the entity search already uses), and
+`asset_notes` / `portfolio_notes` / `theme_notes`, each filtered to
+`is_deleted <> true` so a trashed note reads as gone rather than as
+unreadable.
+
+Folder persistence was verified against **production**, not inferred:
+`ai_project_folders` exists with RLS enabled and four policies, zero anon
+policies, `has_table_privilege('anon', …, 'SELECT')` false, the
+`ai_conversations_folder_own` trigger present, and the folder FK is
+`ON DELETE SET NULL` — so "delete the shelf, keep the threads" is what the
+database actually does.
+
+---
+
+## Final product review — 15 minutes
+
+Branch `discovery/asset-page-2`, PR **#291**. Nothing in this initiative has
+been opened in a browser; this is the whole acceptance path.
+
+### Final state
+
+| Gate | Result |
+| --- | --- |
+| `guard:unit` | **PASS** — 661 files, 11,414 tests |
+| `guard:types` | **PASS** — 8,579 / 8,579, card surfaces 0 |
+| `guard:copy` | **PASS** — 2,383 files scanned |
+| `guard:tdz` | **PASS** |
+| `npm run build` | succeeds, ~50s |
+| PR #291 required checks | Unit tests, Card layout, Type check (cards), Invite entry, static |
+| `db (live role-context verification)` | red, **not required** — the known staging blocker (free plan, account-wide PAT) |
+
+### 1. The AAPL contextual workspace (4 minutes)
+
+From the Dashboard, find a target-reached item for AAPL and press it. The
+work pane opens on that **event**, not on the name.
+
+Expect, in this order:
+
+1. A band with a **blue left edge**, not a filled panel. Eyebrow, then one
+   sentence: AAPL has reached the target you set for it.
+2. Immediately under it, the comparison — the **target you stated**, the
+   **mark the book carries**, and the overshoot between them. These are two
+   different measurements and the band says which is which.
+3. A line giving the **age of the case**, so a target set in March reads
+   differently from one set last week.
+4. Everything else behind one disclosure labelled with what is inside
+   ("Scenarios, the case, exposure and the waiting request"), **closed on
+   arrival**. Open it: the ladder, the exposure line, any waiting request,
+   and three follow-up questions for ACT AI.
+5. The working surface below it must be **visible without scrolling**. If the
+   band pushes the work below the fold, that is the defect it was rewritten
+   to fix.
+
+Now press **"Review the case"** in the band. You land on the canonical Asset
+page, and the **same band is at the top of the page content**, scrolling away
+rather than pinned. It should say the same thing it said in the pane.
+
+Then open AAPL again from the **header search box**. The band must be
+**gone** — you arrived by typing a name, and there is no event to report.
+That is the defect found and fixed in `150fdeb7`, and it is the single most
+important thing to confirm by eye.
+
+Finally, press the band's **"Ask ACT AI"** question. The pane opens with the
+question seeded and the headline you pressed carried as the issue.
+
+### 2. Project folders (3 minutes)
+
+1. Expand ACT AI to research mode. Press **New folder**, name it "Earnings
+   season". Make a second, "IC prep".
+2. Try to make a third called **"earnings  season"** (different case, double
+   space). It must be refused with a sentence, not a database error.
+3. Open the row menu on three conversations and **move** them into folders.
+   Select a folder in the rail: the list scopes to it and the count beside
+   the folder matches what you see.
+4. **Reload the page.** The folders and their contents must come back. This
+   is the one thing code cannot prove.
+5. **Delete** a folder holding conversations. Read the confirmation before
+   pressing it: it must say the conversations are kept and become unfiled,
+   and name how many. Press it, then check the threads are still there.
+6. **Archive** a folder, open "Archived folders", **restore** it.
+
+### 3. Typed object references (4 minutes)
+
+With a thread open, press **Add context** and type two characters of each of:
+an asset, a portfolio, a theme, and a note.
+
+1. Attach all four. The ones you chose are **solid**; one that came from the
+   page you opened ACT AI from is **dashed**. Hover each and read the title.
+2. **Press each chip in turn.** All four must open the real object: the Asset
+   page, the Portfolio tab, the Theme tab, and the note in the tab its entity
+   shares. This is the gap closed in `96c85d94` — before it, only the asset
+   chip went anywhere.
+3. **Come back to ACT AI after each one.** The conversation must still be
+   open with everything you typed still in the composer. Navigating to an
+   object must not cost you the thread.
+4. If you have a reference to something since deleted, its chip should be
+   **struck through** and its title should say it is no longer available and
+   that it was part of this conversation. It must not be a link.
+5. Ask a question that needs the portfolio you attached, and check the
+   answer's evidence names it. Attaching changes what ACT AI actually reads.
+
+### 4. Keep to research, and the archive (4 minutes)
+
+1. Hover an answer, press **Keep**, choose **Keep as a research note**. Read
+   the dialog: it must say a model wrote it and that it is a draft, not a
+   decision or an audit record.
+2. Press **Open the draft**. The capture pane opens with the text in it, and
+   the **source line names ACT AI and the thread**. Save it, then find it in
+   Recent thoughts and confirm the provenance survived.
+3. The negative case: press **Cancel** instead, then open Quick thought by
+   hand. It must be **empty**. A promoted paragraph turning up in an
+   unrelated capture is the defect the handoff suite pins.
+4. **Archive** a conversation with a distinctive title. Then type that title
+   into the search box. The archive should **load and open itself**, and the
+   thread should be there — with the toggle reading "(1 of N)".
+5. Select a folder, then look at the archive: it shows only the archived
+   threads on that shelf, and the empty line names the folder rather than
+   claiming the archive is empty.
+6. **Restore** it from the archive and confirm the same search term now finds
+   it in the live list.
+
+### Remaining unverified behaviour
+
+Everything above. In the code, two things are reasoned rather than asserted:
+
+1. **The final write in the Keep path.** The record is created by
+   `QuickThoughtCapture`'s own audited mutation, which has its own tests;
+   what is tested here is the chain up to the form's props, not a database
+   round trip. Step 4.2 is the test.
+2. **Netlify production deploy.** No production status is posted; confirm by
+   fetching the site and grepping the bundle.
 
 ---
 
 ## What is left
 
 1. **Work the checklist above.** This is the only outstanding acceptance work.
-2. **Decide on the flaky suites** before merging, because "Unit tests" is a
-   required check. Two mobile outcomes test files timed out under load earlier
-   in this initiative; `vitest.config.ts` now caps `maxWorkers` at 8 (the
-   cause was memory, not the assertions) and the full `guard:unit` has since
-   run green at 653 files / 11,284 tests.
+2. ~~**Decide on the flaky suites**~~ — settled. `vitest.config.ts` caps
+   `maxWorkers` at 8 (the cause was memory, not the assertions) and the full
+   `guard:unit` has since run green three times, most recently at 661 files /
+   11,414 tests.
 3. **Merge #291** once you have looked.
 4. **Confirm the deploy.** Netlify posts no production status, so check by
    fetching the site and grepping the bundle for a new string.
 
 Nothing here is blocked on a decision from you.
+
+### Known incomplete, by choice
+
+1. **No message-body search.** Conversation search is titles only, over the
+   most recent 200 threads per list. Searching transcripts needs a text index
+   or a column that does not exist; doing it client-side would be a search
+   that quietly stops at an arbitrary line.
+2. **A notebook note reference is not followable.** The shell has no
+   destination for one. See above.
+3. **No standalone AI artifacts.** The answer is already durable in
+   `ai_conversations.messages`; a second copy would be two versions of one
+   sentence. Keeping promotes into the audited capture form instead.
+4. **`openScenarios` has no distinct destination on the canonical page**, so
+   the band draws one case control there and two in the Dashboard pane.
 
 ---
 
@@ -637,36 +874,40 @@ Nothing here is blocked on a decision from you.
 
 In rough order of how likely they are to bite:
 
-1. **Two unit test files time out under load** — `outcomes-detail-mobile` and
-   `outcomes-mobile-home`, ~5.1s each, passing in isolation. Same class as
-   `automation-rpc-authority.test.ts` earlier in the initiative. This gates a
-   required check and is the most urgent item on this list.
-2. **`price_targets` vs `analyst_price_targets`** remains an orphan trap for
+1. **Two legacy tests assert against source text**, not behaviour:
+   `quick-ideas-chrome.test.tsx` and `capture-draft.test.tsx` read
+   `Layout.tsx` and `ThoughtsSection.tsx` with `readFileSync` and match
+   strings. They cover different features (mobile pane chrome, the capture
+   tracker), but they cannot fail when the real wiring changes — which is the
+   exact failure mode that let the capture prefill go unread for months.
+2. ~~**Two unit test files time out under load**~~ — settled; see "What is
+   left" above.
+3. **`price_targets` vs `analyst_price_targets`** remains an orphan trap for
    anything new that reads price targets.
-3. **Two disagreeing portfolio-membership tables** — a collaborator added in the
+4. **Two disagreeing portfolio-membership tables** — a collaborator added in the
    UI is invisible to half the app. Previously deferred on purpose.
-4. **One conversation list across two organizations.** `ai_conversations` has no
+5. **One conversation list across two organizations.** `ai_conversations` has no
    `organization_id` in the live database. A user in two orgs sees one list, and
    a conversation bound to an asset in one org appears while working in the
    other. Not changed here because it is a product decision and a schema change,
    and Standing Rule 5 would require ownership, policies and an isolation test
    in the same change.
-5. **Overview and ACT AI can report different trade counts** for the same asset.
+6. **Overview and ACT AI can report different trade counts** for the same asset.
    They count different records in the decision chain. Neither is wrong;
    nothing reconciles them.
-6. **`coveringUserIds` is rebuilt inline at three call sites**, so the attention
+7. **`coveringUserIds` is rebuilt inline at three call sites**, so the attention
    memo recomputes every render. Pre-existing pattern, copied rather than
    introduced.
-7. **Two shapes of the same `is-org-admin` question.** `useAIConfig` keys it
+8. **Two shapes of the same `is-org-admin` question.** `useAIConfig` keys it
    `['is-org-admin', orgId]`; `PortfoliosListPage` keys it
    `['is-org-admin', orgId, userId]` and may call a different RPC. Two cache
    entries for one fact. Harmless today.
-8. **Dead imports in `gallery/lists.tsx`** still break vite's dependency
+9. **Dead imports in `gallery/lists.tsx`** still break vite's dependency
    pre-scan.
-9. **The `DOM_HINT` heuristic in `vitest.config.ts`** routes a test file to
+10. **The `DOM_HINT` heuristic in `vitest.config.ts`** routes a test file to
    jsdom based on words in its *prose comments*. It mis-routed files in this
    work and the fix each time was to reword a comment.
-10. **Pre-existing unused-variable warnings** in `InvestmentSnapshot.tsx` and
-    `AISection.tsx`, inside the 8,577 ceiling.
-11. **The parked Work-mode redesign** still needs a decision. Deliberately not
+11. **Pre-existing unused-variable warnings** in `InvestmentSnapshot.tsx` and
+    `AISection.tsx`, inside the 8,579 ceiling.
+12. **The parked Work-mode redesign** still needs a decision. Deliberately not
     absorbed.
