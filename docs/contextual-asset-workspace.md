@@ -494,6 +494,81 @@ on; the demo corpus is largely junk and is not evidence either way.
   2,649 lines of grouped and paired rows, and the brief rules out rebuilding
   it. The comm pane's inbox is the path that was added instead.
 
+## 5c. The third pass: compression, prose, and the hop to the canonical page
+
+Commits `c41314a7`, `95431fce`, `2cc21820`.
+
+### The band got out of the way
+
+The orientation was a blue panel most of a screen tall, and the reader had to
+read all of it before reaching the page. It is now a band: an eyebrow, one
+sentence, four figures, one primary action, and a disclosure holding the
+ladder, the exposure, the written case and the waiting request. Nothing was
+removed; what was always supporting detail is now behind one press, and it is
+unmounted while closed rather than hidden.
+
+The four figures are the point of the compression rather than a casualty of
+it. Each carries its own source line: the target with the date it was
+**stated**, the book's mark with the **snapshot** date, the overshoot labelled
+as the mark against the target, and the last close labelled **price history**.
+Four measurements, four provenance lines, no slot filled from a field its
+label does not name.
+
+It also discloses a case rename instead of reconciling it. Where the event
+says "Base" and the ladder now carries that price under another name, the band
+says so and names both; it does not rewrite the source event, and it does not
+quietly prefer either side.
+
+### Stored research reads as prose
+
+A note written with Markdown rendered as its own markup: `**` and `##` on
+screen, mid-sentence. The renderer knew half of Markdown and three digest
+surfaces did not call it at all. Headings, rules, quotes and nested emphasis
+now render, and the renderer's safety property is asserted: no element is ever
+created from markup in a stored note, so a future `rehype-raw` fails CI rather
+than shipping. A real defect fell out of writing those tests -- the italic
+rule ate the asterisks in "Margins improved \* see footnote 4 \*".
+
+### The arrival travels into the Asset page
+
+This is the gap §5b's "Still on the tab path" named: the event reached the
+pane and not the tab, because `openAsset`'s descriptor has no field for it.
+It still has none, deliberately. A tab descriptor is durable and the thing
+being carried is a reading of one moment, so `lib/asset-workspace/entry-handoff`
+hands it over in memory instead: one slot, offered immediately before
+`openAsset`, taken on arrival, emptied by the take. Guarded on identity
+(`contextAppliesTo`), freshness (10s) and once-only, and keyed on
+`focusRequestId` so a fresh request lands even when the tab was already open.
+
+The canonical page then draws the same band from its own org-scoped reads via
+`orientationFactsFrom`, which is now the single reshape both surfaces use.
+`reviewCase` and `openScenarios` became optional for it: on that page the
+scenarios are a section of Research, which "Review the case" already reaches,
+so the band draws one control rather than two with one destination.
+
+### Third-pass non-vacuity
+
+Eight injections across the three commits, each reverted:
+
+| Injected | Caught by |
+| --- | --- |
+| Band rendered without the disclosure toggle | the compactness case |
+| Rename disclosed as "unchanged" | `target-case-renamed` |
+| Italic rule loosened to `\*(.+?)\*` | the footnote case (a real bug it found) |
+| `rehype-raw`-style raw HTML pass | the three safety cases |
+| Sender drops `offerEntryContext` | "leaves the whole event for the page" |
+| `history[0]` instead of the last close | the measurement case |
+| Scenarios control drawn unconditionally | "draws only the controls it was handed" |
+| Prefill read from the store at render time | the handoff suite's two content cases |
+
+### What is still read rather than asserted
+
+`AssetTab`'s own effect and its render of the band. Four lines over a tested
+function and one conditional; mounting a 6,300-line page costs more than it
+proves. Said here rather than implied.
+
+---
+
 ## 8. Adjacent problems found, unfixed
 
 1. **`useAssetProcessSummary` keys `['workflow-identity', workflowId]`
@@ -516,9 +591,11 @@ on; the demo corpus is largely junk and is not evidence either way.
    contention (see §7). One cached scan shared by the cases would remove the
    whole flake class. Not touched here: changing how a security gate collects
    its evidence is not a change to make inside a workspace pass.
-6. **A target-reached card opened as a TAB is still general.** The event
-   reaches the pane and not the tab, because `openAsset`'s descriptor has no
-   field for it. See §7; converging the two paths is its own change.
+6. ~~**A target-reached card opened as a TAB is still general.**~~ **Fixed in
+   the third pass** (`2cc21820`). The event now travels in memory for one
+   navigation and the canonical page draws the same band. Opening a tab from
+   somewhere other than the pane -- search, a list, a bookmark -- is still
+   general, which is correct: there is no arrival to state.
 7. **The breach compares a holdings mark, not a close.** The lens's own
    comment says which price *should* drive `overshootPct` is an open
    calculation question: a mark carried forward from an upload can sit well

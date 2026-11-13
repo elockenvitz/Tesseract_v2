@@ -21,17 +21,23 @@ or a live database query at the point of the claim.
 document.** It is written so that each item can be confirmed or refuted by
 looking, in a stated order, with the expected result spelled out.
 
-**It is not deployed and not merged.** No migration exists in this work, so
-production is unchanged. Per your instruction, #291 stays unmerged until your
-final visual review.
+**It is not deployed and not merged.** Per your instruction, #291 stays
+unmerged until your final visual review.
 
-**One check is not green, and it is not this work.** `guard:unit` failed on two
-of four runs in the final session — a different test each time
-(`outcomes-detail-mobile`, then `outcomes-mobile-home`), both at ~5.1s, both
-timeouts, both passing in isolation, neither in a file this work touches.
-Earlier runs the same session were fully green at 632 files / 10,980 tests. It
-is a load-dependent flake, it is listed as a finding, and it matters because
-"Unit tests" is a required check on `main`.
+**One migration HAS been applied to production**, with your approval:
+`20261112120000_ai_project_folders.sql`, additive only -- one new table and
+one nullable column. Nothing existing was altered or dropped. See the 2.1 RLS
+posture below and the recapture commit for the policy inventory diff, which
+moved by exactly that one table.
+
+**The flake named in the earlier passes has a cause and a fix.**
+`guard:unit` failed intermittently on `outcomes-detail-mobile` and
+`outcomes-mobile-home`, always on a timeout, always passing alone. It was
+memory: with `maxWorkers` unset, vitest opened about sixteen jsdom
+environments on a machine with 3.9GB free and the heaviest page mounts were
+the victims. `vitest.config.ts` now caps it at 8. No assertion and no timeout
+was changed, and the full guard has since run green at 653 files / 11,284
+tests.
 
 ---
 
@@ -479,12 +485,146 @@ not match is a defect, not a judgment call.
 
 ---
 
+## ACT AI 2.1 — conversation management, references and artifacts
+
+Commits `2b0210b5`, `be75d866`, `4c47b628`. Everything below writes through an
+existing audited path; the only schema change is one additive table.
+
+### Project folders, and a way back from the archive
+
+A reader with forty threads had one flat list. There are now lightweight
+folders: `ai_project_folders`, private per reader and checked against live org
+membership on every verb. They do not compete with Tesseract Projects -- a
+folder holds conversations and nothing else, and a conversation has exactly
+one home.
+
+Archiving became a round trip. The sidebar's query filters archived threads
+out, so archiving was a one-way door in practice; there is now an archived
+disclosure that lists them and restores one. "Not asked yet" and "nothing
+there" are kept apart, so an empty archive says so rather than looking
+unloaded.
+
+RLS: four per-verb policies, each `user_id = auth.uid() AND
+is_member_of_org(organization_id)`, anon revoked, writes to `authenticated`
+only. A child guard is a `SECURITY DEFINER` trigger raising 42501 rather than
+a policy subquery, because a policy subquery runs under the caller's own RLS
+and would have read as a pass. 12 assertions in
+`supabase/tests/ai-project-folders-authorization.sql`, run against production
+inside self-rolling-back transactions: cross-user, cross-org, removed-member
+and filing-on-behalf-of-another-user all denied, legitimate same-org use
+allowed. Two injections proved the suite non-vacuous; a post-check showed zero
+residue.
+
+### A conversation's sources became something you can change
+
+ACT AI's sources are the conversation's tags -- the `ai-chat` function reads
+`ai_conversation_tags` to decide which documents to load -- and a reader could
+see them and not add one. `AiContextAttach` writes a **typed** reference: a
+type and an id from a record the search could read, never the words in the
+box. Candidates come from `useEntitySearch`, which reads under the caller's
+own RLS, so a reader can only attach what they can already open. The
+attachment is not a grant.
+
+Three kinds of context stay apart on screen: **attached** (the reader chose
+it, solid, removable), **inherited** (the page the pane was opened from,
+dashed, and it says where it came from) and **mentioned** -- a name in the
+prose, deliberately NOT a chip, because inferring a reference from text is how
+a conversation about Apple's suppliers acquires AAPL as a source nobody gave
+it. Only assets, portfolios, themes and notes are offered, because those four
+are what the tag table's CHECK accepts.
+
+### Keeping an answer, and the wire that was never connected
+
+"Keep" on an answer opens the canonical quick-thought form with the text
+already in it, as a thought, a research note or a thesis draft. It writes
+nothing: the reader edits and saves with the same component, the same
+validation and the same server-side org stamping as a note typed from
+scratch. The confirmation says who wrote the text, that nothing is saved yet,
+and that it is not a decision or an audit record -- and it discloses a
+truncated answer as ending mid thought.
+
+An artifact is deliberately **not** a new table. The answer is already durable
+in the conversation's own `messages` column, and a second copy would be two
+versions of one sentence with no rule about which is true.
+
+Making that real meant connecting a wire that had never been connected.
+`openThoughtsCapture` has carried a `prefillText` field since the action
+catalogue was written and nothing ever read it: the shell's listener
+destructured four fields and dropped the rest, so `create_prompt` had been
+losing its text for as long as it existed. `lib/capture/prefill` is that wire,
+as a parser rather than a cast, and it honours a prefill only for the one form
+that has initial-value props -- a prefill aimed at the prompt, trade-idea or
+recommendation form is dropped here rather than ignored at the far end. It
+also refuses a draft with no provenance.
+
+### 2.1 non-vacuity
+
+| Injected | Caught by |
+| --- | --- |
+| Folder policy widened to the org | the cross-user read assertion |
+| Child guard removed | cross-user filing denied |
+| Search gate relaxed to one character | "asks for nothing until there is something to search for" |
+| Tag built from the typed text | "attaches the typed object the search returned" |
+| Form's prefill props dropped | 2 cases in the handoff suite |
+| One-shot read at render time | the same 2 cases |
+| Reset dropped from `handleOpenCapture` | the two-requests-in-a-session case, which was ADDED because the first version of that suite passed with the defect in place |
+
+### 2.1 RLS posture
+
+- `ai_project_folders`: new, owner-scoped, four verbs, anon revoked, isolation
+  test above. `ai_conversations.folder_id` is additive and nullable with
+  `ON DELETE SET NULL`.
+- Attachment: **unchanged.** No new table, policy or grant; writes go through
+  the existing `addTag`/`removeTag` path on `ai_conversation_tags`.
+- Promotion: **unchanged.** No migration. The record is written by
+  `QuickThoughtCapture` into `quick_thoughts`, whose `organization_id` is set
+  by its BEFORE INSERT trigger from `current_org_id()` and never by the
+  client.
+
+### The 2.1 walkthrough (about 8 minutes, in this order)
+
+Desktop, `localhost:5190`. Use a name your org actually holds and has written
+on; the demo corpus is junk and is not evidence either way.
+
+1. **Folders.** Open ACT AI in research mode so the sidebar is beside the
+   thread. Press `+` on the rail, name a folder, and watch the counts. Try to
+   name a second one the same thing: it should refuse with a sentence, not a
+   silent no-op. Move a conversation into it from the row's own menu, then
+   "Remove from folder" and confirm it returns to Unfiled.
+2. **Archive and back.** Archive a thread. It leaves the list. Open the
+   archived disclosure, restore it, confirm it comes back where it was. Then
+   delete one and read the confirmation before pressing it.
+3. **Attach a source.** With a thread open, press "Add context" and type two
+   characters of a portfolio you can open. Attach it. The chip should be solid
+   (you chose it) while the chip that came from the page is dashed. Hover each
+   one and read the title. Ask a question that needs that portfolio and check
+   the answer's evidence names it.
+4. **Keep an answer.** Hover an answer, press "Keep", choose "Keep as a
+   research note". Read the dialog -- it should say a model wrote it and that
+   it is not a decision record -- then press "Open the draft". The capture
+   pane should open with the text in it. **Check the source line on the form**:
+   it should name ACT AI and the thread. Save it, then find it in Recent
+   thoughts and confirm the provenance survived.
+5. **The negative case.** Press Cancel on that dialog instead, then open Quick
+   thought by hand. It must be empty. A promoted paragraph turning up in an
+   unrelated capture is the defect the handoff suite pins.
+
+### One hop not covered by a test
+
+`Layout`'s listener handing the parsed capture request to the store. Five
+lines between two tested ends; mounting `Layout` costs more than it proves, so
+it is read rather than asserted.
+
+---
+
 ## What is left
 
 1. **Work the checklist above.** This is the only outstanding acceptance work.
 2. **Decide on the flaky suites** before merging, because "Unit tests" is a
-   required check. Two mobile outcomes test files time out under load and pass
-   alone.
+   required check. Two mobile outcomes test files timed out under load earlier
+   in this initiative; `vitest.config.ts` now caps `maxWorkers` at 8 (the
+   cause was memory, not the assertions) and the full `guard:unit` has since
+   run green at 653 files / 11,284 tests.
 3. **Merge #291** once you have looked.
 4. **Confirm the deploy.** Netlify posts no production status, so check by
    fetching the site and grepping the bundle for a new string.
