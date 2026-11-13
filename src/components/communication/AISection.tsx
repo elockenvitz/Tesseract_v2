@@ -963,30 +963,25 @@ export function AISection({
           mentioned are three different things and only the first two are
           drawn — see the component's own note.
         */}
-        <AiContextAttach
-          attached={tags}
-          inheritedKeys={inheritedTagKeys}
-          labels={tagLabels}
-          onAttach={addTag}
-          onDetach={removeTag}
-          onOpenObject={openTaggedObject}
-          referenceStatus={referenceStatus}
-          className="mb-2"
-        />
         {/*
-          The composer owns the box, the keys and the one control that starts
-          or stops a turn -- including while an answer is streaming, which is
-          the whole period that previously had no Stop at all. Its own file
-          carries the four faults it replaces.
-        */}
-        {/*
-          Tesseract's own dot commands, for the few that mean something in a
-          chat message. It names the ones that do not -- a chart needs an
+          Tesseract's own slash commands, for the few that mean something in
+          a chat message. It names the ones that do not -- a chart needs an
           editor node and chat has no renderer for one -- rather than drawing
           a degraded version. Nothing it offers sends anything: the expansion
           lands in the box under the reader's hands.
+
+          Above the container rather than inside it, because it is a picker
+          over the box, not a part of it.
         */}
         <AiDotMenu value={input} onPick={setInput} templateBody={templateBody} />
+        {/*
+          ONE composer. The box, the attachments, the model picker, Settings
+          and the send control are all inside a single bordered container
+          now, which is what the five separate complaints off the screenshot
+          came down to: a bordered field with a filled square beside it, a
+          context band floating above it and a model row detached below.
+          `AiComposer`'s own header carries each cause.
+        */}
         <AiComposer
           value={input}
           onChange={setInput}
@@ -994,28 +989,29 @@ export function AISection({
           onStop={cancelGeneration}
           isStreaming={isLoading}
           placeholder={ACT_AI_PLACEHOLDER}
-        />
-
-        {/* Model selector and settings */}
-        <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-          <div className="relative" ref={modelSelectorRef}>
-            <button
-              onClick={() => canChangeModel && setShowModelSelector(!showModelSelector)}
-              className="flex items-center space-x-1 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
-              disabled={!canChangeModel}
-              title={
-                !canChangeModel && effectiveConfig.mode === 'byok'
-                  ? 'Model is set by your organization admin'
-                  : undefined
-              }
-            >
-              <div className={clsx(
-                'w-3 h-3 rounded-sm bg-gradient-to-br',
-                currentProviderInfo?.color || 'from-gray-400 to-gray-600'
-              )} />
-              <span className="font-medium">{currentModelInfo?.name || currentModel}</span>
-              {canChangeModel && <ChevronDown className="h-3 w-3" />}
-            </button>
+          toolbar={
+            <>
+              <div className="relative shrink-0" ref={modelSelectorRef}>
+                <button
+                  onClick={() => canChangeModel && setShowModelSelector(!showModelSelector)}
+                  className="flex max-w-[11rem] items-center gap-1 rounded-md px-1.5 py-1 text-xs
+                             text-gray-500 hover:bg-gray-100 hover:text-gray-700
+                             disabled:hover:bg-transparent
+                             dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                  disabled={!canChangeModel}
+                  title={
+                    !canChangeModel && effectiveConfig.mode === 'byok'
+                      ? 'Model is set by your organization admin'
+                      : undefined
+                  }
+                >
+                  <div className={clsx(
+                    'h-2.5 w-2.5 shrink-0 rounded-sm bg-gradient-to-br',
+                    currentProviderInfo?.color || 'from-gray-400 to-gray-600'
+                  )} />
+                  <span className="truncate font-medium">{currentModelInfo?.name || currentModel}</span>
+                  {canChangeModel && <ChevronDown className="h-3 w-3 shrink-0" aria-hidden="true" />}
+                </button>
 
             {/* Model Selector Dropdown */}
             {showModelSelector && canChangeModel && (
@@ -1072,14 +1068,41 @@ export function AISection({
               </div>
             )}
           </div>
-          <button
-            onClick={onOpenSettings}
-            className="hover:text-primary-600 dark:hover:text-primary-400 flex items-center space-x-1"
-          >
-            <Settings className="h-3 w-3" />
-            <span>Settings</span>
-          </button>
-        </div>
+              <button
+                onClick={onOpenSettings}
+                className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs
+                           text-gray-500 hover:bg-gray-100 hover:text-primary-600
+                           dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-primary-400"
+              >
+                <Settings className="h-3 w-3" aria-hidden="true" />
+                <span>Settings</span>
+              </button>
+            </>
+          }
+        >
+          {/*
+            What this conversation may use, and the control that adds to it.
+
+            Unlike the chip row above the thread, this one WRITES: it changes
+            `ai_conversation_tags`, which is the canonical input `ai-chat`
+            reads to build its document blocks. Attached, inherited and
+            merely mentioned are three different things and only the first
+            two are drawn — see the component's own note.
+
+            Inside the composer, because an attachment is part of the
+            question being asked. It used to float above the box in a band
+            of its own.
+          */}
+          <AiContextAttach
+            attached={tags}
+            inheritedKeys={inheritedTagKeys}
+            labels={tagLabels}
+            onAttach={addTag}
+            onDetach={removeTag}
+            onOpenObject={openTaggedObject}
+            referenceStatus={referenceStatus}
+          />
+        </AiComposer>
         </div> {/* reading column */}
       </div>
       </div> {/* main pane */}
