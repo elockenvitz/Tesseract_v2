@@ -96,10 +96,9 @@ import { resolveEntry } from '../../lib/asset-workspace/entry'
  * reads say what the record holds now, and the band reports the difference.
  * The context travels in memory for one navigation -- see `entry-handoff`.
  */
-import { takeEntryContext } from '../../lib/asset-workspace/entry-handoff'
-import type { WorkspaceEntryContext } from '../../lib/asset-workspace/entry-context'
+import { useArrivalOrientation } from '../../lib/asset-workspace/use-arrival-orientation'
 import { orientationFactsFrom } from '../../lib/asset-workspace/orientation-facts'
-import { EntryOrientation } from '../asset-v2/EntryOrientation'
+import { ArrivalOrientationBand } from '../asset-v2/ArrivalOrientationBand'
 import { useAssetListMemberships } from '../../hooks/lists/useAssetListMemberships'
 import { useAssetConversations } from '../../hooks/ai/useAssetConversations'
 import { askAI } from '../../lib/engagement'
@@ -1065,12 +1064,11 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * organisation matches nothing, so taking early would consume the offer and
    * throw it away.
    */
-  const [arrivalContext, setArrivalContext] = useState<WorkspaceEntryContext | null>(null)
-  useEffect(() => {
-    if (!assetExploredOrgId) return
-    const taken = takeEntryContext({ assetId: asset.id, organizationId: assetExploredOrgId })
-    if (taken) setArrivalContext(taken)
-  }, [asset.id, asset.focusRequestId, assetExploredOrgId])
+  const arrivalContext = useArrivalOrientation({
+    assetId: asset.id,
+    organizationId: assetExploredOrgId,
+    focusRequestId: asset.focusRequestId ?? null,
+  })
 
   // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
   useEffect(() => {
@@ -4472,36 +4470,18 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           orientation is read once, and a band pinned over a page the reader
           has moved on to is chrome.
         */}
-        {arrivalContext && arrivalFacts && (
-          <div className="mb-4" data-slot="asset-arrival-orientation">
-            <EntryOrientation
-              context={arrivalContext}
-              facts={arrivalFacts}
-              actions={{
-                /* Research is where the case and the framework under it both
-                   live, so this is the one destination the page has for both
-                   of the band's case verbs. */
-                reviewCase: () => goToMode('research'),
-                openPending: arrivalFacts.pending
-                  ? () => goToSubPage('decisions')
-                  : undefined,
-                ask: (question: string) => askAI({
-                  ...assetEngagementTarget,
-                  origin: { itemId: asset.id, surface: 'asset-entry-orientation' },
-                  ...(arrivalContext.why
-                    ? {
-                      issue: {
-                        title: arrivalContext.why.headline,
-                        reason: `entry:${arrivalContext.intent}`,
-                      },
-                    }
-                    : {}),
-                  seedPrompt: question,
-                }),
-              }}
-            />
-          </div>
-        )}
+        <ArrivalOrientationBand
+          context={arrivalContext}
+          facts={arrivalFacts}
+          onReviewCase={() => goToMode('research')}
+          onOpenPending={() => goToSubPage('decisions')}
+          onAsk={(question, issue) => askAI({
+            ...assetEngagementTarget,
+            origin: { itemId: asset.id, surface: 'asset-entry-orientation' },
+            ...(issue ? { issue } : {}),
+            seedPrompt: question,
+          })}
+        />
 
         {/* UX2 Phase 1 — the attention surface moved to the header ⚡ popover
             (same A1 resolver, signals, grouping, counts, priorities, deep-links).
