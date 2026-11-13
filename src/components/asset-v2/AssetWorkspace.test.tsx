@@ -1,10 +1,13 @@
 /**
- * The PARKED asset workspace.
+ * The asset workspace: parked as a page, live as the Dashboard's work pane.
  *
- * The component is experimental and nothing routes to it -- the existing Asset
- * page is canonical. The suite is kept because the modules it covers are the
- * ones intended to move into that page later, and a covered module is far
- * cheaper to move than an uncovered one.
+ * No asset TAB routes to it -- the existing Asset page is canonical, and a
+ * convergence test holds that line. `AssetWorkspacePane`, which is what every
+ * case here renders, is a different matter: the Dashboard mounts it as its
+ * right-hand work pane through `DashboardNext` and `IdeasWorkPane`, so this
+ * suite covers a surface users read today, not only modules intended to move
+ * into the Asset page later. The file header on the component itself has the
+ * longer version, and what it cost to get wrong.
  *
  * This is where the behaviour that used to be asserted against Research detail
  * and Portfolio position detail now lives, because that is where it moved: one

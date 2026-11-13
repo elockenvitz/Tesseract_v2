@@ -1,5 +1,5 @@
 /**
- * PARKED / EXPERIMENTAL — not reachable, and not the canonical Asset page.
+ * PARKED AS A PAGE, LIVE AS A PANE — and not the canonical Asset page.
  *
  * ── Status ───────────────────────────────────────────────────────────────
  *
@@ -10,11 +10,22 @@
  * page that already holds workflow, lists, estimates, consensus, projects and
  * activity with a reduced one.
  *
- * Nothing renders this today, and a convergence test keeps it that way. It is
- * kept because several pieces are worth moving INTO the Asset page later: the
- * new-since-the-case module, the anchored price visual, the corrected position
- * context, the framework-gap semantics and the Ask AI context construction.
- * Do not wire it back in as a page.
+ * No asset TAB renders this, and a convergence test keeps it that way. Do not
+ * wire it back in as a page.
+ *
+ * `AssetWorkspacePane` is a different matter and is READ BY USERS TODAY: the
+ * Dashboard mounts it as its right-hand work pane, through `DashboardNext`
+ * and `IdeasWorkPane`. The convergence gate names the four page hosts it must
+ * stay out of, and the Dashboard's pane is not one of them.
+ *
+ * That distinction cost real time. This header previously said "nothing
+ * renders this today", so a reported rendering defect -- stored Markdown
+ * printed to the reader as its own source -- was first looked for anywhere
+ * but here, on the reasoning that an unreachable file cannot be what the user
+ * is looking at. It can, through the pane. Anything below that draws content
+ * is shipped, and the pieces still awaiting a home in the Asset page are the
+ * new-since-the-case module, the anchored price visual, the corrected
+ * position context, the framework-gap semantics and the Ask AI context.
  *
  * ── Why it was written this way ──────────────────────────────────────────
  *
@@ -75,6 +86,7 @@ import { anchoredWindow, PriceSinceReview } from '../research-v2/ResearchVisual'
  */
 import { useThesisReviews } from '../../hooks/useThesisReview'
 import { ThesisContainer } from '../contributions'
+import { SmartInputRenderer } from '../smart-input'
 import { useState } from 'react'
 import { EntryOrientation } from './EntryOrientation'
 /* The one reshape of a workspace read into the band's facts, shared with the
@@ -147,6 +159,23 @@ function decisionHandoff(
     else onOpenLegacy?.()
   }
 }
+
+/**
+ * The measure the written case is read at.
+ *
+ * The body column around it is 140ch, which is right for the panels, the
+ * price visual and the position table that sit beside the case -- structured
+ * content that wants the width. Prose does not: a line of 140 characters
+ * loses the reader on the return sweep.
+ *
+ * It was 74ch, which is inside the typographic 45-75ch band and was still
+ * wrong HERE, because the case was rendering at roughly half the width of
+ * everything around it and read as a narrow strip in a wide page. 90ch at
+ * 15px is about 700px: longer lines than a book, shorter than the column,
+ * and the one measure both the section body and its supporting detail use so
+ * they stay aligned down the left and the right.
+ */
+const CASE_MEASURE = 'max-w-[90ch]'
 
 /** Ideas is a separate object; this is the typed hop, not an embedded workspace. */
 function routeToIdea(ideaId: string, issue: string) {
@@ -265,7 +294,9 @@ export function AssetWorkspacePane({
               {peripheral.map(sec => (
                 <p key={sec.section} className="mt-1.5 text-[13px] text-gray-600 dark:text-gray-400">
                   <span className="font-semibold">{SECTION_LABEL[sec.section] ?? sec.section}:</span>{' '}
-                  {sec.content}
+                  {/* `inline`, because this is a one-line "Label: text" row and
+                      the block renderer would break the text onto its own line. */}
+                  <SmartInputRenderer content={sec.content ?? ''} inline />
                 </p>
               ))}
               <p className="mt-1.5 text-[11px] text-gray-500">
@@ -279,13 +310,17 @@ export function AssetWorkspacePane({
           {core.map(sec => (
             <div key={sec.section}>
               <div className={EYEBROW}>{SECTION_LABEL[sec.section] ?? sec.section}</div>
-              <p className="mt-1 max-w-[74ch] whitespace-pre-line text-[15px] leading-[1.7] text-gray-900 dark:text-gray-100">
-                {sec.content || <span className="italic text-gray-500">Empty.</span>}
-              </p>
+              {sec.content ? (
+                <div className={clsx('mt-1', CASE_MEASURE)}>
+                  <SmartInputRenderer content={sec.content} density="reading" />
+                </div>
+              ) : (
+                <p className="mt-1 text-[15px] italic leading-[1.7] text-gray-500">Empty.</p>
+              )}
               {sec.supportingDetail && (
-                <p className="mt-1.5 max-w-[74ch] text-[13px] leading-relaxed text-gray-600 dark:text-gray-400">
-                  {sec.supportingDetail}
-                </p>
+                <div className={clsx('mt-1.5', CASE_MEASURE)}>
+                  <SmartInputRenderer content={sec.supportingDetail} />
+                </div>
               )}
               <div className="mt-1 text-[11px] text-gray-500">
                 {sec.authorName ? `${sec.authorName} · ` : ''}

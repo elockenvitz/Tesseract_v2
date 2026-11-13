@@ -37,6 +37,12 @@ export interface SmartInputRendererProps {
   className?: string
   renderMarkdown?: boolean
   inline?: boolean
+  /**
+   * Body size for block rendering. Defaults to `compact`, which is what every
+   * existing caller gets. See `BLOCK_CLASS`. Ignored when `inline`, which has
+   * no block elements of its own to size.
+   */
+  density?: SmartInputDensity
   // Viewer context for visibility filtering
   viewerId?: string
   viewerTeamIds?: string[]
@@ -56,6 +62,7 @@ export function SmartInputRenderer({
   className,
   renderMarkdown = true,
   inline = false,
+  density = 'compact',
   viewerId,
   viewerTeamIds = [],
   viewerPortfolioIds = []
@@ -78,6 +85,7 @@ export function SmartInputRenderer({
           onReferenceClick={onReferenceClick}
           renderMarkdown={renderMarkdown}
           inline={inline}
+          density={density}
         />
       ))}
     </Wrapper>
@@ -257,7 +265,41 @@ const RESEARCH_HEADING: Record<number, { tag: 'h4' | 'h5' | 'h6'; className: str
   6: { tag: 'h6', className: 'text-[12px] font-semibold uppercase tracking-wide text-gray-500 mt-2 mb-0.5 first:mt-0 dark:text-gray-500' },
 }
 
-function FormattedTextBlock({ text }: { text: string }) {
+/**
+ * The two sizes stored research is read at, and why there are two.
+ *
+ * `compact` is this renderer's original and still its default: a 14px grey
+ * body that sits correctly inside a message bubble, a contribution card or a
+ * summary row, where the text is one element among many.
+ *
+ * `reading` is for a surface where a saved section IS the content -- the
+ * Asset Workspace's "The case", which sets its own 15px/1.7 measure. Before
+ * this existed, such a surface had two bad options: interpolate the raw
+ * string and show `**bold**` to the reader, or adopt a body size chosen for
+ * message bubbles. The first is the defect this prop was added to close.
+ *
+ * Nothing about parsing changes between them. Only the class strings differ,
+ * so a form that renders in one renders identically in the other.
+ */
+export type SmartInputDensity = 'compact' | 'reading'
+
+const BLOCK_CLASS: Record<SmartInputDensity, { p: string; ul: string; ol: string; quote: string }> = {
+  compact: {
+    p: 'text-sm text-gray-700 my-0.5 leading-relaxed dark:text-gray-300',
+    ul: 'list-disc pl-5 my-1.5 space-y-0.5 text-sm text-gray-700 dark:text-gray-300',
+    ol: 'list-decimal pl-5 my-1.5 space-y-0.5 text-sm text-gray-700 dark:text-gray-300',
+    quote: 'my-1.5 border-l-2 border-gray-300 pl-3 text-sm italic text-gray-600 dark:border-gray-600 dark:text-gray-400',
+  },
+  reading: {
+    p: 'text-[15px] text-gray-900 my-1 leading-[1.7] dark:text-gray-100',
+    ul: 'list-disc pl-5 my-2 space-y-1 text-[15px] leading-[1.7] text-gray-900 dark:text-gray-100',
+    ol: 'list-decimal pl-5 my-2 space-y-1 text-[15px] leading-[1.7] text-gray-900 dark:text-gray-100',
+    quote: 'my-2 border-l-2 border-gray-300 pl-3 text-[15px] italic leading-[1.7] text-gray-600 dark:border-gray-600 dark:text-gray-400',
+  },
+}
+
+function FormattedTextBlock({ text, density = 'compact' }: { text: string; density?: SmartInputDensity }) {
+  const block = BLOCK_CLASS[density]
   const lines = text.split('\n')
   const elements: React.ReactNode[] = []
   let bulletGroup: { prefix: string; content: string }[] = []
@@ -267,7 +309,7 @@ function FormattedTextBlock({ text }: { text: string }) {
   const flushBullets = () => {
     if (bulletGroup.length === 0) return
     elements.push(
-      <ul key={`ul-${elements.length}`} className="list-disc pl-5 my-1.5 space-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+      <ul key={`ul-${elements.length}`} className={block.ul}>
         {bulletGroup.map((b, i) => <li key={i}>{applyInlineFormatting(b.content)}</li>)}
       </ul>
     )
@@ -277,7 +319,7 @@ function FormattedTextBlock({ text }: { text: string }) {
   const flushOrdered = () => {
     if (orderedGroup.length === 0) return
     elements.push(
-      <ol key={`ol-${elements.length}`} className="list-decimal pl-5 my-1.5 space-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+      <ol key={`ol-${elements.length}`} className={block.ol}>
         {orderedGroup.map((b, i) => <li key={i}>{applyInlineFormatting(b.content)}</li>)}
       </ol>
     )
@@ -289,7 +331,7 @@ function FormattedTextBlock({ text }: { text: string }) {
     elements.push(
       <blockquote
         key={`bq-${elements.length}`}
-        className="my-1.5 border-l-2 border-gray-300 pl-3 text-sm italic text-gray-600 dark:border-gray-600 dark:text-gray-400"
+        className={block.quote}
       >
         {quoteGroup.map((q, i) => <p key={i} className="my-0.5">{applyInlineFormatting(q)}</p>)}
       </blockquote>
@@ -366,7 +408,7 @@ function FormattedTextBlock({ text }: { text: string }) {
 
     // Regular text paragraph
     elements.push(
-      <p key={`p-${elements.length}`} className="text-sm text-gray-700 my-0.5 leading-relaxed dark:text-gray-300">
+      <p key={`p-${elements.length}`} className={block.p}>
         {applyInlineFormatting(line)}
       </p>
     )
@@ -452,6 +494,7 @@ interface SegmentRendererProps {
   onReferenceClick?: (type: EntityType, id: string) => void
   renderMarkdown?: boolean
   inline?: boolean
+  density?: SmartInputDensity
 }
 
 function SegmentRenderer({
@@ -459,7 +502,8 @@ function SegmentRenderer({
   onMentionClick,
   onReferenceClick,
   renderMarkdown,
-  inline
+  inline,
+  density
 }: SegmentRendererProps) {
   switch (segment.type) {
     case 'text':
@@ -479,7 +523,7 @@ function SegmentRenderer({
 
         // Direct rendering: parse lines into paragraphs, bullet lists, and blank lines.
         // This avoids ReactMarkdown's whitespace collapsing entirely.
-        return <FormattedTextBlock text={segment.content} />
+        return <FormattedTextBlock text={segment.content} density={density} />
       }
       return <span>{segment.content}</span>
 
