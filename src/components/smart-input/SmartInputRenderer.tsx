@@ -240,11 +240,29 @@ function parseContent(
 // No ReactMarkdown — just parse lines into native HTML elements
 // ---------------------------------------------------------------------------
 
+/**
+ * The heading sizes stored research is rendered at.
+ *
+ * Deliberately not h1/h2. A saved thesis is content INSIDE a page that
+ * already has a title and section headings, so a `#` in the text is a
+ * heading within that section, not a competitor to it. The element levels
+ * start at h4 for the same reason: the document outline stays the page's.
+ */
+const RESEARCH_HEADING: Record<number, { tag: 'h4' | 'h5' | 'h6'; className: string }> = {
+  1: { tag: 'h4', className: 'text-[15px] font-semibold text-gray-900 mt-3 mb-1 first:mt-0 dark:text-gray-100' },
+  2: { tag: 'h4', className: 'text-[14px] font-semibold text-gray-900 mt-3 mb-1 first:mt-0 dark:text-gray-100' },
+  3: { tag: 'h5', className: 'text-[13px] font-semibold text-gray-900 mt-2.5 mb-0.5 first:mt-0 dark:text-gray-100' },
+  4: { tag: 'h5', className: 'text-[13px] font-semibold text-gray-800 mt-2 mb-0.5 first:mt-0 dark:text-gray-200' },
+  5: { tag: 'h6', className: 'text-[12px] font-semibold uppercase tracking-wide text-gray-600 mt-2 mb-0.5 first:mt-0 dark:text-gray-400' },
+  6: { tag: 'h6', className: 'text-[12px] font-semibold uppercase tracking-wide text-gray-500 mt-2 mb-0.5 first:mt-0 dark:text-gray-500' },
+}
+
 function FormattedTextBlock({ text }: { text: string }) {
   const lines = text.split('\n')
   const elements: React.ReactNode[] = []
   let bulletGroup: { prefix: string; content: string }[] = []
   let orderedGroup: { num: string; content: string }[] = []
+  let quoteGroup: string[] = []
 
   const flushBullets = () => {
     if (bulletGroup.length === 0) return
@@ -266,7 +284,60 @@ function FormattedTextBlock({ text }: { text: string }) {
     orderedGroup = []
   }
 
+  const flushQuote = () => {
+    if (quoteGroup.length === 0) return
+    elements.push(
+      <blockquote
+        key={`bq-${elements.length}`}
+        className="my-1.5 border-l-2 border-gray-300 pl-3 text-sm italic text-gray-600 dark:border-gray-600 dark:text-gray-400"
+      >
+        {quoteGroup.map((q, i) => <p key={i} className="my-0.5">{applyInlineFormatting(q)}</p>)}
+      </blockquote>
+    )
+    quoteGroup = []
+  }
+
+  /** Close every open group. One call, so no site can forget one. */
+  const flushAll = () => { flushBullets(); flushOrdered(); flushQuote() }
+
   for (const line of lines) {
+    /*
+     * A heading. This was the reported defect's other half: stored research
+     * written in Markdown rendered its `##` literally, because this renderer
+     * knew about lists and emphasis and nothing else. Checked before the
+     * bullet branch, since neither `#` nor `>` can open a list.
+     */
+    const headingMatch = line.match(/^\s*(#{1,6})\s+(.*\S)\s*$/)
+    if (headingMatch) {
+      flushAll()
+      const level = headingMatch[1].length
+      const { tag: Tag, className } = RESEARCH_HEADING[level]
+      elements.push(
+        <Tag key={`h-${elements.length}`} className={className}>
+          {applyInlineFormatting(headingMatch[2])}
+        </Tag>
+      )
+      continue
+    }
+
+    // A thematic break. Checked before bullets: `---` has no space after the
+    // dash, so it is not a list item, but being explicit keeps it that way.
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      flushAll()
+      elements.push(<hr key={`hr-${elements.length}`} className="my-2 border-gray-200 dark:border-gray-700" />)
+      continue
+    }
+
+    // A quoted line. Consecutive ones become one blockquote.
+    const quoteMatch = line.match(/^\s*>\s?(.*)$/)
+    if (quoteMatch) {
+      flushBullets()
+      flushOrdered()
+      quoteGroup.push(quoteMatch[1])
+      continue
+    }
+    flushQuote()
+
     // Bullet list item: -, *, +, •, –
     const bulletMatch = line.match(/^\s*[-*+•–]\s+(.*)/)
     if (bulletMatch) {
@@ -301,43 +372,75 @@ function FormattedTextBlock({ text }: { text: string }) {
     )
   }
 
-  flushBullets()
-  flushOrdered()
+  flushAll()
 
   return <div>{elements}</div>
 }
 
-// Apply **bold** and *italic* markdown inline formatting
+/**
+ * Inline emphasis, code and strikethrough, left to right.
+ *
+ * Candidates are matched independently and the LEFTMOST wins, so a line that
+ * mixes them resolves in reading order rather than in the order the patterns
+ * happen to be written. Code wins ties, because backticks are the one marker
+ * whose whole point is that what is inside them is not formatted.
+ *
+ * Nothing here produces HTML from the text. Every branch emits a React
+ * element whose children are strings, so a stored case containing
+ * `<script>` or `<img onerror=...>` is shown as those characters and never
+ * parsed -- the reason this is a hand-rolled scan and not `rehype-raw`.
+ */
 function applyInlineFormatting(text: string): React.ReactNode {
-  // Bold: **text** or __text__
-  // Italic: *text* or _text_
   const parts: React.ReactNode[] = []
   let remaining = text
   let key = 0
 
   while (remaining.length > 0) {
-    // Bold
-    const boldMatch = remaining.match(/\*\*(.+?)\*\*|__(.+?)__/)
-    // Italic (but not **)
-    const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/)
+    const code = remaining.match(/`([^`]+)`/)
+    const bold = remaining.match(/\*\*(.+?)\*\*|__(.+?)__/)
+    const strike = remaining.match(/~~(.+?)~~/)
+    /*
+     * Italic, but never a half of `**`, and never across a space-padded pair.
+     *
+     * The old rule was `\*(.+?)\*`, which turned "Margins improved * see
+     * footnote 4 * for the basis" into italics and ATE both asterisks: a
+     * footnote marker in a stored case came back as formatting. Markdown
+     * requires the opening marker to be followed by a non-space and the
+     * closing one to be preceded by a non-space, which is exactly the
+     * distinction between emphasis and punctuation, so that is the rule.
+     */
+    const italic = remaining.match(/(?<!\*)\*(?![\s*])([^*\n]+?)(?<![\s*])\*(?!\*)|(?<!_)_(?![\s_])([^_\n]+?)(?<![\s_])_(?!_)/)
 
-    const boldIdx = boldMatch?.index ?? Infinity
-    const italicIdx = italicMatch?.index ?? Infinity
+    type Candidate = { at: number; len: number; node: (k: number) => React.ReactNode }
+    const candidates: Candidate[] = []
+    if (code) candidates.push({
+      at: code.index!, len: code[0].length,
+      node: k => <code key={k} className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[0.9em] dark:bg-gray-800">{code[1]}</code>,
+    })
+    if (bold) candidates.push({
+      at: bold.index!, len: bold[0].length,
+      node: k => <strong key={k}>{bold[1] || bold[2]}</strong>,
+    })
+    if (strike) candidates.push({
+      at: strike.index!, len: strike[0].length,
+      node: k => <s key={k} className="text-gray-500">{strike[1]}</s>,
+    })
+    if (italic) candidates.push({
+      at: italic.index!, len: italic[0].length,
+      node: k => <em key={k}>{italic[1] || italic[2]}</em>,
+    })
 
-    if (boldIdx === Infinity && italicIdx === Infinity) {
+    if (candidates.length === 0) {
       parts.push(<span key={key++}>{remaining}</span>)
       break
     }
 
-    if (boldIdx <= italicIdx && boldMatch) {
-      if (boldMatch.index! > 0) parts.push(<span key={key++}>{remaining.slice(0, boldMatch.index!)}</span>)
-      parts.push(<strong key={key++}>{boldMatch[1] || boldMatch[2]}</strong>)
-      remaining = remaining.slice(boldMatch.index! + boldMatch[0].length)
-    } else if (italicMatch) {
-      if (italicMatch.index! > 0) parts.push(<span key={key++}>{remaining.slice(0, italicMatch.index!)}</span>)
-      parts.push(<em key={key++}>{italicMatch[1] || italicMatch[2]}</em>)
-      remaining = remaining.slice(italicMatch.index! + italicMatch[0].length)
-    }
+    /* Leftmost wins; on a tie the earlier candidate does, and `code` is
+       pushed first for exactly that reason. */
+    const next = candidates.reduce((best, c) => (c.at < best.at ? c : best), candidates[0])
+    if (next.at > 0) parts.push(<span key={key++}>{remaining.slice(0, next.at)}</span>)
+    parts.push(next.node(key++))
+    remaining = remaining.slice(next.at + next.len)
   }
 
   return parts.length === 1 ? parts[0] : <>{parts}</>

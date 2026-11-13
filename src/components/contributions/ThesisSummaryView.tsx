@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
+/* Stored research is Markdown; see the note in ThesisUnifiedSummary. */
+import { SmartInputRenderer } from '../smart-input'
 import { clsx } from 'clsx'
 import {
   RefreshCw,
@@ -743,7 +745,7 @@ export function ThesisSummaryView({
                     {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
                     {c.user?.full_name}:
                   </span>{' '}
-                  <span className="text-sm">{c.content}</span>
+                  <SmartInputRenderer content={c.content} inline className="text-sm" />
                 </div>
               )
             })}
