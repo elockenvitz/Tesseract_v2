@@ -1648,6 +1648,78 @@ Fifteen to twenty minutes, in this order:
 context fix and the honest-gap prompt. That is a production deploy and it is
 your call.
 
+### 2.4 click paths — the parts I could not see
+
+Same situation: **no browser is connected to this session.** I checked rather
+than assumed (`list_connected_browsers` returned nothing), took no
+screenshots, and nothing in this document is claimed from a running app. The
+app is at **http://localhost:5190**.
+
+Each path below names what should happen AND what the old behaviour was, so a
+"that looks fine" can be distinguished from "that is the thing that was
+broken".
+
+**1. One context row, and detaching does not erase history.** (Part 1)
+Open ACT AI on an asset. There should be exactly one context row, below the
+thread, not two — there used to be a second band above it reporting an object
+the request never read. Detach the object with its ×. The row should empty.
+Now reopen the same conversation: it should NOT silently re-attach. Then go to
+that asset and look for the conversation: **it should still be listed there.**
+That is the whole point of Part 1 — detaching changes the next request, it
+does not delete the conversation's history with the asset.
+
+**2. A project is somewhere you can be.** (Part 4a)
+In the conversation list, press a project's NAME (not the chevron). It should
+open as a destination. Press the chevron separately: it should expand in
+place without navigating. Then press "New conversation" from inside a project
+and send one message. Reload. The conversation should still be in that
+project — the assignment is carried to the INSERT, which is the only moment
+the row exists.
+
+**3. Objects are searched, not listed.** (Part 4b)
+The row of object tag chips should be gone. Type two characters into the
+sidebar search. You should get assets, portfolios, themes and notes mixed
+with conversations, exact matches first. Open one: you should see its
+conversations and a control to start a new one with it attached as a
+*removable* context.
+
+**4. Keep is a form now, and the artifact row is still absent.** (Part 4c)
+Press Keep on an answer. You should see three research options and **no**
+"Keep as an artifact" row — absent, not greyed out. That is correct and will
+stay correct until the migration is applied. To see the form itself you would
+have to apply the migration first, which is **not** authorised here. Once it
+is: the form should show a preview of the answer, an editable name
+pre-selected so typing replaces it, a removable "About" chip pre-filled from
+the asset you are on, and an optional project. Clearing the name should
+disable Keep and say why.
+
+**5. Edit the Case lands on the case.** (Part 4d) — *the one most worth
+clicking.*
+From the dashboard, open an asset's work pane. Press **"Edit in research"**
+inside The case. You should arrive on the asset's Research page **scrolled to
+the case**, on your own research view. Previously you arrived at Research and
+then at whatever scroll position that page had last been left at.
+Then: switch to another tab and come back to the asset tab. **It must not
+scroll you back to the case.** That is the durable-replay guard; without it
+the page would yank you there on every return, forever.
+Then press "Edit in research" a second time: it SHOULD take you back. Two
+presses are two arrivals.
+
+**6. Open the scenarios actually goes somewhere.** (Part 4d)
+On a dashboard pane that arrived from a target event, press "open the
+scenarios" in the orientation band. You should land on the Research page at
+the price targets, with the Forecasts section expanded. Previously this
+navigated to the asset and changed nothing at all — it sent a focus value the
+Asset page ignores, so you stayed on whichever sub-page that tab was last on.
+
+**7. The pane agrees with the page.** (Part 4e) — *the second most worth
+clicking, and the fastest.*
+From a dashboard asset pane, press "Edit in research", change the case, save,
+then go back to the dashboard pane. **The pane should show your edit, and its
+"written Nd ago" should reset.** Previously it showed the old case for up to
+a minute and did not even try to refresh during it. Do the same with a price
+target and check the pane's target and reward-to-risk.
+
 ## Adjacent problems found, not fixed
 
 * **The frontend tenant lint could not see the artifacts table.** No `ai_`
@@ -1671,9 +1743,14 @@ your call.
 Written 2026-11-13, on `discovery/asset-page-2`, PR **#291**.
 
 **Read the scope note first.** The 2.4 brief has fifteen parts. This pass did
-four of them properly and part of a fifth. It did not attempt the rest. The
-list of what was not touched is in §7, and it is not a list of things that
-half work — they are unchanged from 2.3.
+seven of them and part of an eighth. It did not attempt the rest. The list of
+what was not touched is in §7, and it is not a list of things that half work —
+they are unchanged from 2.3.
+
+Sections in order: §1 one active context; §2 honest entry; §3 reference
+navigation; §4 the case editor leaves; §4a projects as destinations;
+§4b searchable objects; §4c the artifact save form (still switched off);
+§4d Edit the Case lands on the case; §4e the pane and the page agree.
 
 Nothing has been merged or deployed. `ai-chat` is still undeployed and the
 `ai_artifacts` migration is still unapplied.
@@ -2669,21 +2746,56 @@ but its owner.
 
 Unchanged from 2.3. None of these is half-built.
 
-* **Part VI — Save as artifact.** The Keep menu is unchanged and its artifact
-  row is still absent, because `ai_artifacts` is still unapplied. There is no
-  naming step, no preview, no object-association picker, no project
-  assignment. The feature is correctly OFF rather than broken — the hook
-  probes for the table instead of reading a flag — but "ready for activation"
-  would overstate it: what exists is the pointer write from 2.3, not the flow
-  the brief describes.
-* **Part VIII — the full workspace content audit.** Two specific things were
-  done (the case fills its column; supporting sections are disclosed). The
-  section-by-section visible / disclosed / open-the-feature decision was not
+* **Part VIII — the full workspace content audit.** Three specific things were
+  done (the case fills its column; supporting sections are disclosed; the
+  editing and workflow actions were audited for destination consistency, which
+  found and fixed the inert `framework` focus — see §4d). The
+  section-by-section visible / disclosed / open-the-feature decision was NOT
   made.
-* **Part IX's scenario and risk editing.** Only the case moved. Bull/base/bear
-  and risks are untouched, so whatever they do today, they still do.
-* **Part X — cross-surface consistency audit.** Not attempted.
-* **Part XII — the end-to-end journeys.** Not run.
+* **Part IX's scenario and risk editing.** The case moved, and "open the
+  scenarios" now reaches the price targets. Editing bull/base/bear and risks
+  still happens wherever it happened before — only the navigation to them was
+  corrected, not the editing surface itself.
+* **Part X — cross-surface consistency.** The staleness half is done (§4e):
+  the dashboard pane can no longer show a case or a target the Asset page has
+  changed. The PRESENTATION half is not. Whether the two surfaces label, order
+  and emphasise the same facts the same way was not audited.
+* **Part XII — the end-to-end journeys.** Not run, and cannot be from here:
+  no browser is connected to this session. The click paths are written out
+  above instead, with the old behaviour named beside each one.
+* **Parts XI, and the remainder of VII.** Not attempted.
+
+### Found in this pass, listed rather than fixed
+
+* **No Return affordance after "Edit in research".** The navigation is
+  preserved — the asset opens as a tab beside the one the reader came from —
+  but nothing marks the way back. The fix needs the sending surface to name
+  its own tab, and two hosts mount that pane. Shape of it is in §4d.
+* **`focus: 'framework'` is now a dead member of `AssetFocus`.** It had one
+  sender, which §4d corrected; nothing sends it and the receiver ignores it.
+  Removing it from the union is a separate change with its own blast radius.
+* **A `price_target` AI source still lands on the Snapshot.**
+  `FOCUS_BY_SOURCE_KIND` maps it to `overview`. With `section` now available,
+  `research` + `targets` would take the reader to the target itself. That is
+  Part VII's reference navigation, not Part VIII's, so it was left alone.
+* **The `AssetTab` section effect has no mounted test.** The decision it makes
+  is fully tested (`arrival-section.test.ts`); the four lines that turn a
+  `true` into a `setAttentionAnchor` call are not, because that file cannot be
+  mounted here.
+* **`asset.data.scrollTo` is a second, older section lever** and knows only
+  two of the five anchors. It is the pilot tutorial's path. It should fold into
+  `section`; it was not touched because the tutorial is the only caller and the
+  change is not this pass's.
+* **`ai_conversations.folder_id` has no ownership check.** An existence oracle
+  only, nothing disclosed, and it pre-dates this work. Full reasoning and the
+  fix shape are in §6.
+* **The `storybook (chromium)` vitest project cannot load its addon setup
+  file** in this environment, so a bare `vitest run` reports three failed test
+  FILES with zero failed tests. It is not in the required gate set and is
+  unrelated to this work.
+* **Five pre-existing `no-unused-vars` in `AISection.tsx`** and thirteen
+  pre-existing `any`s in `useAI.ts`. Proven pre-existing by linting `HEAD`'s
+  copy of each file in place.
 
 ## 8. Verification
 
@@ -2703,15 +2815,35 @@ injections, but **no artifact has ever been written**, by me or by anyone,
 because the table does not exist. The migration and its 17-assertion suite are
 read, not run. §4c is the list of what that requires.
 
-Counts at the end of this pass, for the AI area as a set:
+Counts at the end of this pass. Not the AI area alone — the whole required
+gate set, run after the last commit:
 
 ```
-Test Files  69 passed (69)
-     Tests  1437 passed (1437)
-guard:types  repo-wide errors: 8579  (ceiling 8579)   card-surface errors: 0
-             PASS
+guard:ci              PASS   (4 required check names present)
+guard:unit            PASS   687 test files, 12001 tests, 0 failed
+guard:types           PASS   repo-wide 8579 (ceiling 8579), card-surface 0
+guard:holdings        PASS   0 aggregating without a date, 0 weight sites undated
+guard:tdz             PASS   178 files, 0 use-before-define, 0 conditional hooks
+guard:layout          PASS   485 passed, 52 skipped
+guard:policies        PASS   14 known findings, 0 new
+guard:invite          PASS   18 passed
+guard:gallery         PASS   2 entries clean
+guard:social-preview  PASS   16 checks
+guard:favicon         PASS   34 checks
 ```
+
+`guard:policies` passing means **no NEW** policy finding. Its own output says
+what that is worth: "KNOWN_UNRESOLVED is a ratchet, not a baseline. It must
+shrink." The fourteen are unchanged by this work.
 
 The five `no-unused-vars` lint errors in `AISection.tsx` are pre-existing:
 proven by linting `HEAD`'s copy of the file in place, which reports the same
-five.
+five. The same method was used for `AssetWorkspace.tsx` (10),
+`entry-orientation.test.tsx` (7), `useAssetWorkspace.ts` (13) and
+`useContributions.ts` (3) — identical counts at `HEAD`, so this pass added no
+lint error. `useAnalystPriceTargets.ts` is clean.
+
+Eleven deliberate breakages this pass (A–K), each shown failing the gate it
+belongs to and then reverted. Two further real errors were caught by
+`guard:types` without being staged, one of which was a live `ReferenceError`
+on the artifact rename path.
