@@ -2229,6 +2229,64 @@ stood up here. That is the same limit the existing `asset-snapshot-landing`
 suite works around by asserting on source text; this went the other way and
 extracted the rule instead.
 
+## 4e. The dashboard pane and the Asset page can no longer disagree
+
+**In plain language:** you edit the case on the asset page, go back to the
+dashboard, and the dashboard shows the old case. Not for a moment — for up to
+a minute, and it does not even try to refresh during that minute.
+
+**Why.** The dashboard asset pane has exactly one read, `useAssetWorkspace`,
+and it reads tables the full Asset page owns the *editors* for:
+`asset_contributions` for the case, `analyst_price_targets` for the targets.
+Each of those editors tells React Query to refetch its own caches —
+`contributions`, `analyst-price-targets`, `desktop-research`,
+`scenario-cards`. The pane's cache was not on any of those lists, and it holds
+its rows for 60 seconds, so for the first minute it does not refetch on mount
+either. It serves what it has.
+
+What that looks like to a reader: "written 30d ago" over a paragraph they
+rewrote ten seconds ago, or "No core investment case has been written" over
+one they have just written. The target module has the same problem one table
+over — the pane is a *third* reader of `analyst_price_targets`, after the
+editor and the feed's Case-vs-Price cards, and only the first two were wired.
+
+**This got worse because of 4d, not better.** When "Edit in research" stopped
+opening an editor inside the pane and started sending the reader to the Asset
+page, leaving and coming back became the *normal* way to edit the case rather
+than an unusual one. The right order was to fix the staleness in the same pass
+as the hop that makes it routine.
+
+**The fix.** `useAssetWorkspace` now exports its own cache prefix and an
+`invalidateAssetWorkspace(queryClient)` that the writers call: six sites in
+`useContributions` (save, delete, upsert, publish-draft, legacy save, and the
+audience change — an audience change can decide whether the pane's reader is
+entitled to the row at all) and five in `useAnalystPriceTargets`. A prefix
+rather than a per-asset key, because the key carries the symbol, the history
+depth and the organisation as well as the asset id, and a reader can hold
+several variants of the same asset at once — a shallow one for the pane and a
+400-day one for a chart. An id-scoped invalidation would have to reproduce all
+four segments and would miss whichever variant was on screen. The cost of the
+prefix is one refetch of a pane that is usually not mounted.
+
+**What could break:** more refetching than before. Every case save and every
+target save now marks this prefix stale, including for assets other than the
+one being edited. That is deliberate and cheap; the alternative is each of
+eleven writers knowing the shape of someone else's cache key.
+
+### The other two things §6 asked about
+
+- **Navigate away and back.** Covered, and now in two places. The focus
+  replay guard was already there (`focusIntentKey`/`shouldApplyFocus`, keyed
+  per request and stored in tab state so it survives a remount, plus
+  `<AssetTab key={…}>` so switching assets is a remount). 4d adds the same
+  discipline for the section, with its own key proven not to collide.
+- **Stale context.** Covered and unchanged. The arrival event travels in
+  memory for one navigation, is discarded after ten seconds, is cleared on the
+  first take so a remount gets nothing, and is checked against the asset AND
+  the organisation before it is believed. The organisation travels so it can
+  be discarded, never so it can be asserted — the page runs its own
+  org-scoped queries regardless.
+
 ## 5. Non-vacuity
 
 Every gate below was proven to fail by injecting the behaviour it exists to
@@ -2481,6 +2539,34 @@ of the same asset would inherit `section: 'case'`:
 Tests  1 failed | 20 passed (21)
 ```
 
+### The pane's staleness (Part 4e)
+
+Injection J — the invalidation made one segment too specific, so it matches
+nothing the pane is actually holding:
+
+```
+× invalidates the entry the pane is actually holding
+× reaches every variant of the same asset, not just one
+Tests  2 failed | 3 passed (5)
+```
+
+Injection K — the prefix made an array, `['asset-workspace']`, which nests the
+hook's key one level deep. **Worth reading, because four of the five tests
+still passed:**
+
+```
+× is a single segment, so the prefix match is a prefix match
+Tests  1 failed | 4 passed (5)
+```
+
+The four behavioural assertions pass under this injection because the hook's
+key and the invalidator are wrong *together* — both nest, so both still match
+each other, and nothing the test can observe differs. Only the assertion on
+the prefix's SHAPE catches it. That is the whole argument for having both
+kinds of test here: the behavioural ones catch a mismatch between the writer
+and the reader, and they are blind to the two of them agreeing on something
+that no real query key looks like.
+
 ## 6. RLS posture
 
 **No data path changed, and no policy was touched.**
@@ -2505,6 +2591,13 @@ Tests  1 failed | 20 passed (21)
   (`user_id = auth.uid() AND is_member_of_org(organization_id)`, all four
   verbs), so the folder list the UI offers contains only the reader's own.
 * No new table, view, RPC, Edge Function or migration in Part IV either.
+* **Part 4e changes no data path either, and widens no policy.** It changes
+  only WHEN an existing query refetches. Every read it causes is the same
+  `useAssetWorkspace` query under the same org filter it already had —
+  `organization_id = currentOrgId` on the contributions, notes, targets and
+  ideas reads, which is the filter that exists because RLS on those four
+  tables is not organisation-aware. A refetch cannot return a row the reader
+  could not already have fetched.
 * **Part 4d changes no data path at all.** `section` is one more field in a
   client-side tab descriptor. It reads nothing, writes nothing, and reaches no
   table — it decides which paragraph of a page the reader is already entitled
