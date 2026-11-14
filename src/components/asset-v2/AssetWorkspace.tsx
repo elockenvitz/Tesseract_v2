@@ -152,18 +152,56 @@ export interface AssetWorkspaceProps {
  * copies of "which object answers this request" is how two surfaces on one
  * page start sending the same reader to different places; the hop is written
  * once. It hands off, and it never decides.
+ *
+ * ── Two defects this closes, both of them routing ────────────────────────
+ *
+ * The first: it opened `liveIdeas[0]`, the asset's first live idea, and NOT
+ * the idea the request was raised on. Those are the same object only by
+ * coincidence. An asset with two live ideas and a request on the second sent
+ * the reader to the first one -- the right page, the wrong piece of work, and
+ * no way to tell from the screen, because the destination looks exactly like
+ * the destination they wanted. `decision_requests` joins
+ * `trade_queue_items`, so the correct id was already being selected; it was
+ * simply not carried through to the hop. `AssetDecisionRow.ideaId` carries
+ * it now.
+ *
+ * The second: `else onOpenLegacy?.()`. Neither host passes `onOpenLegacy` --
+ * not `IdeasWorkPane`, not `DashboardNext` -- so the fallback was a
+ * no-op, and the one primary action on the page did nothing at all when the
+ * request named no reachable idea. That is reachable in production, not a
+ * theoretical branch: `liveIdeas` is filtered to `outcome IS NULL` and a
+ * non-terminal status and capped at 8, while `decisions` applies neither
+ * filter, so a pending request on a closed or 9th-oldest idea lands exactly
+ * here. The fallback is now the asset's own decisions lens, which is a page
+ * that exists and can be returned from.
+ *
+ * It still never decides inline. Approving a request on a surface built for
+ * reading the case is how a decision gets made without its own record.
  */
 function decisionHandoff(
+  pending: AssetDecisionRow | null | undefined,
   data: { liveIdeas: AssetLiveIdea[] },
   symbol: string | null,
-  action: string | null,
-  onOpenLegacy?: () => void,
+  openDecisions: () => void,
 ): () => void {
   return () => {
-    // The asset's live idea if one exists, else the legacy asset page.
-    const idea = data.liveIdeas[0]
-    if (idea) routeToIdea(idea.id, `${symbol ?? 'Asset'} — decide: ${action ?? 'request'}`)
-    else onOpenLegacy?.()
+    /*
+     * The idea the REQUEST names, and only that one.
+     *
+     * The single-live-idea fallback is for a row selected before `ideaId`
+     * existed (the field is optional for exactly that reason): with one
+     * candidate there is nothing to get wrong. With two or more and no id,
+     * this deliberately does NOT guess -- it sends the reader to the lens
+     * that lists every decision on the asset, where they can pick the right
+     * one themselves. A wrong idea opened confidently is worse than a list.
+     */
+    const ideaId = pending?.ideaId
+      ?? (data.liveIdeas.length === 1 ? data.liveIdeas[0].id : null)
+    if (ideaId) {
+      routeToIdea(ideaId, `${symbol ?? 'Asset'} · decide: ${pending?.action ?? 'request'}`)
+      return
+    }
+    openDecisions()
   }
 }
 
@@ -405,6 +443,30 @@ export function AssetWorkspacePane({
        * reader pressed, so every host gets a Return including ones added
        * later. See `lib/desktop-asset/return-to`.
        */
+      returnTo: true,
+    })
+  }
+
+  /**
+   * The asset's decisions lens, for a request whose own idea is not reachable.
+   *
+   * This exists because the alternative was `onOpenLegacy?.()` on a prop no
+   * host passes -- see `decisionHandoff`. It is deliberately the same shape as
+   * `openCanonicalCase`: the entry context travels, the focus is named, and a
+   * Return is asked for, so a reader who presses Decide and finds a list
+   * rather than their request can get back to where they were in one press.
+   */
+  const openDecisionsLens = () => {
+    offerEntryContext(entry)
+    openAsset({
+      assetId: asset.id,
+      symbol,
+      companyName: asset.company_name ?? null,
+      focus: 'decisions',
+      portfolioId: portfolioId ?? null,
+      portfolioName: portfolioName ?? null,
+      issue: issue ?? null,
+      origin: origin ?? null,
       returnTo: true,
     })
   }
@@ -763,7 +825,7 @@ export function AssetWorkspacePane({
           /* Only where a request is actually waiting. An action with nothing
              behind it is the inert card this work exists to avoid. */
           openPending: pendingRequest
-            ? decisionHandoff(data, symbol, pendingRequest.action ?? null, onOpenLegacy)
+            ? decisionHandoff(pendingRequest, data, symbol, openDecisionsLens)
             : undefined,
           ask: (question: string) => askAI({
             ...target,
@@ -939,7 +1001,7 @@ export function AssetWorkspacePane({
             the target-reached card.
           */}
           {orientation}
-          <DecisionBand data={data} position={position} symbol={symbol} onOpenLegacy={onOpenLegacy} />
+          <DecisionBand data={data} position={position} symbol={symbol} onOpenDecisions={openDecisionsLens} />
           {lead}
           {context}
         </div>
@@ -962,12 +1024,15 @@ export function AssetWorkspacePane({
  * invented from a partial ladder.
  */
 export function DecisionBand({
-  data, position, symbol, onOpenLegacy,
+  data, position, symbol, onOpenDecisions,
 }: {
   data: { decisions: AssetDecisionRow[]; liveIdeas: AssetLiveIdea[]; target: number | null; spot: number | null; ladder: any }
   position: AssetPosition | null
   symbol: string | null
-  onOpenLegacy?: () => void
+  /* Required, not optional. The predecessor was an optional `onOpenLegacy`
+     that no host passed, which made the band's only button inert on the one
+     path that needed it. An optional callback is a defect that typechecks. */
+  onOpenDecisions: () => void
 }) {
   const pending = data.decisions.find(d => (d.status ?? '').toLowerCase() === 'pending')
   if (!pending) return null // no request waiting: the hero is absent, not an empty box
@@ -982,7 +1047,7 @@ export function DecisionBand({
   const rr = (bear != null && bull != null && spot != null && bull > spot && spot > bear)
     ? { ratio: (bull - spot) / (spot - bear), bear, bull, spot } : null
 
-  const decide = decisionHandoff(data, symbol, pending.action ?? null, onOpenLegacy)
+  const decide = decisionHandoff(pending, data, symbol, onOpenDecisions)
 
   return (
     <div data-testid="decision-band"

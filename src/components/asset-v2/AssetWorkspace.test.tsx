@@ -616,12 +616,113 @@ describe('the decision band turns understanding into a decision', () => {
 
   it('hands off to the decision workflow rather than deciding inline', async () => {
     const spy = vi.spyOn(window, 'dispatchEvent')
-    data = { ...BASE, decisions: [pendingDecision()],
+    data = { ...BASE, decisions: [pendingDecision({ ideaId: 'i1' })],
       liveIdeas: [{ id: 'i1', action: 'add', stage: 'deciding', rationale: null, portfolioName: 'Large Cap Core' }] }
     render(<AssetWorkspacePane asset={asset} />)
     await userEvent.click(screen.getByTestId('decision-cta'))
     const fired = spy.mock.calls.some(([e]: any) => e?.type === 'decision-engine-action')
     expect(fired).toBe(true)
+    spy.mockRestore()
+  })
+
+  /*
+   * ── Which object the Decide button opens ──────────────────────────────
+   *
+   * The band's one button used to open `liveIdeas[0]`, which is the asset's
+   * first live idea and not necessarily the idea the request was raised on.
+   * The destination looks identical either way -- an Ideas tab with an idea
+   * selected -- so a reader has no way to notice they were sent to the wrong
+   * piece of work. These three tests are about the id in the payload, which
+   * is the only place the difference is visible.
+   */
+  const ideaEvents = (spy: any) => spy.mock.calls
+    .map(([e]: any) => e)
+    .filter((e: any) => e?.type === 'decision-engine-action' && e?.detail?.type === 'ideas-v2')
+    .map((e: any) => e.detail.data.selectedIdeaId)
+
+  /*
+   * Render, THEN start recording.
+   *
+   * This suite does not unmount between tests -- several cases render twice
+   * and reach for `getAllByTestId(...)[1]` -- so a spy installed before
+   * `render` picks up whatever a previously mounted tree dispatches while
+   * React settles. That cost me a false positive: an injected regression
+   * failed a test whose own assertion still held, which is the same class of
+   * mistake as a test that passes for the wrong reason. Recording from the
+   * press means every event in `spy.mock.calls` is one the press caused.
+   */
+  const recordFromThePress = () => {
+    const spy = vi.spyOn(window, 'dispatchEvent')
+    spy.mockClear()
+    opened.length = 0
+    return spy
+  }
+
+  it('opens the idea the request was raised on, not the first live idea', async () => {
+    /* Two live ideas. The request names the SECOND one. Ordering is by
+       `updated_at`, so which idea is first is a fact about recency and has
+       nothing to do with which request is waiting. */
+    data = { ...BASE, decisions: [pendingDecision({ ideaId: 'i2' })], liveIdeas: [
+      { id: 'i1', action: 'trim', stage: 'deciding', rationale: null, portfolioName: 'Large Cap Core' },
+      { id: 'i2', action: 'add', stage: 'deciding', rationale: null, portfolioName: 'Concentrated' },
+    ] }
+    render(<AssetWorkspacePane asset={asset} />)
+    const spy = recordFromThePress()
+    await userEvent.click(screen.getByTestId('decision-cta'))
+    expect(ideaEvents(spy)).toEqual(['i2'])
+    spy.mockRestore()
+  })
+
+  it('opens the asset decisions lens when the request names no reachable idea', async () => {
+    /*
+     * Reachable in production, not a contrived branch: `liveIdeas` is
+     * filtered to a null outcome and a non-terminal status and capped at 8,
+     * while `decisions` applies neither filter. A pending request on a
+     * closed idea arrives here with nothing to open.
+     *
+     * This used to call an optional `onOpenLegacy` that neither host passes,
+     * so the press did nothing whatsoever.
+     */
+    data = { ...BASE, decisions: [pendingDecision({ ideaId: null })], liveIdeas: [] }
+    render(<AssetWorkspacePane asset={asset} />)
+    const spy = recordFromThePress()
+    await userEvent.click(screen.getByTestId('decision-cta'))
+
+    expect(opened).toHaveLength(1)
+    expect(opened[0]).toMatchObject({ assetId: 'a-1', focus: 'decisions' })
+    /* And a way back, because this is a redirect the reader did not ask for:
+       they pressed Decide and got a list. */
+    expect(opened[0].returnTo).toBe(true)
+    expect(ideaEvents(spy)).toEqual([])
+    spy.mockRestore()
+  })
+
+  it('refuses to guess between two ideas when the request names neither', async () => {
+    /* A row selected before `ideaId` existed. With one candidate there is
+       nothing to get wrong, so that case still routes; with two, guessing
+       would be the original defect reintroduced as a convenience. */
+    data = { ...BASE, decisions: [pendingDecision({ ideaId: null })], liveIdeas: [
+      { id: 'i1', action: 'trim', stage: 'deciding', rationale: null, portfolioName: 'Large Cap Core' },
+      { id: 'i2', action: 'add', stage: 'deciding', rationale: null, portfolioName: 'Concentrated' },
+    ] }
+    render(<AssetWorkspacePane asset={asset} />)
+    const spy = recordFromThePress()
+    await userEvent.click(screen.getByTestId('decision-cta'))
+    expect(ideaEvents(spy)).toEqual([])
+    /* Not nowhere: the lens that lists every decision on the asset, so the
+       reader picks the right one instead of the product picking wrong. */
+    expect(opened).toHaveLength(1)
+    expect(opened[0]).toMatchObject({ focus: 'decisions' })
+
+    /* One candidate: routed, because there is no ambiguity to resolve. */
+    data = { ...BASE, decisions: [pendingDecision({ ideaId: null })],
+      liveIdeas: [{ id: 'i9', action: 'add', stage: 'deciding', rationale: null, portfolioName: 'Concentrated' }] }
+    render(<AssetWorkspacePane asset={{ ...asset, id: 'a-solo' }} />)
+    spy.mockClear()
+    opened.length = 0
+    await userEvent.click(screen.getAllByTestId('decision-cta')[1])
+    expect(ideaEvents(spy)).toEqual(['i9'])
+    expect(opened).toEqual([])
     spy.mockRestore()
   })
 })
