@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { boundHistory, DEFAULT_HISTORY_BUDGET } from '../history'
+import { boundHistory, stripStoredExcerpts, DEFAULT_HISTORY_BUDGET } from '../history'
 import type { HistoryMessage } from '../history'
 
 function thread(turns: number, chars = 100): HistoryMessage[] {
@@ -106,5 +106,96 @@ describe('degenerate input', () => {
     const bounded = boundHistory(priorTurns)
     expect(bounded.messages.length).toBeLessThanOrEqual(DEFAULT_HISTORY_BUDGET.maxMessages)
     expect(bounded.messages.every(m => priorTurns.some(p => p.content.startsWith(m.content.slice(0, 3))))).toBe(true)
+  })
+})
+
+/*
+ * An excerpt is shown, and is not written down.
+ *
+ * ── The boundary ─────────────────────────────────────────────────────────
+ *
+ * The research trail quotes each record it consulted. Showing it is safe: it
+ * came back through the reader's own RLS-scoped query, so it is content they
+ * can already open. Storing it is not the same act.
+ * `ai_conversations.messages` is one jsonb column under the conversation
+ * owner's policy, so a note's words written there become a second copy living
+ * outside that note's own policy, and if the note is later restricted to a
+ * narrower audience, or deleted, the copy stays readable, because nothing
+ * knows it is there to re-check.
+ *
+ * It is also the honest choice on provenance: an excerpt is a snapshot, and a
+ * months-old snapshot shown beside a live link to a record that has since
+ * changed is worse than no snapshot.
+ */
+describe('what the transcript writes to disk', () => {
+  const withExcerpt = () => [{
+    role: 'assistant',
+    content: 'The PM ruling is pending.',
+    tool_calls: [{
+      name: 'search_team_notes',
+      input: { query: 'moat' },
+      status: 'ok',
+      scope: 'caller_visible',
+      sources: [{
+        kind: 'note', id: 'n1', asset_id: 'a1', symbol: 'AAPL', title: 'Channel checks',
+        timestamp: '2026-11-01T00:00:00Z', state: 'shared',
+        excerpt: 'Supplier lead times extended again in the March quarter.',
+      }],
+    }],
+  }]
+
+  /** The first source of the first lookup, after the strip. */
+  const storedSource = () => {
+    const calls = stripStoredExcerpts(withExcerpt())[0].tool_calls as Array<Record<string, any>>
+    return calls[0].sources[0] as Record<string, unknown>
+  }
+
+  it('drops the record text', () => {
+    expect(JSON.stringify(stripStoredExcerpts(withExcerpt()))).not.toContain('Supplier lead times')
+  })
+
+  it('removes the field rather than nulling it', () => {
+    /* An `excerpt: null` on disk is a claim that the record had nothing to
+       say, which is not what happened. */
+    expect('excerpt' in storedSource()).toBe(false)
+  })
+
+  it('keeps everything a reopened trail needs to stay navigable', () => {
+    expect(storedSource()).toEqual({
+      kind: 'note', id: 'n1', asset_id: 'a1', symbol: 'AAPL', title: 'Channel checks',
+      timestamp: '2026-11-01T00:00:00Z', state: 'shared',
+    })
+  })
+
+  it('keeps the lookup s own fields, including how far it could see', () => {
+    const calls = stripStoredExcerpts(withExcerpt())[0].tool_calls as Array<Record<string, any>>
+    expect(calls[0]).toMatchObject({
+      name: 'search_team_notes', status: 'ok', scope: 'caller_visible', input: { query: 'moat' },
+    })
+  })
+
+  it('does not mutate the messages the pane is rendering', () => {
+    /* The live thread keeps its excerpts: the reader is looking at them. */
+    const live = withExcerpt()
+    stripStoredExcerpts(live)
+    expect(live[0].tool_calls[0].sources[0].excerpt).toMatch(/Supplier lead times/)
+  })
+
+  it('returns a message with no lookups unchanged, by identity', () => {
+    const plain = [{ role: 'user', content: 'Where did we land?' }]
+    expect(stripStoredExcerpts(plain)[0]).toBe(plain[0])
+  })
+
+  it('survives a malformed tool call rather than losing the transcript', () => {
+    /* A message from an older deploy, or a half-written one. Dropping the
+       whole thread to be safe would cost the reader their history. */
+    const odd = [
+      { role: 'assistant', content: 'a', tool_calls: [] },
+      { role: 'assistant', content: 'b', tool_calls: [{ name: 'x', input: {} }] },
+      { role: 'assistant', content: 'c', tool_calls: [{ name: 'x', input: {}, sources: null }] },
+      { role: 'assistant', content: 'd', tool_calls: [{ name: 'x', input: {}, sources: [null] }] },
+    ] as Array<Record<string, any>>
+    expect(() => stripStoredExcerpts(odd)).not.toThrow()
+    expect(stripStoredExcerpts(odd)).toHaveLength(4)
   })
 })

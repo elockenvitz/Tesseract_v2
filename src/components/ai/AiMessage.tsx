@@ -19,9 +19,9 @@ import type { ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { clsx } from 'clsx'
 import { AiProse } from './AiProse'
-import { ResearchTrail } from './ResearchTrail'
-import { Citations } from './Citations'
+import { AiEvidence } from './AiEvidence'
 import type { AiRenderableMessage, AiSourceRef } from '../../lib/ai/presentation'
+import { chatLayout, type AiChatMode } from '../../lib/ai/chat-modes'
 
 interface AiMessageProps {
   message: AiRenderableMessage
@@ -31,13 +31,39 @@ interface AiMessageProps {
   onOpenSource?: (source: AiSourceRef) => void
   /** Suggested actions, or anything else the chat wants under the body. */
   footer?: ReactNode
-  /** A briefing opens its evidence; a chat reply folds it away. */
+  /**
+   * Controls that sit beside Copy on the meta row, for an assistant turn.
+   *
+   * A slot rather than a prop per control: what can be done with an answer
+   * belongs to the chat, which knows the thread and the subject. This
+   * component still owns where those controls live and when they appear,
+   * which is why a streaming turn gets neither this nor Copy.
+   */
+  metaActions?: ReactNode
+  /**
+   * A briefing opens its evidence; a chat reply folds it away.
+   *
+   * Left undefined, the mode decides: research mode is where someone is
+   * checking sources, and a trail folded shut on a full-width pane is a click
+   * charged for nothing.
+   */
   evidenceOpen?: boolean
+  /**
+   * Compact rail or full-width research pane.
+   *
+   * It governs the bubble's ceiling, which is not cosmetic: at `max-w-[85%]`
+   * a six-column weight table scrolls inside a container that had 15% of a
+   * 1600px pane left over beside it.
+   */
+  mode?: AiChatMode
 }
 
 export function AiMessage({
-  message, modelLabel, onTickerClick, onOpenSource, footer, evidenceOpen = false,
+  message, modelLabel, onTickerClick, onOpenSource, footer, metaActions, evidenceOpen,
+  mode = 'compact',
 }: AiMessageProps) {
+  const layout = chatLayout(mode)
+  const showEvidenceOpen = evidenceOpen ?? layout.evidenceOpen
   const [copied, setCopied] = useState(false)
   const isAssistant = message.role === 'assistant'
 
@@ -54,12 +80,26 @@ export function AiMessage({
   return (
     <div className={clsx('flex group', isAssistant ? 'justify-start' : 'justify-end')}>
       <div
+        /*
+         * The answer is not a chat bubble.
+         *
+         * It used to be a filled grey container inset to 85% of the pane, and
+         * both halves of that were wrong. The fill made a long reply read as
+         * a dense block rather than as something written to be read, and the
+         * inset spent the pane's scarcest dimension on an empty gutter.
+         *
+         * So the assistant's turn sits on the pane's own surface at full
+         * width, like a document. The reader's turn keeps the filled bubble,
+         * which is what still makes the alternation legible: one voice is
+         * boxed and right-aligned, the other is the page.
+         */
         className={clsx(
-          'relative max-w-[85%] rounded-lg px-4 py-3',
+          'relative',
           isAssistant
-            ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white'
-            : 'bg-primary-600 text-white',
+            ? clsx(layout.assistantTurn, 'text-gray-900 dark:text-gray-100')
+            : clsx(layout.userBubble, 'rounded-lg px-4 py-3 bg-primary-600 text-white'),
         )}
+        data-turn={isAssistant ? 'assistant' : 'user'}
       >
         {isAssistant ? (
           <AiProse content={message.content} onTickerClick={onTickerClick} />
@@ -67,18 +107,21 @@ export function AiMessage({
           <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         )}
 
-        {isAssistant && message.tool_calls && message.tool_calls.length > 0 && (
-          <ResearchTrail
-            toolCalls={message.tool_calls}
-            defaultOpen={evidenceOpen}
-            onOpenSource={onOpenSource}
-          />
-        )}
+        {/*
+          ONE evidence section, not two.
 
-        {isAssistant && message.citations && message.citations.length > 0 && (
-          <Citations
+          This replaced a research trail plus a separate citations list. The
+          same record could appear in both, under two headings, and a reader
+          could not tell whether that was one record or two. `AiEvidence`
+          deduplicates by record identity and marks each one quoted or
+          consulted, so the distinction that justified two sections survives
+          without them.
+        */}
+        {isAssistant && (
+          <AiEvidence
+            toolCalls={message.tool_calls}
             citations={message.citations}
-            defaultOpen={evidenceOpen}
+            defaultOpen={showEvidenceOpen}
             onOpenSource={onOpenSource}
           />
         )}
@@ -115,6 +158,14 @@ export function AiMessage({
             )}
           </div>
           {isAssistant && !message.streaming && (
+            <div className={clsx(
+              'flex items-center gap-1 shrink-0',
+              /* The whole group appears on hover, as Copy always has: a row
+                 of controls under every answer is a row of chrome between
+                 the reader and the next paragraph. */
+              'opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity',
+            )}>
+              {metaActions}
             <button
               type="button"
               onClick={handleCopy}
@@ -122,13 +173,23 @@ export function AiMessage({
                 'inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded shrink-0',
                 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200',
                 'hover:bg-gray-200 dark:hover:bg-gray-700',
-                'opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity',
               )}
               title="Copy response"
             >
-              {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+              {/*
+                `aria-hidden`, because the word next to it already says what
+                this does. Without it the icon is part of the control's name:
+                every text reading of this footer came out as "svgCopy", and
+                the same shape gave "svgKeep" and "svg3 sources svg" on the
+                two controls beside it. A reader using assistive technology
+                was hearing the element, not the label.
+              */}
+              {copied
+                ? <Check className="w-3 h-3" aria-hidden="true" />
+                : <Copy className="w-3 h-3" aria-hidden="true" />}
               {copied ? 'Copied' : 'Copy'}
             </button>
+            </div>
           )}
         </div>
       </div>

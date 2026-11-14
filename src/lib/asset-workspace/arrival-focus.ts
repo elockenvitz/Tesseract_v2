@@ -89,3 +89,56 @@ export function shouldApplyFocus(
   if (!intent) return false
   return intent !== consumedIntent
 }
+
+/**
+ * The SECTION an arrival named, resolved the same way.
+ *
+ * ── Why a section needs its own key ───────────────────────────────────────
+ *
+ * `focus` picks the lens; `section` picks the paragraph. "Edit in research"
+ * inside The case sent `focus: 'research'` and nothing else, so the reader
+ * arrived at Research and then at whatever scroll position Research had last
+ * been left at — on a long page, usually not the paragraph whose Edit control
+ * they had just pressed.
+ *
+ * It needs the same once-per-request discipline and for exactly the same
+ * reason: `section` travels in tab DATA, which is durable. Keyed on the
+ * section VALUE alone, a reader would be yanked back to the case every time
+ * they returned to that tab, forever — the defect the whole module above
+ * exists to stop, reintroduced one field over.
+ *
+ * ── Why it is a separate key from the focus one ───────────────────────────
+ *
+ * The two are consumed by different effects and must not share a slot. The
+ * focus effect sets the sub-page and writes the consumed id to tab state; the
+ * section effect sets a scroll anchor and holds its own. Sharing one key
+ * would mean whichever ran first silently cancelled the other, and since
+ * both fire on the same arrival that is not a rare race — it is every
+ * navigation that names both.
+ */
+export function sectionIntentKey(
+  section: string | null | undefined,
+  focusRequestId?: string | null,
+): string | null {
+  if (!section) return null
+  return focusRequestId ? `sec-req:${focusRequestId}` : `sec:${section}`
+}
+
+/**
+ * Should this arrival's section be scrolled to?
+ *
+ * The `reachable` argument is the caller's own validity check, not a
+ * guess made here: the set of sections the Asset page can actually reach is
+ * `ASSET_SECTION_TARGETS`, and a value outside it would set an anchor whose
+ * DOM id is undefined — a scroll that polls for three seconds and then gives
+ * up without saying anything. Unreachable is therefore NOT consumed either,
+ * so a later build that learns the section can still act on the same request.
+ */
+export function shouldApplySection(
+  intent: string | null,
+  consumedIntent: string | null | undefined,
+  reachable: boolean,
+): boolean {
+  if (!intent || !reachable) return false
+  return intent !== consumedIntent
+}

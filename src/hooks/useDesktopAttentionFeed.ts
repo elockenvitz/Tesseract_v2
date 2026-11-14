@@ -413,7 +413,11 @@ export function useDesktopAttentionFeed(
     }
 
     for (const s of lenses?.stale ?? []) add(buildStaleTargetCard(s as never), 'stale_target')
-    for (const b of lenses?.breaches ?? []) add(buildTargetHitCard(b as never), 'target_hit')
+    /* The breach row travels with the card. The pane beside this feed composes
+       a target review out of it -- which target, against which mark, stated
+       when -- and a card headline alone cannot say any of that. See
+       `entryContextFor`. */
+    for (const b of lenses?.breaches ?? []) add(buildTargetHitCard(b as never), 'target_hit', b as PreviewSource)
     for (const c of lenses?.conviction ?? []) add(buildConvictionCard(c as never), 'conviction', c as PreviewSource)
     for (const c of lenses?.crowded ?? []) add(buildCrowdingCard(c as never), 'crowding', c as PreviewSource)
 
@@ -512,7 +516,10 @@ export function useDesktopAttentionFeed(
     if (include?.decisions) {
       for (const d of decisions.decisions) {
         const input = recommendationInputFrom(d)
-        if (input) add(buildRecommendationCard(input), 'recommendation')
+        /* The input row travels for the same reason the breach row does: the
+           pane leads with the proposal itself -- its action, its sizing, the
+           weight it was measured against -- and the card drops all three. */
+        if (input) add(buildRecommendationCard(input), 'recommendation', input as PreviewSource)
       }
     }
 

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { CapturePrefill } from '../lib/capture/prefill'
 
 export type InspectableItemType = 'quick_thought' | 'prompt' | 'trade_idea' | 'note' | 'thesis_update' | 'insight'
 
@@ -26,9 +27,17 @@ interface SidebarState {
   sidebarMode: SidebarMode
   selectedItem: SelectedItem | null
   pendingCaptureType: PendingCaptureType
+  /**
+   * Words to open the capture form with, from whoever asked for it.
+   *
+   * One-shot, exactly like `pendingCaptureType`, and cleared on every path
+   * that leaves the form: a draft that survived into the NEXT capture would
+   * put one reader's promoted answer into an unrelated note.
+   */
+  pendingCapturePrefill: CapturePrefill | null
 
   // Actions
-  openCaptureSidebar: (captureType?: PendingCaptureType) => void
+  openCaptureSidebar: (captureType?: PendingCaptureType, prefill?: CapturePrefill | null) => void
   openInspector: (type: InspectableItemType, id: string) => void
   closeSidebar: () => void
   backToCapture: () => void
@@ -41,13 +50,15 @@ export const useSidebarStore = create<SidebarState>((set) => ({
   sidebarMode: 'capture',
   selectedItem: null,
   pendingCaptureType: null,
+  pendingCapturePrefill: null,
 
   // Open sidebar in capture mode (default Quick Ideas view)
-  openCaptureSidebar: (captureType) => set({
+  openCaptureSidebar: (captureType, prefill) => set({
     sidebarOpen: true,
     sidebarMode: 'capture',
     selectedItem: null,
     pendingCaptureType: captureType ?? null,
+    pendingCapturePrefill: prefill ?? null,
   }),
 
   // Open sidebar in inspect mode with a specific item
@@ -61,6 +72,7 @@ export const useSidebarStore = create<SidebarState>((set) => ({
   closeSidebar: () => set({
     sidebarOpen: false,
     pendingCaptureType: null,
+    pendingCapturePrefill: null,
     // Keep mode and item for potential re-open
   }),
 
@@ -69,9 +81,10 @@ export const useSidebarStore = create<SidebarState>((set) => ({
     sidebarMode: 'capture',
     selectedItem: null,
     pendingCaptureType: null,
+    pendingCapturePrefill: null,
     // Keep sidebar open
   }),
 
-  // Clear the pending capture type after ThoughtsSection has consumed it
-  clearPendingCaptureType: () => set({ pendingCaptureType: null }),
+  // Clear both one-shots once ThoughtsSection has consumed them
+  clearPendingCaptureType: () => set({ pendingCaptureType: null, pendingCapturePrefill: null }),
 }))

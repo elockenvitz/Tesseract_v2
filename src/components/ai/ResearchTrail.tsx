@@ -21,13 +21,13 @@
 import { useState } from 'react'
 import { AlertCircle, ChevronRight, Search } from 'lucide-react'
 import { clsx } from 'clsx'
-import { openAsset } from '../../lib/desktop-asset'
-import { focusForSourceKind } from '../../lib/ai/source-focus'
+import { openSourceRef } from '../../lib/ai/source-focus'
 import type { AiSourceRef, MessageToolCall } from '../../lib/ai/presentation'
 /* The words, and the three-status rule they carry, live in lib so a test can
    read them without a DOM and a second surface cannot quietly reword them. */
 import {
-  SOURCE_KIND_LABEL, toolCallLabel, toolCallOutcome, trailBorderFor,
+  referenceLabel, sourceStateLabel, recordAge,
+  toolCallLabel, toolCallOutcome, trailBorderFor,
 } from '../../lib/ai/trail-text'
 
 interface ResearchTrailProps {
@@ -120,14 +120,83 @@ export function SourceRef({
       })
     : null
 
+  const state = sourceStateLabel(source.state)
+  const age = recordAge(source.timestamp)
+
   const body = (
     <>
-      <span className="inline-block px-1 mr-1 rounded bg-gray-100 dark:bg-gray-800
-                       text-gray-600 dark:text-gray-400 text-[10px] uppercase tracking-wide">
-        {SOURCE_KIND_LABEL[source.kind]}
+      {/*
+        The concise label first: "AAPL · Thesis".
+
+        This was an uppercase kind chip on its own, followed by the record's
+        full title -- which for a thesis contribution or a requirement is a
+        sentence. Six sources then read as six record headings competing with
+        the answer above them, and the two things a reader scans for, which
+        company and what kind of document, were the smallest part of the row.
+        `referenceLabel` holds the wording so both halves of the evidence
+        section say it the same way.
+      */}
+      <span
+        data-testid="ai-source-label"
+        className="mr-1 font-semibold text-gray-800 dark:text-gray-200"
+      >
+        {referenceLabel(source)}
       </span>
-      <span className="font-medium">{source.title}</span>
+      {/*
+        The record's own title, kept and clamped.
+
+        Not dropped: it is what says WHICH thesis, which ruling, which note,
+        and provenance is the point of this section. One line, because its
+        job here is recognition and the document is one press away.
+      */}
+      <span
+        data-testid="ai-source-title"
+        className="inline-block max-w-[42ch] truncate align-bottom font-normal text-gray-600 dark:text-gray-400"
+        title={source.title}
+      >
+        {source.title}
+      </span>
+      {/*
+        The record's own state, never the lookup's. Separated from the kind
+        chip by weight rather than another box: two chips side by side read as
+        two categories, and this is a property of the one named record.
+      */}
+      {state && (
+        <span data-testid="ai-source-state" className="ml-1 text-gray-500 dark:text-gray-400">
+          {state}
+        </span>
+      )}
       {when && <span className="text-gray-400 dark:text-gray-500 ml-1">{when}</span>}
+      {/*
+        The age, where it is old enough to change how the record should be
+        weighed. The date alone is the lightest thing on the row, so a thesis
+        from March and one from last week scan identically -- and only one of
+        them should be leaned on.
+
+        An age, never a verdict: nothing here calls a record stale. A thesis
+        on a slow compounder can be two years old and current.
+      */}
+      {age && (
+        <span
+          data-testid="ai-source-age"
+          className="ml-1 text-amber-700 dark:text-amber-500"
+          title={`Last updated ${when}. Weigh it accordingly.`}
+        >
+          {age.label}
+        </span>
+      )}
+      {/*
+        The record in its own words. One line, clamped: enough to recognise
+        the row without turning the trail into the document.
+      */}
+      {source.excerpt && (
+        <span
+          data-testid="ai-source-excerpt"
+          className="mt-0.5 block line-clamp-2 font-normal text-gray-500 dark:text-gray-400"
+        >
+          {source.excerpt}
+        </span>
+      )}
     </>
   )
 
@@ -140,14 +209,9 @@ export function SourceRef({
       type="button"
       onClick={() => {
         if (onOpen) { onOpen(source); return }
-        /* No focusRequestId here: assetTabFor stamps one per call, which is
-           what lets the receiver tell a new intent from a remounted tab. */
-        openAsset({
-          assetId: source.asset_id as string,
-          symbol: source.symbol ?? null,
-          focus: focusForSourceKind(source.kind),
-          origin: 'ai-research-trail',
-        })
+        /* The same function the chat pane's wrapper calls, so there is one
+           routing table rather than one here and one there. */
+        openSourceRef(source)
       }}
       className="text-left text-primary-600 dark:text-primary-400 hover:underline"
       title={`Open ${source.title}`}

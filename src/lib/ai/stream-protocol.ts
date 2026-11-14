@@ -32,6 +32,9 @@
  * with the prose that did arrive and zero actions. There is no synthesised
  * fallback action, ever.
  */
+/* Types only, erased at build. `presentation.ts` holds no client. */
+import type { AiSourceRef, AiVisibilityScope } from './presentation'
+import { parseContextManifest, type ContextEntry as AiContextEntry } from './context-outcome'
 
 /** The tools the edge function can report running. Mirrors RESEARCH_TOOLS. */
 export type AiToolName =
@@ -42,6 +45,12 @@ export type AiToolName =
   | 'search_team_notes'
   | 'get_decisions'
   | 'get_workflows'
+  /* Cross-asset: the reader's own work rather than one company. */
+  | 'get_watchlists'
+  | 'get_coverage'
+  | 'get_idea_pipeline'
+  | 'get_pending_decisions'
+  | 'get_outstanding_work'
 
 /**
  * What the reader is told while a tool runs.
@@ -63,6 +72,13 @@ export const TOOL_STATUS_LABEL: Readonly<Record<AiToolName, string>> = Object.fr
   search_team_notes: 'Checking recent research…',
   get_decisions: 'Checking the decision record…',
   get_workflows: 'Checking open work…',
+  /* "Your" is accurate and worth saying: these read the reader's own records,
+     and a reader who knows that can judge an answer that comes back thin. */
+  get_watchlists: 'Reading your lists…',
+  get_coverage: 'Checking coverage…',
+  get_idea_pipeline: 'Reading the Idea Pipeline…',
+  get_pending_decisions: 'Checking what needs a decision…',
+  get_outstanding_work: 'Checking outstanding work…',
 })
 
 /** Non-tool phases worth showing. Same rule: activity, never reasoning. */
@@ -155,19 +171,33 @@ export interface AiStreamFinalEvent {
     status?: 'ok' | 'empty' | 'error'
     searched?: string
     result_count?: number
-    sources?: Array<{
-      kind: 'asset' | 'note' | 'contribution' | 'price_target' | 'portfolio' | 'theme'
-      | 'recommendation' | 'decision_request' | 'accepted_trade'
-      | 'decision_review' | 'outcome' | 'workflow' | 'checklist_item'
-      id: string
-      asset_id?: string | null
-      symbol?: string | null
-      title: string
-      timestamp?: string | null
-    }>
+    /**
+     * How far the lookup could see. The trail's absence sentence depends on
+     * it, so a server that sends it must not have it dropped in transit.
+     */
+    scope?: AiVisibilityScope
+    /*
+     * `AiSourceRef`, not a fourth hand-written copy of the kind union.
+     *
+     * This was spelled out inline, and the copy went stale: `idea` was added
+     * to `AiSourceKind` and to the research trail's own union, and this one
+     * was missed -- so a pipeline source arriving on the wire did not
+     * type-check as one. The shared type cannot drift from itself.
+     */
+    sources?: AiSourceRef[]
   }>
   usage: Record<string, unknown>
   timings: Record<string, number>
+  /**
+   * What the server could actually read, per attached object.
+   *
+   * It has to cross the wire for the same reason `tool_calls.status` does: a
+   * client that cannot see this reports a context read that failed as a
+   * context read that happened. The chip was asserting the client's own tag
+   * write, so an answer built without the attached portfolio looked exactly
+   * like one built with it.
+   */
+  context: AiContextEntry[]
 }
 
 export interface AiStreamErrorEvent {
@@ -233,6 +263,9 @@ export function toStreamEvent(payload: unknown): AiStreamEvent | null {
         tool_calls: Array.isArray(p.tool_calls) ? p.tool_calls as AiStreamFinalEvent['tool_calls'] : [],
         usage: p.usage && typeof p.usage === 'object' ? p.usage as Record<string, unknown> : {},
         timings: isNumberMap(p.timings) ? p.timings : {},
+        /* Validated, not cast. An older server sends no `context` at all,
+           which must read as "nothing reported" rather than as a gap. */
+        context: parseContextManifest(p.context),
       }
 
     case 'error':

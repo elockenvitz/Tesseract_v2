@@ -1,5 +1,5 @@
 /**
- * PARKED / EXPERIMENTAL — not reachable, and not the canonical Asset page.
+ * PARKED AS A PAGE, LIVE AS A PANE — and not the canonical Asset page.
  *
  * ── Status ───────────────────────────────────────────────────────────────
  *
@@ -10,11 +10,22 @@
  * page that already holds workflow, lists, estimates, consensus, projects and
  * activity with a reduced one.
  *
- * Nothing renders this today, and a convergence test keeps it that way. It is
- * kept because several pieces are worth moving INTO the Asset page later: the
- * new-since-the-case module, the anchored price visual, the corrected position
- * context, the framework-gap semantics and the Ask AI context construction.
- * Do not wire it back in as a page.
+ * No asset TAB renders this, and a convergence test keeps it that way. Do not
+ * wire it back in as a page.
+ *
+ * `AssetWorkspacePane` is a different matter and is READ BY USERS TODAY: the
+ * Dashboard mounts it as its right-hand work pane, through `DashboardNext`
+ * and `IdeasWorkPane`. The convergence gate names the four page hosts it must
+ * stay out of, and the Dashboard's pane is not one of them.
+ *
+ * That distinction cost real time. This header previously said "nothing
+ * renders this today", so a reported rendering defect -- stored Markdown
+ * printed to the reader as its own source -- was first looked for anywhere
+ * but here, on the reasoning that an unreachable file cannot be what the user
+ * is looking at. It can, through the pane. Anything below that draws content
+ * is shipped, and the pieces still awaiting a home in the Asset page are the
+ * new-since-the-case module, the anchored price visual, the corrected
+ * position context, the framework-gap semantics and the Ask AI context.
  *
  * ── Why it was written this way ──────────────────────────────────────────
  *
@@ -41,16 +52,16 @@
  * happened and hands off. No idea workspace: an idea is its own object.
  */
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { ArrowUpRight, PencilLine, X } from 'lucide-react'
+import { ArrowUpRight, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
 import {
   useAssetWorkspace, primaryPosition, otherPositions,
   type AssetPosition, type AssetDecisionRow, type AssetLiveIdea,
 } from '../../hooks/useAssetWorkspace'
 import {
-  type AssetFocus, openAsset,
+  type AssetFocus, openAsset, asAssetFocus,
 } from '../../lib/desktop-asset'
 import { ideasTabFor } from '../../lib/desktop-ideas'
 import {
@@ -74,8 +85,26 @@ import { anchoredWindow, PriceSinceReview } from '../research-v2/ResearchVisual'
  * this hook, and the "latest valid holds" filtering happens inside it.
  */
 import { useThesisReviews } from '../../hooks/useThesisReview'
-import { ThesisContainer } from '../contributions'
-import { useState } from 'react'
+/*
+ * `ThesisContainer` is deliberately NOT imported any more.
+ *
+ * It is the canonical contribution editor and it used to mount inside the
+ * case section behind an `editing` flag, which put a full research editor in
+ * a dashboard-pane column. `openCanonicalCase` navigates to the page that
+ * editor belongs on instead; its own header has the reasoning. The import is
+ * named here because re-adding it is how the embedded editor comes back.
+ */
+import { SmartInputRenderer } from '../smart-input'
+import { EntryOrientation } from './EntryOrientation'
+/* The one reshape of a workspace read into the band's facts, shared with the
+   canonical Asset page so the four labelled measurements cannot drift. */
+import { orientationFactsFrom } from '../../lib/asset-workspace/orientation-facts'
+import {
+  contextAppliesTo, type WorkspaceEntryContext,
+} from '../../lib/asset-workspace/entry-context'
+/* The arrival travels with the reader into the canonical page. In memory and
+   for one navigation only -- see the module's own note on why not tab data. */
+import { offerEntryContext } from '../../lib/asset-workspace/entry-handoff'
 
 export interface AssetWorkspaceProps {
   asset: { id: string; symbol?: string | null; company_name?: string | null } & Record<string, any>
@@ -94,7 +123,121 @@ export interface AssetWorkspaceProps {
    * right owner for "and here is why you are looking at it".
    */
   why?: { headline: string; reason: string | null } | null
+  /**
+   * What the reader was looking at when they opened this name.
+   *
+   * The typed contract, not a string: which event, which numbers, stated
+   * when, in which organisation. `EntryOrientation` composes the band at the
+   * top of the page out of it, and the page's own canonical figures fill in
+   * everything the event does not carry.
+   *
+   * Absent for a cold open, which is the general workspace and unchanged.
+   */
+  entryContext?: WorkspaceEntryContext | null
+  /**
+   * The reader's current organisation, for the staleness check only.
+   *
+   * The context carries the organisation it was BUILT in; this is the one the
+   * reader is in NOW. A mismatch discards the context rather than drawing one
+   * organisation's event over another's data, which is why the check needs
+   * both and why neither is ever used to widen a query.
+   */
+  organizationId?: string | null
 }
+
+/**
+ * Where a request waiting on a human is answered.
+ *
+ * Shared by the decision band and by the entry orientation above it. Two
+ * copies of "which object answers this request" is how two surfaces on one
+ * page start sending the same reader to different places; the hop is written
+ * once. It hands off, and it never decides.
+ *
+ * ── Two defects this closes, both of them routing ────────────────────────
+ *
+ * The first: it opened `liveIdeas[0]`, the asset's first live idea, and NOT
+ * the idea the request was raised on. Those are the same object only by
+ * coincidence. An asset with two live ideas and a request on the second sent
+ * the reader to the first one -- the right page, the wrong piece of work, and
+ * no way to tell from the screen, because the destination looks exactly like
+ * the destination they wanted. `decision_requests` joins
+ * `trade_queue_items`, so the correct id was already being selected; it was
+ * simply not carried through to the hop. `AssetDecisionRow.ideaId` carries
+ * it now.
+ *
+ * The second: `else onOpenLegacy?.()`. Neither host passes `onOpenLegacy` --
+ * not `IdeasWorkPane`, not `DashboardNext` -- so the fallback was a
+ * no-op, and the one primary action on the page did nothing at all when the
+ * request named no reachable idea. That is reachable in production, not a
+ * theoretical branch: `liveIdeas` is filtered to `outcome IS NULL` and a
+ * non-terminal status and capped at 8, while `decisions` applies neither
+ * filter, so a pending request on a closed or 9th-oldest idea lands exactly
+ * here. The fallback is now the asset's own decisions lens, which is a page
+ * that exists and can be returned from.
+ *
+ * It still never decides inline. Approving a request on a surface built for
+ * reading the case is how a decision gets made without its own record.
+ */
+function decisionHandoff(
+  pending: AssetDecisionRow | null | undefined,
+  data: { liveIdeas: AssetLiveIdea[] },
+  symbol: string | null,
+  openDecisions: () => void,
+): () => void {
+  return () => {
+    /*
+     * The idea the REQUEST names, and only that one.
+     *
+     * The single-live-idea fallback is for a row selected before `ideaId`
+     * existed (the field is optional for exactly that reason): with one
+     * candidate there is nothing to get wrong. With two or more and no id,
+     * this deliberately does NOT guess -- it sends the reader to the lens
+     * that lists every decision on the asset, where they can pick the right
+     * one themselves. A wrong idea opened confidently is worse than a list.
+     */
+    const ideaId = pending?.ideaId
+      ?? (data.liveIdeas.length === 1 ? data.liveIdeas[0].id : null)
+    if (ideaId) {
+      routeToIdea(ideaId, `${symbol ?? 'Asset'} · decide: ${pending?.action ?? 'request'}`)
+      return
+    }
+    openDecisions()
+  }
+}
+
+/**
+ * The measure the written case is read at: the column it sits in, and nothing
+ * narrower.
+ *
+ * ── Why there is no second cap here any more ──────────────────────────────
+ *
+ * There were two caps stacked on the same prose, and the inner one won. The
+ * stack is `max-w-[140ch]` (see the note at the column itself) and this was
+ * `max-w-[90ch]`, and the two numbers do NOT compare the way they read,
+ * because `ch` resolves against each element's OWN font size: 140ch at the
+ * stack's size is about 1,100px, while 90ch at the case's 15px is about
+ * 700px. So the written case ran to roughly 64% of the column it was given
+ * and stopped, with the right third of every section blank -- reported from
+ * the running page as "the text is wrapping 2/3 of the way instead of at
+ * full width", on AAPL reached from the dashboard.
+ *
+ * This is the same `ch` trap that produced `max-w-[78ch]` inside a 1,190px
+ * requirement column (see `RequirementWorkspace`), and it is worth stating
+ * plainly: a measure cap expressed in `ch` cannot be reasoned about next to
+ * another one unless both font sizes are in front of you.
+ *
+ * The cap that remains is the COLUMN, which is where it belongs -- one
+ * number governing the whole surface instead of a second, invisibly
+ * narrower one governing only the prose. The honest cost is that a line is
+ * now as long as the column allows, which at a wide window is longer than
+ * typography would choose; the lever for that is the column's own 140ch,
+ * not a cap that makes the case look like a strip in its own page.
+ *
+ * Kept as a constant rather than deleted so the section body and its
+ * supporting detail stay provably the same width, and so changing this is
+ * one edit in one place.
+ */
+const CASE_MEASURE = 'max-w-none'
 
 /** Ideas is a separate object; this is the typed hop, not an embedded workspace. */
 function routeToIdea(ideaId: string, issue: string) {
@@ -105,11 +248,22 @@ function routeToIdea(ideaId: string, issue: string) {
 
 export function AssetWorkspacePane({
   asset, focus, portfolioId, portfolioName, issue, origin, onOpenLegacy, why,
+  entryContext, organizationId,
 }: AssetWorkspaceProps) {
-  const activeFocus: AssetFocus = focus ?? 'overview'
+  /*
+   * Normalised, not defaulted.
+   *
+   * `focus ?? 'overview'` handled the absent case and trusted everything
+   * else. `focus` reaches this pane from feed selections and from saved
+   * sessions written by earlier builds, so "everything else" includes values
+   * no longer in the union. `asAssetFocus` resolves those to the page's own
+   * calm default, which here only decides the ORDER of the sections below --
+   * so an unrecognised focus reads like an overview rather than falling
+   * through four branches to the same place by accident.
+   */
+  const activeFocus: AssetFocus = asAssetFocus(focus)
   const symbol = asset.symbol ?? null
   const { data, isLoading } = useAssetWorkspace(asset.id, symbol, activeFocus)
-  const [editing, setEditing] = useState(false)
 
   const core = data.sections.filter(s => (CORE_SECTIONS as readonly string[]).includes(s.section))
   const peripheral = data.sections.filter(s => !(CORE_SECTIONS as readonly string[]).includes(s.section))
@@ -174,6 +328,149 @@ export function AssetWorkspacePane({
 
   if (isLoading) return <Skeleton />
 
+  /* ------------------------------------------------- the one way out, up top */
+
+  /*
+   * The context, only if it still describes what is on screen.
+   *
+   * `contextAppliesTo` is identity, not a heuristic: a context built for
+   * another name, or in another organisation, applies to nothing and the page
+   * renders exactly as it would have with nothing carried. Both defects it
+   * guards against have shipped in this app before.
+   *
+   * Declared HERE, above every section, because three things now hand it to
+   * the next surface -- the header's verb, the orientation band's own action,
+   * and the case section's Edit control. A handler that closes over a `const`
+   * declared below it is the temporal dead zone this codebase has a lint and
+   * a guard for, and it is listed in CLAUDE.md as a defect class that has
+   * already broken the feed once.
+   */
+  const entry = contextAppliesTo(entryContext, {
+    assetId: asset.id, organizationId: organizationId ?? null,
+  }) ? entryContext! : null
+
+  /*
+   * `research` for every verb, and that is not a placeholder.
+   *
+   * All seven verbs `primaryActionFor` can return -- review it, write it,
+   * revisit it, finish it, read it, review the new evidence, add evidence --
+   * are things done to the CASE, and the Asset page's research focus is where
+   * the case and the evidence under it both live. A per-verb map here would
+   * be a table with one value repeated seven times, which is a thing to keep
+   * in step rather than a distinction.
+   */
+  const primaryFocus: AssetFocus = 'research'
+
+  /**
+   * Open the case where the case is actually written.
+   *
+   * ── What this replaces ──────────────────────────────────────────────────
+   *
+   * Pressing Edit used to flip a local `editing` flag and mount
+   * `ThesisContainer` -- the canonical contribution editor -- inside this
+   * section, in a column sized for reading a paragraph rather than for
+   * authoring one. It was the right data model in the wrong room: the editor
+   * expects the Asset page's width and its surrounding research furniture,
+   * and squeezed into a dashboard pane it rendered as a cramped copy of a
+   * page that already exists. Saving worked; using it did not.
+   *
+   * So editing leaves. The three categories an action in this pane can fall
+   * into are edit here, open the canonical feature, or ask ACT AI, and
+   * authoring a thesis is squarely the second -- it is a substantial research
+   * task with its own surface, history and review semantics.
+   *
+   * ── Why this is not a loss of function ──────────────────────────────────
+   *
+   * It is the same editor either way; there is one thesis model and one
+   * mutation path, and this pane never had a second. What changes is which
+   * room it opens in. The arrival context travels with the hop, so a reader
+   * who followed a target breach into this pane and then pressed Edit lands
+   * on the research page still knowing why they came -- and the entry
+   * handoff is what makes the canonical page able to say so.
+   *
+   * ── Where it lands ──────────────────────────────────────────────────────
+   *
+   * On the case, not at the top of Research. The request carries
+   * `section: 'case'`, which the Asset page turns into its existing research
+   * anchor — forcing the Research lens, forcing the reader's own view
+   * (per-section prose does not render on the firm view), and polling until
+   * the anchor is in the DOM, because the template query may not have
+   * resolved. See `AssetSectionTarget` for why that is a named set of five
+   * and not a free string.
+   *
+   * ── What it still does NOT do ───────────────────────────────────────────
+   *
+   * It does not offer a Return to the dashboard. The asset opens as a tab
+   * beside the one the reader came from, so going back is a tab press rather
+   * than a dead end — but that is navigation the reader has to find, and an
+   * affordance for it needs the sending surface to name its own tab, which
+   * two different hosts mount this pane from. It is listed as a finding
+   * rather than papered over.
+   */
+  const openCanonicalCase = () => {
+    /* The arrival goes with them, where there was one. A reader who followed
+       a target breach here should not have to restate why they went just
+       because they left by one control rather than another. */
+    offerEntryContext(entry)
+    openAsset({
+      assetId: asset.id,
+      symbol,
+      companyName: asset.company_name ?? null,
+      focus: primaryFocus,
+      /*
+       * The control named a section, so the arrival names it too.
+       *
+       * `focus: 'research'` alone put the reader at whatever scroll position
+       * the Research page had last been left at, which on a long page is
+       * usually not the case. `'case'` resolves to the thesis anchor — the
+       * case begins there — and the receiver forces the Research lens and
+       * the reader's own view, which is the only one that renders
+       * per-section prose.
+       */
+      section: 'case',
+      portfolioId: portfolioId ?? null,
+      portfolioName: portfolioName ?? null,
+      issue: issue ?? null,
+      origin: origin ?? null,
+      /*
+       * And a way back, which is what the header comment above used to list
+       * as the one thing this still did not do.
+       *
+       * `true` and not a tab id: this pane cannot know which tab it is in --
+       * it is mounted by `IdeasWorkPane`, under both `DashboardNext` and
+       * `IdeasApp`, and `DashboardNext` renders under three different tab
+       * ids. The shell resolves the ask against whatever was active when the
+       * reader pressed, so every host gets a Return including ones added
+       * later. See `lib/desktop-asset/return-to`.
+       */
+      returnTo: true,
+    })
+  }
+
+  /**
+   * The asset's decisions lens, for a request whose own idea is not reachable.
+   *
+   * This exists because the alternative was `onOpenLegacy?.()` on a prop no
+   * host passes -- see `decisionHandoff`. It is deliberately the same shape as
+   * `openCanonicalCase`: the entry context travels, the focus is named, and a
+   * Return is asked for, so a reader who presses Decide and finds a list
+   * rather than their request can get back to where they were in one press.
+   */
+  const openDecisionsLens = () => {
+    offerEntryContext(entry)
+    openAsset({
+      assetId: asset.id,
+      symbol,
+      companyName: asset.company_name ?? null,
+      focus: 'decisions',
+      portfolioId: portfolioId ?? null,
+      portfolioName: portfolioName ?? null,
+      issue: issue ?? null,
+      origin: origin ?? null,
+      returnTo: true,
+    })
+  }
+
   /* ------------------------------------------------------------- sections */
 
   const theCase = (
@@ -184,55 +481,55 @@ export function AssetWorkspacePane({
       lead
       meta={subject.daysSinceReview != null ? `written ${subject.daysSinceReview}d ago` : 'never written'}
       action={
+        /*
+         * The label says where it goes, because it goes somewhere.
+         *
+         * "Edit" on a control that opened an editor in place was accurate.
+         * On a control that navigates it would not be: a reader with unsaved
+         * work elsewhere on this pane deserves to know a press leaves. Hence
+         * the arrow and the verb naming the destination.
+         */
         <button
           type="button"
-          onClick={() => setEditing(v => !v)}
-          className={clsx(
-            'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-semibold',
-            editing
-              ? 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]'
-              : 'text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30',
-          )}
+          data-testid="workspace-open-case-editor"
+          onClick={openCanonicalCase}
+          title={core.length
+            ? 'Open the case in the research editor on the asset page'
+            : 'Start the case in the research editor on the asset page'}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
         >
-          {editing
-            ? <><X className="h-3 w-3" />Done editing</>
-            : <><PencilLine className="h-3 w-3" />{core.length ? 'Edit' : 'Write the case'}</>}
+          <PencilLine className="h-3 w-3" />
+          {core.length ? 'Edit in research' : 'Write the case'}
+          <ArrowUpRight className="h-3 w-3" />
         </button>
       }
     >
-      {editing ? (
-        <>
-          {/* The canonical contribution editor, mounted -- not reimplemented.
-              There is one thesis data model and one mutation path, and this
-              workspace uses them rather than growing a second. */}
-          <ThesisContainer assetId={asset.id} />
-          {peripheral.length > 0 && (
-            <div className="mt-4 border-t border-gray-200 pt-3 dark:border-white/10">
-              <div className={EYEBROW}>Also on record</div>
-              {peripheral.map(sec => (
-                <p key={sec.section} className="mt-1.5 text-[13px] text-gray-600 dark:text-gray-400">
-                  <span className="font-semibold">{SECTION_LABEL[sec.section] ?? sec.section}:</span>{' '}
-                  {sec.content}
-                </p>
-              ))}
-              <p className="mt-1.5 text-[11px] text-gray-500">
-                Supporting sections sit outside the core case and do not move the review date.
-              </p>
-            </div>
-          )}
-        </>
-      ) : core.length > 0 ? (
+      {/*
+        No editor branch here any more.
+
+        `ThesisContainer` used to mount in this slot behind an `editing` flag.
+        See `openCanonicalCase` above for why it left and what travels with
+        the reader when they go. The peripheral sections it listed in full
+        while editing are still named below, as a count -- which is the
+        progressive disclosure this pane is supposed to practise, and the
+        detail is on the page the button now opens.
+      */}
+      {core.length > 0 ? (
         <div className="flex flex-col gap-4">
           {core.map(sec => (
             <div key={sec.section}>
               <div className={EYEBROW}>{SECTION_LABEL[sec.section] ?? sec.section}</div>
-              <p className="mt-1 max-w-[74ch] whitespace-pre-line text-[15px] leading-[1.7] text-gray-900 dark:text-gray-100">
-                {sec.content || <span className="italic text-gray-500">Empty.</span>}
-              </p>
+              {sec.content ? (
+                <div className={clsx('mt-1', CASE_MEASURE)}>
+                  <SmartInputRenderer content={sec.content} density="reading" />
+                </div>
+              ) : (
+                <p className="mt-1 text-[15px] italic leading-[1.7] text-gray-500">Empty.</p>
+              )}
               {sec.supportingDetail && (
-                <p className="mt-1.5 max-w-[74ch] text-[13px] leading-relaxed text-gray-600 dark:text-gray-400">
-                  {sec.supportingDetail}
-                </p>
+                <div className={clsx('mt-1.5', CASE_MEASURE)}>
+                  <SmartInputRenderer content={sec.supportingDetail} />
+                </div>
               )}
               <div className="mt-1 text-[11px] text-gray-500">
                 {sec.authorName ? `${sec.authorName} · ` : ''}
@@ -240,11 +537,7 @@ export function AssetWorkspacePane({
               </div>
             </div>
           ))}
-          {peripheral.length > 0 && (
-            <p className="text-[13px] text-gray-500">
-              {peripheral.length} supporting section{peripheral.length === 1 ? '' : 's'} also on record.
-            </p>
-          )}
+          <SupportingSections sections={peripheral} />
         </div>
       ) : (
         /* The absence IS the finding, and it is stated at the size of one.
@@ -286,7 +579,7 @@ export function AssetWorkspacePane({
       </div>
       <p className="mt-2.5 text-[11px] text-gray-500">
         Dated after the case was last written. Whether each supports or
-        challenges it is not recorded — that is the review.
+        challenges it is not recorded. That is the review.
       </p>
     </DesktopModule>
   ) : null
@@ -343,7 +636,7 @@ export function AssetWorkspacePane({
               {o.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} sh
             </span>
             <span className="w-16 text-right font-mono text-[13px] font-semibold tabular-nums">
-              {o.weightPct != null ? `${o.weightPct.toFixed(1)}%` : '—'}
+              {o.weightPct != null ? `${o.weightPct.toFixed(1)}%` : 'n/a'}
             </span>
           </div>
         ))}
@@ -369,7 +662,7 @@ export function AssetWorkspacePane({
           schema, so "reviewed, unchanged" cannot be recorded. Said plainly
           rather than papered over with a button that would fake it. */}
       <p className="mt-2 text-[11px] leading-snug text-gray-500">
-        Saving a core section is the only thing that moves this date — there is
+        The date on the case moves only when a core section is saved. There is
         no separate &ldquo;reviewed, no change&rdquo; record.
       </p>
     </DesktopSection>
@@ -390,7 +683,7 @@ export function AssetWorkspacePane({
           <button
             key={i.id}
             type="button"
-            onClick={() => routeToIdea(i.id, `${symbol ?? 'Asset'} — open idea`)}
+            onClick={() => routeToIdea(i.id, `${symbol ?? 'Asset'} · open idea`)}
             className="group flex items-baseline gap-2 rounded-md px-1 py-0.5 text-left hover:bg-gray-100 dark:hover:bg-white/[0.06]"
           >
             <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-gray-500">
@@ -409,10 +702,33 @@ export function AssetWorkspacePane({
     </DesktopSection>
   ) : null
 
-  const decisions = data.decisions.length > 0 ? (
-    <DesktopSection key="decisions" title="Recent decisions" meta={`${data.decisions.length}`}>
+  /*
+   * What has already been decided, which is not the same list as what is
+   * waiting.
+   *
+   * The pending request is the page's hero: `DecisionBand` presents it with
+   * the view and the book it is weighed against, and a Decide button. It was
+   * ALSO appearing here, as a grey row whose status column read "pending" and
+   * whose date column read nothing -- the same request, twice on one screen,
+   * the second time looking like history. A reader cannot tell whether that
+   * is one request or two, which is the exact failure mode the section
+   * inventory went looking for.
+   *
+   * So this is "decided", by the same predicate the band uses to find its
+   * hero, inverted. One request appears in exactly one place.
+   *
+   * Consequence worth stating: an asset whose ONLY decision row is the
+   * pending one now shows no Recent decisions section at all. That is
+   * correct -- there is no recent decision -- and it is why the count in the
+   * heading is the decided count rather than `data.decisions.length`, which
+   * would have promised rows the section does not render.
+   */
+  const decided = data.decisions.filter(d => (d.status ?? '').toLowerCase() !== 'pending')
+
+  const decisions = decided.length > 0 ? (
+    <DesktopSection key="decisions" title="Recent decisions" meta={`${decided.length}`}>
       <div className="flex flex-col gap-1.5">
-        {data.decisions.slice(0, 5).map(d => (
+        {decided.slice(0, 5).map(d => (
           <div key={d.id} className="flex items-baseline gap-2 text-[13px]">
             <span className="w-[74px] shrink-0 font-mono text-[11px] uppercase tracking-wider text-gray-500">
               {d.status}
@@ -421,7 +737,7 @@ export function AssetWorkspacePane({
               {d.action ?? 'decision'}{d.portfolioName ? ` · ${d.portfolioName}` : ''}
             </span>
             <span className="shrink-0 font-mono text-[11px] text-gray-500">
-              {d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : '—'}
+              {d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : 'not yet'}
             </span>
           </div>
         ))}
@@ -451,36 +767,101 @@ export function AssetWorkspacePane({
    * panes already use, and `focus` lands the reader on the part the verb
    * names rather than at the top.
    *
-   * ── The in-pane editor is not lost ──────────────────────────────────────
+   * ── Every verb about the case leaves, by the same door ──────────────────
    *
-   * `setEditing` is no longer called from here, and the case section keeps
-   * its own "Write the case" / "Edit" control, so authoring in place is still
-   * one press away for a reader who wants to stay. What changes is that the
-   * HEADER's verb now leaves, consistently, whatever the verb is.
+   * The header's verb, the orientation band's "review the case" and the case
+   * section's own Edit control are three labels for one navigation, and they
+   * all call `openCanonicalCase`, declared at the top of this component. The
+   * in-pane editor that used to answer the last two is gone; its header has
+   * the reasoning.
    */
-  /*
-   * `research` for every verb, and that is not a placeholder.
-   *
-   * All seven verbs `primaryActionFor` can return -- review it, write it,
-   * revisit it, finish it, read it, review the new evidence, add evidence --
-   * are things done to the CASE, and the Asset page's research focus is
-   * where the case and the evidence under it both live. A per-verb map here
-   * would be a table with one value repeated seven times, which is a thing
-   * to keep in step rather than a distinction.
-   */
-  const primaryFocus: AssetFocus = 'research'
-  const runPrimary = () => {
-    openAsset({
-      assetId: asset.id,
-      symbol,
-      companyName: asset.company_name ?? null,
-      focus: primaryFocus,
-      portfolioId: portfolioId ?? null,
-      portfolioName: portfolioName ?? null,
-      issue: issue ?? null,
-      origin: origin ?? null,
-    })
-  }
+  const runPrimary = openCanonicalCase
+
+  /* ------------------------------------------------ why you are here */
+
+  const pendingRequest = data.decisions.find(d => (d.status ?? '').toLowerCase() === 'pending') ?? null
+
+  const orientation = entry?.event ? (() => {
+    /* The canonical figures, from this page's own org-scoped reads. The event
+       carries what the Dashboard item knew; the reshape is what the record
+       says now, which is how the band can report a divergence between the two
+       rather than silently preferring one.
+
+       `orientationFactsFrom` rather than a local object: the canonical Asset
+       page draws the same band from the same hook, and two copies of this
+       mapping would be two ways to fill four slots the band labels with four
+       different sources. */
+    const facts = orientationFactsFrom(data, portfolioId ?? null)!
+
+    return (
+      <EntryOrientation
+        context={entry}
+        facts={facts}
+        actions={{
+          /* The canonical research editor, same as the case section's own
+             control and the header's verb. It used to flip this pane into an
+             embedded editor; see `openCanonicalCase`. */
+          reviewCase: openCanonicalCase,
+          /* The canonical asset page at its scenarios, which is where a
+             target is actually edited. The event travels with the hop so the
+             reader does not have to restate why they went. */
+          openScenarios: () => {
+            /* The event goes with the reader, in memory, for this one
+               navigation. The ids below are what a tab can hold; the reading
+               -- which target, which mark, how far through -- cannot live in
+               tab data without being restated as current every time the
+               reader returns to that tab. See `entry-handoff`. */
+            offerEntryContext(entry)
+            openAsset({
+              assetId: asset.id,
+              symbol,
+              companyName: asset.company_name ?? null,
+              /*
+               * `focus: 'framework'` was inert, and that is not a style
+               * point -- the Asset page's arrival effect maps research,
+               * decisions, overview and position, and leaves the saved
+               * sub-page alone for everything else, `framework` included.
+               * So "open the scenarios" navigated to the asset and landed
+               * the reader wherever that tab had last been, which is the
+               * same failure as arriving at the top of Research but quieter,
+               * because nothing even changed page.
+               *
+               * The scenarios are the price targets, and they live in the
+               * Research page's Forecasts section. `section: 'targets'` is
+               * the anchor that is actually there -- and the receiving
+               * effect knows that section must be force-expanded before the
+               * anchor exists in the DOM at all.
+               */
+              focus: 'research',
+              section: 'targets',
+              portfolioId: entry.portfolioId ?? portfolioId ?? null,
+              portfolioName: entry.portfolioName ?? portfolioName ?? null,
+              issue: entry.why?.headline ?? issue ?? null,
+              origin: entry.sourceItem?.family ?? origin ?? null,
+              /* Same ask as the case control: the reader came here from an
+                 event on their feed and should be able to get back to it
+                 once the target is set. */
+              returnTo: true,
+            })
+          },
+          openFullWorkspace: onOpenLegacy,
+          /* Only where a request is actually waiting. An action with nothing
+             behind it is the inert card this work exists to avoid. */
+          openPending: pendingRequest
+            ? decisionHandoff(pendingRequest, data, symbol, openDecisionsLens)
+            : undefined,
+          ask: (question: string) => askAI({
+            ...target,
+            origin: { itemId: asset.id, surface: 'asset-entry-orientation' },
+            issue: entry.why
+              ? { title: entry.why.headline, reason: `entry:${entry.intent}` }
+              : target.issue,
+            seedPrompt: question,
+          }),
+        }}
+      />
+    )
+  })() : null
 
   // Focus reorders one page. It never hides a section behind a tab.
   const lead: React.ReactNode[] = []
@@ -489,6 +870,14 @@ export function AssetWorkspacePane({
   if (activeFocus === 'position' || activeFocus === 'framework') {
     // The framework is the only thing here that can say the position is wrong,
     // so it leads; the case is what a reader checks it against.
+    //
+    // `framework` shares this branch, and it is the reason the focus value
+    // still exists: a scenario-gap finding ("the case has no scenarios
+    // against this price") arrives with it, and this is the only ordering on
+    // the surface that puts the ladder above the case -- which is the right
+    // order when the ladder is the subject. The 2.4 audit called the value
+    // dead; it was dead on the Asset PAGE, which never mapped it to a
+    // sub-page, and live here. The page now lands it on research.
     if (framework) lead.push(framework)
     lead.push(theCase)
     if (positionModule) context.push(positionModule)
@@ -625,7 +1014,17 @@ export function AssetWorkspacePane({
       */}
       <div className="px-4 pb-12 pt-5" data-asset-body>
         <div className="mx-auto flex w-full max-w-[140ch] flex-col gap-6">
-          <DecisionBand data={data} position={position} symbol={symbol} onOpenLegacy={onOpenLegacy} />
+          {/*
+            The event the reader pressed, above everything.
+
+            Above `DecisionBand` deliberately. A pending recommendation is a
+            real claim on the reader's attention and keeps its own band, but
+            it is not what they selected: leading with it would answer a
+            question they did not ask, which is the behaviour reported against
+            the target-reached card.
+          */}
+          {orientation}
+          <DecisionBand data={data} position={position} symbol={symbol} onOpenDecisions={openDecisionsLens} />
           {lead}
           {context}
         </div>
@@ -648,12 +1047,15 @@ export function AssetWorkspacePane({
  * invented from a partial ladder.
  */
 export function DecisionBand({
-  data, position, symbol, onOpenLegacy,
+  data, position, symbol, onOpenDecisions,
 }: {
   data: { decisions: AssetDecisionRow[]; liveIdeas: AssetLiveIdea[]; target: number | null; spot: number | null; ladder: any }
   position: AssetPosition | null
   symbol: string | null
-  onOpenLegacy?: () => void
+  /* Required, not optional. The predecessor was an optional `onOpenLegacy`
+     that no host passed, which made the band's only button inert on the one
+     path that needed it. An optional callback is a defect that typechecks. */
+  onOpenDecisions: () => void
 }) {
   const pending = data.decisions.find(d => (d.status ?? '').toLowerCase() === 'pending')
   if (!pending) return null // no request waiting: the hero is absent, not an empty box
@@ -668,13 +1070,7 @@ export function DecisionBand({
   const rr = (bear != null && bull != null && spot != null && bull > spot && spot > bear)
     ? { ratio: (bull - spot) / (spot - bear), bear, bull, spot } : null
 
-  const decide = () => {
-    // Hand off to where the asset's decision work lives: its live idea if one
-    // exists, else the legacy asset page. Never decide on this surface.
-    const idea = data.liveIdeas[0]
-    if (idea) routeToIdea(idea.id, `${symbol ?? 'Asset'} — decide: ${pending.action ?? 'request'}`)
-    else onOpenLegacy?.()
-  }
+  const decide = decisionHandoff(pending, data, symbol, onOpenDecisions)
 
   return (
     <div data-testid="decision-band"
@@ -827,7 +1223,7 @@ function AssetHeader({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-1 basis-[11rem] items-baseline gap-2.5">
           <span className="font-extrabold text-[32px] leading-[1.02] tracking-[-0.03em]">
-            {symbol ?? '—'}
+            {symbol ?? 'Asset'}
           </span>
           {companyName && (
             <span className="min-w-0 truncate text-[15px] font-medium text-gray-500">{companyName}</span>
@@ -994,6 +1390,68 @@ function AssetHeader({
           there was no action waiting to go in it.
         */}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The sections outside the core case — a count, and the content behind it.
+ *
+ * ── Why this exists at all ────────────────────────────────────────────────
+ *
+ * The supporting sections used to render in full, labelled, with their
+ * Markdown intact — but ONLY while the embedded editor was open. So the one
+ * way to read "Key catalysts" was to open an editor you did not want, and
+ * when that editor left, the content would have left with it. What remained
+ * was the count, which is the sort of lossy summary that makes a reader open
+ * the full page to find out whether anything is there.
+ *
+ * So it is disclosed rather than summarised. Closed by default, because these
+ * sections sit outside the core case and do not move the review date — they
+ * are supporting detail, and permanent screen space is what this pane is
+ * supposed to be spending more carefully. Open, they are the same labelled
+ * rows the editor used to show, rendered by the same renderer.
+ *
+ * Reading is not editing: nothing here writes, and the control that does is
+ * the one that opens the research page.
+ */
+function SupportingSections({
+  sections,
+}: {
+  sections: { section: string; content: string | null }[]
+}) {
+  const [open, setOpen] = useState(false)
+  if (sections.length === 0) return null
+
+  const count = `${sections.length} supporting section${sections.length === 1 ? '' : 's'}`
+
+  return (
+    <div data-testid="case-supporting-sections">
+      <button
+        type="button"
+        data-slot="case-supporting-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1 text-[13px] text-gray-500 underline-offset-2 hover:text-gray-800 hover:underline dark:hover:text-gray-200"
+      >
+        {open ? 'Hide' : 'Show'} {count} also on record
+      </button>
+
+      {open && (
+        <div className="mt-2 border-t border-gray-200 pt-2 dark:border-white/10">
+          {sections.map(sec => (
+            <p key={sec.section} className="mt-1.5 text-[13px] text-gray-600 dark:text-gray-400">
+              <span className="font-semibold">{SECTION_LABEL[sec.section] ?? sec.section}:</span>{' '}
+              {/* `inline`, because this is a one-line "Label: text" row and the
+                  block renderer would break the text onto its own line. */}
+              <SmartInputRenderer content={sec.content ?? ''} inline />
+            </p>
+          ))}
+          <p className="mt-1.5 text-[11px] text-gray-500">
+            Supporting sections sit outside the core case and do not move the review date.
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -1169,7 +1627,7 @@ function buildTarget({
   return {
     objectType: 'asset',
     objectId: asset.id,
-    label: asset.company_name ? `${symbol} — ${asset.company_name}` : (symbol ?? 'Asset'),
+    label: asset.company_name ? `${symbol} · ${asset.company_name}` : (symbol ?? 'Asset'),
     symbol: symbol ?? undefined,
     assetId: asset.id,
     portfolioId: position?.portfolioId,

@@ -1,5 +1,8 @@
 import { useState, useRef, useCallback, useMemo, ChangeEvent, KeyboardEvent } from 'react'
 import { resolveResponsePolicy } from '../lib/ai'
+/* The command trigger, from the one module that owns it, so this parser and
+   the editor's and the chat composer's cannot disagree. */
+import { SLASH } from '../lib/ai/slash-commands'
 import { useEntitySearch, EntitySearchResult, EntityType } from './useEntitySearch'
 import { useTemplates, Template } from './useTemplates'
 import { supabase } from '../lib/supabase'
@@ -198,7 +201,8 @@ export function useSmartInput({
     const lastAt = beforeCursor.lastIndexOf('@')
     const lastHash = beforeCursor.lastIndexOf('#')
     const lastDollar = beforeCursor.lastIndexOf('$')
-    const lastDot = beforeCursor.lastIndexOf('.')
+    /* `lastDot` is gone with the fallback that used it -- see the scan
+       below. Nothing else read it. */
 
     // Check @mentions
     if (enableMentions && lastAt > lastSpace && lastAt !== -1) {
@@ -227,26 +231,45 @@ export function useSmartInput({
       }
     }
 
-    // Check .commands — find the command-starting dot (after whitespace or at start),
-    // not the last dot, so multi-dot commands like .chart.aapl work correctly.
-    // Scan backwards from cursor to find a dot preceded by whitespace or at position 0.
+    /*
+     * Slash Commands.
+     *
+     * Scan backwards from the caret for the slash that STARTS the command --
+     * at the beginning of the line or after whitespace -- rather than the
+     * last slash, so a qualified command like `/chart.aapl` still works.
+     * The dots inside a command are separators, not triggers.
+     *
+     * ── The fallback is gone, and that is a fix ────────────────────────
+     *
+     * There used to be a second pass: if no properly placed trigger was
+     * found, take the LAST one on the line regardless of what preceded it.
+     * With a dot that meant `BRK.B` and `example.com` opened the command
+     * menu mid-word. With a slash it would mean every URL and every path
+     * does -- `https://x.com/price` would offer the price command while the
+     * reader was typing a link. The forward scan already handles every
+     * command the fallback was there for.
+     */
     let cmdDot = -1
     for (let i = beforeCursor.length - 1; i >= 0; i--) {
       const ch = beforeCursor[i]
-      if (ch === ' ' || ch === '\n') break // hit whitespace before finding a dot
-      if (ch === '.' && (i === 0 || /\s/.test(beforeCursor[i - 1]))) {
+      if (ch === ' ' || ch === '\n') break // hit whitespace before finding a trigger
+      if (ch === SLASH && (i === 0 || /\s/.test(beforeCursor[i - 1]))) {
         cmdDot = i
         break
       }
-    }
-    if (cmdDot === -1 && lastDot > lastSpace && lastDot !== -1) {
-      cmdDot = lastDot // fallback for simple single-dot commands
     }
 
     if (cmdDot !== -1 && cmdDot > lastSpace) {
       const cmd = beforeCursor.substring(cmdDot + 1).toLowerCase()
 
-      // Require at least one letter after the dot — a bare "." is punctuation, not a command
+      /*
+       * A letter must follow the slash.
+       *
+       * That one rule keeps out a date fragment (`/2026`), arithmetic
+       * (`10/2`, `/ 50`) and a doubled slash. Combined with the
+       * start-or-after-whitespace scan above it also keeps out ratios
+       * (`P/E`) and URLs, whose slashes are all mid-token.
+       */
       if (cmd.length === 0 || !/^[a-zA-Z]/.test(cmd)) {
         return null
       }
@@ -293,7 +316,7 @@ export function useSmartInput({
       if (cmd.length > 0 && captureCommands.some(c => c.startsWith(cmd) || cmd.startsWith(c))) {
         // Handle .embed with URL argument
         if (cmd.startsWith('embed')) {
-          const embedMatch = beforeCursor.match(/\.embed\s+(https?:\/\/[^\s]*)?$/i)
+          const embedMatch = beforeCursor.match(new RegExp(`\\${SLASH}embed\\s+(https?://[^\\s]*)?$`, 'i'))
           if (embedMatch) {
             return { type: 'embed', query: embedMatch[1] || '', position: cmdDot }
           }

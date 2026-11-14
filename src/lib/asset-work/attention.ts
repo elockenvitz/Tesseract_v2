@@ -78,6 +78,16 @@ export interface WorkAttentionItem {
   requesterName?: string | null
   contextNote?: string | null
   createdAgo?: string | null
+  /**
+   * When the request was raised, as stored.
+   *
+   * `useAssetWorkAttention` has always selected and mapped `created_at`; the
+   * field was simply absent from this type, so a consumer that wanted to say
+   * how long a PM has been sitting on a request had to read an untyped
+   * property off a cast object. `createdAgo` above is a pre-formatted string
+   * for the one surface that wanted words; this is the fact.
+   */
+  createdAt?: string | null
 }
 
 export interface AttentionSplit<T> {

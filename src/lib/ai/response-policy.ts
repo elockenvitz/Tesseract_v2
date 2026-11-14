@@ -87,6 +87,66 @@ const TERSE_PATTERNS: readonly RegExp[] = Object.freeze([
   /\byes or no\b/i,
 ])
 
+/**
+ * Requests that name two opposed deliverables in one breath.
+ *
+ * "Come up with a bear and bull case for it" resolved to `brief`: a 600
+ * character target, which is about ninety words for the pair. The words of
+ * depth were absent, so the vocabulary rules above never fired, and the
+ * answer was thin because it was told to be.
+ *
+ * The PAIR is the trigger, never the word. "What is the bear case?" is one
+ * case and stays brief; a reader asking for both has asked for two things.
+ */
+const PAIRED_PATTERNS: readonly RegExp[] = Object.freeze([
+  /\b(?:bear|bull)\s+and\s+(?:bull|bear)\b/i,
+  /\bpros?\s+and\s+cons?\b/i,
+  /\bboth\s+sides\b/i,
+  /\b(?:case|argument)s?\s+for\s+and\s+against\b/i,
+  /\bfor\s+and\s+against\b/i,
+  /\bupside\s+and\s+downside\b/i,
+  /\brisks?\s+and\s+opportunit(?:y|ies)\b/i,
+  /\bbest\s+and\s+worst\s+case\b/i,
+])
+
+/**
+ * One ask, counted.
+ *
+ * "Let's analyze LRCX, come up with what the market is thinking about it and
+ * where we are with it in our process" is three questions wearing one
+ * sentence, and it also resolved to `brief`.
+ *
+ * Markers rather than punctuation, because commas are how people write a
+ * single thought and a comma count would escalate every rambling question.
+ * It takes THREE to move the tier, which is what keeps an ordinary two-part
+ * question ("what is it and why") at the default.
+ *
+ * Deliberately absent: a bare "why" or "how". The note on DEEP_PATTERNS
+ * applies here with full force -- those are the most common ordinary
+ * questions, and counting them is how a concise assistant turns back into an
+ * essay generator. The marker has to be a REQUEST for a deliverable.
+ */
+const ASK_MARKERS: readonly RegExp[] = Object.freeze([
+  /\banaly[sz]e\b/i,
+  /\bcome up with\b/i,
+  /\bwhat(?:'s| is| are| do| does)?\s+the\s+market\b/i,
+  /\bwhere\s+(?:we|are we|do we)\b/i,
+  /\bcompare\b/i,
+  /\bsummari[sz]e\b/i,
+  /\blay(?:\s+it)?\s+out\b/i,
+  /\btell me\b/i,
+  /\bwhat(?:'s| is| are)\s+(?:the|our|your)\b/i,
+])
+
+/** How many distinct asks make a message more than one question. */
+const MULTI_ASK_THRESHOLD = 3
+
+function askCount(text: string): number {
+  let n = 0
+  for (const marker of ASK_MARKERS) if (marker.test(text)) n += 1
+  return n
+}
+
 const POLICIES: Readonly<Record<AiVerbosity, Omit<AiResponsePolicy, 'rationale'>>> = Object.freeze({
   brief: {
     verbosity: 'brief',
@@ -165,6 +225,28 @@ export function resolveResponsePolicy(input: ResolvePolicyInput): AiResponsePoli
     if (pattern.test(text)) {
       return { ...POLICIES.deep, rationale: 'explicit-depth-request' }
     }
+  }
+
+  /*
+   * Shape, after the two vocabulary rules and before the default.
+   *
+   * After terse, because a reader who says "yes or no" has overridden the
+   * shape. After deep, because a comprehensive bear and bull case is a
+   * depth request that happens to also be paired. Before the default,
+   * which is the whole point: these questions were getting six hundred
+   * characters.
+   *
+   * `standard`, never `deep`. Neither of these shapes asked for an essay,
+   * and `deep` is what carries the long analysis block.
+   */
+  for (const pattern of PAIRED_PATTERNS) {
+    if (pattern.test(text)) {
+      return { ...POLICIES.standard, rationale: 'paired-case-request' }
+    }
+  }
+
+  if (askCount(text) >= MULTI_ASK_THRESHOLD) {
+    return { ...POLICIES.standard, rationale: 'multi-part-request' }
   }
 
   return { ...POLICIES.brief, rationale: 'default' }

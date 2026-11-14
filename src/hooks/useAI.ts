@@ -7,6 +7,7 @@ import {
   resolveResponsePolicy,
   parseAiResponse,
   boundHistory,
+  stripStoredExcerpts,
   consumeAiStream,
   createMarks,
   deriveLatency,
@@ -15,6 +16,8 @@ import {
   createInFlight,
   cancelInFlight,
   shouldApplyToView,
+  suggestedPrompts,
+  type PromptContext,
   type AiAction,
   type AiEvidence,
   type AiObjectRef,
@@ -24,6 +27,18 @@ import {
   type RejectedAiAction,
   type ViewState,
 } from '../lib/ai'
+import { isThreadSettling } from '../lib/ai/restore-gate'
+/*
+ * The association / activation split. `ai_conversation_tags` was holding both
+ * "what the next request carries" and "what this conversation is about", and
+ * deleting a row to change the first destroyed the second. The module's own
+ * header has the account, the detach rule and where activation is stored.
+ */
+import {
+  activeTags as tagsActive, activationKey, detachAction,
+  readDeactivated, writeDeactivated,
+} from '../lib/ai/context-activation'
+import { contextKey, type ContextEntry } from '../lib/ai/context-outcome'
 import type {
   AiSourceKind, AiSourceRef, MessageCitation, MessageToolCall, AiRenderableMessage,
 } from '../lib/ai/presentation'
@@ -124,6 +139,15 @@ export interface AIConversation {
   last_message_at: string | null
   created_at: string
   updated_at: string
+  /**
+   * The project folder this thread is filed under, or null for unfiled.
+   *
+   * One home, not many: the alternative is a membership table, which buys
+   * multi-filing and costs the reader the only question a filing system
+   * exists to answer. Cross-cutting relationships stay in
+   * `ai_conversation_tags`.
+   */
+  folder_id?: string | null
   // Populated client-side from a separate query against ai_conversation_tags.
   tags?: TagRef[]
 }
@@ -160,7 +184,7 @@ export type AIConversationSummary = Omit<AIConversation, 'messages'>
  * second, subtly different shape.
  */
 const CONVERSATION_SUMMARY_COLUMNS =
-  'id, user_id, context_type, context_id, title, is_archived, is_pinned, last_message_at, created_at, updated_at'
+  'id, user_id, context_type, context_id, title, is_archived, is_pinned, last_message_at, created_at, updated_at, folder_id'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -288,6 +312,58 @@ export function useAI(initialTags: TagRef[] = []) {
     initialTags.map(tagKey).sort().join('|'),
   )
 
+  /*
+   * The conversation this pane is in the middle of restoring, if any.
+   *
+   * Opening the panel on an asset used to paint three times: the empty state
+   * with generic prompts, then the same empty state with the labelled prompts
+   * once `tagLabels` resolved, then a restored thread once the tag rows
+   * arrived and the transcript was fetched. All three are correct renders of
+   * what was known at the time; the defect is that "not known yet" and "there
+   * is nothing" rendered identically.
+   *
+   * Set before `conversationId`, cleared when the transcript lands.
+   */
+  const [restoringId, setRestoringId] = useState<string | null>(null)
+
+  /*
+   * ── Association versus activation ──────────────────────────────────────
+   *
+   * `tags` above is the conversation's ASSOCIATION: the rows in
+   * `ai_conversation_tags`, which is also how the thread is discovered later
+   * (`useAssetConversations` inner-joins that exact table to answer "my
+   * conversations about AAPL"). It is not the request's list.
+   *
+   * These two hold the request's list. `deactivated` is the subset the reader
+   * has detached, and `activeTags` below is what actually travels. The split
+   * exists because deleting the row to change the request destroyed the
+   * discovery record with it -- see `lib/ai/context-activation`, which has
+   * the full account and the honest limitation of where this is stored.
+   */
+  const [deactivated, setDeactivated] = useState<ReadonlySet<string>>(() => new Set())
+
+  /*
+   * Which objects have travelled in at least one request on this thread.
+   *
+   * A tag attached and then removed without anything being asked established
+   * no association, so detaching it DELETES the row rather than deactivating
+   * it: keeping it would file the thread under an object it never discussed.
+   * A ref because it is never rendered and must not re-render on every send.
+   */
+  const establishedRef = useRef<Set<string>>(new Set())
+
+  /** What the next request will carry. The association minus what is off. */
+  const activeTags = useMemo(() => tagsActive(tags, deactivated), [tags, deactivated])
+
+  /** Persist the reader's choice, and reload it when the thread changes. */
+  const applyDeactivated = useCallback((
+    next: ReadonlySet<string>,
+    forConversation: string | null,
+  ) => {
+    setDeactivated(next)
+    writeDeactivated(forConversation, next)
+  }, [])
+
   // Detect parent prop changes (user navigated to a different asset/etc.)
   // and reset the panel: clear the current conversation + adopt the new
   // tags. The auto-load effect below then surfaces the most recent
@@ -299,6 +375,17 @@ export function useAI(initialTags: TagRef[] = []) {
     setConversationId(null)
     setMessages([])
     setTagsState(initialTags)
+    /* The reader navigated to a different object, so this is a fresh canvas:
+       nothing is turned off and nothing is established. The auto-load effect
+       below may then adopt an existing thread, and `selectConversation`'s own
+       adopt restores that thread's activation from the store. */
+    setDeactivated(new Set())
+    establishedRef.current = new Set()
+    /* The reader navigated: whatever we were restoring is not what they are
+       looking at. Released here rather than in the restore effect's cleanup,
+       because setting state while unmounting an effect is how a cleanup starts
+       scheduling renders nobody asked for. */
+    setRestoringId(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTags])
 
@@ -329,7 +416,7 @@ export function useAI(initialTags: TagRef[] = []) {
     () => conversations.map(c => c.id).join('|'),
     [conversations],
   )
-  const { data: tagsByConvId } = useQuery<Map<string, TagRef[]>>({
+  const { data: tagsByConvId, isLoading: isLoadingConvTags } = useQuery<Map<string, TagRef[]>>({
     queryKey: ['ai-conversation-tags', conversationIdKey],
     queryFn: async () => {
       const ids = conversationIdKey.split('|').filter(Boolean)
@@ -368,7 +455,7 @@ export function useAI(initialTags: TagRef[] = []) {
     return [...s].sort().join('|')
   }, [tagsByConvId, tags])
 
-  const { data: tagLabels } = useQuery<Record<string, string>>({
+  const { data: tagLabels, isLoading: isLoadingTagLabels } = useQuery<Record<string, string>>({
     queryKey: ['ai-tag-labels', allTagRefsKey],
     queryFn: async () => {
       const out: Record<string, string> = {}
@@ -443,18 +530,144 @@ export function useAI(initialTags: TagRef[] = []) {
       if (prev.find(t => t.type === tag.type && t.id === tag.id)) return prev
       return [...prev, tag]
     })
+    /*
+     * Attaching also REACTIVATES.
+     *
+     * The row may still be there from a thread that discussed this object and
+     * then detached it, in which case the upsert below is a no-op and the
+     * only thing standing between the reader and the object they just picked
+     * is the deactivation. Without this, attaching an object you had cleared
+     * earlier appeared to do nothing.
+     */
+    const key = activationKey(tag)
+    if (deactivated.has(key)) {
+      const next = new Set(deactivated)
+      next.delete(key)
+      applyDeactivated(next, conversationId)
+    }
     persistTagAdd(tag).catch(console.error)
-  }, [persistTagAdd])
+  }, [persistTagAdd, deactivated, conversationId, applyDeactivated])
 
+  /*
+   * Detaching one object.
+   *
+   * Two outcomes, and which one depends on whether the object ever reached a
+   * request. See `detachAction`:
+   *
+   *   deactivate  it has. The conversation really was conducted with it, so
+   *               the row stays and the thread stays discoverable from that
+   *               object -- but it leaves the request's list immediately.
+   *   delete      it has not. Nothing was asked with it, no answer rests on
+   *               it, and keeping the row would file this thread under an
+   *               object it never discussed.
+   *
+   * Either way the next request is different, because the request is built
+   * from `activeTags` rather than from the rows.
+   */
   const removeTag = useCallback((tag: TagRef) => {
+    const key = activationKey(tag)
+    if (detachAction(establishedRef.current.has(key)) === 'deactivate') {
+      applyDeactivated(new Set([...deactivated, key]), conversationId)
+      return
+    }
     setTagsState(prev => prev.filter(t => !(t.type === tag.type && t.id === tag.id)))
     persistTagRemove(tag).catch(console.error)
-  }, [persistTagRemove])
+  }, [persistTagRemove, deactivated, conversationId, applyDeactivated])
 
   const setTags = useCallback((next: TagRef[]) => {
     setTagsState(next)
     // No bulk persist — caller can use addTag/removeTag for that. setTags
     // is for the new-conversation reset case where there's no convo yet.
+  }, [])
+
+  /*
+   * Detach EVERY object, and mean it — without erasing what the thread was.
+   *
+   * ── What this did first, and why it was wrong ──────────────────────────
+   *
+   * The first version deleted every row for the conversation in one
+   * statement. It changed the next request correctly and it also destroyed
+   * the conversation's association with every object it had ever discussed,
+   * so a cleared thread vanished from each of those objects' conversation
+   * lists permanently. One press, unrecoverable, and nothing on screen said
+   * it had happened.
+   *
+   * ── What it does now ───────────────────────────────────────────────────
+   *
+   * The same rule as `removeTag`, applied to every active object at once:
+   * established objects are deactivated and keep their rows; objects that
+   * never reached a request are deleted, because there is no association to
+   * keep. The deactivation is one write rather than N, and the deletes are
+   * one statement scoped to the keys that qualify.
+   *
+   * Messages and citations are untouched on purpose. Clearing what ACT AI may
+   * read next must not rewrite what it already said.
+   */
+  const clearContext = useCallback(() => {
+    const established = activeTags.filter(t => establishedRef.current.has(activationKey(t)))
+    const never = activeTags.filter(t => !establishedRef.current.has(activationKey(t)))
+
+    if (established.length > 0) {
+      applyDeactivated(
+        new Set([...deactivated, ...established.map(activationKey)]),
+        conversationId,
+      )
+    }
+
+    if (never.length === 0) return
+    const neverKeys = new Set(never.map(activationKey))
+    setTagsState(prev => prev.filter(t => !neverKeys.has(activationKey(t))))
+
+    if (!conversationId) return
+    /*
+     * Scoped to the ids that qualify, never a bare delete on
+     * `conversation_id`. The established rows have to survive this
+     * statement, and `.in()` on the tag ids is what guarantees it rather
+     * than a filter the client applies afterwards.
+     */
+    /* `Promise.resolve` because a PostgREST builder is a thenable, not a
+       promise: `.then()` on it types as `PromiseLike<void>`, which has no
+       `.catch` to hang the transport case on. */
+    void Promise.resolve(
+      supabase.from('ai_conversation_tags').delete()
+        .eq('conversation_id', conversationId)
+        .in('tag_id', never.map(t => t.id)),
+    )
+      .then(({ error: delErr }) => {
+        if (delErr) { console.error('Failed to clear context:', delErr); return }
+        queryClient.invalidateQueries({ queryKey: ['ai-conversation-tags'] })
+      })
+      /* PostgREST resolves with `{ error }` rather than rejecting, so this
+         catches only a transport failure -- which is exactly the case that
+         would otherwise surface as an unhandled rejection and take the pane
+         down with it. The local state is already updated either way. */
+      .catch((err: unknown) => console.error('Failed to clear context:', err))
+  }, [conversationId, queryClient, activeTags, deactivated, applyDeactivated])
+
+  /*
+   * Where a thread that does not exist yet will be filed.
+   *
+   * A conversation row is not written until the first answer, so "New
+   * conversation in this project" has nothing to set `folder_id` on at the
+   * moment it is pressed. Holding the intent here and spending it in the
+   * insert is what makes the assignment persistent rather than a label on
+   * the sidebar that the saved row then contradicts.
+   *
+   * A ref AND state: the insert happens inside `persistConversation`, which
+   * must read the value as it is at that moment rather than as it was when
+   * the callback was built -- while the pane needs a render to say where the
+   * thread will be saved.
+   *
+   * Declared ABOVE the callbacks that depend on it, not beside the one that
+   * reads it. A dependency array is evaluated on every render, so naming a
+   * `const` declared further down throws a TDZ ReferenceError before
+   * anything runs -- a defect class this codebase has shipped before.
+   */
+  const draftFolderRef = useRef<string | null>(null)
+  const [draftFolderId, setDraftFolderId] = useState<string | null>(null)
+  const setDraftFolder = useCallback((folderId: string | null) => {
+    draftFolderRef.current = folderId
+    setDraftFolderId(folderId)
   }, [])
 
   // ─── Conversation actions ──────────────────────────────────────────────
@@ -463,10 +676,32 @@ export function useAI(initialTags: TagRef[] = []) {
     // transcript is never on it. Two paths differing only in whether the tags
     // are already cached, so the id-fetch below stays the one that also
     // resolves tags for a conversation the list has not loaded.
+    /*
+     * Opening a thread restores both halves.
+     *
+     * The rows ARE the association, and every one of them belongs to a
+     * conversation that has already been conducted -- so they all count as
+     * established, which is what makes a later detach deactivate rather than
+     * delete. The deactivated set comes from the viewer's own store, so a
+     * reader who cleared context and came back does not silently get it all
+     * attached again. That reappearance is the thing the brief's context
+     * walkthrough asks about, and it is also why this cannot simply default
+     * to "everything active".
+     */
+    const adopt = (rows: readonly TagRef[]) => {
+      setTagsState(rows as TagRef[])
+      establishedRef.current = new Set(rows.map(activationKey))
+      setDeactivated(readDeactivated(id))
+      /* Opening a saved thread abandons the draft, so the project it would
+         have been filed in must not be spent on whatever is sent next --
+         which belongs to a conversation that already has its own filing. */
+      setDraftFolder(null)
+    }
+
     const found = conversationsWithTags.find(c => c.id === id)
     if (found) {
       setConversationId(found.id)
-      setTagsState(found.tags || [])
+      adopt(found.tags || [])
       setMessages(await fetchConversationMessages(id))
       return
     }
@@ -475,18 +710,24 @@ export function useAI(initialTags: TagRef[] = []) {
     const { data: tagRows } = await supabase
       .from('ai_conversation_tags')
       .select('tag_type, tag_id').eq('conversation_id', id)
-    setTagsState(((tagRows as any[]) || []).map(r => ({ type: r.tag_type as TagType, id: r.tag_id })))
-  }, [conversationsWithTags])
+    adopt(((tagRows as any[]) || []).map(r => ({ type: r.tag_type as TagType, id: r.tag_id })))
+  }, [conversationsWithTags, setDraftFolder])
 
-  const newConversation = useCallback(() => {
+  const newConversation = useCallback((folderId: string | null = null) => {
     setConversationId(null)
     setMessages([])
     // Reset to whatever the parent suggested (e.g. AAPL when launched
     // from the AAPL page) — gives users a sensible starting point on
     // every new thread without re-typing tags.
     setTagsState(initialTags)
+    /* A new thread has nothing turned off and nothing established: no object
+       on it has reached a request yet, so an immediate detach deletes rather
+       than leaving a row behind on a conversation that was never had. */
+    setDeactivated(new Set())
+    establishedRef.current = new Set()
+    setDraftFolder(folderId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialTagsKey])
+  }, [initialTagsKey, setDraftFolder])
 
   // ─── Send message ──────────────────────────────────────────────────────
   //
@@ -500,6 +741,15 @@ export function useAI(initialTags: TagRef[] = []) {
   const [error, setError] = useState<Error | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const [latency, setLatency] = useState<AiLatency | null>(null)
+  /*
+   * What the server reported it could actually read, for the last answer.
+   *
+   * Keyed per attached object, and NOT cleared when a new tag is attached:
+   * an object with no entry reads as `unknown`, which is the honest state
+   * for something nothing has been asked about yet. Clearing on attach
+   * would discard a real gap report about the OTHER chips.
+   */
+  const [contextManifest, setContextManifest] = useState<ContextEntry[]>([])
   const inFlightRef = useRef<AiInFlightRequest | null>(null)
 
   // A ref mirror of the state the completion path must compare against.
@@ -535,7 +785,28 @@ export function useAI(initialTags: TagRef[] = []) {
     cancelInFlight(inFlightRef.current)
 
     const safeMessages = Array.isArray(messages) ? messages : []
-    const safeTags     = Array.isArray(tags)     ? tags     : []
+    /*
+     * The ACTIVE set, not the association.
+     *
+     * This array is what `ai-chat` reads -- it takes `body.tags` and never
+     * re-reads `ai_conversation_tags` -- so this line is the one that makes
+     * "I cleared the context" true. An object the reader detached is absent
+     * from here even though its row is still on the conversation, which is
+     * exactly the point: the row is how the thread is found later, and the
+     * request is what the model is given.
+     */
+    const safeTags     = Array.isArray(activeTags) ? activeTags : []
+
+    /*
+     * Everything sent is now established.
+     *
+     * Recorded before the request goes out rather than on success: the
+     * reader asked with these objects attached, and a failed send does not
+     * unmake that. It decides only whether a later detach deactivates the
+     * row or deletes it, and preserving an association the reader did intend
+     * is the safer side of that call.
+     */
+    for (const t of safeTags) establishedRef.current.add(activationKey(t))
 
     const policy = resolveResponsePolicy({ message, purpose: 'chat' })
     const allowlist: AiObjectRef[] = safeTags
@@ -685,6 +956,28 @@ export function useAI(initialTags: TagRef[] = []) {
 
       request.status = 'done'
       setLatency(deriveLatency(marks, serverTimings, streamed))
+      /*
+       * Merged, not replaced.
+       *
+       * The server reports only the tags THIS request carried. A chip
+       * attached after the send has no entry and must stay `unknown`, and a
+       * gap reported about another chip two answers ago is still true until
+       * something contradicts it. Replacing the map would silently clear a
+       * standing problem every time the reader asked an unrelated question.
+       *
+       * An entry for the same object always wins, so a retry that succeeds
+       * clears its own warning.
+       */
+      if (shouldApplyToView(context, viewRef.current)) {
+        const fresh = outcome.final?.context ?? []
+        if (fresh.length > 0) {
+          setContextManifest(prev => {
+            const merged = new Map(prev.map(e => [contextKey(e), e]))
+            for (const e of fresh) merged.set(contextKey(e), e)
+            return [...merged.values()]
+          })
+        }
+      }
     } catch (e) {
       // An abort is the reader's own decision, not a failure to report.
       const aborted = request.status === 'cancelled'
@@ -717,12 +1010,26 @@ export function useAI(initialTags: TagRef[] = []) {
   ): Promise<{ conversationId: string | null; isNew: boolean }> => {
     if (!user?.id) return { conversationId: null, isNew: false }
 
+    /*
+     * One place, because there are two writes below and a third would be
+     * added by whoever adds the next one.
+     *
+     * The research trail quotes each record it consulted, which is safe to
+     * show: it came back through this reader's own RLS-scoped query. Writing
+     * it here is a different act -- `ai_conversations.messages` is one jsonb
+     * column under the conversation owner's policy, so a note's words stored
+     * in it become a copy living outside that note's own policy, which
+     * nothing re-checks if the note is later restricted or deleted. The
+     * reasoning is in `stripStoredExcerpts`.
+     */
+    const storedMessages = stripStoredExcerpts(nextMessages)
+
     const nowIso = new Date().toISOString()
     if (targetConversationId) {
       const { error } = await supabase
         .from('ai_conversations')
         .update({
-          messages: nextMessages,
+          messages: storedMessages,
           last_message_at: nowIso,
           updated_at: nowIso,
         })
@@ -736,8 +1043,13 @@ export function useAI(initialTags: TagRef[] = []) {
         .insert({
           user_id: user.id,
           title: deriveTitleFromMessage(firstUserMessageOnCreate),
-          messages: nextMessages,
+          messages: storedMessages,
           last_message_at: nowIso,
+          /* The project the reader started this in, spent here because this
+             is the first moment a row exists to carry it. Omitted rather
+             than sent as null when there is none, so a plain New
+             conversation keeps the column's own default. */
+          ...(draftFolderRef.current ? { folder_id: draftFolderRef.current } : {}),
         })
         // Only the id. A bare `.select()` echoes the whole row back, and the
         // largest thing in that row is the `messages` array we just uploaded —
@@ -766,10 +1078,13 @@ export function useAI(initialTags: TagRef[] = []) {
         })
         queryClient.invalidateQueries({ queryKey: ['ai-conversation-tags'] })
       }
+      /* Spent. The row now carries the project, so leaving the intent set
+         would re-file the NEXT new conversation into it silently. */
+      if (draftFolderRef.current) setDraftFolder(null)
       queryClient.invalidateQueries({ queryKey: ['ai-conversations'] })
       return { conversationId: data.id, isNew: true }
     }
-  }, [user?.id, queryClient])
+  }, [user?.id, queryClient, setDraftFolder])
 
   // ─── Conversation list mutations ───────────────────────────────────────
   const renameConversationMutation = useMutation({
@@ -805,6 +1120,35 @@ export function useAI(initialTags: TagRef[] = []) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['ai-conversations'] }),
   })
 
+  /**
+   * File a conversation on a shelf, or take it off one.
+   *
+   * The server has the last word twice over: the conversation's policy
+   * decides whose thread this is, and a definer trigger refuses a folder the
+   * owner does not own. So this sends the id and lets a rejection surface --
+   * it does not pre-check ownership client-side and then trust itself.
+   *
+   * `moveTarget` keeps a no-op move from becoming a write: the menu offers
+   * the folder a thread is already in, and accepting that would invalidate
+   * three queries to change nothing.
+   */
+  const moveConversationMutation = useMutation({
+    mutationFn: async ({ id, folderId }: { id: string; folderId: string | null }) => {
+      /* Cast for the same reason every other write in this file would need
+         one: `ai_conversations` is absent from the hand-maintained Database
+         type, so its update parameter resolves to `never`. The payload above
+         the cast is typed; see the note in hooks/ai/useAIFolders.ts. */
+      const patch: { folder_id: string | null } = { folder_id: folderId }
+      const { error } = await supabase
+        .from('ai_conversations').update(patch as never).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['ai-conversations'] })
+      queryClient.invalidateQueries({ queryKey: ['ai-conversations-archived'] })
+    },
+  })
+
   const deleteConversationMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('ai_conversations').delete().eq('id', id)
@@ -835,6 +1179,11 @@ export function useAI(initialTags: TagRef[] = []) {
 
     if (candidates[0]) {
       const picked = candidates[0]
+      /* Claim the restore BEFORE the id lands, so the pane never gets a frame
+         where a conversation is selected and its transcript is still empty.
+         That frame is the empty state, and it is why opening the panel showed
+         suggestions and then replaced them with a thread. */
+      setRestoringId(picked.id)
       setConversationId(picked.id)
       setTagsState(picked.tags || initialTags)
       // The transcript is fetched rather than read off the list row. This
@@ -843,19 +1192,68 @@ export function useAI(initialTags: TagRef[] = []) {
       // `cancelled` is the same guard the send path uses for the same reason.
       let cancelled = false
       fetchConversationMessages(picked.id)
-        .then(loaded => { if (!cancelled) setMessages(loaded) })
-        .catch(console.error)
+        .then(loaded => { if (!cancelled) { setMessages(loaded); setRestoringId(null) } })
+        /* A failed restore releases the gate too. Holding it would leave the
+           pane on a skeleton with no way out. */
+        .catch(e => { console.error(e); if (!cancelled) setRestoringId(null) })
       return () => { cancelled = true }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, initialTagsKey, conversationsWithTags.length])
 
+  /*
+   * Does this pane not yet know what to show?
+   *
+   * The condition itself is in `lib/ai/restore-gate`, where it can be tested
+   * without a Supabase client. This call is only the wiring.
+   */
+  const isRestoringConversation = isThreadSettling({
+    messageCount: messages.length,
+    initialTagCount: initialTags.length,
+    openTagCount: tags.length,
+    hasConversation: conversationId !== null,
+    isFetchingClaimedTranscript: restoringId !== null,
+    isLoadingList,
+    /* `tagsByConvId === undefined` as well as the loading flag: a query that
+       is disabled because there are no conversations yet is not "loading",
+       but it has also not answered. */
+    isLoadingConversationTags:
+      conversationIdKey.length > 0 && (isLoadingConvTags || tagsByConvId === undefined),
+    isLoadingTagLabels,
+  })
+
   return {
     // State
     messages,
-    tags,
+    /*
+     * The ACTIVE set: what the next request carries, and what the pane draws.
+     *
+     * Deliberately not the association. A consumer that renders this is
+     * telling the reader what ACT AI will be given, which is the question the
+     * pane's context row exists to answer. `associatedTags` below is the
+     * other fact, for anything that needs to know what the thread is about.
+     */
+    tags: activeTags,
+    /*
+     * Every object the conversation is associated with, active or not.
+     *
+     * This is the row set, and it is what discovery joins against
+     * (`useAssetConversations`). Exposed so a surface can show "this thread
+     * is about AAPL, though you are not asking about it right now" rather
+     * than having to re-query. No current consumer; exported because the
+     * distinction is the point of the split and leaving it unreachable
+     * invites the next reader to use `tags` for both again.
+     */
+    associatedTags: tags,
     conversationId,
+    isRestoringConversation,
     isConfigured: effectiveConfig.isConfigured,
+    /*
+     * Whether `isConfigured` is an answer yet. While this is true it is the
+     * resolver's default, not a verdict, so a surface must not render a
+     * "not configured" state on it. See `EffectiveAIConfig.isResolving`.
+     */
+    isConfigResolving: effectiveConfig.isResolving,
     configMode: effectiveConfig.mode,
 
     // Send
@@ -872,18 +1270,93 @@ export function useAI(initialTags: TagRef[] = []) {
     cancelGeneration,
     /** Measured latency for the last completed request. TTFU is the one. */
     latency,
+    /**
+     * What the server could actually read, per attached object.
+     *
+     * The pane draws its chips from this rather than from its own tag write,
+     * so a chip can no longer claim an object the answer was built without.
+     * Empty until the first answer comes back, which is why an absent entry
+     * means `unknown` and not a problem.
+     */
+    contextManifest,
 
     // Tag actions
     addTag,
     removeTag,
     setTags,
+    /**
+     * Detach every active object without erasing what the thread was about.
+     * See the callback's own note, and `lib/ai/context-activation`.
+     */
+    clearContext,
     tagLabels: seededTagLabels,
 
     // Conversation list + selection
     conversations: conversationsWithTags,
     isLoadingList,
     selectConversation,
+    /**
+     * Start a thread, optionally destined for a project.
+     *
+     * The folder is remembered until the first answer writes the row, which
+     * is the only moment there is anything to set `folder_id` on.
+     */
     newConversation,
+    /** The project an unsaved thread will be filed in, or null. */
+    draftFolderId,
+    /**
+     * The archived threads, fetched only when something asks for them.
+     *
+     * Archiving existed and was one-way in practice: the sidebar's list
+     * filters `is_archived = false`, so an archived thread was reachable by
+     * id and by nothing a reader could click. `unarchiveConversation` has
+     * always been there; this is the list it needs.
+     */
+    loadArchived: async (): Promise<AIConversationSummary[]> => {
+      if (!user?.id) return []
+      return queryClient.fetchQuery({
+        queryKey: ['ai-conversations-archived', user.id],
+        staleTime: 30_000,
+        queryFn: async () => {
+          const { data, error: err } = await supabase
+            .from('ai_conversations')
+            .select(CONVERSATION_SUMMARY_COLUMNS)
+            .eq('user_id', user.id)
+            .eq('is_archived', true)
+            .order('last_message_at', { ascending: false, nullsFirst: false })
+            .limit(200)
+          if (err) throw err
+          const rows = (data || []) as unknown as AIConversationSummary[]
+          /*
+           * Archived threads carry their references too.
+           *
+           * The live list is decorated with tags by its own query; the
+           * archive was not, so the sidebar's reference filter could not see
+           * an archived thread even when the chip it was filtering on came
+           * from that thread. One extra read of the same table the live list
+           * uses, over at most two hundred ids.
+           */
+          const ids = rows.map(r => r.id)
+          if (ids.length === 0) return rows
+          const { data: tagRows } = await supabase
+            .from('ai_conversation_tags')
+            .select('conversation_id, tag_type, tag_id')
+            .in('conversation_id', ids)
+          const byId = new Map<string, TagRef[]>()
+          for (const row of (tagRows || []) as any[]) {
+            const arr = byId.get(row.conversation_id) || []
+            arr.push({ type: row.tag_type as TagType, id: row.tag_id })
+            byId.set(row.conversation_id, arr)
+          }
+          return rows.map(r => ({ ...r, tags: byId.get(r.id) || [] }))
+        },
+      })
+    },
+
+    /** Move a thread onto a folder, or off one with null. */
+    moveConversationToFolder: (id: string, folderId: string | null) =>
+      moveConversationMutation.mutateAsync({ id, folderId }),
+
     renameConversation: (id: string, title: string) => renameConversationMutation.mutate({ id, title }),
     archiveConversation: (id: string) => archiveConversationMutation.mutate({ id }),
     unarchiveConversation: (id: string) => archiveConversationMutation.mutate({ id, archived: false }),
@@ -899,57 +1372,21 @@ export function useAI(initialTags: TagRef[] = []) {
 }
 
 // ─── Suggested prompts ─────────────────────────────────────────────────────
-// Suggestions adapt to whatever's tagged. Single object → object-specific
-// prompts using its actual name (so users see "Analyze AAPL's thesis"
-// rather than the generic "Analyze my thesis"). Multi-tag → comparison.
-// No tags → generic market.
-export function useAISuggestions(tags: TagRef[], tagLabels: Record<string, string> = {}) {
-  if (tags.length === 0) {
-    return [
-      'What sectors are showing momentum?',
-      'Explain the current market environment',
-      'What should I be watching this week?',
-    ]
-  }
-  const labelFor = (t: TagRef) => tagLabels[`${t.type}:${t.id}`] || t.type
-  const onlyAssets = tags.every(t => t.type === 'asset')
-
-  if (tags.length === 1) {
-    const t = tags[0]
-    const name = labelFor(t)
-    if (t.type === 'asset') {
-      return [
-        `Analyze ${name}'s thesis for blind spots`,
-        `Suggest bull/base/bear outcomes for ${name}`,
-        `What are the key risks to the ${name} thesis?`,
-        `Summarize the team's notes on ${name}`,
-      ]
-    }
-    if (t.type === 'theme') {
-      return [
-        `Which assets have the most exposure to ${name}?`,
-        `What are the key drivers of ${name}?`,
-        `Suggest assets to add to ${name}`,
-      ]
-    }
-    if (t.type === 'portfolio') {
-      return [
-        `Analyze ${name}'s sector allocation`,
-        `What are ${name}'s concentration risks?`,
-        `Suggest rebalancing actions for ${name}`,
-      ]
-    }
-  }
-  if (onlyAssets && tags.length > 1) {
-    const names = tags.map(labelFor).join(' vs ')
-    return [
-      `Compare ${names} side by side`,
-      `Which has the strongest thesis: ${names}?`,
-      `How do the risks differ across ${names}?`,
-    ]
-  }
-  return [
-    `Synthesize what ${tags.map(labelFor).join(', ')} have in common`,
-    `Highlight the biggest risks across ${tags.map(labelFor).join(', ')}`,
-  ]
+/**
+ * Suggestions adapt to whatever's tagged, and to why the pane was opened.
+ *
+ * The strings and the rules they follow are in `lib/ai/suggested-prompts`, not
+ * here: this module builds a Supabase client at import time, so nothing
+ * declared in it can be tested without standing up auth. That is the reason
+ * the old version shipped a sentence about a company called "asset" — the
+ * no-label fallback had nowhere a test could reach it.
+ *
+ * The signature is unchanged for existing callers; `extra` is additive.
+ */
+export function useAISuggestions(
+  tags: TagRef[],
+  tagLabels: Record<string, string> = {},
+  extra: Pick<PromptContext, 'target' | 'mode'> = {},
+) {
+  return suggestedPrompts({ tags, tagLabels, ...extra })
 }

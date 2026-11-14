@@ -38,6 +38,7 @@
  */
 
 import { openAsset } from '../desktop-asset'
+import { dispatchCaptureOpen } from '../capture/prefill'
 import { openResearch, researchTabFor } from '../desktop-research'
 import { openIdeaDetail } from '../navigation/open-idea'
 import { discuss } from '../engagement'
@@ -431,19 +432,28 @@ export function parseAiActions(
 function openCapture(
   captureType: 'idea' | 'trade_idea' | 'prompt' | 'proposal',
   ref: AiObjectRef,
-  prefillText?: string,
 ): boolean {
-  if (typeof window === 'undefined') return false
-  window.dispatchEvent(new CustomEvent('openThoughtsCapture', {
-    detail: {
-      contextType: ref.type,
-      contextId: ref.id,
-      contextTitle: ref.symbol ?? ref.label,
-      captureType,
-      ...(prefillText ? { prefillText } : {}),
-    },
-  }))
-  return true
+  return dispatchCaptureOpen({
+    captureType,
+    contextType: ref.type,
+    contextId: ref.id,
+    contextTitle: ref.symbol ?? ref.label,
+  })
+  /*
+   * No prefill from here.
+   *
+   * This used to pass a `prefillText` built from the model's `reason`, and
+   * nothing read it: the shell's listener dropped every field it did not
+   * name, so the text went nowhere for as long as the catalogue has existed.
+   * The channel now has a parser (`lib/capture/prefill`) and it honours a
+   * prefill only for the quick-thought form, which is the only one that
+   * takes initial values.
+   *
+   * It is not reinstated for the prompt form here because a model's one-line
+   * `reason` is a justification for offering the action, not the question a
+   * reader wants to ask a colleague. Keeping an ANSWER is the promotion that
+   * carries text, and it goes through `AiKeep` with a confirmation.
+   */
 }
 
 /** The shell's own tab channel. The `type` is always a literal from here. */
@@ -565,7 +575,7 @@ export function executeAiAction(action: AiAction): boolean {
       return t ? openCapture('idea', t) : false
 
     case 'create_prompt':
-      return t ? openCapture('prompt', t, action.reason) : false
+      return t ? openCapture('prompt', t) : false
 
     case 'create_trade_idea':
       return t ? openCapture('trade_idea', t) : false

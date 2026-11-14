@@ -45,6 +45,52 @@ import type { AssetFocus } from '../lib/desktop-asset'
 
 const DAY = 86_400_000
 
+/**
+ * The cache prefix this read lives under.
+ *
+ * ── Why it is exported, and what went wrong without it ───────────────────
+ *
+ * This hook is the dashboard asset pane's ONLY read, and it reads tables the
+ * full Asset page owns the editors for: `asset_contributions` for the case and
+ * `analyst_price_targets` for the targets. Those editors invalidate their own
+ * keys -- `contributions`, `analyst-price-targets`, `desktop-research`,
+ * `scenario-cards` -- and this one is not among them.
+ *
+ * So: edit the case on the Asset page, come back to the dashboard pane, and
+ * the pane states the OLD case. Not briefly, either. `staleTime` here is 60
+ * seconds, so for the first minute the pane does not even refetch on mount:
+ * it serves the cached rows and says "written 30d ago" over a paragraph the
+ * reader has just rewritten, or shows "No core investment case has been
+ * written" over one they have just written.
+ *
+ * It became easier to reach, not harder, when "Edit in research" stopped
+ * opening an editor in the pane and started sending the reader to the Asset
+ * page -- which made leaving and returning the NORMAL way to edit the case
+ * rather than an unusual one.
+ *
+ * `invalidateAssetWorkspace` is what the writers call. A prefix, so it covers
+ * every symbol, history depth and organisation variant of the same asset
+ * without each writer having to know the key's shape.
+ */
+export const ASSET_WORKSPACE_KEY = 'asset-workspace' as const
+
+/**
+ * Mark the dashboard pane's read stale after writing something it shows.
+ *
+ * Call it from any mutation touching the case, the evidence, the targets, the
+ * ideas or the decisions on an asset. It is deliberately NOT scoped to the
+ * asset id: the key carries the symbol, the history depth and the
+ * organisation as well, so an id-scoped invalidation would have to reproduce
+ * all four and would miss the variant the reader was actually looking at.
+ * Invalidating the prefix costs one refetch of one pane that is usually not
+ * even mounted.
+ */
+export function invalidateAssetWorkspace(queryClient: {
+  invalidateQueries: (filters: { queryKey: unknown[] }) => unknown
+}): void {
+  queryClient.invalidateQueries({ queryKey: [ASSET_WORKSPACE_KEY] })
+}
+
 /** Deep enough to anchor a chart at a case written a year ago. */
 const DEEP_HISTORY_DAYS = 400
 /** Enough to find a last close, and nothing more, when no chart is shown. */
@@ -126,6 +172,11 @@ const personName = (u: any): string | null =>
  * closes to render nothing.
  */
 function historyDaysFor(focus: AssetFocus): number {
+  /* `framework` stays in this list. It is the focus a scenario-gap finding
+     arrives with, and that finding is the ladder measured against price --
+     the one reading on this surface that cannot be drawn without the deep
+     history. Dropping it would have made the chart the finding is ABOUT
+     render from four closes. */
   return focus === 'research' || focus === 'framework' || focus === 'position'
     ? DEEP_HISTORY_DAYS
     : SHALLOW_HISTORY_DAYS
@@ -166,7 +217,7 @@ export function useAssetWorkspace(
   const { currentOrgId } = useOrganization()
 
   const { data, isLoading, error } = useQuery<AssetWorkspaceData>({
-    queryKey: ['asset-workspace', assetId, symbol, days, currentOrgId],
+    queryKey: [ASSET_WORKSPACE_KEY, assetId, symbol, days, currentOrgId],
     enabled: !!assetId && !!currentOrgId,
     staleTime: 60_000,
     queryFn: async () => {

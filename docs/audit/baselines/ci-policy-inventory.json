@@ -1,10 +1,10 @@
 {
   "schema_version": 4,
-  "captured_at": "2026-11-11T01:54:36.709Z",
+  "captured_at": "2026-11-13T04:49:12.136Z",
   "ci_minimal": true,
   "counts": {
-    "tables": 295,
-    "policies": 951
+    "tables": 296,
+    "policies": 955
   },
   "tables": [
     {
@@ -77,6 +77,14 @@
       "rls_forced": false,
       "policies": 2,
       "anon": "DELETE,INSERT,SELECT,UPDATE",
+      "auth": "DELETE,INSERT,SELECT,UPDATE"
+    },
+    {
+      "name": "ai_project_folders",
+      "rls": true,
+      "rls_forced": false,
+      "policies": 4,
+      "anon": "",
       "auth": "DELETE,INSERT,SELECT,UPDATE"
     },
     {
@@ -2678,6 +2686,70 @@
       "name": "Users manage their own ai conversations",
       "cmd": "ALL",
       "roles": "public",
+      "permissive": "PERMISSIVE",
+      "unconditional": false,
+      "qual_class": "SCOPED",
+      "check_class": "SCOPED",
+      "qual_branches": 1,
+      "qual_open": 0,
+      "qual_open_self": 0,
+      "check_branches": 1,
+      "check_open": 0,
+      "check_open_self": 0
+    },
+    {
+      "table": "ai_project_folders",
+      "name": "ai_project_folders_delete",
+      "cmd": "DELETE",
+      "roles": "authenticated",
+      "permissive": "PERMISSIVE",
+      "unconditional": false,
+      "qual_class": "SCOPED",
+      "check_class": "EMPTY",
+      "qual_branches": 1,
+      "qual_open": 0,
+      "qual_open_self": 0,
+      "check_branches": 0,
+      "check_open": 0,
+      "check_open_self": 0
+    },
+    {
+      "table": "ai_project_folders",
+      "name": "ai_project_folders_insert",
+      "cmd": "INSERT",
+      "roles": "authenticated",
+      "permissive": "PERMISSIVE",
+      "unconditional": false,
+      "qual_class": "EMPTY",
+      "check_class": "SCOPED",
+      "qual_branches": 0,
+      "qual_open": 0,
+      "qual_open_self": 0,
+      "check_branches": 1,
+      "check_open": 0,
+      "check_open_self": 0
+    },
+    {
+      "table": "ai_project_folders",
+      "name": "ai_project_folders_select",
+      "cmd": "SELECT",
+      "roles": "authenticated",
+      "permissive": "PERMISSIVE",
+      "unconditional": false,
+      "qual_class": "SCOPED",
+      "check_class": "EMPTY",
+      "qual_branches": 1,
+      "qual_open": 0,
+      "qual_open_self": 0,
+      "check_branches": 0,
+      "check_open": 0,
+      "check_open_self": 0
+    },
+    {
+      "table": "ai_project_folders",
+      "name": "ai_project_folders_update",
+      "cmd": "UPDATE",
+      "roles": "authenticated",
       "permissive": "PERMISSIVE",
       "unconditional": false,
       "qual_class": "SCOPED",

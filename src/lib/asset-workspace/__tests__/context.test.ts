@@ -68,18 +68,50 @@ describe('the situation is a closed set, resolved by precedence', () => {
     expect(resolveWorkspaceState(facts())).toBe('unowned')
   })
 
-  it('every state has an emphasis, and every emphasis covers every panel', () => {
+  it('every state names a situation and what leads the page', () => {
     /*
-     * A missing entry would silently drop a panel off the page for one
-     * situation only — the kind of defect nobody finds because it needs the
-     * exact record shape to reproduce.
+     * This used to assert that each state's `order` array covered all six
+     * panels, with a comment about a panel being "silently dropped off the
+     * page". It could not be: nothing read `order`. The Snapshot composed a
+     * fixed layout and used the state for a `data-` attribute only, so the
+     * test described a consequence that did not exist -- a check on a
+     * property of a constant rather than on the thing it was meant to
+     * govern.
+     *
+     * `lead` is read by the Snapshot, and `snapshot-emphasis.test.tsx`
+     * asserts the page actually follows it.
      */
-    const panels = ['conclusion', 'decision', 'case', 'position', 'work', 'memory']
     for (const state of Object.keys(STATE_EMPHASIS)) {
       const e = STATE_EMPHASIS[state as keyof typeof STATE_EMPHASIS]
       expect(e.label.length, state).toBeGreaterThan(0)
-      expect([...e.order].sort(), state).toEqual([...panels].sort())
+      expect(['position', 'none'], state).toContain(e.lead)
     }
+  })
+
+  it('never makes the waiting-work queue a matter of state', () => {
+    /*
+     * The regression this pins, found by four existing Snapshot tests. The
+     * queue was briefly gated on `decision-pending`, which hid it on the
+     * names where an idea sits at ready-to-recommend: that is work owed
+     * without being a pending ruling, so the state is something else and the
+     * only actionable thing on the page vanished.
+     *
+     * Whether the queue leads is a question about data. `lead` answers a
+     * different question -- what leads when nothing is owed -- so no state
+     * may name the queue at all.
+     */
+    for (const state of Object.keys(STATE_EMPHASIS)) {
+      expect(STATE_EMPHASIS[state as keyof typeof STATE_EMPHASIS].lead, state)
+        .not.toBe('decision')
+    }
+  })
+
+  it('leads with the exposure only where there is exposure and no case', () => {
+    /* `unowned` is the trap: nothing is held, so there is no position to put
+       at the top of the page. */
+    expect(STATE_EMPHASIS['position-unexplained'].lead).toBe('position')
+    expect(STATE_EMPHASIS['unowned'].lead).toBe('none')
+    expect(STATE_EMPHASIS['position-monitored'].lead).toBe('none')
   })
 })
 

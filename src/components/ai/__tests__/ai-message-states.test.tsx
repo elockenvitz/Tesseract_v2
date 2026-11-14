@@ -33,6 +33,35 @@ describe('AiMessage', () => {
     expect(screen.getByText('**not bold**')).toBeTruthy()
   })
 
+  describe('the answer is the page, not a bubble in it', () => {
+    const turn = (role: 'assistant' | 'user', mode: 'compact' | 'research' = 'compact') =>
+      render(<AiMessage message={msg({ role })} mode={mode} />)
+        .container.querySelector('[data-turn]') as HTMLElement
+
+    it('gives the answer no fill and no inset, in either mode', () => {
+      /*
+       * The reported defect: a long reply read as a dense grey block inset
+       * from the pane, which is both harder to read and narrower than the
+       * space available. An answer is the content of the pane.
+       */
+      for (const mode of ['compact', 'research'] as const) {
+        const el = turn('assistant', mode)
+        expect(el.className).not.toMatch(/bg-gray-100/)
+        expect(el.className).not.toMatch(/max-w-\[\d+%\]/)
+        expect(el.className).toMatch(/max-w-none/)
+      }
+    })
+
+    it('keeps the reader own turn a filled bubble, so the voices stay apart', () => {
+      /* Without this the two turns would be indistinguishable: removing the
+         fill from BOTH is how a thread becomes one undifferentiated column. */
+      const el = turn('user')
+      expect(el.className).toMatch(/bg-primary-600/)
+      expect(el.className).toMatch(/rounded-lg/)
+      expect(el.className).toMatch(/max-w-\[85%\]/)
+    })
+  })
+
   it('shows the model label the caller resolved', () => {
     render(<AiMessage message={msg({ model: 'claude-sonnet-4-6' })} modelLabel="Claude Sonnet 4.6" />)
     expect(screen.getByText('Claude Sonnet 4.6')).toBeTruthy()
@@ -134,6 +163,112 @@ describe('AiPrompts', () => {
       />,
     )
     expect(screen.getByText('popped')).toBeTruthy()
+  })
+
+  /*
+   * Grounded prompts arrive as `{ text, reason }` rather than a string, and
+   * the reason is the whole point: it is the records that justify offering
+   * the question. These assert the reader can see it, that it never stands in
+   * for the question, and that a prompt with no record behind it says nothing.
+   */
+  it('shows why a question is being offered, under the question', () => {
+    render(
+      <AiPrompts
+        suggestions={[{ text: 'What needs a decision?', reason: '4 are waiting, the longest for 9 days' }]}
+        onPick={() => {}}
+      />,
+    )
+    const reason = screen.getByTestId('ai-prompt-reason')
+    expect(reason.textContent).toBe('4 are waiting, the longest for 9 days')
+    /* Inside the button, so it reads as one thing, not a caption beside it. */
+    expect(reason.closest('button')).toBeTruthy()
+  })
+
+  it('still sends only the question when a reason is attached', () => {
+    const onPick = vi.fn()
+    render(
+      <AiPrompts
+        suggestions={[{ text: 'What needs a decision?', reason: '4 are waiting' }]}
+        onPick={onPick}
+      />,
+    )
+    /* The accessible name covers both lines, so match on the question alone. */
+    screen.getByRole('button', { name: /What needs a decision\?/ }).click()
+    expect(onPick).toHaveBeenCalledWith('What needs a decision?')
+    expect(onPick).not.toHaveBeenCalledWith(expect.stringContaining('waiting'))
+  })
+
+  it('renders no reason line for a prompt that has no record behind it', () => {
+    render(
+      <AiPrompts
+        suggestions={[{ text: 'What is in my Idea Pipeline?', reason: null }, 'Which names am I covering?']}
+        onPick={() => {}}
+      />,
+    )
+    expect(screen.queryByTestId('ai-prompt-reason')).toBeNull()
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+  })
+
+  it('accepts plain strings and grounded prompts in one list', () => {
+    render(
+      <AiPrompts
+        suggestions={['Analyze AAPL for blind spots', { text: 'What is overdue?', reason: '2 past due' }]}
+        onPick={() => {}}
+      />,
+    )
+    expect(screen.getAllByRole('button')).toHaveLength(2)
+    expect(screen.getAllByTestId('ai-prompt-reason')).toHaveLength(1)
+  })
+
+  it('keeps a reason legible rather than clipping it', () => {
+    /* A fixed 56px height cut the second line off. The floor is a floor. */
+    render(
+      <AiPrompts
+        suggestions={[{ text: 'What needs a decision?', reason: '4 are waiting' }]}
+        onPick={() => {}}
+      />,
+    )
+    const cls = screen.getAllByRole('button')[0].className
+    expect(cls).toContain('min-h-[56px]')
+    /* The lookbehind is load-bearing: `min-h-[56px]` ends in `h-[56px]`, so
+       without it this assertion fails against the correct class list. */
+    expect(cls).not.toMatch(/(?<!min-)\bh-(14|\[56px\])\b/)
+  })
+
+  it('gives the reason room and a readable size', () => {
+    /*
+     * These were reported as cramped by a reader looking at the real panel,
+     * which is the only way this class of problem gets found. The numbers
+     * here are floors, not the design: the reason used to be 10.5px sitting
+     * 2px under the question, and a fractional font size under 11px is the
+     * specific thing that read as unreadable.
+     */
+    render(
+      <AiPrompts
+        suggestions={[{ text: 'What needs a decision?', reason: '4 in your decision inbox' }]}
+        onPick={() => {}}
+      />,
+    )
+    const cls = screen.getAllByRole('button')[0].className
+    /* Not `gap-0.5`, which put the two lines 2px apart. */
+    expect(cls).not.toMatch(/\bgap-0(\.5)?\b/)
+    expect(cls).toMatch(/\bgap-1\b/)
+
+    const reason = screen.getByTestId('ai-prompt-reason').className
+    const px = Number(reason.match(/text-\[([\d.]+)px\]/)?.[1] ?? NaN)
+    expect(px, `reason font size from "${reason}"`).toBeGreaterThanOrEqual(11)
+    /* And it is distinguishable from its own background in the dark theme,
+       where it was `gray-500` text on a `gray-800` panel. */
+    expect(reason).not.toMatch(/dark:text-gray-5\d\d/)
+  })
+
+  it('separates the questions from each other', () => {
+    /* A 8px gutter between two-line buttons read as one block of grey. */
+    render(
+      <AiPrompts suggestions={['One?', 'Two?', 'Three?']} onPick={() => {}} />,
+    )
+    const list = screen.getByTestId('ai-prompts').className
+    expect(list).toMatch(/space-y-2\.5|gap-2\.5/)
   })
 })
 

@@ -70,6 +70,16 @@ vi.mock('../../portfolio-v2/PortfolioVisual', async importOriginal => {
   const actual = await importOriginal<typeof import('../../portfolio-v2/PortfolioVisual')>()
   return { ...actual, FrameworkScale: () => <div data-testid="ladder" /> }
 })
+/*
+ * The briefing runs a model call and has its own suite
+ * (`asset-briefing-wiring.test.tsx`). Stubbed here so these stay tests of the
+ * snapshot -- but stubbed to render the asset it was handed, so the test below
+ * can still prove the snapshot mounts it against the right asset.
+ */
+vi.mock('../AssetBriefingSection', () => ({
+  AssetBriefingSection: ({ assetId, symbol }: { assetId: string; symbol: string | null }) =>
+    <div data-testid="briefing" data-asset={assetId} data-symbol={symbol ?? ''} />,
+}))
 
 import { InvestmentSnapshot } from '../InvestmentSnapshot'
 /* Rendered directly in one case, to stand in for the no-rows callers. */
@@ -204,6 +214,19 @@ describe('absent data says it is absent', () => {
     expect(screen.queryByText(/Last close/)).toBeNull()
     expect(screen.queryByText(/Quote as of/)).toBeNull()
     expect(screen.queryByText(/Live quote/)).toBeNull()
+  })
+
+  it('mounts the briefing against the asset the page is showing', () => {
+    /*
+     * The briefing's own behaviour is tested in `asset-briefing-wiring`. What
+     * only this suite can prove is that the snapshot mounts it for THIS asset:
+     * a briefing handed the wrong id would be a confident answer about a
+     * different company, which is the worst failure the feature has.
+     */
+    renderSnapshot()
+    const briefing = screen.getByTestId('briefing')
+    expect(briefing.getAttribute('data-asset')).toBe(ASSET.id)
+    expect(briefing.getAttribute('data-symbol')).toBe(ASSET.symbol)
   })
 
   it('states the position with what the strip cannot carry, not a copy of it', () => {

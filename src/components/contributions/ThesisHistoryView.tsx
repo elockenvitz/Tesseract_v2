@@ -22,6 +22,7 @@ import { useAssetRevisions, useUpdateRevisionNote, type RevisionRow } from '../.
 import { EvolutionOverview, type EvolutionStats, type Sentiment } from './EvolutionOverview'
 import { EvolutionTimeline } from './EvolutionTimeline'
 import { RevisionCompare } from './RevisionCompare'
+import { richTextToPlainBlock } from '../../lib/text/rich-text-plain'
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -263,10 +264,18 @@ function TimelineEvent({ event }: { event: HistoryEvent }) {
 
       {event.type !== 'price_target' && (
         <div className="text-sm">
+          {/* Both sides flattened before they are compared, not after. A diff
+              of Markdown SOURCE reports the asterisks as changed tokens, so
+              re-bolding an unchanged phrase showed up as an edit to it. */}
           {event.previousContent ? (
-            <DiffView oldContent={event.previousContent} newContent={event.content || null} />
+            <DiffView
+              oldContent={richTextToPlainBlock(event.previousContent)}
+              newContent={richTextToPlainBlock(event.content) || null}
+            />
           ) : event.content ? (
-            <span className="bg-green-100 text-green-800 rounded px-0.5">{event.content}</span>
+            <span className="bg-green-100 text-green-800 rounded px-0.5">
+              {richTextToPlainBlock(event.content)}
+            </span>
           ) : null}
         </div>
       )}
@@ -644,7 +653,10 @@ function RevisionEventRow({ event }: { event: HistoryEvent }) {
     return (
       <div className="flex items-center gap-2 text-sm py-0.5">
         <DollarSign className="w-3 h-3 text-green-500 flex-shrink-0" />
-        <span className="text-gray-700 dark:text-gray-300 text-xs">{event.content}</span>
+        {/* A generated string ("$180 to $200"), so this flattening is a no-op
+            today. It is here so the guard stays blunt: carving an exception
+            per call site is how the next one gets missed. */}
+        <span className="text-gray-700 dark:text-gray-300 text-xs">{richTextToPlainBlock(event.content)}</span>
       </div>
     )
   }
@@ -654,7 +666,7 @@ function RevisionEventRow({ event }: { event: HistoryEvent }) {
     return (
       <div className="flex items-center gap-2 text-sm py-0.5">
         <Gauge className="w-3 h-3 text-indigo-500 flex-shrink-0" />
-        <span className="text-gray-700 dark:text-gray-300 text-xs">{event.content}</span>
+        <span className="text-gray-700 dark:text-gray-300 text-xs">{richTextToPlainBlock(event.content)}</span>
       </div>
     )
   }

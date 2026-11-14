@@ -59,6 +59,11 @@ import { AdminConsolePage } from './AdminConsolePage'
 import { ASSET_REFERENCE_SELECT } from '../lib/assets/asset-columns'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
+/* The Return seam: `returnTabPatch` turns a sender's ASK for a way back into
+   the tab that was active when they pressed -- or into "leave the keys alone"
+   when the navigation does not move the reader -- and the subscription is how
+   the canonical page asks to go there. See `lib/desktop-asset/return-to`. */
+import { returnTabPatch, subscribeToActivateTab } from '../lib/desktop-asset'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
 import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
 import { CoverageSummaryBanner } from '../components/coverage/CoverageSummaryBanner'
@@ -248,6 +253,21 @@ export function DashboardPage() {
   useEffect(() => {
     activeTabIdRef.current = activeTabId
   }, [activeTabId])
+
+  /*
+   * The open tabs, and the guarded switch, for the same long-lived listeners.
+   *
+   * `subscribeToActivateTab` is registered once with `[]` deps and has to
+   * answer two questions at press time: is that tab still open, and switch to
+   * it. Both change on every render, so both are read through a ref for
+   * exactly the reason the one above exists.
+   *
+   * Assigned during render rather than in an effect: a Return can be pressed
+   * in the same commit that opened the asset page, and an effect-assigned ref
+   * would still hold the initial no-op.
+   */
+  const tabsRef = useRef<Tab[]>([])
+  const tabChangeRef = useRef<(tabId: string) => void>(() => {})
 
   // Session tracking (heartbeat-based)
   useSessionTracking()
@@ -523,6 +543,43 @@ export function DashboardPage() {
     setTabs(prev => {
       const existingTab = findExistingTab(prev)
 
+      /*
+       * ── A way back to the pane that sent the reader ──────────────────────
+       *
+       * The sender asked for one (`openAsset({ returnTo: true })`) and only
+       * this function knows what is open, so this is where the ask becomes a
+       * tab id. See `lib/desktop-asset/return-to` for why the sender cannot
+       * name its own tab: the asset pane is mounted four levels down by two
+       * different components, under three different tab ids, and none of
+       * them is told which one it is.
+       *
+       * Resolved from `prev` and `activeTabIdRef`, not from the closure's
+       * `tabs`, for the same staleness reason `currentActiveId` below is.
+       *
+       * Written for EVERY asset navigation, not only the ones that asked.
+       * Tab data merges, so an arrival that did not ask would otherwise
+       * inherit the previous arrival's Return -- a reader who came from the
+       * Dashboard and then opened the same name from the Trade Queue would
+       * be offered a way back to a surface they had not come from.
+       */
+      const backFrom = activeTabIdRef.current
+      /*
+       * `returnTabPatch`, not `returnTabData(returnTargetFrom(...))`: the
+       * third outcome is "write nothing". A navigation whose destination is
+       * the tab the reader is already on has not moved them, and rewriting
+       * the keys there deleted a Return they had arrived with. See the note
+       * on `returnTabPatch`.
+       */
+      const back = returnTabPatch({
+        requested: result.data?.returnRequested === true,
+        activeTabId: backFrom,
+        hosts: prev,
+        targetId: existingTab?.id ?? result.id,
+        organizationId: currentOrgId ?? null,
+      })
+      const withReturn = (data: Record<string, unknown> | undefined) =>
+        result.type === 'asset' ? { ...(data ?? {}), ...(back ?? {}) } : data
+
       if (existingTab) {
         finalActiveId = existingTab.id
         return prev.map(tab => ({
@@ -533,7 +590,7 @@ export function DashboardPage() {
             ...(result.data ? {
               data: {
                 ...tab.data,
-                ...result.data,
+                ...withReturn(result.data),
                 // For trade-lab tabs, explicitly reset shareId when the new
                 // navigation target doesn't carry one. Without this, opening
                 // your own trade lab after viewing a shared one would inherit
@@ -557,7 +614,7 @@ export function DashboardPage() {
         finalActiveId = result.id
         return prev.map(tab =>
           tab.id === currentActiveId
-            ? { id: result.id, title: tabTitle, type: result.type, data: result.data, isActive: true }
+            ? { id: result.id, title: tabTitle, type: result.type, data: withReturn(result.data), isActive: true }
             : { ...tab, isActive: false }
         )
       }
@@ -566,7 +623,7 @@ export function DashboardPage() {
       finalActiveId = result.id
       return [
         ...prev.map(tab => ({ ...tab, isActive: false })),
-        { id: result.id, title: tabTitle, type: result.type, data: result.data, isActive: true },
+        { id: result.id, title: tabTitle, type: result.type, data: withReturn(result.data), isActive: true },
       ]
     })
     if (finalActiveId) setActiveTabId(finalActiveId)
@@ -620,12 +677,40 @@ export function DashboardPage() {
     return () => window.removeEventListener('decision-engine-action', handler)
   }, [])
 
+  /*
+   * Return to the surface that sent the reader to a canonical page.
+   *
+   * Activation and nothing else. The tab channel above would CREATE the tab
+   * when it is closed and would merge a descriptor's `data` into it when it
+   * is open; both are wrong for a Return, where the whole point is to find
+   * the reader's own surface exactly as they left it. A target that is no
+   * longer open is ignored, which is what makes the affordance safe: the
+   * worst a press can do is nothing.
+   *
+   * Through `handleTabChange`, so the unsaved-research prompt applies. This is
+   * the same act as pressing the tab by hand, and a reader with an open
+   * editor deserves the same question.
+   *
+   * `tabsRef` rather than the closure's `tabs`: this effect is registered
+   * once and the set of open tabs changes under it.
+   */
+  useEffect(() => subscribeToActivateTab(tabId => {
+    if (!tabsRef.current.some(t => t.id === tabId)) return
+    tabChangeRef.current(tabId)
+  }), [])
+
   // Guarded (UX1c-2b): switching the active main tab unmounts the current tab's
   // content, including an open inline Investment Case editor in an AssetTab. Ask
   // before discarding unsaved research; clean editors navigate immediately.
   const handleTabChange = (tabId: string) => {
     requestUnsavedNavigation(() => applyTabChange(tabId))
   }
+
+  /* The two refs the Return listener reads. Same reason and same shape as
+     `navigateRef` above: the listener is registered once, these change every
+     render. */
+  tabsRef.current = tabs
+  tabChangeRef.current = handleTabChange
 
   const applyTabChange = (tabId: string) => {
     // If tab doesn't exist yet (e.g. synthetic parent from grouped tabs), create it directly

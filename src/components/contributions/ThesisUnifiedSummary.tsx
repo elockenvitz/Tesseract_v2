@@ -1,4 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
+/* Stored research is Markdown. Rendered through the application's own
+   renderer, which emits React elements and never HTML, so a case written
+   with `**bold**` reads as bold instead of showing its markers. */
+import { SmartInputRenderer } from '../smart-input'
 import { clsx } from 'clsx'
 import {
   RefreshCw,
@@ -723,7 +727,7 @@ function IndividualViews({
                       {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
                       {c.user?.full_name}:
                     </span>{' '}
-                    {c.content}
+                    <SmartInputRenderer content={c.content} inline />
                   </div>
                 )
               })}
@@ -743,7 +747,7 @@ function IndividualViews({
                       {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
                       {c.user?.full_name}:
                     </span>{' '}
-                    {c.content}
+                    <SmartInputRenderer content={c.content} inline />
                   </div>
                 )
               })}
@@ -763,7 +767,7 @@ function IndividualViews({
                       {isCovering && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
                       {c.user?.full_name}:
                     </span>{' '}
-                    {c.content}
+                    <SmartInputRenderer content={c.content} inline />
                   </div>
                 )
               })}

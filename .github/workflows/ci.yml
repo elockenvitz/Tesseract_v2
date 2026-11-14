@@ -88,13 +88,25 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm install --legacy-peer-deps --no-audit --no-fund --no-progress
-      # --project unit runs only the unit-test project from vitest.config.ts.
-      # The "storybook" project runs in browser mode via Playwright/Chromium,
-      # which requires `npx playwright install` to download the browser
-      # binaries (~150MB). Skipped here to keep CI fast; visual-regression
-      # tests can move to a separate workflow with that install step.
+      # Both unit projects. `vitest.config.ts` splits the suite in two for
+      # speed -- `unit` gets jsdom and the setup file, `unit-node` gets
+      # neither because those files only read source and pure functions -- and
+      # this step ran `unit` ALONE. So 403 files and about 7,400 assertions,
+      # every pure-logic suite in the repository including all of
+      # `src/lib/ai`, were not covered by the required check at all. They ran
+      # only in the local `guard:unit`, which is to say only when someone
+      # remembered. A test CI never runs is decoration.
+      #
+      # The "storybook" project is still skipped: it runs in browser mode via
+      # Playwright/Chromium, which needs `npx playwright install` (~150MB).
+      # Visual-regression tests can move to a separate workflow with that
+      # install step.
+      #
       # CI=true makes Vitest exit instead of watching forever.
       - run: npm test -- --run --project unit
+        env:
+          CI: true
+      - run: npm test -- --run --project unit-node
         env:
           CI: true
 

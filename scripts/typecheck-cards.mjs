@@ -281,6 +281,23 @@ const MAX_ERRORS = 0
 // `useAIConfig.ts`, because `rpc()` in this repo resolves `Fn['Args']` to
 // `never` for every declared function -- a pre-existing defect that roughly
 // thirty call sites already pay for inside this ceiling.
+//
+// 8577 -> 8576 (navigate-out-of-pane): the nav drawer's inline
+// `result => { ... }` callback in `Layout` had an implicitly-typed parameter.
+// Both drawer callbacks now go through `handleChromeNavigation`, whose
+// parameter is stated once.
+// 8576 -> 8579 (contextual workspace): a correction, not a budget. The
+// 8576 above was the last figure measured during the Layout change; by the
+// time the contextual-workspace commits landed the tree measured 8579, and
+// the three are NOT attributable to the change shipped alongside this line:
+// HEAD without it measures 8579 and the two diagnostic lists are identical,
+// line for line. Nor do any of the three name an identifier this work
+// introduced -- the new modules (`entry.ts`, `DecisionAtHand`, `WorkAtHand`,
+// `WorkspaceActions`, `useAssetOpenRequirements`) carry zero diagnostics
+// each. They are three more implicitly-typed expressions inside
+// `AssetTab.tsx` / `InvestmentSnapshot.tsx` class files that already hold
+// hundreds, surfaced by a commit between the two measurements that I did not
+// bisect. Recorded here rather than quietly absorbed.
 const MAX_REPO_ERRORS = 8579
 
 /**

@@ -93,6 +93,7 @@ export type {
 
 export {
   boundHistory,
+  stripStoredExcerpts,
   DEFAULT_HISTORY_BUDGET,
 } from './history'
 export type { HistoryMessage, HistoryBudget, BoundedHistory } from './history'
@@ -112,6 +113,32 @@ export type {
 } from './request-context'
 
 export {
+  chatModeFor,
+  chatLayout,
+  modeToggleLabel,
+} from './chat-modes'
+export type { AiChatMode, ChatLayout, ChatModeInput } from './chat-modes'
+
+export { suggestedPrompts } from './suggested-prompts'
+export type { PromptContext, PromptTag, PromptTarget } from './suggested-prompts'
+
+/* Whether the pane yet knows what it is showing. */
+export { isThreadSettling } from './restore-gate'
+/* One supporting-evidence model per answer: records deduplicated across every
+   lookup and citation, each marked quoted or consulted. */
+export { consolidateEvidence, evidenceHeading, lookupSummary } from './evidence'
+export type {
+  ConsolidatedEvidence, EvidenceRecord, EvidenceLookup, EvidenceRelation,
+} from './evidence'
+export type { RestoreGateInput } from './restore-gate'
+
+/* What the assistant is called. One place, so renaming is one edit. */
+export {
+  ACT_AI, ACT_AI_RESEARCH, ACT_AI_BRIEFING, ACT_AI_PLACEHOLDER, ACT_AI_ANALYZE,
+  actAiTitle,
+} from './brand'
+
+export {
   selectContext,
   describeSelection,
   DEFAULT_BUDGET,
@@ -127,3 +154,21 @@ export type {
   AiTag,
   AiTagType,
 } from './context-selection'
+
+/* Keeping an answer: which objects one can become, and the capture request
+   that opens the canonical form prefilled. Writes nothing itself. */
+export {
+  ARTIFACT_PROMOTIONS,
+  artifactPromotion,
+  promotable,
+  buildArtifactPromotion,
+  promotionConfirmation,
+} from './artifacts'
+export type {
+  ArtifactPromotionId,
+  ArtifactPromotionSpec,
+  PromotionRefusal,
+  PromotionSubject,
+  BuildPromotionInput,
+  PromotionConfirmation,
+} from './artifacts'

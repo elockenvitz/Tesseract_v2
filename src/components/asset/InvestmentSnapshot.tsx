@@ -46,6 +46,7 @@ import { useMemo, type ReactNode } from 'react'
 import { clsx } from 'clsx'
 import { useAssetWorkspace } from '../../hooks/useAssetWorkspace'
 import { DecisionMemorySummary } from './DecisionMemorySummary'
+import { AssetBriefingSection } from './AssetBriefingSection'
 import { useAssetDecisionTimeline } from '../../hooks/useAssetDecisionTimeline'
 import { OBSERVED_PROOFS, isAwaitingDecision } from '../../types/decision-timeline'
 /*
@@ -91,8 +92,23 @@ import { conclusionFigures } from './InvestmentConclusion'
  * claim.
  */
 import {
-  resolveWorkspaceState, STALE_CASE_DAYS, type WorkspaceFacts,
+  resolveWorkspaceState, STATE_EMPHASIS, STALE_CASE_DAYS,
+  type WorkspaceFacts, type LeadCompanion,
 } from '../../lib/asset-workspace/context'
+/*
+ * The entry reason, and the three compositions it chooses between.
+ *
+ * `effectiveMode` is the honesty guard: a decision entry whose request has
+ * since been ruled on, or a work entry whose run is gone, composes the
+ * general page rather than leading with a block about a record that is no
+ * longer there.
+ */
+import {
+  GENERAL_ENTRY, effectiveMode, type WorkspaceEntry,
+} from '../../lib/asset-workspace/entry'
+import { DecisionAtHand } from './DecisionAtHand'
+import { WorkAtHand } from './WorkAtHand'
+import { WorkspaceActions } from './WorkspaceActions'
 /*
  * The excerpt helper, shared with Our View rather than reimplemented.
  *
@@ -156,6 +172,26 @@ export interface InvestmentSnapshotProps {
    * not wired it still gets the truthful summary.
    */
   onOpenEvidence?: (noteId: string) => void
+  /**
+   * WHY the reader opened this name, as the sender described it.
+   *
+   * This is what makes the surface a contextual workspace rather than one
+   * page with a situation label on it: a general open, a decision to rule on
+   * and a process to advance compose differently, because the first question
+   * is different in each. Resolved by `lib/asset-workspace/entry` from the
+   * tab descriptor the shell already delivered.
+   *
+   * Optional, and absent means `general` -- every existing caller keeps the
+   * page it had.
+   */
+  entry?: WorkspaceEntry
+  /**
+   * The process run the asset page currently has selected, if any.
+   *
+   * Only so the action area can tell whether "open the requirements" leads
+   * anywhere. The Snapshot does not fetch workflows and does not choose one.
+   */
+  activeWorkflowId?: string | null
 }
 
 const pct = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
@@ -249,6 +285,8 @@ export function InvestmentSnapshot({
   asset, coverage, currentQuote, onOpenSubPage,
   contributions, currentUserId,
   onOpenEvidence,
+  entry = GENERAL_ENTRY,
+  activeWorkflowId = null,
 }: InvestmentSnapshotProps) {
   const symbol = asset.symbol ?? null
 
@@ -1314,9 +1352,144 @@ export function InvestmentSnapshot({
     unobservedExecutionCount: executionProvenance.unobserved,
     executionCount: executionProvenance.total,
     viewerId: null,
-    arrivalIntent: null,
+    /*
+     * The reason the reader is here, which this surface finally has.
+     *
+     * It was `null` from the day the resolver was written, with the field
+     * documented as "where they came from, if the sender said". Every lens
+     * says; the page was the one that was not listening. The resolver reads
+     * it in `resolveLanding`, which is how an explicit arrival outranks what
+     * the records would otherwise infer.
+     */
+    arrivalIntent: {
+      origin: entry.origin,
+      focus: entry.mode === 'decision' ? 'decisions' : entry.mode === 'work' ? 'workflow' : null,
+      portfolioId: entry.portfolioId,
+    },
   }
   const workspaceState = resolveWorkspaceState(workspaceFacts)
+  /*
+   * Which panel the state puts beside the case at the top of the page.
+   *
+   * `lead` names a panel; this resolves it to the element, and falls through
+   * to no companion when the named panel has nothing to show. The state is
+   * an emphasis, never a promise that data exists: `decision-pending` is
+   * derived from a waiting decision, but `needsDecision` additionally
+   * requires one the reader can act on, and leading with an empty block
+   * would be worse than not leading at all.
+   */
+  const emphasis = STATE_EMPHASIS[workspaceState]
+  /*
+   * Work owed leads whenever it exists, whatever the state says.
+   *
+   * This ordering is the correction to a regression I introduced reaching for
+   * the tidier version. Gating the queue on `decision-pending` hid it on the
+   * names where an idea sits at ready-to-recommend: that is work owed without
+   * being a pending ruling, so the state is not `decision-pending` and the
+   * only actionable thing on the page vanished.
+   *
+   * So the queue is data-driven, as it always was, and the emphasis decides
+   * only what happens on the names where nothing is owed.
+   */
+  const leadKind: 'decision' | LeadCompanion =
+    needsDecision ? 'decision'
+      : emphasis.lead === 'position' ? 'position'
+      : 'none'
+  const leadCompanion =
+    leadKind === 'decision' ? needsDecision
+      : leadKind === 'position' ? exposureValuation
+      : null
+
+  /* ------------------------------------------------- the three compositions */
+
+  /*
+   * Which situation the READER is in, as opposed to which situation the
+   * ASSET is in.
+   *
+   * `workspaceState` above is a fact about the name: a decision is waiting,
+   * the case is stale, nobody holds it. `entryMode` is why this person opened
+   * it, and the two are independent -- a PM arriving to rule on a buy and an
+   * analyst arriving to finish a requirement can be looking at the same name
+   * in the same state and need almost nothing in common.
+   *
+   * The state still decides the emphasis WITHIN the general composition, as
+   * it did before. The entry reason decides which composition.
+   */
+  const entryMode = effectiveMode(entry, {
+    /* Requests only. A live idea is work owed, not a ruling to make, and
+       leading with "the decision in front of you" over an idea nobody has
+       recommended yet would be the surface overstating its records. */
+    openDecisionCount: scopedOpen.length,
+    hasWork: !!entry.work,
+  })
+
+  const decisionAtHand = entryMode === 'decision' ? (
+    <DecisionAtHand
+      assetId={asset.id}
+      rows={scopedOpen}
+      rationaleByIdeaId={ideaRationaleById}
+      highlightId={entry.decisionId}
+      reason={entry.reason}
+      onOpenDecisions={() => onOpenSubPage('decisions')}
+    />
+  ) : null
+
+  const workAtHand = entryMode === 'work' && entry.work ? (
+    <WorkAtHand
+      key="work"
+      assetId={asset.id}
+      workflowId={entry.work.workflowId}
+      requirementId={entry.work.requirementId ?? null}
+      reason={entry.reason}
+      onOpenProcess={() => onOpenSubPage('workflow')}
+    />
+  ) : null
+
+  /*
+   * The running process on a general review, where the Overview said nothing
+   * about it at all.
+   *
+   * "Active work and research requirements" is one of the questions this
+   * surface is supposed to answer, and it answered only the half of it that
+   * is an idea or a decision request. A name with a live process run showed
+   * no sign of it until the reader changed mode.
+   *
+   * The same component, without the arrival framing: no "you were sent here",
+   * nothing highlighted, and it sits in the supporting column rather than
+   * leading. On a work entry it is NOT rendered here, because it is already
+   * the lead and a block drawn twice is a defect.
+   */
+  const processInReview = entryMode === 'general' && activeWorkflowId ? (
+    <WorkAtHand
+      key="process"
+      assetId={asset.id}
+      workflowId={activeWorkflowId}
+      onOpenProcess={() => onOpenSubPage('workflow')}
+    />
+  ) : null
+
+  /*
+   * What leads the page, and what sits in the narrow column beside it.
+   *
+   * One place decides this, so the dedupe below can be stated as a fact
+   * rather than recomputed per branch. A block that leads is never also
+   * rendered lower down: a panel drawn twice on one page is a defect, not
+   * emphasis.
+   */
+  const lead: { primary: ReactNode; secondary: ReactNode | null; kind: string } =
+    entryMode === 'decision'
+      ? { primary: decisionAtHand, secondary: exposureValuation, kind: 'decision-entry' }
+      : entryMode === 'work'
+        /* The queue takes the narrow column when something is owed, because
+           work owed outranks standing exposure; otherwise the exposure does. */
+        ? { primary: workAtHand, secondary: needsDecision ?? exposureValuation, kind: 'work-entry' }
+        : { primary: ourView, secondary: leadCompanion, kind: leadKind }
+
+  /* Consumed by the lead row, so the lower grid must not repeat them. */
+  const exposureLed = entryMode === 'decision'
+    || (entryMode === 'work' && !needsDecision)
+    || (entryMode === 'general' && leadKind === 'position')
+  const caseLed = entryMode === 'general'
   /*
    * Execution provenance is withheld HERE, and only here.
    *
@@ -1344,6 +1517,9 @@ export function InvestmentSnapshot({
       data-asset={asset.id}
       data-portfolio={portfolioId ?? 'all'}
       data-workspace-state={workspaceState}
+      /* The situation the READER is in. Distinct from the state above, which
+         is the situation the ASSET is in. */
+      data-entry-mode={entryMode}
       className="flex flex-col gap-5"
     >
       {/*
@@ -1382,14 +1558,88 @@ export function InvestmentSnapshot({
         72ch paragraph sat alone in a page-wide card. With nothing owed, the
         view takes the row by itself.
       */}
-      {needsDecision ? (
+      {/*
+        The top row is the page's one emphasis slot, and the workspace state
+        is what decides it.
+
+        `STATE_EMPHASIS[state].lead` names what earns the row beside the case.
+        Before this the state reached the DOM as a data attribute and nothing
+        else, so a name held with no case on record looked exactly like one
+        held with a written case: an empty case panel took the page-wide lead
+        and the exposure -- the only concrete fact about the name -- sat below
+        two other blocks.
+
+        A panel that does not lead is still on the page, lower down. Nothing
+        is hidden by a rule the reader cannot see.
+      */}
+      {/*
+        ── And the entry reason decides which composition ──────────────────
+
+        The three leads, in one row each:
+
+          general    the case, with the state's chosen companion beside it
+          decision   the request being ruled on, with the exposure it moves
+          work       the process being advanced, with what is owed on it
+
+        In the two contextual modes the case does not disappear -- it moves
+        below the action area, which is where a reader who came to rule or to
+        work reads it: after they know what they are ruling on.
+      */}
+      {lead.secondary ? (
         /* `items-start` so a short queue does not stretch to the height of a
            long thesis beside it. */
-        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
-          {ourView}
-          {needsDecision}
+        <div
+          data-testid="snapshot-lead-row"
+          data-lead={lead.kind}
+          className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]"
+        >
+          {lead.primary}
+          {lead.secondary}
         </div>
-      ) : ourView}
+      ) : lead.primary}
+      {/*
+        One restrained row of real destinations, framed by the entry reason.
+
+        Directly under the lead, because the lead states the situation and
+        this is what the reader does about it. Every control resolves to a
+        surface that exists and holds something; see `WorkspaceActions`.
+      */}
+      <WorkspaceActions
+        mode={entryMode}
+        assetId={asset.id}
+        symbol={symbol}
+        companyName={asset.company_name ?? null}
+        held={data.positions.length > 0}
+        hasCase={!!data.caseWrittenAt}
+        hasProcess={!!(entry.work?.workflowId ?? activeWorkflowId)}
+        onOpenSubPage={onOpenSubPage}
+      />
+      {/* The firm's own words, where the contextual modes put them. */}
+      {caseLed ? null : ourView}
+      {/*
+        ── ACT AI Briefing ─────────────────────────────────────────────────
+
+        Below the argument and what is owed, above the supporting detail.
+
+        That position is the claim it makes: the briefing is a reading of what
+        the firm already holds, so it belongs after the firm's own words and
+        before the figures a reader would check them against. Putting it at
+        the top would have the assistant speak before the analysts did.
+
+        It reads the SAME resolver the attention band reads, so the situation
+        it says it is in is the situation the band says, and nothing runs
+        until the reader asks for it.
+      */}
+      <AssetBriefingSection
+        assetId={asset.id}
+        symbol={asset.symbol ?? null}
+        companyName={asset.company_name ?? null}
+        coveringUserIds={coverage.map(c => c.user_id).filter((v): v is string => Boolean(v))}
+        spot={quotePrice ?? data.spot}
+        /* So the briefing asks the question the reader's arrival implies,
+           rather than the one the record alone would suggest. */
+        entryMode={entryMode}
+      />
       {/*
         Both left-column blocks are now conditional — "What changed" only when
         something did, the contributor roster only when there is more than one
@@ -1398,26 +1648,37 @@ export function InvestmentSnapshot({
         nothing, so the position and the record take the full width when there
         is no left column to sit beside.
       */}
-      {whatChanged || perspectives ? (
-        <div className="grid grid-cols-1 gap-x-8 gap-y-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
-          <div className="flex min-w-0 flex-col gap-5">
-            {whatChanged}
-            {perspectives}
-          </div>
-          <div className="flex min-w-0 flex-col gap-5">
-            {exposureValuation}
-            {decisionHistory}
-          </div>
-        </div>
-      ) : (
+      {/*
+        The supporting detail, as two columns of whatever actually exists.
+
+        This was three hand-written branches over the same four blocks, which
+        is why adding a fifth meant rewriting the condition rather than adding
+        a block. Composed from two lists instead: the wide column holds what
+        reads (research that arrived, the running process), the narrow one
+        holds the figures (exposure, the record). A block already used by the
+        lead row is absent from both -- a panel drawn twice on one page is a
+        defect, not emphasis -- and a column with nothing in it is not drawn,
+        so a quiet single-author name does not hold 62% of a row open for
+        nothing.
+      */}
+      {(() => {
+        const reads = [whatChanged, perspectives, processInReview].filter(Boolean)
+        const figures = [exposureLed ? null : exposureValuation, decisionHistory].filter(Boolean)
+        if (reads.length > 0) {
+          return (
+            <div className="grid grid-cols-1 gap-x-8 gap-y-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(320px,1fr)]">
+              <div className="flex min-w-0 flex-col gap-5">{reads}</div>
+              <div className="flex min-w-0 flex-col gap-5">{figures}</div>
+            </div>
+          )
+        }
         /* Side by side rather than stacked: each is a compact block of
            figures, and two of them in a page-wide column is a lot of white
-           to the right of a weight bar. */
-        <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
-          {exposureValuation}
-          {decisionHistory}
-        </div>
-      )}
+           to the right of a weight bar. One of them stands alone. */
+        return figures.length > 1 ? (
+          <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">{figures}</div>
+        ) : figures
+      })()}
     </div>
   )
 }

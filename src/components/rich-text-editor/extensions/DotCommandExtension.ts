@@ -1,6 +1,9 @@
 import { Extension } from '@tiptap/core'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+/* The trigger, from the one module that owns it, so the highlighter and the
+   suggestion menu cannot disagree about what a command looks like. */
+import { SLASH } from '../../../lib/ai/slash-commands'
 
 const DotCommandPluginKey = new PluginKey('dot-command-highlight')
 
@@ -119,9 +122,22 @@ function findDotCommands(doc: any, cursorPos: number): DecorationSet {
 
     const text = node.text || ''
 
-    // First, match data commands with symbol suffix like .price.AAPL
+    /*
+     * Data commands with a symbol suffix, like /price.AAPL.
+     *
+     * ── The leading boundary is new, and it is a fix ───────────────────
+     *
+     * This had no boundary at all: `\.(price|...)` matched anywhere in a
+     * word, so text that merely ENDED in a command name picked up command
+     * styling. Harmless enough with a dot. Not harmless with a slash --
+     * without `(?<=^|\s)` every URL in every note would have its path
+     * decorated as a command, because `example.com/price` ends in one.
+     *
+     * `(?<=^|\s)` is a lookbehind, so the boundary is not consumed and the
+     * match offsets below still point at the trigger itself.
+     */
     const dataPattern = new RegExp(
-      `\\.(${DATA_COMMANDS.join('|')})\\.([A-Z0-9]+)(?=\\s|$|[.,;:!?)])`,
+      `(?<=^|\\s)\\${SLASH}(${DATA_COMMANDS.join('|')})\\.([A-Z0-9]+)(?=\\s|$|[.,;:!?)])`,
       'gi'
     )
 
@@ -148,8 +164,15 @@ function findDotCommands(doc: any, cursorPos: number): DecorationSet {
       )
     }
 
-    // Then match regular .command patterns (not already matched as data+symbol)
-    const pattern = /\.([a-zA-Z][a-zA-Z0-9_]*)(?=\s|$|[.,;:!?)])/g
+    /*
+     * Then plain /command patterns, with the same boundary.
+     *
+     * Historical documents hold the old dot form as ordinary TEXT. It is
+     * left alone: not decorated, and not rewritten. Rewriting stored
+     * research to chase a branding change is forbidden, and decorating the
+     * dot form would keep teaching a trigger that no longer fires.
+     */
+    const pattern = new RegExp(`(?<=^|\\s)\\${SLASH}([a-zA-Z][a-zA-Z0-9_]*)(?=\\s|$|[.,;:!?)])`, 'g')
 
     while ((match = pattern.exec(text)) !== null) {
       const from = pos + match.index

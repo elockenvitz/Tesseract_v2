@@ -28,8 +28,8 @@
  * The scan is comment-stripped so that prose explaining the fix, including the
  * comments this change added, can neither satisfy nor break the guard.
  */
-import { describe, it, expect } from 'vitest'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { describe, it, expect, beforeAll } from 'vitest'
+import { readFileSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 
 const SRC = path.join(process.cwd(), 'src')
@@ -55,12 +55,15 @@ function codeOf(abs: string): string {
 }
 
 function sourceFiles(dir = SRC, acc: string[] = []): string[] {
-  for (const entry of readdirSync(dir)) {
-    const full = path.join(dir, entry)
-    if (statSync(full).isDirectory()) {
-      if (entry === '__tests__' || entry === 'test') continue
+  /* `withFileTypes`, so the kind comes back with the listing instead of
+     costing a `statSync` per entry. Measured: 18ms against 42ms, over the
+     same 1,642 files. */
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      if (entry.name === '__tests__' || entry.name === 'test') continue
       sourceFiles(full, acc)
-    } else if (/\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry)) {
+    } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
       acc.push(full)
     }
   }
@@ -70,21 +73,42 @@ function sourceFiles(dir = SRC, acc: string[] = []): string[] {
 /**
  * The comment-stripped source of every application file, read once.
  *
- * Scanned lazily and memoised on purpose. Two other guards in this repo
- * (`benchmark-read-paths`, `storage-access-invariants`) walk the same ~2800
- * files, and each full walk costs about a second. An earlier draft of this
- * file called the walk once per function name, four times in all, which
- * pushed this suite and both of those over vitest's 5s default when the
- * project runs them in parallel. One walk serves every assertion here.
+ * Two other guards in this repo (`benchmark-read-paths`,
+ * `storage-access-invariants`) read the same corpus, and an earlier draft of
+ * this file read it once per function name, four times in all.
+ *
+ * ── Why the read is a hook and not a lazy memo ───────────────────────────
+ *
+ * It was a lazy memo, so whichever assertion touched it first paid for the
+ * whole corpus inside its own 5s budget. MEASURED on this machine: the walk
+ * itself is 18ms with `withFileTypes` and 42ms with a `statSync` per entry,
+ * all three comment-stripping passes together are 95ms, and READING the 1,642
+ * files -- 26.4 MB -- is 1.3 seconds. The first assertion was therefore a
+ * 1.7s test with 3x headroom on its own, and it failed at exactly 5000ms in a
+ * full `guard:unit` run, where three guards of this class read those megabytes
+ * at the same time as 640 other files' suites.
+ *
+ * So the I/O moves to `beforeAll`, where setup belongs, and each assertion is
+ * then a scan of an in-memory corpus. No timeout is raised and no assertion
+ * is weakened: the subject, the regexes and the expectations are untouched,
+ * and a corpus that fails to build still fails the suite rather than passing
+ * it empty.
  */
 let corpus: Array<{ rel: string; code: string }> | null = null
 
+beforeAll(() => {
+  corpus = sourceFiles().map(abs => ({
+    rel: path.relative(SRC, abs).split(path.sep).join('/'),
+    code: codeOf(abs),
+  }))
+})
+
 function sources(): Array<{ rel: string; code: string }> {
-  if (corpus === null) {
-    corpus = sourceFiles().map(abs => ({
-      rel: path.relative(SRC, abs).split(path.sep).join('/'),
-      code: codeOf(abs),
-    }))
+  /* Not a lazy fallback: an empty corpus would make every "nothing calls
+     this" assertion pass for the wrong reason, so an unbuilt one throws. */
+  if (corpus === null) throw new Error('the source corpus was not built')
+  if (corpus.length < 500) {
+    throw new Error(`the source corpus holds ${corpus.length} files, which is not this repository`)
   }
   return corpus
 }
