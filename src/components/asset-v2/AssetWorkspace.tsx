@@ -579,7 +579,7 @@ export function AssetWorkspacePane({
       </div>
       <p className="mt-2.5 text-[11px] text-gray-500">
         Dated after the case was last written. Whether each supports or
-        challenges it is not recorded — that is the review.
+        challenges it is not recorded. That is the review.
       </p>
     </DesktopModule>
   ) : null
@@ -636,7 +636,7 @@ export function AssetWorkspacePane({
               {o.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} sh
             </span>
             <span className="w-16 text-right font-mono text-[13px] font-semibold tabular-nums">
-              {o.weightPct != null ? `${o.weightPct.toFixed(1)}%` : '—'}
+              {o.weightPct != null ? `${o.weightPct.toFixed(1)}%` : 'n/a'}
             </span>
           </div>
         ))}
@@ -662,7 +662,7 @@ export function AssetWorkspacePane({
           schema, so "reviewed, unchanged" cannot be recorded. Said plainly
           rather than papered over with a button that would fake it. */}
       <p className="mt-2 text-[11px] leading-snug text-gray-500">
-        Saving a core section is the only thing that moves this date — there is
+        The date on the case moves only when a core section is saved. There is
         no separate &ldquo;reviewed, no change&rdquo; record.
       </p>
     </DesktopSection>
@@ -683,7 +683,7 @@ export function AssetWorkspacePane({
           <button
             key={i.id}
             type="button"
-            onClick={() => routeToIdea(i.id, `${symbol ?? 'Asset'} — open idea`)}
+            onClick={() => routeToIdea(i.id, `${symbol ?? 'Asset'} · open idea`)}
             className="group flex items-baseline gap-2 rounded-md px-1 py-0.5 text-left hover:bg-gray-100 dark:hover:bg-white/[0.06]"
           >
             <span className="font-mono text-[11px] font-semibold uppercase tracking-wider text-gray-500">
@@ -702,10 +702,33 @@ export function AssetWorkspacePane({
     </DesktopSection>
   ) : null
 
-  const decisions = data.decisions.length > 0 ? (
-    <DesktopSection key="decisions" title="Recent decisions" meta={`${data.decisions.length}`}>
+  /*
+   * What has already been decided, which is not the same list as what is
+   * waiting.
+   *
+   * The pending request is the page's hero: `DecisionBand` presents it with
+   * the view and the book it is weighed against, and a Decide button. It was
+   * ALSO appearing here, as a grey row whose status column read "pending" and
+   * whose date column read nothing -- the same request, twice on one screen,
+   * the second time looking like history. A reader cannot tell whether that
+   * is one request or two, which is the exact failure mode the section
+   * inventory went looking for.
+   *
+   * So this is "decided", by the same predicate the band uses to find its
+   * hero, inverted. One request appears in exactly one place.
+   *
+   * Consequence worth stating: an asset whose ONLY decision row is the
+   * pending one now shows no Recent decisions section at all. That is
+   * correct -- there is no recent decision -- and it is why the count in the
+   * heading is the decided count rather than `data.decisions.length`, which
+   * would have promised rows the section does not render.
+   */
+  const decided = data.decisions.filter(d => (d.status ?? '').toLowerCase() !== 'pending')
+
+  const decisions = decided.length > 0 ? (
+    <DesktopSection key="decisions" title="Recent decisions" meta={`${decided.length}`}>
       <div className="flex flex-col gap-1.5">
-        {data.decisions.slice(0, 5).map(d => (
+        {decided.slice(0, 5).map(d => (
           <div key={d.id} className="flex items-baseline gap-2 text-[13px]">
             <span className="w-[74px] shrink-0 font-mono text-[11px] uppercase tracking-wider text-gray-500">
               {d.status}
@@ -714,7 +737,7 @@ export function AssetWorkspacePane({
               {d.action ?? 'decision'}{d.portfolioName ? ` · ${d.portfolioName}` : ''}
             </span>
             <span className="shrink-0 font-mono text-[11px] text-gray-500">
-              {d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : '—'}
+              {d.decidedAt ? new Date(d.decidedAt).toLocaleDateString() : 'not yet'}
             </span>
           </div>
         ))}
@@ -1200,7 +1223,7 @@ function AssetHeader({
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex min-w-0 flex-1 basis-[11rem] items-baseline gap-2.5">
           <span className="font-extrabold text-[32px] leading-[1.02] tracking-[-0.03em]">
-            {symbol ?? '—'}
+            {symbol ?? 'Asset'}
           </span>
           {companyName && (
             <span className="min-w-0 truncate text-[15px] font-medium text-gray-500">{companyName}</span>
@@ -1604,7 +1627,7 @@ function buildTarget({
   return {
     objectType: 'asset',
     objectId: asset.id,
-    label: asset.company_name ? `${symbol} — ${asset.company_name}` : (symbol ?? 'Asset'),
+    label: asset.company_name ? `${symbol} · ${asset.company_name}` : (symbol ?? 'Asset'),
     symbol: symbol ?? undefined,
     assetId: asset.id,
     portfolioId: position?.portfolioId,

@@ -658,6 +658,44 @@ describe('the decision band turns understanding into a decision', () => {
     return spy
   }
 
+  /*
+   * ── One request, one place on the page ────────────────────────────────
+   *
+   * The band is the hero for what is waiting. "Recent decisions" is the
+   * record of what was settled. The pending row was appearing in both: once
+   * with the view it is weighed against and a Decide button, once as a grey
+   * line whose status read "pending" and whose date read nothing. Two
+   * renderings of one object, the second looking like history.
+   */
+  it('shows a pending request as the hero only, never also as history', () => {
+    data = { ...BASE, decisions: [
+      pendingDecision({ id: 'd-wait', action: 'Add in Large Cap Core' }),
+      pendingDecision({ id: 'd-done', status: 'approved', action: 'Trim in Concentrated', decidedAt: daysAgo(3) }),
+    ] }
+    render(<AssetWorkspacePane asset={asset} />)
+
+    const band = screen.getByTestId('decision-band')
+    expect(within(band).getByText(/Add in Large Cap Core/)).toBeInTheDocument()
+
+    /* The settled one is history and belongs in the list. The waiting one
+       is the hero and must not be in it. */
+    const history = screen.getByText('Recent decisions').closest('section')!
+    expect(within(history).getByText(/Trim in Concentrated/)).toBeInTheDocument()
+    expect(within(history).queryByText(/Add in Large Cap Core/)).not.toBeInTheDocument()
+    /* The heading counts what it renders, not what the query returned. */
+    expect(history).toHaveTextContent(/Recent decisions\s*1/)
+  })
+
+  it('drops the Recent decisions section when the only decision is the waiting one', () => {
+    data = { ...BASE, decisions: [pendingDecision()] }
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(screen.getByTestId('decision-band')).toBeInTheDocument()
+    /* There is no recent decision, so there is no section. An empty box
+       titled "Recent decisions" beside a request that is still open reads
+       as a system that lost something. */
+    expect(screen.queryByText('Recent decisions')).not.toBeInTheDocument()
+  })
+
   it('opens the idea the request was raised on, not the first live idea', async () => {
     /* Two live ideas. The request names the SECOND one. Ordering is by
        `updated_at`, so which idea is first is a fact about recency and has
