@@ -2847,3 +2847,377 @@ Eleven deliberate breakages this pass (A–K), each shown failing the gate it
 belongs to and then reverted. Two further real errors were caught by
 `guard:types` without being staged, one of which was a live `ReferenceError`
 on the artifact rename path.
+
+
+---
+
+# ACT AI 2.4 — completion
+
+Branch `discovery/asset-page-2`, pull request **#291** (open, unmerged, base
+`main`), head `407a26b8`. Written 2026-11-14.
+
+**Nothing in this section has been seen in a browser.** Claude in Chrome
+reports no connected browser on this machine (`list_connected_browsers`
+returned an empty list), so there are no screenshots and nothing below claims
+to be visually verified. Every "verified" names a test, a guard, or a live
+database query at the point of the claim. The click-through is at the end.
+
+**Nothing is merged and nothing is deployed.** Both migrations that this work
+depends on remain unapplied, confirmed by querying production directly:
+
+```
+to_regclass('public.ai_artifacts')  -> null        (20261113120000, unapplied)
+ai_conversation_folder_must_be_own  -> no org check (20261114120000, unapplied)
+```
+
+## 1. Asset Workspace
+
+**A section inventory now exists**, at
+`docs/asset-workspace-section-inventory.md`: every section that renders, its
+class (essential context / supporting detail / full workflow), when it
+appears, and the ordering under each of the five focus values. Three things
+were already right and did not need changing — no section is hidden behind a
+tab in any focus, no whole page is embedded, and the case's measure is its
+column's rather than a second narrower cap inside it. Four were not:
+
+- **The pending decision rendered twice.** `data.decisions` was unfiltered, so
+  the row `DecisionBand` presents as the hero also appeared in "Recent
+  decisions" as a grey line whose status column read `pending` and whose date
+  column was empty. One object, twice on one screen, the second time looking
+  like settled history. "Recent decisions" is now the decided rows, and its
+  heading counts what it renders. An asset whose only decision is the open one
+  shows no such section, which is correct.
+- **Six user-visible em dashes.** Two in prose, three as null glyphs in data
+  columns, one in the Ideas hop label.
+- **A dangling referent.** "Research status" ended with "the only thing that
+  moves this date" while displaying no date.
+- **Two label formats for one hop.** `AAPL — decide: …` from the band and
+  `AAPL — open idea` from the ideas list, now both `·`.
+
+No layout changed. No section moved column and none became hidden.
+
+## 2. Action routing
+
+Every control on the surface resolves to exactly one of **Edit here / Open
+full workflow / Ask ACT AI**. Two routing defects were found in the one that
+matters most, and both were invisible on screen because a wrong destination
+looks exactly like the right one:
+
+- **Decide opened the wrong idea.** It routed to `liveIdeas[0]` — the asset's
+  most recently updated live idea — and not the idea the request was raised
+  on. `decision_requests` already joins `trade_queue_items`, so the correct id
+  was being selected and simply not carried through the hop.
+- **Decide did nothing at all on one path.** The no-idea fallback was
+  `onOpenLegacy?.()`, and neither host passes `onOpenLegacy` — not
+  `IdeasWorkPane`, not `DashboardNext`. It is reachable in production, not a
+  theoretical branch: `liveIdeas` filters to a null outcome and a non-terminal
+  status and caps at 8, while `decisions` applies neither filter, so a pending
+  request on a closed idea landed exactly there. It now opens the asset's own
+  decisions lens, with a Return.
+
+With two or more candidate ideas and no id on the request, it refuses to guess
+and sends the reader to that lens. `DecisionBand`'s callback is required
+rather than optional, because an optional callback no caller passes is a
+defect that typechecks.
+
+`onOpenLegacy` remains declared and still unpassed, so "Full asset page" and
+`target-open-full` do not render. Absent rather than broken, and left alone
+deliberately: there is no legacy page to send anyone to.
+
+## 3. Navigation
+
+**Return** is in place and survives repeated use. The §5D walk — open, return,
+open again, switch tabs, return, open again — found a defect that every step
+passed in isolation:
+
+A navigation whose destination is the tab the reader is **already on** has not
+moved them. The resolver correctly answered "no target" for it, and the shell
+then wrote all three Return keys as null, deleting a way back the reader had
+arrived with and still needed. Follow a breach from the Dashboard into AAPL,
+press one source chip on the page you land on, and "Back to Dashboard"
+disappeared without you ever leaving. There are three outcomes, not two:
+
+```
+set     the reader moved, from somewhere worth returning to
+clear   the reader moved, from somewhere that is not
+none    the reader did not move      <- this was missing
+```
+
+`returnTabPatch` is that third answer. Clearing on a real move with no valid
+origin is untouched, and is still what stops a reader who came from the
+Dashboard and then opened the same name from the search box being offered a
+way back to a surface they did not come from. Organisation stamping is
+unchanged: a Return written in one firm is dropped, not offered, in another.
+
+The other §5 items were closed in the preceding commits: `price_target` lands
+on Research at the targets anchor, `framework` was consolidated rather than
+deleted (it was dead on the Asset page and live in the dashboard pane, which
+the earlier report got wrong), and the two-anchor `scrollTo` mechanism was
+removed as doubly dead — no sender, and a nested `data.data` path nothing
+writes.
+
+## 4. ACT AI
+
+Project destinations and object discovery are complete and were verified by
+reading the rendered controls, not by assuming the helpers exist:
+
+- The project **name** opens the project view; the **chevron** expands in
+  place without leaving; a new conversation started inside a project is
+  created with that folder id rather than filed afterwards; one `···` menu
+  carries rename, archive and delete.
+- A searchable object can be **opened at its canonical destination**
+  (`ai-object-open`, sharing the chip resolver, so resolving IS the permission
+  check and "can I open this" cannot disagree with "is it still there"), shows
+  **its conversation count** across the live list and the archive, and starts
+  a thread with itself as **removable** context, de-duplicated against context
+  the entry point already seeded.
+- A refused move now says so. The move had been dispatched into a discarded
+  promise, so a database refusal closed the menu, left the thread where it
+  was, and said nothing. One sentence covers both refusals deliberately: the
+  trigger's check is a single existence-and-ownership read, and two messages
+  would make the control an oracle for whether an arbitrary uuid is a real
+  folder.
+
+The unified active-context implementation was left alone, as instructed.
+
+## 5. Artifacts — blocked by an unapplied migration
+
+`20261113120000_ai_artifacts.sql` is **not applied**, confirmed above. The
+client probes for the table and reports `available: false`, so the Keep menu's
+artifact row is **absent rather than broken**. Nothing exposes a Save action
+that cannot work.
+
+`supabase/tests/ai-artifacts-authorization.sql` **has never been executed**,
+because no database contains the schema it tests. Its authorization is
+therefore **not proven**, and this document does not say otherwise.
+
+Activation sequence, in an authorized environment, needing your approval at
+step 1 and again at step 5:
+
+1. Apply `20261113120000_ai_artifacts.sql`.
+2. Run `supabase/tests/ai-artifacts-authorization.sql` in full. Every
+   assertion must pass. It runs in BEGIN/ROLLBACK and leaves nothing behind.
+3. Run the deliberate breakages named in that file's header and confirm each
+   fails the assertions it should. A suite nobody has seen fail is decoration.
+4. Confirm the legitimate path: keep an answer, see it listed, rename it,
+   delete it, as a member of the owning organisation.
+5. Separate approval before production.
+6. The rollback is `20261113120000_ai_artifacts.rollback.sql`.
+
+## 6. Security — blocked by an unapplied migration
+
+`20261114120000_ai_conversation_folder_org_boundary.sql` is **prepared and not
+applied**, confirmed above.
+
+It closes one residual gap, and the honest description is a tightening rather
+than a breach: the existing trigger checks that a folder belongs to the
+conversation's owner but not that the owner is still a **member** of the
+organisation the folder is scoped to. The folder's own four policies all
+require `is_member_of_org`, so the definer read inside the trigger was the one
+path that could reach a folder in an organisation the owner has left. No other
+person's data is reachable either way — the folder is theirs and the
+conversation is theirs — and `ai_conversations` has no organisation column at
+all, so nothing crosses a tenant boundary.
+
+The earlier report listed "`folder_id` has no ownership check" as an open
+finding. **That was wrong**, and the correction is recorded in the migration
+header rather than quietly: the check exists in production and has since
+`20261112120000`. What did not exist was any way for a reader to find out it
+had fired.
+
+`supabase/tests/ai-conversation-folder-authorization.sql` is authored and
+**has never been executed**. Seventeen assertions, including two that FAIL
+against a database carrying only the first migration — deliberately, as the
+way to tell which migration an environment has — and one that asserts a
+nonexistent folder and a stranger's folder are refused **identically**. Its
+authorization is **not proven**.
+
+## 7. Cross-surface consistency
+
+- **A promoted idea did not reach the asset pane.** `usePromoteToTradeIdea`
+  inserts a `trade_queue_items` row carrying an `asset_id`, which is exactly
+  what "Live ideas" reads, and it did not invalidate that key. The pane caches
+  for 60 seconds and does not refetch on mount inside the window, so the
+  expiry was load-bearing — the thing the brief says not to lean on. Fixed.
+- **One invalidation, two spellings.** `useDecisionRequests` wrote
+  `['asset-workspace']` itself while twelve other writers call
+  `invalidateAssetWorkspace`. That is how a key change goes green in twelve
+  places and silently stale in the thirteenth.
+- **Checked and correct as they stand:** the case (`asset_contributions`) and
+  the targets (`analyst_price_targets`) invalidate the pane from all twelve of
+  their mutation paths. My first read said they did not; I had grepped for the
+  key rather than the helper that wraps it.
+
+## 8. Engineering
+
+Every gate run, on the final tree:
+
+| Gate | Result |
+|---|---|
+| `guard:types` | PASS — 8579 / ceiling 8579, card-surface 0 |
+| `guard:unit` | PASS — 12015 tests, 687 files |
+| `guard:layout` | PASS — 485 passed, 52 skipped |
+| `guard:ci` | PASS |
+| `guard:gallery` | PASS |
+| `guard:holdings` | PASS |
+| `guard:tdz` | PASS |
+| `guard:social-preview` | PASS |
+| `guard:favicon` | PASS |
+| `guard:policies` | PASS — 14 known findings, 0 new |
+| `guard:copy` | PASS — 334 em dashes, ceiling lowered 339 → 334 |
+| `guard:selftest` | PASS — 14 self-tests, every guard proved able to fail |
+| `sec:edge-authz` | PASS — 13 functions, 0 errors, 1 pre-existing warning |
+
+`guard:selftest` also confirms the new test file is **gated, not deferred**:
+750 on disk = 687 gated + 63 deferred. A test the runner never executes is
+not a test.
+
+Six deliberate breakages this pass, each shown failing the specific assertions
+it should and then reverted:
+
+| | Injection | Caught by |
+|---|---|---|
+| A | restore `liveIdeas[0]` routing | "opens the idea the request was raised on" (got i1, wanted i2); "refuses to guess" (got i1) |
+| B | make the Decide fallback inert | both tests asserting the decisions lens opens (0 opens, wanted 1) |
+| C | restore the unfiltered decisions list | "shows a pending request as the hero only"; "drops the Recent decisions section" |
+| D | drop the same-tab guard from `returnTabPatch` | "keeps the way back when a control does not move the reader" (undefined, wanted 'Dashboard'); "writes all three keys on a move" |
+| E | reintroduce one em dash in asset copy | `guard:copy` FAIL at 335 against ceiling 334, exit 1 |
+| F | drop the promote-path invalidation | "makes the asset pane that lists live ideas refetch" |
+
+**Injection A also caught a flaw in my own tests.** A spy installed before
+`render` recorded events from a tree a previous test left mounted, so one test
+failed for a reason other than its own assertion — a false positive, which is
+the same class of mistake as a test that passes for the wrong reason. The
+spies now start at the press. This is why the injections are run individually
+and the failures read, rather than counted.
+
+## 9. Manual review — a 15 to 20 minute click-through
+
+Nothing below has been done. Each step says what to press and what you should
+see; a mismatch is a finding.
+
+**Setup.** The canonical dev server on port 5190. An asset with a written
+case, a position, at least one live idea, and a pending decision request.
+AAPL in the pilot org has had all four.
+
+### A. The way back (4 min) — the leading fix
+
+1. Open the **Dashboard**. Find an item about an asset and press into it so
+   the asset work pane opens beside it.
+2. In the pane, press **"Edit in research"** on The case.
+   → An asset tab opens. At the **top left of its sticky header**, before
+   anything else, a small **"Back to Dashboard"** button with a left arrow.
+   → The page lands on **Research**, scrolled to **the case**, not at the top.
+3. Press **Back to Dashboard**.
+   → The Dashboard tab activates. **The asset tab stays open** — this is a
+   tab switch, not a close.
+4. Press **Edit in research** again, then **Back** again. Repeat once more.
+   → Identical both times. The button does not drift, duplicate, or lose its
+   label.
+5. Now from the asset page, press a **source chip** or any control that
+   re-opens the same asset at a different section.
+   → **"Back to Dashboard" is still there.** This is the §5D fix; before it,
+   this press deleted the button.
+6. Open the **global search box**, type the same ticker, open it from there.
+   → **No Back button.** Arriving by search is not a trip you come back from,
+   and offering one would point at a surface you did not come from.
+7. Switch organisation with both tabs open, then look at the asset tab.
+   → **No Back button**, because the Dashboard tab now shows another firm's
+   feed.
+
+### B. The decision, and which object it opens (4 min)
+
+8. On an asset with a **pending** request, look at the pane.
+   → An amber **"Waiting on you"** band with the request, the target it is
+   weighed against, the book, and one **Decide** button.
+   → **The same request does NOT also appear** in "Recent decisions" lower
+   down. If it does, step 8 has regressed.
+9. If the asset has more than one live idea, note which idea the request was
+   raised on, then press **Decide**.
+   → The **Ideas** tab opens with **that** idea selected — not the most
+   recently updated one.
+10. Find an asset with a pending request whose idea is closed or archived and
+    press **Decide**.
+    → The asset's **decisions lens** opens, with a **Back** button. Before
+    this pass, nothing happened at all.
+11. On an asset whose only decision is the open one:
+    → **No "Recent decisions" section at all.** Not an empty box.
+
+### C. Copy and figures (3 min)
+
+12. Read every line of the pane: section headings, the small grey notes under
+    sections, the "Also held in" rows, the decision rows.
+    → **No em dashes anywhere.** An absent weight reads `n/a`; an undecided
+    date reads `not yet`.
+13. Read the note under **Research status**.
+    → It says the date on **the case** moves only when a core section is
+    saved. It does not refer to "this date" with no date in sight.
+
+### D. Staleness across surfaces (4 min)
+
+14. From the asset pane, press **Edit in research**, change the thesis, save,
+    press **Back to Dashboard**.
+    → The pane states the **new** case and a **fresh** "written" date
+    immediately. Not after a minute.
+15. Promote a **Quick Thought** on that asset to a trade idea, then go to the
+    asset pane.
+    → **"Live ideas" lists it immediately.** This was the 60-second gap.
+16. Accept or reject a decision request, then return to the asset.
+    → The band is **gone**, and the row has moved into "Recent decisions"
+    with a date.
+
+### E. ACT AI projects and objects (4 min)
+
+17. Open ACT AI. Press a **project's name**.
+    → The project view opens and the list narrows to it.
+18. Press the **chevron** on a different project.
+    → It expands **in place**. The first project stays open. The chevron did
+    not navigate.
+19. Inside an expanded project, press **"New conversation in <name>"**.
+    → The thread is created **already in that project**, not unfiled and then
+    moved.
+20. Search for a ticker in the conversation search box and press the result.
+    → A band naming the object, **"Open <label>"** first in its row, a
+    conversation count, and **"New conversation about this"**.
+21. Press **Open <label>**.
+    → The object's own canonical page opens.
+22. Press **"New conversation about this"**, then look at the composer.
+    → A context chip for the object, with a **remove** control, and **one**
+    chip rather than two if the entry point had already seeded it.
+23. Try to move a conversation into a project, then (if you can arrange it)
+    into one that is not yours.
+    → A legitimate move confirms with the destination named. A refused move
+    says **"You cannot file a conversation there. Pick one of your own
+    projects."** — the same sentence whichever way it was refused, which is
+    deliberate.
+
+### F. What you will NOT see, and should not
+
+24. **Keep as artifact** does not appear in the Keep menu. The table does not
+    exist in production; the action is absent rather than broken. That is
+    correct and is waiting on your approval to apply the migration.
+25. **"Full asset page"** does not appear. No host passes the callback and
+    there is no legacy page to open.
+
+## Adjacent problems found, not fixed
+
+Listed rather than bundled, per scope discipline.
+
+1. **An archived idea still shows as live in the pane.** The "intentionally
+   skipped" mutation in `useDecisionAccountability` writes `visibility_tier:
+   'archive'` and `archived_at`, and does **not** touch `status` or `outcome`.
+   The pane's "Live ideas" filters on a null outcome and a non-terminal
+   **status**, so an idea one surface treats as archived is still listed as
+   live on the asset. This is a data-semantics question — which column is
+   authoritative for "this idea is over" — and not mine to decide.
+2. **`asset.data.researchViewFilter`** is a second dead nested-path arrival
+   effect in `AssetTab`, with no sender and a `data.data` path nothing writes.
+   The same shape as the `scrollTo` effect removed this pass.
+3. **`routeToIdea` navigations carry no Return.** Pressing a live idea or
+   Decide opens the Ideas tab with no way back, while every asset hop now has
+   one. The seam would extend to it; the Ideas tab's host was not in scope.
+4. **Two overlapping `ALL` policies on `ai_conversations`**, one of them `TO
+   public`. Not exploitable on its own — both require `user_id = auth.uid()`
+   — but a `TO public` policy is one edit away from being one.
+5. **`holdings-api` has no runtime authorization regression test**, reported
+   by `sec:edge-authz` as a warning. Pre-existing and unrelated to this work.
