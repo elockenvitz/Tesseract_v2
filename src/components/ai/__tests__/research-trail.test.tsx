@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ResearchTrail, SourceRef } from '../ResearchTrail'
-import { SOURCE_KIND_LABEL, toolCallOutcome, toolCallLabel } from '../../../lib/ai/trail-text'
+import { SOURCE_KIND_LABEL, referenceLabel, toolCallOutcome, toolCallLabel } from '../../../lib/ai/trail-text'
 import type { AiSourceRef, MessageToolCall } from '../../../lib/ai/presentation'
 
 const call = (over: Partial<MessageToolCall> = {}): MessageToolCall => ({
@@ -215,5 +215,43 @@ describe('SourceRef', () => {
     render(<SourceRef source={source({ kind: 'idea', id: 'i-1' })} />)
     screen.getByRole('button').click()
     expect(dispatched[0].detail).toMatchObject({ assetId: 'a-1', focus: 'decisions' })
+  })
+})
+
+/**
+ * The row leads with a short label, and still says which record it was.
+ *
+ * It used to lead with an uppercase kind chip and then the record's whole
+ * title. For a thesis contribution or a requirement that title is a sentence,
+ * so six cited sources read as six record headings competing with the answer
+ * above them -- and the two things a reader scans for, which company and what
+ * kind of document, were the smallest marks on the row.
+ */
+describe('a reference reads as a reference', () => {
+  it('names the company and the kind, in that order', () => {
+    expect(referenceLabel({ kind: 'contribution', symbol: 'aapl' })).toBe('AAPL · Thesis')
+    expect(referenceLabel({ kind: 'decision_request', symbol: 'CEG' })).toBe('CEG · PM ruling')
+  })
+
+  it('falls back to the kind alone where there is no ticker', () => {
+    /* A portfolio or a theme has none, and "· Portfolio" with an empty left
+       half reads as a bug rather than as a label. */
+    expect(referenceLabel({ kind: 'portfolio', symbol: null })).toBe('Portfolio')
+    expect(referenceLabel({ kind: 'theme' })).toBe('Theme')
+  })
+
+  it('does not invent a kind for one it has never seen', () => {
+    expect(referenceLabel({ kind: 'something_new', symbol: 'X' })).toBe('X · something_new')
+    expect(referenceLabel({})).toBe('Record')
+  })
+
+  it('renders the label and keeps the record title beside it', () => {
+    render(<SourceRef source={source({ kind: 'contribution', symbol: 'AAPL', title: 'Services mix supports a larger terminal multiple than the street carries' })} />)
+
+    expect(screen.getByTestId('ai-source-label').textContent).toBe('AAPL · Thesis')
+    /* Kept, because it is what says WHICH thesis. Clamped, not dropped. */
+    const title = screen.getByTestId('ai-source-title')
+    expect(title.textContent).toMatch(/Services mix supports/)
+    expect(title.className).toContain('truncate')
   })
 })

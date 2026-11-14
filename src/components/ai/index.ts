@@ -25,13 +25,25 @@ export { AiEvidence } from './AiEvidence'
 export type { AiEvidenceProps } from './AiEvidence'
 export { AiMessage } from './AiMessage'
 export { AiThinking, AiErrorNotice, AiPrompts } from './AiStates'
-export { AiContextChips } from './AiContextChips'
-export type { AiContextSubject, AiContextTarget } from './AiContextChips'
-/* The one context component that WRITES. It changes the conversation's tags,
-   which is the canonical input the server reads — see its own note for why
-   that is not a contradiction of the display-only rule above. */
+/*
+ * `AiContextChips` was here and is gone.
+ *
+ * It drew a second context row above the thread from `currentSubject` and
+ * `engagementTarget` — neither of which the request reads — so detaching an
+ * object by the composer left it still announcing that object one band up.
+ * There is one context row now, it writes, and it is below.
+ *
+ * Deleted rather than left unexported: a tested component that still renders
+ * a competing context list is how the competing list comes back.
+ */
+/* The one context component, and it WRITES. It changes the conversation's
+   tags, which is the canonical input the server reads. */
 export { AiContextAttach, ATTACHABLE_TYPES } from './AiContextAttach'
 export type { AiContextAttachProps, AttachableType } from './AiContextAttach'
+/* Why the pane was opened: one dismissible line, and NOT a context list. The
+   distinction is the whole point -- see the component's own header. */
+export { AiEntryOrientation } from './AiEntryOrientation'
+export type { AiEntryOrientationProps } from './AiEntryOrientation'
 /* Keeping an answer. It opens the canonical capture form prefilled and
    writes nothing itself -- see its own note on why it still confirms. */
 export { AiKeep } from './AiKeep'

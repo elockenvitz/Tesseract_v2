@@ -26,7 +26,11 @@ interface Props {
   conversations: AIConversationSummary[]
   activeConversationId: string | null
   onSelect: (id: string) => void
-  onNewConversation: () => void
+  /**
+   * Start a thread. The project id is passed when the reader started it from
+   * inside a project, and the thread is filed there when it is first saved.
+   */
+  onNewConversation: (folderId?: string | null) => void
   onRename: (id: string, title: string) => void
   onArchive: (id: string) => void
   onTogglePin: (id: string, pinned: boolean) => void
@@ -317,7 +321,11 @@ export function AIConversationList({
       <div className="p-2 border-b border-gray-200 dark:border-gray-700 space-y-2">
         <button
           type="button"
-          onClick={onNewConversation}
+          /* `onClick={onNewConversation}` would hand the MouseEvent to the
+             handler as its folder id, which is now a parameter it reads.
+             Called with nothing, because this is the UNFILED new thread --
+             the project-scoped ones are in the rail and the project band. */
+          onClick={() => onNewConversation()}
           className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm font-medium
                      text-primary-700 dark:text-primary-300
                      bg-white dark:bg-gray-800 hover:bg-primary-50 dark:hover:bg-gray-700
@@ -363,6 +371,7 @@ export function AIConversationList({
           conversationsFor={conversationsByFolder}
           activeConversationId={activeConversationId}
           tagLabels={tagLabels}
+          onNewConversation={onNewConversation}
           onSelectConversation={onSelect}
           onRenameConversation={onRename}
           onArchiveConversation={onArchive}
@@ -414,6 +423,56 @@ export function AIConversationList({
               </button>
             )
           })}
+        </div>
+      )}
+
+      {/*
+        A project is somewhere you can be, not only a filter.
+
+        With the rail alone, opening a project changed which threads were
+        listed and nothing said which project that was or how to get out --
+        the only clue was a highlighted row above a shorter list. This band
+        is the project's identity while you are in it: its name, what it
+        holds, the way to add to it, and the way back out.
+      */}
+      {selectedFolderName && (
+        <div
+          data-testid="ai-project-view"
+          className="border-b border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-800/60"
+        >
+          <div className="flex items-center gap-1.5">
+            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-primary-600 dark:text-primary-300" aria-hidden="true" />
+            <h3
+              data-testid="ai-project-name"
+              className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-900 dark:text-white"
+              title={selectedFolderName}
+            >
+              {selectedFolderName}
+            </h3>
+            <span className="shrink-0 text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
+              {counts.get(activeFolderId as string) ?? 0}
+            </span>
+          </div>
+          <div className="mt-1 flex items-center gap-3">
+            <button
+              type="button"
+              data-testid="ai-project-new-chat"
+              onClick={() => onNewConversation(activeFolderId as string)}
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-primary-600 hover:underline dark:text-primary-400"
+            >
+              <Plus className="h-3 w-3" aria-hidden="true" />
+              New conversation here
+            </button>
+            <button
+              type="button"
+              data-testid="ai-project-leave"
+              onClick={() => onSelectFolder?.(null)}
+              className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
+            >
+              <MessageSquare className="h-3 w-3" aria-hidden="true" />
+              All conversations
+            </button>
+          </div>
         </div>
       )}
 
@@ -602,7 +661,7 @@ export function AIConversationList({
 function FolderRail({
   folders, archivedFolders, counts, total, activeFolderId, error,
   expanded, onToggleExpanded, conversationsFor,
-  activeConversationId, tagLabels,
+  activeConversationId, tagLabels, onNewConversation,
   onSelectConversation, onRenameConversation, onArchiveConversation,
   onTogglePinConversation, onMoveConversation, onRequestDeleteConversation,
   onSelectFolder, onCreateFolder, onRenameFolder, onArchiveFolder, onRequestDeleteFolder,
@@ -618,6 +677,7 @@ function FolderRail({
   conversationsFor: Map<string, AIConversationSummary[]>
   activeConversationId: string | null
   tagLabels: Record<string, string>
+  onNewConversation: (folderId?: string | null) => void
   onSelectConversation: (id: string) => void
   onRenameConversation: (id: string, title: string) => void
   onArchiveConversation: (id: string) => void
@@ -716,10 +776,11 @@ function FolderRail({
                   ? <FolderOpen className="w-3.5 h-3.5" />
                   : <Folder className="w-3.5 h-3.5" />}
                 isActive={activeFolderId === f.id}
-                /* The row IS the disclosure. The project no longer doubles
-                   as a filter you might have meant to file into. */
                 isExpanded={isOpen}
-                onSelect={() => onToggleExpanded(f.id)}
+                /* Two acts, two controls. The name goes to the project; the
+                   chevron looks inside it without leaving where you are. */
+                onOpen={() => onSelectFolder?.(f.id)}
+                onToggle={() => onToggleExpanded(f.id)}
                 testId={`ai-folder-row-${f.id}`}
                 onRename={onRenameFolder ? (name) => onRenameFolder(f.id, name) : undefined}
                 onArchive={onArchiveFolder ? () => onArchiveFolder(f.id, true) : undefined}
@@ -731,7 +792,25 @@ function FolderRail({
                     <li className="px-3 py-1 text-[11px] italic text-gray-400">
                       Nothing in this project yet.
                     </li>
-                  ) : inside.map(c => (
+                  ) : null}
+                  {/* Starting a thread where you are looking. The alternative
+                      is start-then-file, which is two gestures and a thread
+                      that is briefly in the wrong place. */}
+                  {onNewConversation && (
+                    <li>
+                      <button
+                        type="button"
+                        data-testid={`ai-folder-new-chat-${f.id}`}
+                        onClick={() => onNewConversation(f.id)}
+                        className="flex w-full items-center gap-1.5 px-3 py-1 text-[11px]
+                                   text-primary-600 hover:underline dark:text-primary-400"
+                      >
+                        <Plus className="h-3 w-3" aria-hidden="true" />
+                        New conversation in {f.name}
+                      </button>
+                    </li>
+                  )}
+                  {inside.map(c => (
                     <ConversationItem
                       key={c.id}
                       conversation={c}
@@ -754,8 +833,13 @@ function FolderRail({
       </ul>
       {/* "All conversations" is what clears a project selection. It sits
           below the tree rather than above it, because the tree is now the
-          primary thing and this is an escape from a narrowed view. */}
-      {activeFolderId !== null && (
+          primary thing and this is an escape from a narrowed view.
+
+          Only for a selection the project band cannot speak for -- the
+          unfiled shelf. When a named project is open the band carries its own
+          way out, and two controls doing one thing is how a reader stops
+          trusting either. */}
+      {activeFolderId === UNFILED && (
         <button
           type="button"
           data-testid="ai-folder-clear"
@@ -807,9 +891,21 @@ function FolderRail({
   )
 }
 
+/**
+ * One project row: a destination and a disclosure, which are not the same act.
+ *
+ * ── Why these were split ─────────────────────────────────────────────────
+ *
+ * Both the row and its chevron called one handler, so there was exactly one
+ * thing a project could do and the reader had to guess which. Pressing the
+ * NAME now opens the project as a place -- a view of its own, with its own
+ * New conversation -- and pressing the CHEVRON expands it in the rail
+ * without going anywhere. A reader can look inside a project while reading
+ * a thread from another one, which a single handler made impossible.
+ */
 function FolderRow({
   label, count, icon, isActive, isExpanded, testId,
-  onSelect, onRename, onArchive, onDelete,
+  onOpen, onToggle, onRename, onArchive, onDelete,
 }: {
   label: string
   count: number
@@ -818,7 +914,10 @@ function FolderRow({
   /** Undefined for a row that is not a disclosure. */
   isExpanded?: boolean
   testId?: string
-  onSelect: () => void
+  /** Go to the project. */
+  onOpen: () => void
+  /** Show or hide its threads in place. Undefined when it is not a tree row. */
+  onToggle?: () => void
   onRename?: (name: string) => void
   onArchive?: () => void
   onDelete?: () => void
@@ -843,7 +942,7 @@ function FolderRow({
         data-slot="ai-folder-row"
         data-testid={testId}
         data-folder-active={isActive || undefined}
-        onClick={() => !editing && onSelect()}
+        onClick={() => !editing && onOpen()}
         className={clsx(
           'group flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer text-[12px] transition-colors',
           isActive
@@ -852,14 +951,16 @@ function FolderRow({
         )}
       >
         {/* The disclosure, when this row is one. A real button, so a project
-            can be opened from the keyboard -- which the flat rail's rows,
-            being clickable divs, could not be. */}
-        {isExpanded !== undefined && (
+            can be expanded from the keyboard -- which the flat rail's rows,
+            being clickable divs, could not be. `stopPropagation` is what
+            keeps it from also navigating: the chevron shows the contents in
+            place and goes nowhere. */}
+        {isExpanded !== undefined && onToggle && (
           <button
             type="button"
             aria-expanded={isExpanded}
             aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${label}`}
-            onClick={e => { e.stopPropagation(); onSelect() }}
+            onClick={e => { e.stopPropagation(); onToggle() }}
             className="shrink-0 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
           >
             <ChevronRight
@@ -885,7 +986,19 @@ function FolderRow({
             className="flex-1 min-w-0 px-1 text-[12px] rounded border border-primary-300 dark:border-primary-700 bg-white dark:bg-gray-900 outline-none"
           />
         ) : (
-          <span className="flex-1 truncate" title={label}>{label}</span>
+          /* A real button, for the same reason the conversation title is one:
+             the row's handler is mouse-only, so without this a project could
+             be expanded from the keyboard but never opened. */
+          <button
+            type="button"
+            data-slot="ai-folder-open"
+            onClick={e => { e.stopPropagation(); onOpen() }}
+            aria-current={isActive || undefined}
+            className="flex-1 truncate rounded text-left"
+            title={`Open ${label}`}
+          >
+            {label}
+          </button>
         )}
         {!editing && (
           <>

@@ -1,14 +1,18 @@
 /**
  * The objects this conversation is allowed to use, and the control that adds one.
  *
- * ── Why this one DOES write, when the chip row above the thread does not ──
+ * ── This is the only context row, and it writes ──────────────────────────
  *
- * `AiContextChips` is display-only on purpose: it describes what the server
- * assembled, and a chip that set context would be a second client-side source
- * of truth for what the model was told. This control is the other thing. It
- * writes `ai_conversation_tags`, which is the canonical input the `ai-chat`
- * function reads to build its document blocks, so attaching an object here
- * changes what ACT AI can actually see rather than mirroring it.
+ * There were three. `EngagementContextHeader` and `AiContextChips` drew the
+ * other two from `engagementTarget` and `currentSubject`, which the request
+ * does not read, so detaching an object here left both of them still naming
+ * it — the defect that made "what will ACT AI actually receive" unanswerable
+ * from the screen. Both are gone from this pane; see `lib/ai/active-context`.
+ *
+ * What remains writes. It changes `ai_conversation_tags`, which is the
+ * canonical input the `ai-chat` function reads to build its document blocks,
+ * and the same set travels in the request body — so attaching or detaching
+ * here changes what ACT AI can see rather than mirroring it.
  *
  * ── Three kinds of context, kept apart ───────────────────────────────────
  *
@@ -117,12 +121,25 @@ export interface AiContextAttachProps {
    * the first send.
    */
   retrieval?: (tag: TagRef) => ChipRetrieval
+  /**
+   * Detach everything at once.
+   *
+   * Offered only from two chips up: with one chip its own remove button is
+   * already the whole of "clear all", and a second control that does the same
+   * thing invites the reader to wonder how they differ.
+   *
+   * The host's handler must change the next REQUEST, not just this row. See
+   * `clearContext` in `useAI` -- it resets the tag state and deletes the
+   * conversation's rows, which is what the edge function reads. Omitted where
+   * the host cannot promise that.
+   */
+  onClearAll?: () => void
   className?: string
 }
 
 export function AiContextAttach({
   attached, inheritedKeys = [], labels = {}, onAttach, onDetach, onOpenObject,
-  referenceStatus = () => 'open', retrieval = () => 'unknown', className,
+  referenceStatus = () => 'open', retrieval = () => 'unknown', onClearAll, className,
 }: AiContextAttachProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -301,6 +318,24 @@ export function AiContextAttach({
           </span>
         )
       })}
+
+      {/*
+        Clear everything, from two chips up.
+
+        Placed after the chips and before Add context so the row reads
+        "these, gone, more" rather than putting a destructive control first.
+      */}
+      {onClearAll && attached.length > 1 && (
+        <button
+          type="button"
+          data-testid="ai-context-clear-all"
+          onClick={onClearAll}
+          title="Detach every object. The conversation and its answers are kept."
+          className="rounded-full px-1.5 py-0.5 text-[11px] font-medium text-gray-500 underline-offset-2 hover:text-gray-900 hover:underline dark:text-gray-400 dark:hover:text-gray-100"
+        >
+          Clear all
+        </button>
+      )}
 
       {!open ? (
         <button

@@ -1663,3 +1663,579 @@ your call.
   rendering would be better.
 * **`holdings-api` has no runtime authorization test.** The edge-authz guard
   warns about it. Pre-existing and unrelated to this work.
+
+---
+
+# ACT AI 2.4 — one active context, honest entry, and the case editor leaves
+
+Written 2026-11-13, on `discovery/asset-page-2`, PR **#291**.
+
+**Read the scope note first.** The 2.4 brief has fifteen parts. This pass did
+four of them properly and part of a fifth. It did not attempt the rest. The
+list of what was not touched is in §7, and it is not a list of things that
+half work — they are unchanged from 2.3.
+
+Nothing has been merged or deployed. `ai-chat` is still undeployed and the
+`ai_artifacts` migration is still unapplied.
+
+## 1. There was one context display that mattered, and two that lied
+
+**This is the finding worth understanding, and it explains the symptom
+exactly.** You said removing context near the composer does not remove the
+context at the top, and that it is unclear what the model will actually
+receive. Both halves were true, and for the same reason.
+
+The pane drew context in three bands from three different sources:
+
+| Band | Drawn from | Does the request read it? |
+|---|---|---|
+| `EngagementContextHeader`, at the very top | `engagementTarget` | **No** |
+| `AiContextChips`, above the thread | `currentSubject` + `engagementTarget` | **No** |
+| `AiContextAttach`, in the composer | `tags` | **Yes** |
+
+`tags` is the only one of the three that decides anything. It is written to
+`ai_conversation_tags`, which `ai-chat` reads to build its document blocks,
+and it also travels in the request body as `tags: [...]` (`useAI.ts`, in
+`sendMessage`). The other two bands were parallel descriptions built from
+inputs the request never looks at.
+
+So detaching an object by the composer genuinely changed what the model would
+receive — and the two bands above went on naming it, because they had never
+been reading the same thing. There was no bug in the removal. There were two
+displays that were never connected to it.
+
+`engagementTarget` is also never cleared, by design: it is the request that
+opened the pane. Nothing can revoke it, because nothing stores it as context.
+
+### What replaced it
+
+`src/lib/ai/active-context.ts` is the single model now. `objects` has exactly
+one input — `tags` — and there is no parameter on the function that could put
+an object in that list from anywhere else. That is the enforcement; it is not
+a convention.
+
+It keeps four things apart that were being conflated:
+
+* **Active context** — objects in `tags`. Sent, removable.
+* **Event orientation** — why the pane opened. A sentence about your screen,
+  not an attachment. Dismissible.
+* **Conversation history** — previous messages, sent as bounded history.
+  Clearing context does not rewrite it.
+* **Evidence** — what an answer cited. A record of a past retrieval, not a
+  standing permission to read it again.
+
+The two lying bands are gone from the pane. `AiContextChips` is **deleted**,
+not merely unexported: a tested component that still renders a competing
+context list is how the competing list comes back.
+`EngagementContextHeader` stays in the tree because the Discuss half of the
+pane still uses it — the AI pane just does not.
+
+### The controls, and that they are real
+
+* Remove one object — the chip's X, `removeTag`. What it does to the row
+  depends on whether the object ever reached a request; see §1a below.
+* Dismiss inherited asset context — the same control. An inherited chip is a
+  tag like any other; the dashed border says where it came from.
+* Dismiss inherited event context — the orientation line's X. Keyed to the
+  event, so dismissing AAPL's breach does not silence NVDA's next one.
+  Dismissing detaches nothing.
+* **Clear all** — new, offered from two chips up. `clearContext` in `useAI`
+  detaches every active object at once, in one write rather than a per-chip
+  loop of N requests that can half-fail.
+* Add — unchanged. Adding an object back also reactivates one that was
+  deactivated, so remove-then-add is a round trip with no surprises.
+
+### 1a. The thing I got wrong first, and had to fix
+
+Worth reading, because it is the kind of defect that does its damage silently
+and is not recoverable.
+
+My first version of **Clear all** did exactly what the bullet above used to
+say: it deleted the conversation's tag rows in one statement. That changes
+the next request correctly. It also destroys something else, because
+`ai_conversation_tags` was answering two unrelated questions with one row
+set:
+
+| The question | Who asks it |
+|---|---|
+| What does the next request carry? | the request body's `tags: [...]` |
+| What is this conversation **about**? | `useAssetConversations`, which inner-joins that table to build "my conversations about AAPL" |
+
+So a twenty-message investigation of AAPL, followed by one press of Clear all
+to ask about something else, removed the thread from AAPL's conversation list
+**permanently**, with nothing on screen saying it had happened. The same was
+true one chip at a time before Clear all existed — Clear all turned a
+per-chip footgun into a single press.
+
+The split, in `src/lib/ai/context-activation.ts`:
+
+* The **association** stays in the table and is no longer deleted by a
+  context change. The thread stays discoverable from every object it
+  discussed.
+* **Activation** is held separately, and the request is built from the active
+  set. So clearing still changes the next payload — it just stops destroying
+  history to do it.
+* Detaching is **not** always a deactivation. An object you attached and then
+  removed without ever asking anything established no association: nothing
+  was sent with it and no answer rests on it, so keeping the row would file
+  the thread under an object it never discussed. That row is deleted. One
+  that has travelled in a request is deactivated.
+
+**The limitation, stated plainly.** Activation lives in your browser, per
+viewer, because there is nowhere durable to put it without a migration:
+`ai_conversation_tags` is `(conversation_id, tag_type, tag_id, created_at)`
+with no `is_active`, and `ai_conversations` has no metadata column. Both were
+checked against the live database, not against the migration files, which do
+not describe production. So if you clear context and then open the same
+thread on another machine, the objects are active again. The association is
+intact and the thread is still discoverable either way — the half that was
+being lost is fixed; the half that does not travel is the preference.
+
+The durable fix is one additive column,
+`ai_conversation_tags.is_active boolean not null default true`, plus reading
+and writing it in `useAI`. It is not applied here because applying a
+production migration needs your approval. It is additive and defaults to the
+current behaviour, so it carries no risk to existing rows.
+
+Not built: **"replace the active asset"** as one action (it is remove then
+add), and **"start a new conversation using selected context"** as a named
+control — `New chat` resets to the entry point's context, which is not the
+same thing.
+
+## 2. Opening ACT AI is not asking it something
+
+Opening ACT AI from a CEG tile rendered:
+
+```
+CEG  CEG
+CEG is trading below every case you modelled
+CONTEXT ALREADY SUPPLIED TO THE MODEL
+✓ Asset CEG   ✓ Spot $…   ✓ Raised by valuationBreach
+```
+
+Four faults in one band, all fixed by that band going away:
+
+1. **The ticker twice.** `symbol` is "CEG" and `label` is also "CEG" for an
+   asset with no company name, and the header printed both, adjacent.
+   Measured: with the old header back in place, "CEG" renders **four times**
+   on that screen. The test asserts exactly once.
+2. **A heading claiming to list what the model was given**, over chips built
+   from the engagement request — which is not what the model is given. This
+   was the half that could not be removed.
+3. **`Raised by valuationBreach`** — an evaluator key rendered to a reader as
+   a value. The trace still exists on the target for debugging; it is no
+   longer UI.
+4. **Undismissable.** Read it once and keep it forever.
+
+What is there now is one line — issue title, one sentence of detail, a close
+button: `AiEntryOrientation`.
+
+### Context is not a question
+
+`WorkspaceActions`' **"Ask ACT AI"** button sent a `seedPrompt`, so pressing a
+button that promised to open ACT AI typed a three-clause question about what
+had changed since the case was written into the box — which you then had to
+clear before you could ask your own.
+
+The rule now: **a question is seeded only when the entry named an event.**
+`context.event` exists only when the target carries an `issue`, so:
+
+* **Ask ACT AI** from an asset with nothing wrong → compact context chip,
+  **empty composer**, no orientation banner, no model call.
+* **A valuation breach, a pending recommendation, research past its date** →
+  the orientation line, and the surface's question offered in the composer,
+  editable, never sent.
+
+The discriminator is data the surfaces already send, so nothing new had to be
+threaded through them. Two of the three asks in that row do name a question —
+"Ask what evidence is missing", "Ask what we already hold" — so those now send
+the reason they are naming it (a decision waiting; requirements open), which
+keeps the button's label and the composer's contents agreeing. That reason is
+not invented: it is the state that put the workspace in that mode.
+
+### The `svg` text: I do not think it is in the application
+
+The paste read `svgSpot…`. The same paste also contains `**CEG**` and
+`**CEG is trading below every case you modelled**` — markdown asterisks that
+are not on the screen. The paste therefore went through an HTML-to-Markdown
+converter, and those converters emit `svg` as literal text for an `<svg>`
+element. The icon immediately before "Spot" in that chip row is exactly where
+`svgSpot` comes from.
+
+A grep of all of `components/ai`, `components/communication` and
+`components/asset-v2` for a literal `svg` string found none. The 2.2 pass
+reached the same conclusion from the other end.
+
+**Not fixed, because I do not believe there is anything there to fix.** Seeing
+`svg` on screen — not in a paste — would be new information.
+
+## 3. Following a reference gets out of your way
+
+A reference press in **research** mode now steps the pane back to the rail. It
+is a mode change, not a close, so the conversation, the scroll position and an
+unsent draft all survive — `mode-continuity.test.tsx` already pinned that a
+mode change costs none of them, which is what made this safe to do
+automatically.
+
+In **compact** mode nothing happens. The rail is 384px beside the page, the
+destination is already visible, and collapsing a pane you can see past would
+be the same mistake in the other direction.
+
+The way back is named: after an auto-collapse the mode toggle reads **"Back to
+ACT AI"** rather than "Expand", until you use it. "Expand" was true and
+useless — what you want is the conversation you were just in, and nothing on
+screen said it was still open.
+
+All three exits go through one wrapper: context chips, cited sources and
+ticker pills. Getting the cited-source path there meant lifting `SourceRef`'s
+own navigation into `lib/ai/source-focus` as `openSourceRef`, because the only
+hook the component offered **replaced** the default rather than wrapping it,
+and a second copy of a routing table is how one of them starts sending a
+`workflow` source to the wrong sub-page.
+
+Following a reference does not attach the destination. Navigation and active
+context stay separate operations, and there is a test for it.
+
+### Reference labels
+
+A cited row led with an uppercase kind chip and then the record's whole title.
+For a thesis contribution or a requirement that title is a sentence, so six
+sources read as six record headings competing with the answer above them — and
+the two things you scan for, which company and what kind of document, were the
+smallest marks on the row.
+
+Rows now lead with `AAPL · Thesis`, `CEG · PM ruling`. The record's own title
+is **kept**, clamped to a line with the full text in its tooltip: it is what
+says *which* thesis, and provenance is the point of that section.
+`referenceLabel` in `lib/ai/trail-text` holds the wording.
+
+## 4. Edit the Case no longer opens a cramped copy of the asset page
+
+Pressing Edit flipped a local flag and mounted `ThesisContainer` — the
+canonical contribution editor — **inside** the workspace section, in a column
+sized for reading a paragraph rather than authoring one. It was the right data
+model in the wrong room. There was never a second thesis path; what was wrong
+was which room it opened in. Saving worked. Using it did not.
+
+It navigates now. `openCanonicalCase` opens the asset page at its **research**
+focus, which is where the case and the evidence under it both live — not a
+generic asset overview. The arrival context travels with the hop, so following
+a target breach into the pane and then pressing Edit lands you on the research
+page still knowing why you came.
+
+Three labels, one door: the header's verb, the orientation band's "review the
+case", and the case section's own control all call the same function. The
+button says **"Edit in research"** with an arrow, because "Edit" on a control
+that navigates would be a lie to anyone with unsaved work elsewhere on the
+pane.
+
+The declaration had to move to the top of the component. Three handlers now
+close over the entry context, and a handler closing over a `const` declared
+below it is the temporal dead zone CLAUDE.md lists as a defect class that has
+already broken the feed once.
+
+### The supporting sections were about to be lost
+
+They rendered in full, labelled, with their Markdown intact — but **only while
+the embedded editor was open**. So the one way to read "Key catalysts" was to
+open an editor you did not want, and when that editor left, the content would
+have gone with it, leaving a bare count.
+
+They are disclosed instead: `Show 1 supporting section also on record`, closed
+by default, the same renderer when opened. That is the progressive disclosure
+the brief asks this pane for; the alternative was a lossy summary that makes
+you open the full page to find out whether anything is there.
+
+### What this does NOT do
+
+* **It does not scroll the research page to one named section.** It lands on
+  the research focus. A section-level deep link needs a destination the focus
+  table cannot express yet.
+* **It does not offer a Return to the dashboard.** The asset opens as a tab
+  beside the one you came from, so going back is a tab press rather than a
+  dead end — but it is navigation you have to find, not an affordance.
+* **It does not check read-only permission** at this control. The editor it
+  opens does, which is where it belongs, but the button is drawn for everyone.
+
+## 4a. A project became somewhere you can be
+
+Pressing a project did exactly one thing: it expanded to show its threads.
+Both the row and its chevron called the same handler, so there was no second
+act to discover and no way to tell which one you had performed. A project was
+something you peered into.
+
+Three changes, and they are independent on purpose:
+
+**The name goes to the project; the chevron looks inside it.** Pressing the
+name opens the project; pressing the chevron reveals its threads in the rail
+and navigates nowhere. That matters more than it sounds: a reader can now
+check what is in one project while reading a thread from another. Both are
+real buttons, so both work from the keyboard — the name was previously a span
+inside a clickable div, which meant a project could be expanded without a
+mouse but never opened.
+
+**A project you have opened says so.** A band above the list carries its
+name, how many threads it holds, a New conversation that belongs to it, and
+the way back to all conversations. Before this, opening a project changed
+which threads were listed and nothing else: no name, no count, and the only
+clue as to which project was a highlighted row above a shorter list. The
+rail's old "Show all conversations" link is kept only for the unfiled shelf,
+which the band cannot speak for — two controls doing one thing is how a
+reader stops trusting either.
+
+**"New conversation in <project>" files the thread for real.** This is the
+part worth being careful about, and the reason it has its own test file. A
+conversation row is not written until the first answer comes back, so at the
+moment the button is pressed there is nothing to set `folder_id` on. The
+project is held as an intention in the client for as long as the reader takes
+to type their question, and spent in the `INSERT`. If it were dropped
+anywhere in that window the sidebar would say one thing and the saved row
+another, with no reason for the reader to check — which is worse than not
+offering the control. So the tests pin the insert itself, plus the three ways
+the intention must not leak: onto a plain New conversation, onto the next
+thread after it has been spent, and onto a saved thread opened instead
+(which has its own filing already, and whose next message must not move it).
+
+The composer says "Will be saved in <project>." while the thread is unsaved,
+because that window is the only time the assignment exists in one place.
+
+**Not done in Part IV:** a project still has no description, no members and
+no artifacts of its own, and there is no drag-and-drop filing. Moving a
+thread is still the row menu.
+
+## 5. Non-vacuity
+
+Every gate below was proven to fail by injecting the behaviour it exists to
+catch; the injections were then reverted.
+
+**`active-context.test.ts`** — the old fallback re-added, so `objects` could
+be populated from the target when `tags` was empty:
+
+```
+× is empty when the tags are, however much the entry point supplied
+  AssertionError: expected [ { …(3) } ] to deeply equal []
+× is absent for a plain open, so the composer stays empty
+  AssertionError: expected { title: 'Asked from a surface', …(2) } to be null
+```
+
+**`active-context-pane.test.tsx`** — `EngagementContextHeader` re-rendered in
+the pane and the seed read from the target again. Six failed, including the
+one that counts the ticker:
+
+```
+× names the asset exactly once
+  AssertionError: expected [ <span/>, …(3) ] to have a length of 1 but got 4
+× never claims to list what was already supplied to the model
+× does not render the producer key the chip row showed as a value
+× leaves the composer empty when nothing raised this
+  AssertionError: expected 'What is our current view of CEG, and …' to be ''
+```
+
+**The reference auto-collapse** — `followReference` reduced to just running
+the navigation:
+
+```
+× steps out of research mode when a reference is followed
+  AssertionError: expected "vi.fn()" to be called 1 times, but got 0 times
+× renames the toggle so the way back is findable
+  AssertionError: expected 'Expand' to contain 'Back to ACT AI'
+```
+
+**The embedded editor** — `ThesisContainer` mounted back in the case section:
+
+```
+× sends the reader to the canonical research editor, and mounts none here
+× takes the same door from the case section as from the header
+× sends the review-case control to the asset page at its research focus
+```
+
+One of my own tests was vacuous when first written and was rewritten: three of
+the reference cases asserted by pressing the mode toggle, which proves nothing
+about following a reference. They now resolve the tagged object so the chip
+renders as a real link, and press that.
+
+**`ai-context-activation.test.tsx`** — the association split, which is the one
+claim where a mistake loses data that cannot be recovered. There was no
+`useAI` test before this: every suite that needed the hook mocked it, which is
+precisely why a defect in its write path had nowhere to be caught. This one
+mounts the real hook against a Supabase stub that records every statement
+built, so "no DELETE was issued" is an assertion about what would have reached
+the database rather than a reading of the source.
+
+Injection 1 — `removeTag` reverted to the unconditional row delete (the
+original behaviour). 4 of 10 red:
+
+```
+× leaves the association row in place when it is detached
+  AssertionError: expected [ { table: 'ai_conversation_tags', … } ] to deeply equal []
+× does not come back when the conversation is reopened
+× comes back when the reader attaches it again
+× becomes established once it has travelled, and then survives detaching
+```
+
+Injection 2 — `clearContext` reverted to the bare
+`.delete().eq('conversation_id', id)`. 2 of 10 red:
+
+```
+× empties the request without emptying the conversation
+× never issues an unscoped delete on the conversation
+  an unscoped delete reached the tag table: [["eq","conversation_id","c1"]]
+```
+
+Both reverted; `git diff` on `useAI.ts` afterwards shows only the intended
+change. Note that "leaves it out of the next request body" passes under
+injection 1 — correctly, because deleting the row also drops it from the
+active set. That test guards the payload; the four above guard the
+association. They are separate claims and needed separate cases.
+
+**`ai-project-assignment.test.tsx`** — the project a new thread is filed in.
+
+Injection 1 — `folder_id` dropped from the conversation `INSERT`, which is
+what the code did before this change:
+
+```
+× writes the project onto the row it creates
+  AssertionError: expected undefined to be 'f-earnings'
+```
+
+Injection 2 — the intention left set after it was spent:
+
+```
+× spends the intention once, and not on the next thread
+  AssertionError: expected 'f-earnings' to be undefined
+```
+
+**`ai-folder-rail.test.tsx`** — the chevron rejoined to the name, so both
+did the same thing again:
+
+```
+× goes to the project when the name is pressed, and does not expand it
+  AssertionError: expected "onSelectFolder" to be called with [ 'f-earnings' ]
+```
+
+Four of these cases asserted the OPPOSITE before this pass and were
+rewritten rather than deleted, with the reversal recorded in the file. The
+sharpest was `expect(onSelectFolder).not.toHaveBeenCalled()` after pressing
+a project's name — exactly wrong now, and the clearest statement of what
+"a project is only a disclosure" used to mean.
+
+**`guard:types` proved itself without an injection.** The ratchet's ceiling
+is 8579 repo-wide errors. Four of the errors this pass introduced were real
+and were found by running the typecheck rather than the gate — including one
+live bug (below) — and the count stood at 8583 against that ceiling, so the
+gate would have failed. After the fixes: `repo-wide errors: 8579 (ceiling
+8579), card-surface errors: 0, PASS`.
+
+**One live bug the typecheck caught.** Giving `onNewConversation` a folder
+parameter turned the header's `onClick={onNewConversation}` into a handler
+receiving the MouseEvent as its folder id. The reader would have pressed New
+conversation and had the thread filed into a project whose id was a React
+synthetic event. It is now `onClick={() => onNewConversation()}`.
+
+**One TDZ avoided.** The dependency array that `selectConversation` needed
+named `setDraftFolder`, declared below it. A dependency array is evaluated on
+every render, so that is a `ReferenceError` before anything runs — the
+defect class this codebase has shipped before. The declaration was moved
+above the callbacks that depend on it.
+
+## 6. RLS posture
+
+**No data path changed, and no policy was touched.**
+
+* `clearContext` issues at most
+  `DELETE FROM ai_conversation_tags WHERE conversation_id = $1 AND tag_id IN (...)`
+  as the reader, through PostgREST, under their own RLS — and only for
+  objects that never reached a request. There is deliberately no unscoped
+  delete on `conversation_id`; a test asserts that any delete reaching the
+  tag table names its ids, because the unscoped version is the defect in §1a.
+  It cannot reach a conversation the reader does not own —
+  `ai_conversations` is `user_id = auth.uid()`, and the tag table's policies
+  are scoped through it.
+* Deactivation writes no row at all. It is `localStorage`, per viewer, so it
+  has no RLS posture and leaks nothing: the keys are `type:id` pairs for
+  objects the reader could already open.
+* The project assignment adds `folder_id` to the `ai_conversations` INSERT.
+  Same table, same policy, same reader: `ai_conversations` carries
+  `user_id = auth.uid()` on every verb, and the row is inserted by its own
+  owner. `ai_project_folders` is unchanged and is read under its own
+  per-reader, per-organization policy
+  (`user_id = auth.uid() AND is_member_of_org(organization_id)`, all four
+  verbs), so the folder list the UI offers contains only the reader's own.
+* No new table, view, RPC, Edge Function or migration in Part IV either.
+
+**One thing I checked and did not like, stated plainly.** I was going to
+write that the foreign key stops a reader filing a thread into another
+firm's project. It does not, and I checked the live database rather than
+assume. The constraint is
+`folder_id REFERENCES ai_project_folders(id) ON DELETE SET NULL` — it
+requires the folder to EXIST, not to be yours. And the two policies on
+`ai_conversations` constrain `user_id` only; neither mentions `folder_id`.
+So a crafted client could set `folder_id` to any folder id in the database.
+
+What that is and is not worth:
+
+* **Nothing is disclosed and nothing is corrupted.** The conversation stays
+  `user_id = auth.uid()`, so only its own author can read it, and the folder's
+  owner cannot see it either — their sidebar counts from conversations THEY
+  can see. There is no path by which one firm's thread appears in another's.
+* **What it does leak is an existence oracle.** The insert succeeds for a
+  real folder id and fails the foreign key for a fake one, so a client could
+  confirm whether a given UUID is a folder in some organization. Against
+  unguessable v4 UUIDs that is weak, and it reveals existence only, never a
+  name or an owner.
+* **It pre-dates this change.** `moveConversationToFolder` has always written
+  this column with no ownership check; Part IV adds a second write path to the
+  same unguarded column rather than opening a new hole.
+
+It is listed as an unfixed finding at the end rather than fixed here, per
+scope discipline. The fix is a `WITH CHECK` on `ai_conversations` requiring
+`folder_id IS NULL OR EXISTS (SELECT 1 FROM ai_project_folders f WHERE
+f.id = folder_id AND f.user_id = auth.uid())` — through a definer helper, not
+an inline `EXISTS`, because a policy subquery runs under the caller's own RLS
+and an inline one would be satisfied by the reader's own visibility rather
+than checking it. That is a migration, and migrations need your approval.
+* No new table, view, RPC or Edge Function. No migration.
+* `openSourceRef` moved an `openAsset` call between modules. It dispatches a
+  tab descriptor; it reads nothing.
+* The attach picker still searches through `useEntitySearch`, under the
+  reader's own RLS, so an object you cannot open is an object you cannot
+  attach. Unchanged.
+
+Carried forward from 2.3: the artifacts feature's confidentiality comes almost
+entirely from `user_id = auth.uid()`. The `organization_id` half is a filing
+boundary, not a confidentiality one, because no row is ever readable by anyone
+but its owner.
+
+## 7. What this pass did NOT touch
+
+Unchanged from 2.3. None of these is half-built.
+
+* **Part V — Searchable objects, and the tag clutter in the sidebar.** The
+  object tags above the conversation list are still there.
+* **Part VI — Save as artifact.** The Keep menu is unchanged and its artifact
+  row is still absent, because `ai_artifacts` is still unapplied. There is no
+  naming step, no preview, no object-association picker, no project
+  assignment. The feature is correctly OFF rather than broken — the hook
+  probes for the table instead of reading a flag — but "ready for activation"
+  would overstate it: what exists is the pointer write from 2.3, not the flow
+  the brief describes.
+* **Part VIII — the full workspace content audit.** Two specific things were
+  done (the case fills its column; supporting sections are disclosed). The
+  section-by-section visible / disclosed / open-the-feature decision was not
+  made.
+* **Part IX's scenario and risk editing.** Only the case moved. Bull/base/bear
+  and risks are untouched, so whatever they do today, they still do.
+* **Part X — cross-surface consistency audit.** Not attempted.
+* **Part XII — the end-to-end journeys.** Not run.
+
+## 8. Verification
+
+Automated only. **No browser interaction occurred in this session**, so
+nothing above is a visual claim — every statement names a test, a measurement
+or a grep.
+
+Backend-dependent and therefore still unverified end to end: the request
+payload assertion is made against the code path, not against a live
+`ai-chat`, because `ai-chat` is undeployed. The `tags` array in the body and
+the row delete are both assertable locally; what the deployed function then
+does with a shorter `tags` array is 2.3's change, not this one.

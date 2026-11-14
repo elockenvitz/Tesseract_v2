@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
-import { EngagementContextHeader } from './EngagementContextHeader'
 import type { EngagementTarget } from '../../lib/engagement'
 import {
   Bot,
@@ -40,7 +39,7 @@ import { clsx } from 'clsx'
  * failed" starts rendering as "no records found" on one surface and not the
  * other.
  */
-import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextChips, AiContextAttach, AiKeep, AiComposer, AiSlashMenu, slashRowText } from '../ai'
+import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextAttach, AiEntryOrientation, AiKeep, AiComposer, AiSlashMenu, slashRowText } from '../ai'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
@@ -69,6 +68,19 @@ import {
   conversationContextState, describeSendTarget, shortSubjectLabel,
   subjectsAgree, subjectTag,
 } from '../../lib/ai/conversation-context'
+/*
+ * The one authoritative answer to "what will the next message carry".
+ *
+ * This pane used to draw context in three bands from three sources, only one
+ * of which the request actually reads. The module's own header has the full
+ * account; the short version is that `objects` comes from `tags` and nothing
+ * else, so removing a chip is true everywhere at once rather than in the one
+ * band that happened to be wired to it.
+ */
+import { activeContext, describeActiveContext } from '../../lib/ai/active-context'
+/* The routing a cited source follows, shared with `SourceRef`'s own default
+   so the pane can wrap the hop without re-deriving where it goes. */
+import { openSourceRef } from '../../lib/ai/source-focus'
 
 interface AISectionProps {
   isOpen: boolean
@@ -173,6 +185,7 @@ export function AISection({
     isLoadingList,
     selectConversation,
     newConversation,
+    draftFolderId,
     setTags,
     renameConversation,
     archiveConversation,
@@ -189,6 +202,9 @@ export function AISection({
      */
     addTag,
     removeTag,
+    /* Detach everything, and delete the rows, in one action. The row of chips
+       offers it; see the hook's own note for why it is not a per-chip loop. */
+    clearContext,
     // Project folders: the thread's one organizational home.
     moveConversationToFolder,
     // Archiving had no way back in the UI. These two are it.
@@ -225,6 +241,50 @@ export function AISection({
   const inheritedTagKeys = useMemo(
     () => initialTags.map(t => `${t.type}:${t.id}`),
     [initialTags],
+  )
+
+  /*
+   * ── The active context, assembled once ──────────────────────────────────
+   *
+   * Everything on screen that claims to describe what ACT AI will receive is
+   * drawn from this one value, and this one value is drawn from `tags`.
+   *
+   * The orientation line is in here too, but as an `event` rather than as an
+   * object, because it is neither: it is a sentence about why the reader is
+   * on this screen. It is never put on the wire as context, and dismissing it
+   * detaches nothing.
+   */
+  /*
+   * Dismissal is keyed to the event, not kept as a bare boolean.
+   *
+   * A boolean dismissed for one event stays dismissed for the next, so the
+   * reader who closed AAPL's valuation breach would never be told why the
+   * pane had opened again on NVDA. The key is the title plus the object, and
+   * a new key is a new event that has not been dismissed.
+   */
+  const [dismissedEventKey, setDismissedEventKey] = useState<string | null>(null)
+  const eventKey = engagementTarget?.issue?.title
+    ? `${engagementTarget.objectType}:${engagementTarget.objectId}:${engagementTarget.issue.title}`
+    : null
+
+  const context = useMemo(
+    () => activeContext({
+      tags,
+      inheritedKeys: inheritedTagKeys,
+      target: engagementTarget,
+      currentSubject,
+      eventDismissed: eventKey !== null && dismissedEventKey === eventKey,
+    }),
+    [tags, inheritedTagKeys, engagementTarget, currentSubject, eventKey, dismissedEventKey],
+  )
+
+  /** The sentence form, for the row's own title attribute. */
+  const contextSummary = useMemo(
+    () => describeActiveContext(
+      context,
+      o => o.tag.label || tagLabels[o.key] || o.tag.id,
+    ),
+    [context, tagLabels],
   )
 
   /*
@@ -284,9 +344,58 @@ export function AISection({
     [contextManifest, tagLabels, tags],
   )
 
+  /*
+   * ── Following a reference out of expanded research mode ─────────────────
+   *
+   * The destination worked and the transition did not. Pressing a reference
+   * in expanded ACT AI navigated the page underneath, and expanded ACT AI
+   * stayed over the top of it, so the reader saw nothing change and had to
+   * close the pane by hand to find out where they had been sent. Then
+   * re-opening it to carry on.
+   *
+   * So a reference press in research mode steps the pane back to the rail.
+   * It is a mode change, not a close: the same component stays mounted, so
+   * the conversation, the scroll position and an unsent draft all survive --
+   * `mode-continuity.test.tsx` already pins that a mode change costs none of
+   * them, which is what makes this safe to do automatically.
+   *
+   * In compact mode nothing happens. The rail is 384px beside the page, the
+   * destination is already visible, and collapsing a pane the reader can see
+   * past would be the same mistake in the other direction.
+   */
+  /** Set when a reference press collapsed research mode, so the toggle back
+      can say what it is for rather than reading "Expand". */
+  const [returnToResearch, setReturnToResearch] = useState(false)
+
+  const followReference = useCallback((go: () => void) => {
+    go()
+    if (mode === 'research' && onToggleMode) {
+      setReturnToResearch(true)
+      onToggleMode()
+    }
+  }, [mode, onToggleMode])
+
   const openTaggedObject = useCallback(
-    (tag: TagRef) => { openReference(referenceTargets.get(referenceKey(tag))) },
-    [referenceTargets],
+    (tag: TagRef) => {
+      followReference(() => openReference(referenceTargets.get(referenceKey(tag))))
+    },
+    [referenceTargets, followReference],
+  )
+
+  /**
+   * A record the answer cited.
+   *
+   * Passed explicitly so the hop goes through `followReference`. Without it
+   * `SourceRef` navigates on its own and the pane never learns a reference
+   * was followed -- which is the half of the transition that was missing.
+   * `openSourceRef` is the component's own default, lifted into `lib` so
+   * both callers share one routing table.
+   */
+  const openCitedSource = useCallback(
+    (source: Parameters<typeof openSourceRef>[0]) => {
+      followReference(() => { openSourceRef(source, 'ai-chat-reference') })
+    },
+    [followReference],
   )
 
   /*
@@ -310,6 +419,18 @@ export function AISection({
     if (folderSelection === null || folderSelection === UNFILED) return
     if (!folders.some(f => f.id === folderSelection)) setFolderSelection(null)
   }, [folders, folderSelection, folderOrgId])
+
+  /*
+   * The project an unsaved thread is destined for, named.
+   *
+   * Resolved against the live folder list rather than remembered, so a
+   * project archived or deleted in another tab stops being announced instead
+   * of naming somewhere that is no longer there.
+   */
+  const draftFolderName = useMemo(
+    () => (draftFolderId ? folders.find(f => f.id === draftFolderId)?.name ?? null : null),
+    [draftFolderId, folders],
+  )
 
   /** Everything the list needs to show and change folders, in one object. */
   const folderProps = {
@@ -431,8 +552,26 @@ export function AISection({
    * Keyed on the seed itself rather than on the target, so re-opening the
    * panel for the same item does not clobber a reply the user has started
    * typing. Anything already in the box wins.
+   *
+   * ── Why it reads the EVENT and not the target ──────────────────────────
+   *
+   * Opening ACT AI and analysing an event are two different actions, and the
+   * composer is where the difference is visible. "Ask ACT AI" from an asset
+   * means the reader wants to ask something; finding a three-clause question
+   * about what has changed since the case was written already typed into the
+   * box answers a question they did not ask, and they then have to clear it
+   * before they can ask their own.
+   *
+   * `context.event` exists only when the entry point named an issue -- a
+   * valuation breach, a pending recommendation, research past its date. So a
+   * seed is offered exactly when something specific raised this, and a plain
+   * open gets an empty composer. The discriminator is the data the surfaces
+   * already send; nothing new had to be threaded through them.
+   *
+   * `WorkspaceActions`' "Ask ACT AI" supplies a `seedPrompt` with no issue
+   * and is therefore now a plain open, which is what its label promises.
    */
-  const seedPrompt = engagementTarget?.seedPrompt ?? null
+  const seedPrompt = context.event?.seedPrompt ?? null
   const seededRef = useRef<string | null>(null)
   useEffect(() => {
     if (!seedPrompt || seededRef.current === seedPrompt) return
@@ -571,8 +710,8 @@ export function AISection({
     selectConversation(id)
     if (!isInlineSidebar) setShowListAsScreen(false)
   }
-  const handleNewConversationFromList = () => {
-    newConversation()
+  const handleNewConversationFromList = (folderId?: string | null) => {
+    newConversation(folderId ?? null)
     if (!isInlineSidebar) setShowListAsScreen(false)
   }
 
@@ -681,7 +820,9 @@ export function AISection({
   // is wired, the pill renders but clicks are a no-op — visual win first,
   // navigation later.
   const handleTickerClick = (symbol: string) => {
-    window.dispatchEvent(new CustomEvent('open-asset-by-symbol', { detail: { symbol } }))
+    followReference(() => {
+      window.dispatchEvent(new CustomEvent('open-asset-by-symbol', { detail: { symbol } }))
+    })
   }
 
   const handleSuggestionClick = (suggestion: string) => {
@@ -836,7 +977,7 @@ export function AISection({
           activeConversationId={conversationId}
           tagLabels={tagLabels}
           onSelect={selectConversation}
-          onNewConversation={newConversation}
+          onNewConversation={(folderId) => newConversation(folderId ?? null)}
           onRename={renameConversation}
           onArchive={archiveConversation}
           onTogglePin={togglePin}
@@ -849,16 +990,25 @@ export function AISection({
       {/* Main pane */}
       <div className="flex flex-col flex-1 min-w-0 h-full">
       {/*
-        The bound-object header, but NOT while it would be lying.
+        Why the reader is here — one line, and only that.
 
-        It renders the engagement target, which is never cleared. With a
-        conversation open that the current page is not part of, it announced
-        "context already supplied: Asset AAPL" over a thread the reader had
-        walked away from. In that one state the banner below says what is
-        actually open instead.
+        This used to be `EngagementContextHeader`, which also announced
+        "Context already supplied to the model" over a row of chips built from
+        the engagement request. That claim was false in the way that matters:
+        the model's context is the conversation's `tags`, and this band was
+        drawn from something else entirely, so it kept naming an asset the
+        reader had just detached by the composer. `AiEntryOrientation`'s
+        header has the full list of what that band got wrong.
+
+        Still suppressed over a foreign thread, for the original reason: a
+        reader who has walked to a thread about something else should not be
+        told why a different screen opened this pane.
       */}
-      {engagementTarget && contextState !== 'foreign' && headerDescribesHere && (
-        <EngagementContextHeader target={engagementTarget} mode="ai" />
+      {context.event && contextState !== 'foreign' && headerDescribesHere && (
+        <AiEntryOrientation
+          event={context.event}
+          onDismiss={() => setDismissedEventKey(eventKey)}
+        />
       )}
 
       {/*
@@ -924,7 +1074,7 @@ export function AISection({
           <button
             type="button"
             data-testid="ai-mode-toggle"
-            onClick={onToggleMode}
+            onClick={() => { setReturnToResearch(false); onToggleMode() }}
             aria-pressed={mode === 'research'}
             className={clsx(
               'ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium',
@@ -932,28 +1082,43 @@ export function AISection({
                 ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
                 : 'text-gray-500 hover:bg-gray-200 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200',
             )}
-            title={modeToggleLabel(mode)}
+            title={
+              returnToResearch && mode !== 'research'
+                ? 'Back to the conversation in research mode. Your draft is still there.'
+                : modeToggleLabel(mode)
+            }
           >
             {mode === 'research'
               ? <Minimize2 className="h-3.5 w-3.5" />
               : <Maximize2 className="h-3.5 w-3.5" />}
-            {mode === 'research' ? 'Research mode' : 'Expand'}
+            {/*
+              The way back, named.
+
+              The pane steps out of research mode by itself when a reference
+              is followed, so that the reader can see where they landed. A
+              control reading "Expand" after that is technically true and
+              useless: the thing the reader wants is the conversation they
+              were just in, and nothing on screen said it was still open.
+              The word changes until they use it.
+            */}
+            {mode === 'research'
+              ? 'Research mode'
+              : returnToResearch ? 'Back to ACT AI' : 'Expand'}
           </button>
         )}
       </div>
 
       {/*
-        What this conversation is about.
+        There is no second context row here any more.
 
-        Display only: the model's context is assembled server-side from the
-        conversation's tags. On the rail, with the thread scrolled, this is the
-        only thing on screen that answers "which company am I asking about".
+        `AiContextChips` used to sit at this point, drawn from `currentSubject`
+        and `engagementTarget`. It answered "which company am I asking about"
+        on a scrolled rail, which is a real question — but it answered it from
+        inputs the request never reads, so it was the band that went on saying
+        "AAPL" after AAPL had been detached. The composer's row answers the
+        same question from the authoritative set and is pinned to the bottom
+        of the pane, so it is on screen whenever this was.
       */}
-      <AiContextChips
-        subject={currentSubject}
-        target={engagementTarget}
-        mode={mode}
-      />
 
       {/*
         Messages.
@@ -998,7 +1163,23 @@ export function AISection({
           <AiPrompts
             suggestions={groundedSuggestions}
             onPick={handleSuggestionClick}
-            header={<AiErrorNotice error={error} onRetry={retryLastSend} />}
+            header={
+              <>
+                <AiErrorNotice error={error} onRetry={retryLastSend} />
+                {/* Where this will land, said before it lands.
+                    The row is written on the first answer, so without this
+                    the reader presses "New conversation in Earnings season"
+                    and then has nothing but faith that it stuck. */}
+                {draftFolderName && (
+                  <p
+                    data-testid="ai-draft-folder"
+                    className="mb-2 text-[11px] text-gray-500 dark:text-gray-400"
+                  >
+                    Will be saved in {draftFolderName}.
+                  </p>
+                )}
+              </>
+            }
             columns={layout.promptColumns}
           />
         ) : (
@@ -1009,6 +1190,9 @@ export function AISection({
                 message={message}
                 modelLabel={modelLabelFor(message.model)}
                 onTickerClick={handleTickerClick}
+                /* So a cited record is followed through the pane rather than
+                   around it. See `openCitedSource`. */
+                onOpenSource={openCitedSource}
                 /* The bubble's ceiling, and whether the evidence rail starts
                    open. Research mode is where sources get checked. */
                 mode={mode}
@@ -1244,16 +1428,31 @@ export function AISection({
             question being asked. It used to float above the box in a band
             of its own.
           */}
+          {/*
+            Rendered from `context.objects`, not from `tags` directly.
+
+            Same data — `activeContext` has no other input for them — but
+            routing it through the module makes that structurally true rather
+            than a convention, and the row inherits its de-duplication: a
+            reader who attached the asset the entry point had already seeded
+            used to get two chips for one object, each with its own remove
+            button, so removing either left the other looking like a failure.
+          */}
           <AiContextAttach
-            attached={tags}
-            inheritedKeys={inheritedTagKeys}
+            attached={context.objects.map(o => o.tag)}
+            inheritedKeys={context.objects.filter(o => o.origin === 'inherited').map(o => o.key)}
             labels={tagLabels}
             onAttach={addTag}
             onDetach={removeTag}
             onOpenObject={openTaggedObject}
             referenceStatus={referenceStatus}
             retrieval={retrieval}
+            /* Clears the state AND deletes the rows the edge function reads,
+               so the next request is genuinely different. */
+            onClearAll={clearContext}
+            className="w-full"
           />
+          <p data-testid="ai-context-summary" className="sr-only">{contextSummary}</p>
         </AiComposer>
         </div> {/* reading column */}
       </div>

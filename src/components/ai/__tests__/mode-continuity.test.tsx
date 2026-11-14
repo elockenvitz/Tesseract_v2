@@ -244,12 +244,20 @@ describe('compact ↔ research', () => {
   })
 
   it('names the active asset in both modes', () => {
+    /*
+     * Asserted against the context row in the composer, which is the one
+     * place the pane names its objects now. It used to be `ai-context-chips`
+     * above the thread; that band described the engagement target rather than
+     * the conversation's tags, so it could name an asset the reader had
+     * detached. The claim being made here is unchanged -- switching modes
+     * must not cost the reader the answer to "which company is this about".
+     */
     const compact = renderPane('compact')
-    expect(compact.getByTestId('ai-context-chips').textContent).toContain('AAPL')
+    expect(compact.getByTestId('ai-context-attach').textContent).toContain('AAPL')
     compact.unmount()
 
     const research = renderPane('research')
-    expect(research.getByTestId('ai-context-chips').textContent).toContain('AAPL')
+    expect(research.getByTestId('ai-context-attach').textContent).toContain('AAPL')
   })
 
   it('offers the source as a live link in both modes', async () => {

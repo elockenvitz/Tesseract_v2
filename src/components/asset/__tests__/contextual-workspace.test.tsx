@@ -205,11 +205,25 @@ describe('opened to review the name', () => {
     expect(screen.queryByTestId('snapshot-work-at-hand')).toBeNull()
   })
 
-  it('asks the assistant the review question', () => {
+  it('opens the assistant without putting a question in the composer', () => {
+    /*
+     * This used to assert the opposite -- that pressing "Ask ACT AI" sent a
+     * drafted question about the current view of AAPL, which the pane then
+     * typed into the composer.
+     *
+     * The button says it will open ACT AI. A reader who presses it has asked
+     * for a blank box, and arriving to find a three-clause question already
+     * written there means clearing it before they can ask their own. The two
+     * buttons in this row that DO name a question still send one; they are
+     * asserted below, and they now also send the reason they are naming it.
+     *
+     * Context is not a question: the asset still travels as inherited
+     * context, which `engagement.test.ts` covers through `toAITags`.
+     */
     renderWorkspace(entry())
     fireEvent.click(screen.getByTestId('workspace-action-ask'))
     expect(asked).toHaveLength(1)
-    expect(asked[0]).toMatch(/current view of AAPL/)
+    expect(asked[0]).toBe('')
   })
 })
 

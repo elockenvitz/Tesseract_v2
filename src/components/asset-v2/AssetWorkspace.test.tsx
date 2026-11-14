@@ -277,14 +277,39 @@ describe('the case is the object, and its absence is a finding', () => {
     expect(screen.getByText(/2 research items exist against it/)).toBeInTheDocument()
   })
 
-  it('mounts the canonical editor rather than growing its own', async () => {
+  /*
+   * This used to assert the opposite: that pressing Edit mounted
+   * `ThesisContainer` -- the canonical editor -- inside this section, and
+   * that it was handed the right asset id. It was the right data model in
+   * the wrong room. The editor expects the Asset page's width and the
+   * research furniture around it, and in a dashboard pane it rendered as a
+   * cramped copy of a page that already exists.
+   *
+   * The claim now is that the pane does NOT grow an editor and the reader
+   * lands on the one that belongs to the case, at the research focus rather
+   * than on a generic asset overview.
+   */
+  it('sends the reader to the canonical research editor, and mounts none here', async () => {
     const user = userEvent.setup()
     data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(30) }
     render(<AssetWorkspacePane asset={asset} />)
-    await user.click(screen.getByRole('button', { name: /Edit/ }))
+    await user.click(screen.getByTestId('workspace-open-case-editor'))
 
-    expect(screen.getAllByTestId('real-thesis-editor')).toHaveLength(1)
-    expect(editorFor).toEqual(['a-1'])
+    expect(screen.queryByTestId('real-thesis-editor')).toBeNull()
+    expect(editorFor).toEqual([])
+    expect(opened).toHaveLength(1)
+    expect(opened[0].assetId).toBe('a-1')
+    expect(opened[0].focus).toBe('research')
+  })
+
+  it('says where the control goes, since it goes somewhere', () => {
+    /* "Edit" was honest about an editor that opened in place. On a control
+       that navigates it is not: a press leaves the pane. */
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(30) }
+    render(<AssetWorkspacePane asset={asset} />)
+
+    expect(screen.getByTestId('workspace-open-case-editor').textContent)
+      .toMatch(/Edit in research/)
   })
 
   it('offers to write the case when there is none', () => {
@@ -859,24 +884,30 @@ describe('the action row names the one thing to do, and goes there', () => {
    *
    * The header's verb now leaves, consistently, whatever the verb is -- a
    * button that sometimes navigates and sometimes opens an editor is worse
-   * than either. What this case protects is that leaving did not take the
-   * in-place editor with it: the case section keeps its own control, so a
-   * reader who wants to stay still writes here in one press.
+   * than either.
+   *
+   * This case used to protect the opposite of what it protects now. It
+   * asserted that leaving had not taken the in-place editor with it: the
+   * section's own control still mounted the editor, so "writing here means
+   * staying here". Both halves of that are gone. The embedded editor was a
+   * research surface in a pane too narrow to use it, so the section's control
+   * leaves too -- and the claim worth keeping is that the pane has ONE
+   * destination for the case, reached the same way from either control,
+   * rather than two behaviours behind two similar-looking buttons.
    */
-  it('still writes in place from the case itself, not only away', async () => {
+  it('takes the same door from the case section as from the header', async () => {
     data = { ...BASE, evidence: [{ id: 'e1', title: 'A note', createdAt: daysAgo(10), authorName: 'A', isShared: true }] } as AssetWorkspaceData
     render(<AssetWorkspacePane asset={asset} />)
     expect(screen.queryByTestId('real-thesis-editor')).toBeNull()
 
-    // The header's verb reads the same words in this state, so the section's
-    // own control has to be reached past it rather than by label alone.
-    const inCase = [...document.querySelectorAll<HTMLButtonElement>('button')]
-      .filter(b => b.dataset.slot !== 'asset-primary' && /Write the case/.test(b.textContent ?? ''))
-    expect(inCase).toHaveLength(1)
-    await userEvent.click(inCase[0])
-    expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
-    // And pressing it did NOT navigate. Writing here means staying here.
-    expect(opened).toEqual([])
+    await userEvent.click(screen.getByTestId('workspace-open-case-editor'))
+
+    /* No editor appeared, and the hop names the research focus rather than
+       dropping the reader on a generic asset overview. */
+    expect(screen.queryByTestId('real-thesis-editor')).toBeNull()
+    expect(opened).toHaveLength(1)
+    expect(opened[0].focus).toBe('research')
+    expect(opened[0].assetId).toBe('a-1')
   })
 })
 

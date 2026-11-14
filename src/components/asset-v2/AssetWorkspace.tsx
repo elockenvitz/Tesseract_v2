@@ -52,9 +52,9 @@
  * happened and hands off. No idea workspace: an idea is its own object.
  */
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
-import { ArrowUpRight, PencilLine, X } from 'lucide-react'
+import { ArrowUpRight, PencilLine } from 'lucide-react'
 import { askAI, discuss, canDiscuss, type EngagementTarget } from '../../lib/engagement'
 import {
   useAssetWorkspace, primaryPosition, otherPositions,
@@ -85,9 +85,16 @@ import { anchoredWindow, PriceSinceReview } from '../research-v2/ResearchVisual'
  * this hook, and the "latest valid holds" filtering happens inside it.
  */
 import { useThesisReviews } from '../../hooks/useThesisReview'
-import { ThesisContainer } from '../contributions'
+/*
+ * `ThesisContainer` is deliberately NOT imported any more.
+ *
+ * It is the canonical contribution editor and it used to mount inside the
+ * case section behind an `editing` flag, which put a full research editor in
+ * a dashboard-pane column. `openCanonicalCase` navigates to the page that
+ * editor belongs on instead; its own header has the reasoning. The import is
+ * named here because re-adding it is how the embedded editor comes back.
+ */
 import { SmartInputRenderer } from '../smart-input'
-import { useState } from 'react'
 import { EntryOrientation } from './EntryOrientation'
 /* The one reshape of a workspace read into the band's facts, shared with the
    canonical Asset page so the four labelled measurements cannot drift. */
@@ -208,7 +215,6 @@ export function AssetWorkspacePane({
   const activeFocus: AssetFocus = focus ?? 'overview'
   const symbol = asset.symbol ?? null
   const { data, isLoading } = useAssetWorkspace(asset.id, symbol, activeFocus)
-  const [editing, setEditing] = useState(false)
 
   const core = data.sections.filter(s => (CORE_SECTIONS as readonly string[]).includes(s.section))
   const peripheral = data.sections.filter(s => !(CORE_SECTIONS as readonly string[]).includes(s.section))
@@ -273,6 +279,91 @@ export function AssetWorkspacePane({
 
   if (isLoading) return <Skeleton />
 
+  /* ------------------------------------------------- the one way out, up top */
+
+  /*
+   * The context, only if it still describes what is on screen.
+   *
+   * `contextAppliesTo` is identity, not a heuristic: a context built for
+   * another name, or in another organisation, applies to nothing and the page
+   * renders exactly as it would have with nothing carried. Both defects it
+   * guards against have shipped in this app before.
+   *
+   * Declared HERE, above every section, because three things now hand it to
+   * the next surface -- the header's verb, the orientation band's own action,
+   * and the case section's Edit control. A handler that closes over a `const`
+   * declared below it is the temporal dead zone this codebase has a lint and
+   * a guard for, and it is listed in CLAUDE.md as a defect class that has
+   * already broken the feed once.
+   */
+  const entry = contextAppliesTo(entryContext, {
+    assetId: asset.id, organizationId: organizationId ?? null,
+  }) ? entryContext! : null
+
+  /*
+   * `research` for every verb, and that is not a placeholder.
+   *
+   * All seven verbs `primaryActionFor` can return -- review it, write it,
+   * revisit it, finish it, read it, review the new evidence, add evidence --
+   * are things done to the CASE, and the Asset page's research focus is where
+   * the case and the evidence under it both live. A per-verb map here would
+   * be a table with one value repeated seven times, which is a thing to keep
+   * in step rather than a distinction.
+   */
+  const primaryFocus: AssetFocus = 'research'
+
+  /**
+   * Open the case where the case is actually written.
+   *
+   * ── What this replaces ──────────────────────────────────────────────────
+   *
+   * Pressing Edit used to flip a local `editing` flag and mount
+   * `ThesisContainer` -- the canonical contribution editor -- inside this
+   * section, in a column sized for reading a paragraph rather than for
+   * authoring one. It was the right data model in the wrong room: the editor
+   * expects the Asset page's width and its surrounding research furniture,
+   * and squeezed into a dashboard pane it rendered as a cramped copy of a
+   * page that already exists. Saving worked; using it did not.
+   *
+   * So editing leaves. The three categories an action in this pane can fall
+   * into are edit here, open the canonical feature, or ask ACT AI, and
+   * authoring a thesis is squarely the second -- it is a substantial research
+   * task with its own surface, history and review semantics.
+   *
+   * ── Why this is not a loss of function ──────────────────────────────────
+   *
+   * It is the same editor either way; there is one thesis model and one
+   * mutation path, and this pane never had a second. What changes is which
+   * room it opens in. The arrival context travels with the hop, so a reader
+   * who followed a target breach into this pane and then pressed Edit lands
+   * on the research page still knowing why they came -- and the entry
+   * handoff is what makes the canonical page able to say so.
+   *
+   * ── What it does NOT yet do ─────────────────────────────────────────────
+   *
+   * It does not scroll the research page to one named section, and it does
+   * not offer a Return to the dashboard. The asset opens as a tab beside the
+   * one the reader came from, so going back is a tab press rather than a
+   * dead end, but that is navigation the reader has to find. Both are real
+   * gaps and are listed as such rather than papered over.
+   */
+  const openCanonicalCase = () => {
+    /* The arrival goes with them, where there was one. A reader who followed
+       a target breach here should not have to restate why they went just
+       because they left by one control rather than another. */
+    offerEntryContext(entry)
+    openAsset({
+      assetId: asset.id,
+      symbol,
+      companyName: asset.company_name ?? null,
+      focus: primaryFocus,
+      portfolioId: portfolioId ?? null,
+      portfolioName: portfolioName ?? null,
+      issue: issue ?? null,
+      origin: origin ?? null,
+    })
+  }
+
   /* ------------------------------------------------------------- sections */
 
   const theCase = (
@@ -283,46 +374,40 @@ export function AssetWorkspacePane({
       lead
       meta={subject.daysSinceReview != null ? `written ${subject.daysSinceReview}d ago` : 'never written'}
       action={
+        /*
+         * The label says where it goes, because it goes somewhere.
+         *
+         * "Edit" on a control that opened an editor in place was accurate.
+         * On a control that navigates it would not be: a reader with unsaved
+         * work elsewhere on this pane deserves to know a press leaves. Hence
+         * the arrow and the verb naming the destination.
+         */
         <button
           type="button"
-          onClick={() => setEditing(v => !v)}
-          className={clsx(
-            'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-semibold',
-            editing
-              ? 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-white/[0.06]'
-              : 'text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30',
-          )}
+          data-testid="workspace-open-case-editor"
+          onClick={openCanonicalCase}
+          title={core.length
+            ? 'Open the case in the research editor on the asset page'
+            : 'Start the case in the research editor on the asset page'}
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/30"
         >
-          {editing
-            ? <><X className="h-3 w-3" />Done editing</>
-            : <><PencilLine className="h-3 w-3" />{core.length ? 'Edit' : 'Write the case'}</>}
+          <PencilLine className="h-3 w-3" />
+          {core.length ? 'Edit in research' : 'Write the case'}
+          <ArrowUpRight className="h-3 w-3" />
         </button>
       }
     >
-      {editing ? (
-        <>
-          {/* The canonical contribution editor, mounted -- not reimplemented.
-              There is one thesis data model and one mutation path, and this
-              workspace uses them rather than growing a second. */}
-          <ThesisContainer assetId={asset.id} />
-          {peripheral.length > 0 && (
-            <div className="mt-4 border-t border-gray-200 pt-3 dark:border-white/10">
-              <div className={EYEBROW}>Also on record</div>
-              {peripheral.map(sec => (
-                <p key={sec.section} className="mt-1.5 text-[13px] text-gray-600 dark:text-gray-400">
-                  <span className="font-semibold">{SECTION_LABEL[sec.section] ?? sec.section}:</span>{' '}
-                  {/* `inline`, because this is a one-line "Label: text" row and
-                      the block renderer would break the text onto its own line. */}
-                  <SmartInputRenderer content={sec.content ?? ''} inline />
-                </p>
-              ))}
-              <p className="mt-1.5 text-[11px] text-gray-500">
-                Supporting sections sit outside the core case and do not move the review date.
-              </p>
-            </div>
-          )}
-        </>
-      ) : core.length > 0 ? (
+      {/*
+        No editor branch here any more.
+
+        `ThesisContainer` used to mount in this slot behind an `editing` flag.
+        See `openCanonicalCase` above for why it left and what travels with
+        the reader when they go. The peripheral sections it listed in full
+        while editing are still named below, as a count -- which is the
+        progressive disclosure this pane is supposed to practise, and the
+        detail is on the page the button now opens.
+      */}
+      {core.length > 0 ? (
         <div className="flex flex-col gap-4">
           {core.map(sec => (
             <div key={sec.section}>
@@ -345,11 +430,7 @@ export function AssetWorkspacePane({
               </div>
             </div>
           ))}
-          {peripheral.length > 0 && (
-            <p className="text-[13px] text-gray-500">
-              {peripheral.length} supporting section{peripheral.length === 1 ? '' : 's'} also on record.
-            </p>
-          )}
+          <SupportingSections sections={peripheral} />
         </div>
       ) : (
         /* The absence IS the finding, and it is stated at the size of one.
@@ -556,59 +637,15 @@ export function AssetWorkspacePane({
    * panes already use, and `focus` lands the reader on the part the verb
    * names rather than at the top.
    *
-   * ── The in-pane editor is not lost ──────────────────────────────────────
+   * ── Every verb about the case leaves, by the same door ──────────────────
    *
-   * `setEditing` is no longer called from here, and the case section keeps
-   * its own "Write the case" / "Edit" control, so authoring in place is still
-   * one press away for a reader who wants to stay. What changes is that the
-   * HEADER's verb now leaves, consistently, whatever the verb is.
+   * The header's verb, the orientation band's "review the case" and the case
+   * section's own Edit control are three labels for one navigation, and they
+   * all call `openCanonicalCase`, declared at the top of this component. The
+   * in-pane editor that used to answer the last two is gone; its header has
+   * the reasoning.
    */
-  /*
-   * `research` for every verb, and that is not a placeholder.
-   *
-   * All seven verbs `primaryActionFor` can return -- review it, write it,
-   * revisit it, finish it, read it, review the new evidence, add evidence --
-   * are things done to the CASE, and the Asset page's research focus is
-   * where the case and the evidence under it both live. A per-verb map here
-   * would be a table with one value repeated seven times, which is a thing
-   * to keep in step rather than a distinction.
-   */
-  /*
-   * The context, only if it still describes what is on screen.
-   *
-   * `contextAppliesTo` is identity, not a heuristic: a context built for
-   * another name, or in another organisation, applies to nothing and the page
-   * renders exactly as it would have with nothing carried. Both defects it
-   * guards against have shipped in this app before.
-   *
-   * Declared here rather than beside the orientation it feeds, because the
-   * two ways out of this pane -- the header's verb and the band's own action
-   * -- both hand it to the next surface, and a handler that closes over a
-   * `const` declared below it is the use-before-define this codebase has a
-   * lint for.
-   */
-  const entry = contextAppliesTo(entryContext, {
-    assetId: asset.id, organizationId: organizationId ?? null,
-  }) ? entryContext! : null
-
-  const primaryFocus: AssetFocus = 'research'
-  const runPrimary = () => {
-    /* The arrival goes with them, where there was one. The header's verb is
-       the other way out of this pane to the canonical page, and a reader who
-       followed a target breach here should not have to restate why they went
-       just because they left by the header rather than by the band. */
-    offerEntryContext(entry)
-    openAsset({
-      assetId: asset.id,
-      symbol,
-      companyName: asset.company_name ?? null,
-      focus: primaryFocus,
-      portfolioId: portfolioId ?? null,
-      portfolioName: portfolioName ?? null,
-      issue: issue ?? null,
-      origin: origin ?? null,
-    })
-  }
+  const runPrimary = openCanonicalCase
 
   /* ------------------------------------------------ why you are here */
 
@@ -631,9 +668,10 @@ export function AssetWorkspacePane({
         context={entry}
         facts={facts}
         actions={{
-          /* The page's own editor, in place. The case section keeps its own
-             control; this is the same one, reached from the orientation. */
-          reviewCase: () => setEditing(true),
+          /* The canonical research editor, same as the case section's own
+             control and the header's verb. It used to flip this pane into an
+             embedded editor; see `openCanonicalCase`. */
+          reviewCase: openCanonicalCase,
           /* The canonical asset page at its scenarios, which is where a
              target is actually edited. The event travels with the hop so the
              reader does not have to restate why they went. */
@@ -1190,6 +1228,68 @@ function AssetHeader({
           there was no action waiting to go in it.
         */}
       </div>
+    </div>
+  )
+}
+
+/**
+ * The sections outside the core case — a count, and the content behind it.
+ *
+ * ── Why this exists at all ────────────────────────────────────────────────
+ *
+ * The supporting sections used to render in full, labelled, with their
+ * Markdown intact — but ONLY while the embedded editor was open. So the one
+ * way to read "Key catalysts" was to open an editor you did not want, and
+ * when that editor left, the content would have left with it. What remained
+ * was the count, which is the sort of lossy summary that makes a reader open
+ * the full page to find out whether anything is there.
+ *
+ * So it is disclosed rather than summarised. Closed by default, because these
+ * sections sit outside the core case and do not move the review date — they
+ * are supporting detail, and permanent screen space is what this pane is
+ * supposed to be spending more carefully. Open, they are the same labelled
+ * rows the editor used to show, rendered by the same renderer.
+ *
+ * Reading is not editing: nothing here writes, and the control that does is
+ * the one that opens the research page.
+ */
+function SupportingSections({
+  sections,
+}: {
+  sections: { section: string; content: string | null }[]
+}) {
+  const [open, setOpen] = useState(false)
+  if (sections.length === 0) return null
+
+  const count = `${sections.length} supporting section${sections.length === 1 ? '' : 's'}`
+
+  return (
+    <div data-testid="case-supporting-sections">
+      <button
+        type="button"
+        data-slot="case-supporting-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(o => !o)}
+        className="inline-flex items-center gap-1 text-[13px] text-gray-500 underline-offset-2 hover:text-gray-800 hover:underline dark:hover:text-gray-200"
+      >
+        {open ? 'Hide' : 'Show'} {count} also on record
+      </button>
+
+      {open && (
+        <div className="mt-2 border-t border-gray-200 pt-2 dark:border-white/10">
+          {sections.map(sec => (
+            <p key={sec.section} className="mt-1.5 text-[13px] text-gray-600 dark:text-gray-400">
+              <span className="font-semibold">{SECTION_LABEL[sec.section] ?? sec.section}:</span>{' '}
+              {/* `inline`, because this is a one-line "Label: text" row and the
+                  block renderer would break the text onto its own line. */}
+              <SmartInputRenderer content={sec.content ?? ''} inline />
+            </p>
+          ))}
+          <p className="mt-1.5 text-[11px] text-gray-500">
+            Supporting sections sit outside the core case and do not move the review date.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

@@ -21,13 +21,12 @@
 import { useState } from 'react'
 import { AlertCircle, ChevronRight, Search } from 'lucide-react'
 import { clsx } from 'clsx'
-import { openAsset } from '../../lib/desktop-asset'
-import { focusForSourceKind } from '../../lib/ai/source-focus'
+import { openSourceRef } from '../../lib/ai/source-focus'
 import type { AiSourceRef, MessageToolCall } from '../../lib/ai/presentation'
 /* The words, and the three-status rule they carry, live in lib so a test can
    read them without a DOM and a second surface cannot quietly reword them. */
 import {
-  SOURCE_KIND_LABEL, sourceStateLabel, recordAge,
+  referenceLabel, sourceStateLabel, recordAge,
   toolCallLabel, toolCallOutcome, trailBorderFor,
 } from '../../lib/ai/trail-text'
 
@@ -126,11 +125,37 @@ export function SourceRef({
 
   const body = (
     <>
-      <span className="inline-block px-1 mr-1 rounded bg-gray-100 dark:bg-gray-800
-                       text-gray-600 dark:text-gray-400 text-[10px] uppercase tracking-wide">
-        {SOURCE_KIND_LABEL[source.kind]}
+      {/*
+        The concise label first: "AAPL · Thesis".
+
+        This was an uppercase kind chip on its own, followed by the record's
+        full title -- which for a thesis contribution or a requirement is a
+        sentence. Six sources then read as six record headings competing with
+        the answer above them, and the two things a reader scans for, which
+        company and what kind of document, were the smallest part of the row.
+        `referenceLabel` holds the wording so both halves of the evidence
+        section say it the same way.
+      */}
+      <span
+        data-testid="ai-source-label"
+        className="mr-1 font-semibold text-gray-800 dark:text-gray-200"
+      >
+        {referenceLabel(source)}
       </span>
-      <span className="font-medium">{source.title}</span>
+      {/*
+        The record's own title, kept and clamped.
+
+        Not dropped: it is what says WHICH thesis, which ruling, which note,
+        and provenance is the point of this section. One line, because its
+        job here is recognition and the document is one press away.
+      */}
+      <span
+        data-testid="ai-source-title"
+        className="inline-block max-w-[42ch] truncate align-bottom font-normal text-gray-600 dark:text-gray-400"
+        title={source.title}
+      >
+        {source.title}
+      </span>
       {/*
         The record's own state, never the lookup's. Separated from the kind
         chip by weight rather than another box: two chips side by side read as
@@ -184,14 +209,9 @@ export function SourceRef({
       type="button"
       onClick={() => {
         if (onOpen) { onOpen(source); return }
-        /* No focusRequestId here: assetTabFor stamps one per call, which is
-           what lets the receiver tell a new intent from a remounted tab. */
-        openAsset({
-          assetId: source.asset_id as string,
-          symbol: source.symbol ?? null,
-          focus: focusForSourceKind(source.kind),
-          origin: 'ai-research-trail',
-        })
+        /* The same function the chat pane's wrapper calls, so there is one
+           routing table rather than one here and one there. */
+        openSourceRef(source)
       }}
       className="text-left text-primary-600 dark:text-primary-400 hover:underline"
       title={`Open ${source.title}`}

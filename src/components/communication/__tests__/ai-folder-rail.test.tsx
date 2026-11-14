@@ -173,13 +173,20 @@ describe('the project tree', () => {
 
   it('scopes the conversation list to the selected shelf', () => {
     /* Folder SELECTION still works and still narrows the list -- it is the
-       filter contract, it has its own suite, and search results rely on it.
-       What changed is that pressing a project row no longer invokes it. */
+       filter contract, it has its own suite, and search results rely on it. */
     render(list({ activeFolderId: 'f-earnings' }))
     expect(titles()).toEqual(['MSFT Q4 setup', 'NVDA supply chain'])
     expect(rows()[1].getAttribute('data-folder-active')).toBe('true')
-    /* And there is a way back out of the narrowed view. */
-    expect(screen.getByTestId('ai-folder-clear')).toHaveTextContent('Show all conversations (4)')
+    /*
+     * And there is a way back out of the narrowed view.
+     *
+     * This asserted `ai-folder-clear` in the rail. The project band now
+     * carries its own way out, and two controls doing one thing is how a
+     * reader stops trusting either -- so the rail's copy is kept only for
+     * the unfiled selection, which no band can speak for.
+     */
+    expect(screen.getByTestId('ai-project-leave')).toHaveTextContent('All conversations')
+    expect(screen.queryByTestId('ai-folder-clear')).not.toBeInTheDocument()
   })
 
   it('shows only the unfiled threads for the unfiled selection', () => {
@@ -200,26 +207,60 @@ describe('the project tree', () => {
       .toHaveTextContent('Nothing is filed in Earnings season yet.')
   })
 
-  it('opens a project to show what is in it, and does not filter', async () => {
+  /*
+   * ── The chevron and the name are different acts ─────────────────────────
+   *
+   * These three cases asserted the opposite of what they assert now, and the
+   * reversal is the point of this pass. Both the row and its chevron called
+   * one handler, so a project could do exactly one thing and the reader had
+   * to guess which -- and the one thing it did was expand, which left a
+   * project as something you peek into rather than somewhere you can be.
+   *
+   * The name now GOES to the project; the chevron shows its threads in
+   * place and navigates nowhere. The old assertion
+   * `expect(onSelectFolder).not.toHaveBeenCalled()` after pressing the name
+   * is now exactly wrong, which is why these were rewritten rather than
+   * extended.
+   */
+  const expand = (name: string) => screen.getByRole('button', { name: `Expand ${name}` })
+  const collapse = (name: string) => screen.getByRole('button', { name: `Collapse ${name}` })
+
+  it('expands a project in place when the chevron is pressed, and goes nowhere', async () => {
     render(list())
-    /* The whole point of the change. Pressing a project reveals its
-       contents in place rather than narrowing the view to it, so the reader
-       can see containment without losing everything else. */
     expect(screen.queryByTestId('ai-folder-threads-f-earnings')).not.toBeInTheDocument()
 
-    await userEvent.click(screen.getByText('Earnings season'))
+    await userEvent.click(expand('Earnings season'))
 
     const inside = screen.getByTestId('ai-folder-threads-f-earnings')
     expect(inside).toHaveTextContent('MSFT Q4 setup')
     expect(inside).toHaveTextContent('NVDA supply chain')
+    /* Looking inside is not leaving. A reader can check what is in one
+       project while reading a thread from another. */
     expect(handlers.onSelectFolder).not.toHaveBeenCalled()
+    /* And nothing was filtered: the full list is still underneath. */
+    expect(titles()).toContain('A thought about rates')
+  })
+
+  it('goes to the project when the name is pressed, and does not expand it', async () => {
+    render(list())
+
+    /* By role, because the name control has to BE one: the row's own click
+       handler is mouse-only, so without a focusable name a project could be
+       expanded from the keyboard and never opened. Its accessible name is
+       the project's name, which is also what the reader sees. */
+    await userEvent.click(screen.getByRole('button', { name: 'Earnings season' }))
+
+    expect(handlers.onSelectFolder).toHaveBeenCalledWith('f-earnings')
+    /* Independent of the disclosure. The destination draws its own list, so
+       expanding the rail row as well would show the same threads twice. */
+    expect(screen.queryByTestId('ai-folder-threads-f-earnings')).not.toBeInTheDocument()
   })
 
   it('closes it again', async () => {
     render(list())
-    await userEvent.click(screen.getByText('Earnings season'))
+    await userEvent.click(expand('Earnings season'))
     expect(screen.getByTestId('ai-folder-threads-f-earnings')).toBeInTheDocument()
-    await userEvent.click(screen.getByText('Earnings season'))
+    await userEvent.click(collapse('Earnings season'))
     expect(screen.queryByTestId('ai-folder-threads-f-earnings')).not.toBeInTheDocument()
   })
 
@@ -238,9 +279,21 @@ describe('the project tree', () => {
 
   it('says a project is empty rather than drawing nothing', async () => {
     render(list({ conversations: [conversations[3]] }))
-    await userEvent.click(screen.getByText('Earnings season'))
+    await userEvent.click(expand('Earnings season'))
     expect(screen.getByTestId('ai-folder-threads-f-earnings'))
       .toHaveTextContent('Nothing in this project yet.')
+  })
+
+  it('offers to start a thread inside a project it has opened', async () => {
+    /* Start-then-file is two gestures and a thread that is briefly in the
+       wrong place. The project id travels with the request so the row is
+       written filed, rather than moved afterwards. */
+    render(list())
+    await userEvent.click(expand('Earnings season'))
+
+    await userEvent.click(screen.getByTestId('ai-folder-new-chat-f-earnings'))
+
+    expect(handlers.onNewConversation).toHaveBeenCalledWith('f-earnings')
   })
 
   it('opens the project holding the conversation being read', () => {
@@ -259,6 +312,50 @@ describe('the project tree', () => {
     expect(inside).toHaveTextContent('MSFT Q4 setup')
     expect(inside).not.toHaveTextContent('A thought about rates')
     expect(inside).not.toHaveTextContent('AAPL thesis review')
+  })
+})
+
+/**
+ * A project you can be in, rather than a filter you have applied.
+ *
+ * Opening one used to change which threads were listed and nothing else: no
+ * name, no count, no way out except a link in the rail below, and the only
+ * clue as to WHICH project was a highlighted row above a shorter list. These
+ * cases are about the band that answers those questions while the reader is
+ * there.
+ */
+describe('the project destination', () => {
+  it('names the project it has opened, and what it holds', () => {
+    render(list({ activeFolderId: 'f-earnings' }))
+    const band = screen.getByTestId('ai-project-view')
+    expect(screen.getByTestId('ai-project-name')).toHaveTextContent('Earnings season')
+    expect(band).toHaveTextContent('2')
+  })
+
+  it('is absent until a project is opened', () => {
+    render(list())
+    expect(screen.queryByTestId('ai-project-view')).not.toBeInTheDocument()
+  })
+
+  it('starts a thread that belongs to it', () => {
+    render(list({ activeFolderId: 'f-earnings' }))
+    screen.getByTestId('ai-project-new-chat').click()
+    expect(handlers.onNewConversation).toHaveBeenCalledWith('f-earnings')
+  })
+
+  it('lets the reader out again', () => {
+    render(list({ activeFolderId: 'f-earnings' }))
+    screen.getByTestId('ai-project-leave').click()
+    expect(handlers.onSelectFolder).toHaveBeenCalledWith(null)
+  })
+
+  it('does not appear for the unfiled shelf, which is not a project', () => {
+    /* There is no project to name, no count that means anything about one,
+       and nothing to start a thread "in". The rail's own escape control
+       covers this case instead. */
+    render(list({ activeFolderId: UNFILED }))
+    expect(screen.queryByTestId('ai-project-view')).not.toBeInTheDocument()
+    expect(screen.getByTestId('ai-folder-clear')).toBeInTheDocument()
   })
 })
 

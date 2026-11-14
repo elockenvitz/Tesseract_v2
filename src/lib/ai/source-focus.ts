@@ -16,7 +16,7 @@
  * outside that set is a dead link, and the test for this module says so.
  */
 import { SUBPAGE_MODE, type AssetMode, type AssetSubPage } from '../asset-workspace/modes'
-import type { AssetFocus } from '../desktop-asset'
+import { openAsset, type AssetFocus } from '../desktop-asset'
 
 /** Every source kind the final event can carry. Mirrors `AiSourceKind`. */
 export type AiResearchSourceKind =
@@ -80,6 +80,40 @@ export const FOCUS_BY_SOURCE_KIND: Readonly<Record<AiResearchSourceKind, AssetFo
 /** The focus for a kind, falling back to the asset's own overview. */
 export function focusForSourceKind(kind: string): AssetFocus {
   return (FOCUS_BY_SOURCE_KIND as Record<string, AssetFocus>)[kind] ?? 'overview'
+}
+
+/**
+ * Follow one cited source to the page it is read on.
+ *
+ * ── Why the navigation moved out of the component ─────────────────────────
+ *
+ * `SourceRef` held this inline as its default, and `AISection` had no way to
+ * reach it: the only hook the component offers is `onOpenSource`, which
+ * REPLACES the default rather than wrapping it. So a host that wanted to do
+ * anything either side of the hop -- in this case, step out of expanded
+ * research mode so the reader can actually see where they landed -- had to
+ * re-implement the routing, and a second copy of a routing table is how one
+ * of them starts sending a `workflow` source to the wrong sub-page.
+ *
+ * One function, called by the component's default and by the host's wrapper.
+ *
+ * Returns false for a source with no asset to open, so a caller can tell
+ * "nothing happened" from "we navigated" rather than assuming.
+ */
+export function openSourceRef(
+  source: { asset_id?: string | null; symbol?: string | null; kind?: string | null },
+  origin = 'ai-research-trail',
+): boolean {
+  if (!source.asset_id) return false
+  /* No focusRequestId here: `assetTabFor` stamps one per call, which is what
+     lets the receiver tell a new intent from a remounted tab. */
+  openAsset({
+    assetId: source.asset_id,
+    symbol: source.symbol ?? null,
+    focus: focusForSourceKind(source.kind ?? ''),
+    origin,
+  })
+  return true
 }
 
 /**

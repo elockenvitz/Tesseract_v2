@@ -20,6 +20,22 @@
  * The ask is framed by the entry reason, which this surface knows and the
  * pane does not. `workspaceAskDraft` writes the question; the pane places it
  * in the composer and never sends it, so the reader edits or discards it.
+ *
+ * ── Opening ACT AI is not the same as asking it something ────────────────
+ *
+ * Two of these three buttons name a question -- "Ask what evidence is
+ * missing", "Ask what we already hold" -- and one says only "Ask ACT AI".
+ * All three used to send a `seedPrompt`, so the plain one typed a
+ * three-clause question about what had changed since the case was written
+ * into the composer of a reader who had asked for nothing but a blank box.
+ * They then had to clear it before they could ask their own.
+ *
+ * The pane now seeds the composer only for an entry that names an EVENT (see
+ * `lib/ai/active-context`), which makes the distinction a property of the
+ * data rather than a convention. So the two buttons that promise a question
+ * state the reason they are promising it, and the one that promises only to
+ * open ACT AI sends no seed at all. The reason is not invented: a decision
+ * waiting and requirements open are what put this surface in those modes.
  */
 import { clsx } from 'clsx'
 import { askAI } from '../../lib/engagement'
@@ -69,6 +85,21 @@ const ASK_LABEL: Record<WorkspaceEntryMode, string> = {
   work: 'Ask what we already hold',
 }
 
+/**
+ * Why the drafted question is being offered, per mode, or null for the mode
+ * whose button offers none.
+ *
+ * `general` is null and that is the whole point: the pane seeds the composer
+ * from an event, so a mode with no event gets an empty box. The other two
+ * describe the state that put the workspace in that mode, which is the same
+ * state their labels are already referring to.
+ */
+const ASK_REASON: Record<WorkspaceEntryMode, ((name: string) => string) | null> = {
+  general: null,
+  decision: name => `A decision on ${name} is waiting`,
+  work: name => `Open requirements on ${name}`,
+}
+
 interface Action {
   key: string
   label: string
@@ -80,6 +111,7 @@ export function WorkspaceActions({
   mode, assetId, symbol, companyName, held, hasCase, hasProcess, onOpenSubPage, className,
 }: WorkspaceActionsProps) {
   const ask = () => {
+    const reason = ASK_REASON[mode]
     askAI({
       objectType: 'asset',
       objectId: assetId,
@@ -87,7 +119,18 @@ export function WorkspaceActions({
       symbol: symbol ?? undefined,
       assetId,
       origin: { surface: 'asset-workspace-actions' },
-      seedPrompt: workspaceAskDraft(ASK_CONTEXT[mode], symbol),
+      /*
+       * Both or neither. The pane reads the seed through the event, so a
+       * seed with no issue is silently dropped and a reason with no seed is
+       * a banner about nothing. Sending them as a pair is what keeps the
+       * button's label and the composer's contents agreeing.
+       */
+      ...(reason
+        ? {
+            issue: { title: reason(symbol ?? 'this asset') },
+            seedPrompt: workspaceAskDraft(ASK_CONTEXT[mode], symbol),
+          }
+        : {}),
     })
   }
 

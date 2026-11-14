@@ -353,7 +353,19 @@ describe('the supporting sections on record render the same way', () => {
       caseWrittenAt: daysAgo(30),
     }
     render(<AssetWorkspacePane asset={asset} />)
-    await user.click(screen.getByRole('button', { name: /Edit/ }))
+
+    /*
+     * Behind a disclosure, not behind the editor.
+     *
+     * These rows used to render only while the embedded editor was open, so
+     * reading "Key catalysts" meant opening an editor the reader did not
+     * want — and when that editor moved to the canonical page, the content
+     * would have gone with it, leaving a bare count. It is disclosed here
+     * instead: closed by default, because a supporting section does not move
+     * the review date, and the same renderer when opened.
+     */
+    expect(screen.queryByText('Key catalysts:')).toBeNull()
+    await user.click(screen.getByRole('button', { name: /Show 1 supporting section/ }))
 
     /* The row stays "Label: text" on one line, and the emphasis is real. */
     expect(screen.getByText('Key catalysts:')).toBeInTheDocument()

@@ -481,10 +481,20 @@ describe('context that no longer describes the screen', () => {
 /* ------------------------------------- 5. every control is a real hop */
 
 describe('the orientation actions', () => {
-  it('opens the canonical thesis editor in place', async () => {
+  /*
+   * This asserted that the band's "review the case" mounted the canonical
+   * editor IN PLACE. It no longer does, and nothing in this pane does: a
+   * research editor in a dashboard-pane column was the right data model in a
+   * room too narrow to use it. The control is a hop now, like every other
+   * control in this band, and it names the research focus.
+   */
+  it('sends the review-case control to the asset page at its research focus', async () => {
     render(pane({ entryContext: contextFromPress(targetEntry()) }))
     await userEvent.click(screen.getByTestId('target-review-case'))
-    expect(screen.getByTestId('real-thesis-editor')).toHaveAttribute('data-asset', 'a-aapl')
+
+    expect(screen.queryByTestId('real-thesis-editor')).not.toBeInTheDocument()
+    expect(opened).toHaveLength(1)
+    expect(opened[0]).toMatchObject({ assetId: 'a-aapl', focus: 'research' })
   })
 
   it('sends the scenarios control to the asset page at its framework', async () => {

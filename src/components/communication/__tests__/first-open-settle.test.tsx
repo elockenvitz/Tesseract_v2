@@ -214,7 +214,11 @@ describe('first open', () => {
        composer are known from the first frame and should be there: an empty
        pane with no furniture looks like a failure to open. */
     renderPane()
-    expect(screen.getByTestId('ai-context-chips')).toBeTruthy()
+    /* The context row, which is now the ONE of them and lives in the
+       composer. It used to be `ai-context-chips` above the thread; that band
+       drew from inputs the request does not read and is gone. The claim here
+       is unchanged: the furniture paints while only the thread waits. */
+    expect(screen.getByTestId('ai-context-attach')).toBeTruthy()
     expect(screen.getByTestId('ai-mode-toggle')).toBeTruthy()
     expect(screen.getByPlaceholderText('Ask ACT AI…')).toBeTruthy()
   })

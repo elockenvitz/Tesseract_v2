@@ -39,6 +39,34 @@ export const SOURCE_KIND_LABEL: Readonly<Record<AiSourceKind, string>> = Object.
   idea: 'Idea',
 })
 
+/**
+ * The short, human name for one reference: "AAPL · Thesis".
+ *
+ * ── What it is for ───────────────────────────────────────────────────────
+ *
+ * A cited row led with an uppercase kind chip and then the record's own
+ * title, which for a thesis contribution or a requirement is a sentence. On
+ * a research answer with six sources that is six lines of record headings
+ * competing with the analysis above them, and the thing a reader actually
+ * scans for -- which company, what kind of document -- was the smallest part
+ * of the row.
+ *
+ * So the ticker and the kind lead, as one label. The record's own title is
+ * NOT dropped: it still identifies which thesis, which ruling, which note,
+ * and provenance is the whole point of the evidence section. It follows,
+ * clamped to a line.
+ *
+ * Falls back to the kind alone where there is no symbol -- a portfolio or a
+ * theme has none, and "· Portfolio" with an empty left half reads as a bug.
+ */
+export function referenceLabel(
+  source: { kind?: string | null; symbol?: string | null },
+): string {
+  const kind = SOURCE_KIND_LABEL[(source.kind ?? '') as AiSourceKind] ?? source.kind ?? 'Record'
+  const symbol = (source.symbol ?? '').trim().toUpperCase()
+  return symbol ? `${symbol} · ${kind}` : kind
+}
+
 /** What a lookup was, in plain words. */
 export function toolCallLabel(name: string, input: Record<string, unknown>): string {
   const sym = String(input.symbol || '').toUpperCase()
