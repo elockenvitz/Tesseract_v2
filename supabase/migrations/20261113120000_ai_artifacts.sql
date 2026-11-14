@@ -96,11 +96,35 @@ CREATE TABLE IF NOT EXISTS public.ai_artifacts (
   -- would silently repoint if a turn were ever removed from the array.
   message_id      text NOT NULL,
   title           text NOT NULL,
+  -- What the artifact is ABOUT, so it is findable from the object rather than
+  -- only from a list of titles. Polymorphic, so no foreign key is possible --
+  -- the pair is guarded by the trigger below instead, which is the only way
+  -- to stop a row naming another firm's portfolio or theme.
+  --
+  -- Three types, not the four the sidebar's search offers. A note is
+  -- something a reader WROTE and lives in one of four separate tables; an
+  -- asset, a portfolio and a theme are the research objects an answer is
+  -- about, and each is one table the guard can actually check.
+  subject_type    text,
+  subject_id      uuid,
+  -- The project it was kept into, when the reader chose one. Optional by
+  -- design: filing is a convenience and refusing to save an artifact for
+  -- want of a shelf would be the wrong trade.
+  folder_id       uuid REFERENCES public.ai_project_folders(id) ON DELETE SET NULL,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT ai_artifacts_title_present CHECK (btrim(title) <> ''),
   CONSTRAINT ai_artifacts_title_length  CHECK (length(title) <= 200),
-  CONSTRAINT ai_artifacts_message_present CHECK (btrim(message_id) <> '')
+  CONSTRAINT ai_artifacts_message_present CHECK (btrim(message_id) <> ''),
+  CONSTRAINT ai_artifacts_subject_type CHECK (
+    subject_type IS NULL OR subject_type IN ('asset', 'portfolio', 'theme')
+  ),
+  -- Both or neither. A type with no id names nothing, and an id with no type
+  -- cannot be resolved to a table -- either one stored alone is a row that
+  -- claims an association it cannot express.
+  CONSTRAINT ai_artifacts_subject_paired CHECK (
+    (subject_type IS NULL) = (subject_id IS NULL)
+  )
 );
 
 -- Keeping the same answer twice is the same artifact, renamed.
@@ -115,6 +139,19 @@ CREATE INDEX IF NOT EXISTS ai_artifacts_owner
 -- open thread.
 CREATE INDEX IF NOT EXISTS ai_artifacts_conversation
   ON public.ai_artifacts (conversation_id);
+
+-- "What has been kept about AAPL" -- the whole point of the subject columns.
+-- Partial, because most artifacts will carry no subject and indexing their
+-- nulls buys nothing.
+CREATE INDEX IF NOT EXISTS ai_artifacts_subject
+  ON public.ai_artifacts (user_id, subject_type, subject_id)
+  WHERE subject_type IS NOT NULL;
+
+-- Reached when a project is deleted (the SET NULL above) and by a project's
+-- own artifact list.
+CREATE INDEX IF NOT EXISTS ai_artifacts_folder
+  ON public.ai_artifacts (folder_id)
+  WHERE folder_id IS NOT NULL;
 
 DROP TRIGGER IF EXISTS ai_artifacts_touch ON public.ai_artifacts;
 CREATE TRIGGER ai_artifacts_touch
@@ -152,6 +189,10 @@ CREATE POLICY ai_artifacts_delete ON public.ai_artifacts
 
 -- ─── Parentage ──────────────────────────────────────────────────────────────
 
+-- Everything this row POINTS AT has to be something its owner may point at:
+-- the conversation, the project, and the research object. One function,
+-- because three triggers would be three places for the next column to be
+-- forgotten.
 CREATE OR REPLACE FUNCTION public.ai_artifact_conversation_must_be_own()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -169,6 +210,62 @@ BEGIN
       USING ERRCODE = '42501';
   END IF;
 
+  -- The project, same argument. `ai_project_folders` is private per reader
+  -- AND per organization, so a row could otherwise be filed into a shelf in
+  -- another firm, or another reader's. The foreign key only requires the
+  -- folder to EXIST.
+  IF NEW.folder_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM public.ai_project_folders f
+     WHERE f.id = NEW.folder_id
+       AND f.user_id = NEW.user_id
+       AND f.organization_id = NEW.organization_id
+  ) THEN
+    RAISE EXCEPTION
+      'ai_artifacts.folder_id must reference a project owned by the artifact owner in the same organization'
+      USING ERRCODE = '42501';
+  END IF;
+
+  -- The research object. No foreign key is possible for a polymorphic
+  -- reference, so this is the ONLY thing standing between a crafted request
+  -- and a row naming another firm's portfolio or theme.
+  --
+  -- An asset is checked for existence only: assets are global reference data
+  -- with no organization by design, which is the documented exception.
+  -- Portfolios and themes carry an organization and are checked against the
+  -- artifact's own.
+  IF NEW.subject_type IS NOT NULL THEN
+    IF NEW.subject_type = 'asset' THEN
+      IF NOT EXISTS (SELECT 1 FROM public.assets a WHERE a.id = NEW.subject_id) THEN
+        RAISE EXCEPTION 'ai_artifacts.subject_id does not name an asset'
+          USING ERRCODE = '42501';
+      END IF;
+    ELSIF NEW.subject_type = 'portfolio' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.portfolios p
+         WHERE p.id = NEW.subject_id
+           AND p.organization_id = NEW.organization_id
+      ) THEN
+        RAISE EXCEPTION 'ai_artifacts.subject_id must name a portfolio in the same organization'
+          USING ERRCODE = '42501';
+      END IF;
+    ELSIF NEW.subject_type = 'theme' THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.themes t
+         WHERE t.id = NEW.subject_id
+           AND t.organization_id = NEW.organization_id
+      ) THEN
+        RAISE EXCEPTION 'ai_artifacts.subject_id must name a theme in the same organization'
+          USING ERRCODE = '42501';
+      END IF;
+    ELSE
+      -- Unreachable while the CHECK holds. Here so that adding a type to the
+      -- CHECK without adding its branch fails closed rather than silently
+      -- skipping the guard.
+      RAISE EXCEPTION 'ai_artifacts.subject_type % has no containment check', NEW.subject_type
+        USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
   RETURN NEW;
 END
 $$;
@@ -179,10 +276,16 @@ REVOKE ALL ON FUNCTION public.ai_artifact_conversation_must_be_own() FROM authen
 
 DROP TRIGGER IF EXISTS ai_artifacts_conversation_own ON public.ai_artifacts;
 CREATE TRIGGER ai_artifacts_conversation_own
-  BEFORE INSERT OR UPDATE OF conversation_id, user_id ON public.ai_artifacts
+  BEFORE INSERT OR UPDATE OF
+    conversation_id, user_id, organization_id, folder_id, subject_type, subject_id
+  ON public.ai_artifacts
   FOR EACH ROW EXECUTE FUNCTION public.ai_artifact_conversation_must_be_own();
 
 COMMENT ON TABLE public.ai_artifacts IS
   'Pointers to ACT AI answers a reader kept: conversation, message id and a reader-written title. Holds NO copy of the answer text, which stays the one copy in ai_conversations.messages. Private per user and scoped to one organization; not shared, because the conversation it points at is not.';
 COMMENT ON COLUMN public.ai_artifacts.message_id IS
   'ChatMessage.id inside the conversation''s messages jsonb. Not an ordinal: an ordinal would repoint if a turn were removed.';
+COMMENT ON COLUMN public.ai_artifacts.subject_type IS
+  'asset | portfolio | theme. Polymorphic, so no FK is possible: containment is enforced by ai_artifact_conversation_must_be_own(), which is the only guard against a row naming another organization''s portfolio or theme. Notes are deliberately excluded -- they live in four tables and are something the reader wrote rather than a research object an answer is about.';
+COMMENT ON COLUMN public.ai_artifacts.folder_id IS
+  'Optional project. Guarded by the same trigger: the FK only requires the folder to exist, not to belong to the artifact''s owner in the artifact''s organization.';

@@ -50,8 +50,13 @@
 --
 --   * widen ai_artifacts_select to USING (user_id = auth.uid()), dropping
 --     the membership half -> assertion 5 must fail.
---   * drop the ai_artifacts_conversation_own trigger -> assertion 9 must
---     fail.
+--   * drop the ai_artifacts_conversation_own trigger -> assertions 9, 13, 14
+--     and 15 must ALL fail, and 16 must still pass. One trigger carries
+--     every parentage check, so dropping it is the single injection that
+--     proves all four; 16 staying green is what proves they are guards and
+--     not a blanket refusal.
+--   * drop ai_artifacts_subject_paired -> assertion 17 must fail. Separate,
+--     because that one is a CHECK and not the trigger.
 --
 -- Until that has happened this file is a specification, not evidence, and
 -- nothing here should be cited as a passing test.
@@ -61,7 +66,7 @@
 -- and exited 0: both injections above would have been "caught" in a report
 -- nothing reads, on a green run. A gate that cannot fail is decoration.
 --
--- Self-cleaning, by the transaction opened below. 12 assertions, counted.
+-- Self-cleaning, by the transaction opened below. 17 assertions, counted.
 -- =============================================================================
 
 -- The transaction the header above promises, which the file did not actually
@@ -89,6 +94,14 @@ DECLARE
   v_other_cv  uuid;
   v_artifact  uuid;
   v_leaver_ar uuid;
+  -- For the association guards: a project and a portfolio on each side of
+  -- the organization boundary, plus a thread that assertion 11 does not
+  -- delete out from under them.
+  v_own_cv2   uuid;
+  v_folder_a  uuid;   -- owner's project, org A
+  v_folder_c  uuid;   -- colleague's project, org A
+  v_pf_a      uuid;   -- portfolio in org A
+  v_pf_b      uuid;   -- portfolio in org B
   v_count     int;
   v_count2    int;
   v_text      text;
@@ -126,6 +139,24 @@ BEGIN
   INSERT INTO ai_conversations (user_id, title, messages)
     VALUES (v_colleague, 'ART colleague thread ' || v_suffix, '[]'::jsonb)
     RETURNING id INTO v_other_cv;
+
+  -- A second thread for the owner, because assertion 11 deletes `v_conv` to
+  -- prove the cascade and would take the association fixtures with it.
+  INSERT INTO ai_conversations (user_id, title, messages)
+    VALUES (v_owner, 'ART assoc thread ' || v_suffix,
+            '[{"id":"m-assoc","role":"assistant","content":"Two ways to size it."}]'::jsonb)
+    RETURNING id INTO v_own_cv2;
+
+  -- Projects and portfolios on both sides of the boundary, for the subject
+  -- and folder guards. Seeded as the table owner, like the rest.
+  INSERT INTO ai_project_folders (user_id, organization_id, name)
+    VALUES (v_owner,     v_org_a, 'ART owner shelf ' || v_suffix) RETURNING id INTO v_folder_a;
+  INSERT INTO ai_project_folders (user_id, organization_id, name)
+    VALUES (v_colleague, v_org_a, 'ART colleague shelf ' || v_suffix) RETURNING id INTO v_folder_c;
+  INSERT INTO portfolios (organization_id, name)
+    VALUES (v_org_a, 'ART book A ' || v_suffix) RETURNING id INTO v_pf_a;
+  INSERT INTO portfolios (organization_id, name)
+    VALUES (v_org_b, 'ART book B ' || v_suffix) RETURNING id INTO v_pf_b;
 
   -- Seeded as the table owner, so the fixture does not depend on the policies
   -- under test.
@@ -333,6 +364,99 @@ BEGIN
   IF v_text = 'denied' THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (12, 'PASS', 'keeping the same answer twice is rejected');
   ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (12, 'FAIL', 'the same answer was kept twice'); END IF;
 
+  -- ===========================================================================
+  -- 13. THE PROJECT GUARD. `folder_id` has a foreign key, and a foreign key
+  --     only requires the folder to EXIST. `ai_project_folders` is private per
+  --     reader and per organization, so without the trigger a reader could
+  --     file an artifact into a colleague's shelf -- and the colleague's own
+  --     project view counts by folder, so it would appear there.
+  -- ===========================================================================
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_owner, 'role', 'authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    INSERT INTO ai_artifacts (user_id, organization_id, conversation_id, message_id, title, folder_id)
+      VALUES (v_owner, v_org_a, v_own_cv2, 'm-foreign-folder', 'ART foreign shelf ' || v_suffix, v_folder_c);
+    RESET ROLE;
+    v_text := 'allowed';
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_text := 'denied';
+  END;
+  IF v_text = 'denied' THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (13, 'PASS', 'filing into another readers project denied');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (13, 'FAIL', 'an artifact was filed into another readers project'); END IF;
+
+  -- ===========================================================================
+  -- 14. THE SUBJECT GUARD. `subject_type`/`subject_id` is polymorphic, so no
+  --     foreign key is possible: the trigger is the ONLY thing between a
+  --     crafted request and a row naming another firm's portfolio. Nothing is
+  --     disclosed by such a row on its own, but it is a cross-organization
+  --     reference, and the association is meant to make artifacts findable
+  --     FROM the object.
+  -- ===========================================================================
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_owner, 'role', 'authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    INSERT INTO ai_artifacts (user_id, organization_id, conversation_id, message_id, title, subject_type, subject_id)
+      VALUES (v_owner, v_org_a, v_own_cv2, 'm-foreign-subj', 'ART foreign book ' || v_suffix, 'portfolio', v_pf_b);
+    RESET ROLE;
+    v_text := 'allowed';
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_text := 'denied';
+  END;
+  IF v_text = 'denied' THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (14, 'PASS', 'associating another organizations portfolio denied');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (14, 'FAIL', 'an artifact was associated with another organizations portfolio'); END IF;
+
+  -- ===========================================================================
+  -- 15. A subject that names nothing at all. Separate from 14 because a guard
+  --     written as "same organization" and a guard written as "exists" fail
+  --     differently, and only one of them catches a random uuid.
+  -- ===========================================================================
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_owner, 'role', 'authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    INSERT INTO ai_artifacts (user_id, organization_id, conversation_id, message_id, title, subject_type, subject_id)
+      VALUES (v_owner, v_org_a, v_own_cv2, 'm-ghost-subj', 'ART ghost ' || v_suffix, 'theme', gen_random_uuid());
+    RESET ROLE;
+    v_text := 'allowed';
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_text := 'denied';
+  END;
+  IF v_text = 'denied' THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (15, 'PASS', 'associating a theme that does not exist denied');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (15, 'FAIL', 'an artifact named a theme that does not exist'); END IF;
+
+  -- ===========================================================================
+  -- 16. The legitimate association works: the owner's own project and a
+  --     portfolio in their own firm, together, on one row. Without this the
+  --     three guards above could be a blanket refusal of every subject and
+  --     every folder, and all three would still pass.
+  -- ===========================================================================
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_owner, 'role', 'authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    INSERT INTO ai_artifacts (user_id, organization_id, conversation_id, message_id, title, subject_type, subject_id, folder_id)
+      VALUES (v_owner, v_org_a, v_own_cv2, 'm-assoc', 'ART sizing ' || v_suffix, 'portfolio', v_pf_a, v_folder_a);
+    SELECT count(*) INTO v_count FROM ai_artifacts
+     WHERE conversation_id = v_own_cv2 AND message_id = 'm-assoc'
+       AND subject_type = 'portfolio' AND subject_id = v_pf_a AND folder_id = v_folder_a;
+    RESET ROLE;
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_count := -1;
+  END;
+  IF v_count = 1 THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (16, 'PASS', 'the owner can associate their own portfolio and project');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (16, 'FAIL', format('legitimate association read back %s row(s); expected 1', v_count)); END IF;
+
+  -- ===========================================================================
+  -- 17. A subject type with no id, and an id with no type. Either stored
+  --     alone is a row claiming an association it cannot express, and the
+  --     CHECK -- not the trigger -- is what refuses it.
+  -- ===========================================================================
+  BEGIN
+    EXECUTE format('SET LOCAL request.jwt.claims = %L', json_build_object('sub', v_owner, 'role', 'authenticated')::text);
+    SET LOCAL ROLE authenticated;
+    INSERT INTO ai_artifacts (user_id, organization_id, conversation_id, message_id, title, subject_type)
+      VALUES (v_owner, v_org_a, v_own_cv2, 'm-half-subj', 'ART half ' || v_suffix, 'asset');
+    RESET ROLE;
+    v_text := 'allowed';
+  EXCEPTION WHEN OTHERS THEN RESET ROLE; v_text := 'denied';
+  END;
+  IF v_text = 'denied' THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (17, 'PASS', 'a subject type with no id is rejected');
+  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (17, 'FAIL', 'a subject type was stored with no id'); END IF;
+
   RAISE NOTICE '=== % passed, % failed ===', v_pass, v_fail;
 END $$;
 
@@ -362,18 +486,18 @@ BEGIN
     INTO v_fail, v_total
     FROM _sec_results;
 
-  IF v_total <> 12 THEN
+  IF v_total <> 17 THEN
     RAISE EXCEPTION
-      'AI_ARTIFACTS AUTHORIZATION TEST INCOMPLETE: expected 12 assertions, recorded %',
+      'AI_ARTIFACTS AUTHORIZATION TEST INCOMPLETE: expected 17 assertions, recorded %',
       v_total;
   END IF;
 
   IF v_fail > 0 THEN
     RAISE EXCEPTION
-      'AI_ARTIFACTS AUTHORIZATION TEST FAILED: % of 12 assertion(s) failed', v_fail;
+      'AI_ARTIFACTS AUTHORIZATION TEST FAILED: % of 17 assertion(s) failed', v_fail;
   END IF;
 
-  RAISE NOTICE 'ai_artifacts authorization: 12 of 12 assertions passed';
+  RAISE NOTICE 'ai_artifacts authorization: 17 of 17 assertions passed';
 END $$;
 
 ROLLBACK;

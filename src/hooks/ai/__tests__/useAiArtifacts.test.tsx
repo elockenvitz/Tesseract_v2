@@ -21,10 +21,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { ReactNode } from 'react'
 import { renderHook, waitFor, cleanup } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { ArtifactDraft } from '../../../lib/ai/artifact-store'
 
 /** What the next list query resolves to. Set per test. */
 let listResult: { data: unknown; error: unknown } = { data: [], error: null }
 const upsertSpy = vi.fn()
+const updateSpy = vi.fn()
 
 vi.mock('../../../lib/supabase', () => ({
   supabase: {
@@ -41,7 +43,10 @@ vi.mock('../../../lib/supabase', () => ({
             }),
           }
         },
-        update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+        update: (payload: unknown) => {
+          updateSpy(payload)
+          return { eq: () => Promise.resolve({ error: null }) }
+        },
         delete: () => ({ eq: () => Promise.resolve({ error: null }) }),
       }
       return builder
@@ -72,6 +77,7 @@ const mount = () => renderHook(() => useAiArtifacts(), { wrapper: wrap })
 beforeEach(() => {
   listResult = { data: [], error: null }
   upsertSpy.mockReset()
+  updateSpy.mockReset()
 })
 afterEach(cleanup)
 
@@ -125,6 +131,17 @@ describe('whether the feature is on', () => {
   })
 })
 
+/**
+ * The reader's choices, as the save form hands them over.
+ *
+ * `keep` takes a draft rather than a loose title now, because the subject and
+ * the folder travel with it and the two subject columns have to be produced
+ * together.
+ */
+const draft = (over: Partial<ArtifactDraft> = {}): ArtifactDraft => ({
+  title: 'Bear case', subject: null, folderId: null, ...over,
+})
+
 describe('what a write sends', () => {
   it('stamps the organization at write time and stores no text', async () => {
     /*
@@ -135,7 +152,7 @@ describe('what a write sends', () => {
      */
     const { result } = mount()
     await waitFor(() => expect(result.current.isLoading).toBe(false))
-    await result.current.keep({ conversationId: 'c-1', messageId: 'm-1', title: 'Bear case' })
+    await result.current.keep({ conversationId: 'c-1', messageId: 'm-1', draft: draft() })
 
     expect(upsertSpy).toHaveBeenCalledTimes(1)
     const payload = upsertSpy.mock.calls[0][0] as Record<string, unknown>
@@ -143,18 +160,94 @@ describe('what a write sends', () => {
     expect(payload.user_id).toBe('user-1')
     expect(payload.conversation_id).toBe('c-1')
     expect(payload.message_id).toBe('m-1')
+    /*
+     * The association columns joined this list when the save form gained a
+     * subject and a project. `content` must still never be among them: the
+     * answer stays the one copy in `ai_conversations.messages`.
+     */
     expect(Object.keys(payload).sort()).toEqual([
-      'conversation_id', 'message_id', 'organization_id', 'title', 'user_id',
+      'conversation_id', 'folder_id', 'message_id', 'organization_id',
+      'subject_id', 'subject_type', 'title', 'user_id',
     ])
+  })
+
+  it('sends the association as a pair, or as two nulls', async () => {
+    /*
+     * The table's CHECK is `(subject_type IS NULL) = (subject_id IS NULL)`,
+     * so one of them written alone is a rejected row. They are produced
+     * together by `artifactAssociation` for that reason, and this is the
+     * assertion that the hook does not reassemble them by hand.
+     */
+    const { result } = mount()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    await result.current.keep({ conversationId: 'c-1', messageId: 'm-1', draft: draft() })
+    expect(upsertSpy.mock.calls[0][0]).toMatchObject({
+      subject_type: null, subject_id: null, folder_id: null,
+    })
+
+    await result.current.keep({
+      conversationId: 'c-1',
+      messageId: 'm-2',
+      draft: draft({
+        subject: { type: 'asset', id: 'a-1', label: 'AAPL' },
+        folderId: 'f-1',
+      }),
+    })
+    expect(upsertSpy.mock.calls[1][0]).toMatchObject({
+      subject_type: 'asset', subject_id: 'a-1', folder_id: 'f-1',
+    })
+  })
+
+  it('sends no folder for an empty choice, rather than an empty string', async () => {
+    /* The select's "No project" option has a value of `''`, and `''` is not
+       a uuid -- it would be rejected by the column rather than read as
+       "unfiled". */
+    const { result } = mount()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    await result.current.keep({
+      conversationId: 'c-1', messageId: 'm-1', draft: draft({ folderId: '' }),
+    })
+    expect((upsertSpy.mock.calls[0][0] as { folder_id: unknown }).folder_id).toBeNull()
   })
 
   it('clamps a long title to what the column accepts', async () => {
     const { result } = mount()
     await waitFor(() => expect(result.current.isLoading).toBe(false))
     await result.current.keep({
-      conversationId: 'c-1', messageId: 'm-1', title: 'word '.repeat(100),
+      conversationId: 'c-1', messageId: 'm-1',
+      draft: draft({ title: 'word '.repeat(100) }),
     })
     const payload = upsertSpy.mock.calls[0][0] as { title: string }
+    expect(payload.title.length).toBeLessThanOrEqual(200)
+  })
+
+  it('refuses a rename to a blank name, and says which refusal it was', async () => {
+    /*
+     * This path had no test at all, and that is how `artifactTitleError`
+     * went missing from the hook's imports while every other suite stayed
+     * green: the check it guards is reached only by renaming, so the real
+     * behaviour was a `ReferenceError` no reader would meet until they
+     * cleared the field.
+     *
+     * So the assertion is on the MESSAGE as well as on the absence of a
+     * write -- a ReferenceError also leaves `updateSpy` untouched, and
+     * would have passed a test that only checked that.
+     */
+    const { result } = mount()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+
+    await result.current.rename('art-1', '   ')
+
+    expect(updateSpy).not.toHaveBeenCalled()
+    await waitFor(() => expect(result.current.lastError).toMatch(/name you will recognise/i))
+  })
+
+  it('clamps a rename the same way it clamps a first save', async () => {
+    const { result } = mount()
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    await result.current.rename('art-1', 'word '.repeat(100))
+    const payload = updateSpy.mock.calls[0][0] as { title: string }
     expect(payload.title.length).toBeLessThanOrEqual(200)
   })
 
@@ -169,7 +262,7 @@ describe('what a write sends', () => {
     const { useAiArtifacts: hook } = await import('../useAiArtifacts')
     const { result } = renderHook(() => hook(), { wrapper: wrap })
     const row = await result.current.keep({
-      conversationId: 'c-1', messageId: 'm-1', title: 'Bear case',
+      conversationId: 'c-1', messageId: 'm-1', draft: draft(),
     })
     expect(row).toBeNull()
     expect(upsertSpy).not.toHaveBeenCalled()

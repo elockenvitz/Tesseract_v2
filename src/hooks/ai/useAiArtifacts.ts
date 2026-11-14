@@ -37,11 +37,13 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../useAuth'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
 import {
-  isMissingTable, clampTitle, artifactTitleError, type ArtifactRow,
+  isMissingTable, clampTitle, artifactTitleError, artifactAssociation, artifactDraftError,
+  type ArtifactDraft, type ArtifactRow,
 } from '../../lib/ai/artifact-store'
 
 const ARTIFACT_COLUMNS =
-  'id, user_id, organization_id, conversation_id, message_id, title, created_at, updated_at'
+  'id, user_id, organization_id, conversation_id, message_id, title, '
+  + 'subject_type, subject_id, folder_id, created_at, updated_at'
 
 /* See `useAIFolders` on why a write payload is declared here and cast once:
    the hand-maintained database types collapse every table's insert generic
@@ -52,12 +54,31 @@ type ArtifactInsert = {
   conversation_id: string
   message_id: string
   title: string
+  /* The association. Both columns or neither -- the table's CHECK says so,
+     and `artifactAssociation` is what produces the pair. */
+  subject_type: string | null
+  subject_id: string | null
+  folder_id: string | null
 }
 
 export const aiArtifactsKey = (
   userId: string | null | undefined,
   orgId: string | null | undefined,
 ) => ['ai-artifacts', userId ?? null, orgId ?? null] as const
+
+/**
+ * What keeping an answer needs.
+ *
+ * `draft` rather than a loose title, because the association travels with it
+ * and the two columns have to be produced together -- `artifactAssociation`
+ * is the only thing that does that, and splitting them across call sites is
+ * how one of them ends up written alone.
+ */
+export interface KeepArgs {
+  conversationId: string
+  messageId: string
+  draft: ArtifactDraft
+}
 
 export interface UseAiArtifacts {
   /**
@@ -73,7 +94,7 @@ export interface UseAiArtifacts {
   /** Null while the organization is unknown, which is not the same as none. */
   organizationId: string | null
   /** Resolves to the row, or null when it could not be written. */
-  keep: (args: { conversationId: string; messageId: string; title: string }) => Promise<ArtifactRow | null>
+  keep: (args: KeepArgs) => Promise<ArtifactRow | null>
   rename: (id: string, title: string) => Promise<void>
   remove: (id: string) => Promise<void>
   /** The last rejection, as a sentence for the reader. Null when clean. */
@@ -127,15 +148,11 @@ export function useAiArtifacts(): UseAiArtifacts {
   }, [queryClient, user?.id, organizationId])
 
   const keepMutation = useMutation({
-    mutationFn: async (args: {
-      conversationId: string
-      messageId: string
-      title: string
-    }): Promise<ArtifactRow | null> => {
+    mutationFn: async (args: KeepArgs): Promise<ArtifactRow | null> => {
       if (!user?.id || !organizationId) return null
 
-      const title = clampTitle(args.title)
-      const invalid = artifactTitleError(title)
+      const draft = { ...args.draft, title: clampTitle(args.draft.title) }
+      const invalid = artifactDraftError(draft)
       if (invalid) throw new Error(invalid)
 
       const payload: ArtifactInsert = {
@@ -145,7 +162,18 @@ export function useAiArtifacts(): UseAiArtifacts {
         organization_id: organizationId,
         conversation_id: args.conversationId,
         message_id: args.messageId,
-        title,
+        title: draft.title,
+        /*
+         * The association, produced as a set.
+         *
+         * Note what this does NOT do: it does not check that the subject or
+         * the folder belongs to this reader's organization. That is not an
+         * omission -- a client-side check would be advisory, and the
+         * authority is the `ai_artifact_conversation_must_be_own` trigger,
+         * which runs SECURITY DEFINER and raises 42501. The picker only
+         * offers RLS-visible objects, so a legitimate reader never meets it.
+         */
+        ...artifactAssociation(draft),
       }
 
       const { data: row, error: writeError } = await supabase
@@ -188,8 +216,7 @@ export function useAiArtifacts(): UseAiArtifacts {
   })
 
   const keep = useCallback(
-    (args: { conversationId: string; messageId: string; title: string }) =>
-      keepMutation.mutateAsync(args).catch(() => null),
+    (args: KeepArgs) => keepMutation.mutateAsync(args).catch(() => null),
     [keepMutation],
   )
 

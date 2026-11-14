@@ -42,6 +42,8 @@ export { AiContextAttach, ATTACHABLE_TYPES } from './AiContextAttach'
 export type { AiContextAttachProps, AttachableType } from './AiContextAttach'
 /* Why the pane was opened: one dismissible line, and NOT a context list. The
    distinction is the whole point -- see the component's own header. */
+export { AiArtifactSave } from './AiArtifactSave'
+export type { AiArtifactSaveProps, ArtifactSubjectOption } from './AiArtifactSave'
 export { AiEntryOrientation } from './AiEntryOrientation'
 export type { AiEntryOrientationProps } from './AiEntryOrientation'
 /* Keeping an answer. It opens the canonical capture form prefilled and

@@ -39,7 +39,7 @@ import { clsx } from 'clsx'
  * failed" starts rendering as "no records found" on one surface and not the
  * other.
  */
-import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextAttach, AiEntryOrientation, AiKeep, AiComposer, AiSlashMenu, slashRowText } from '../ai'
+import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextAttach, AiEntryOrientation, AiKeep, AiComposer, AiSlashMenu, AiArtifactSave, slashRowText } from '../ai'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
@@ -59,8 +59,13 @@ import { useGroundedPromptFacts } from '../../hooks/ai/useGroundedPrompts'
 import { useSlashReading } from '../../hooks/ai/useSlashReading'
 import { parseSlashCommand } from '../../lib/ai/slash-commands'
 import { useAiArtifacts } from '../../hooks/ai/useAiArtifacts'
-import { suggestArtifactTitle } from '../../lib/ai/artifact-store'
-import { ConfirmDialog } from '../ui/ConfirmDialog'
+import {
+  ARTIFACT_SUBJECT_TYPES, initialArtifactDraft, isArtifactSubjectType,
+  type ArtifactDraft,
+} from '../../lib/ai/artifact-store'
+
+/** What the save form holds while nothing is being kept. */
+const EMPTY_ARTIFACT_DRAFT: ArtifactDraft = { title: '', subject: null, folderId: null }
 
 /** How many questions each layout has room for. Matches `chatLayout`. */
 const LIMIT_FOR: Record<AiChatMode, number> = { compact: 4, research: 6 }
@@ -678,17 +683,50 @@ export function AISection({
     ),
     [artifacts.artifacts, conversationId],
   )
-  const [keeping, setKeeping] = useState<{ messageId: string; title: string } | null>(null)
+  /*
+   * The open save form: which answer, its text for the preview, and the
+   * reader's choices so far.
+   *
+   * The draft lives here rather than in the form so that a rejection from
+   * the write can be shown without throwing the reader's title and subject
+   * away -- which is what closing the dialog on failure would do.
+   */
+  const [keeping, setKeeping] = useState<
+    { messageId: string; content: string; draft: ArtifactDraft } | null
+  >(null)
+
+  /* Its own query, separate from the sidebar's: the reader is choosing what
+     an answer is ABOUT, which is a different search from finding a thread. */
+  const [artifactSubjectQuery, setArtifactSubjectQuery] = useState('')
+  const { results: artifactSubjectHits } = useEntitySearch({
+    query: artifactSubjectQuery.trim(),
+    /* Three types, not four. A note is something the reader wrote; an
+       artifact is about a research object. The table's CHECK agrees. */
+    types: [...ARTIFACT_SUBJECT_TYPES],
+    limit: 4,
+    enabled: shouldSearchObjects(artifactSubjectQuery),
+  })
+  const artifactSubjectResults = useMemo(
+    () => (shouldSearchObjects(artifactSubjectQuery)
+      ? rankObjects(artifactSubjectHits, artifactSubjectQuery, 6)
+        .filter(o => isArtifactSubjectType(o.type))
+        .map(o => ({ type: o.type, id: o.id, label: o.label, detail: o.detail }))
+      : []),
+    [artifactSubjectHits, artifactSubjectQuery],
+  )
 
   const confirmKeepArtifact = async () => {
     if (!keeping || !conversationId) return
     const pending = keeping
-    setKeeping(null)
-    await artifacts.keep({
+    const row = await artifacts.keep({
       conversationId,
       messageId: pending.messageId,
-      title: pending.title,
+      draft: pending.draft,
     })
+    /* Closed only on success. A rejection leaves the form open with the
+       reader's title and subject intact and the reason above the buttons;
+       closing it would discard both and say nothing. */
+    if (row) setKeeping(null)
   }
   const subjectName = shortSubjectLabel(currentSubject?.label)
 
@@ -1269,7 +1307,16 @@ export function AISection({
                     }
                     onKeepArtifact={() => setKeeping({
                       messageId: message.id,
-                      title: suggestArtifactTitle(message.content, openConversationTitle),
+                      content: message.content,
+                      /* Pre-filled from where the reader already is -- the
+                         subject, and the project the thread is filed in --
+                         and all of it changeable before it is saved. */
+                      draft: initialArtifactDraft({
+                        content: message.content,
+                        conversationTitle: openConversationTitle,
+                        subject: currentSubject ?? null,
+                        folderId: conversations.find(c => c.id === conversationId)?.folder_id ?? null,
+                      }),
                     })}
                   />
                 }
@@ -1510,28 +1557,34 @@ export function AISection({
       </div> {/* main pane */}
 
       {/*
-        Keeping an answer as an artifact, confirmed.
-        The sentence says what it is and what it is NOT, because the thing a
-        reader has to understand is that an artifact is not firm-approved
-        research: it is a pointer to an answer they wanted again, readable
-        only by them.
+        Keeping an answer as an artifact.
+
+        This was a confirmation with a title the reader could not change, no
+        sight of what was being kept, and nowhere to say what it was about --
+        so the only way to find it again was to recognise, in a list, a
+        sentence a model had written. It is a form now: the name, a preview,
+        the research object, and optionally a project.
+
+        The sentence inside still says what an artifact is NOT, because that
+        is the thing a reader has to understand: it is a pointer to an answer
+        they wanted again, readable only by them, and not firm-approved
+        research.
+
+        Still gated. `artifacts.available` is false in every environment
+        because the table does not exist, so the Keep menu's artifact row is
+        absent and nothing opens this.
       */}
-      <ConfirmDialog
-        isOpen={!!keeping}
-        onClose={() => setKeeping(null)}
-        onConfirm={confirmKeepArtifact}
-        title="Keep this answer?"
-        message={
-          keeping
-            ? `It will be saved as "${keeping.title}", findable outside this thread. `
-              + 'It stays private to you, it is not filed as research, and it is not a '
-              + 'decision or an approved firm view. The answer itself is not copied: '
-              + 'deleting this conversation removes it.'
-            : ''
-        }
-        confirmText="Keep it"
-        cancelText="Cancel"
-        variant="info"
+      <AiArtifactSave
+        open={!!keeping}
+        content={keeping?.content ?? ''}
+        draft={keeping?.draft ?? EMPTY_ARTIFACT_DRAFT}
+        onChange={draft => setKeeping(k => (k ? { ...k, draft } : k))}
+        onCancel={() => setKeeping(null)}
+        onSave={confirmKeepArtifact}
+        folders={folders}
+        subjectResults={artifactSubjectResults}
+        onSubjectQueryChange={setArtifactSubjectQuery}
+        error={artifacts.lastError}
       />
     </div>
   )

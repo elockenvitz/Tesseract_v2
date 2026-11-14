@@ -2062,6 +2062,81 @@ unapplied — see Part VI), and an object's band shows its conversations but
 not its artifacts for the same reason. There is no recent-objects list for an
 empty query, and no keyboard navigation of the results beyond Tab.
 
+## 4c. Keeping an answer is a form now, and the feature is still off
+
+**In plain language:** keeping an answer used to be a yes/no box. It showed a
+name a model had written, which you could not change, and nothing else — not
+the answer, not what it was about, not where it went. So the only way to find
+a kept answer again was to recognise a machine's sentence in a list.
+
+It is a form now, with the four things the brief asked for: the name (editable,
+and selected when the form opens so replacing it is one gesture), a preview of
+the answer being kept, what it is about, and optionally which project it goes
+in.
+
+Three choices inside it are worth knowing about:
+
+- **The subject arrives pre-filled and is removable.** You are usually keeping
+  an answer *about* something and the pane knows what. But an answer read on
+  the AAPL page is often about the sector, so the chip has an × — pre-filled,
+  not forced.
+- **It only offers assets, portfolios and themes.** The sidebar's object search
+  also finds notes. An artifact cannot be about a note: the column's CHECK
+  accepts three types, so offering a fourth would produce a row the database
+  refuses — a save that silently did nothing. The picker drops a result of any
+  other type rather than passing it on.
+- **It says what an artifact is not.** "It is not filed as research and it is
+  not a decision. The answer itself is not copied, so deleting this
+  conversation removes it." Nothing downstream says this, so this is the only
+  place it gets said.
+
+**What could break:** nothing live, because nothing is live. See below.
+
+### What remains before artifacts can be turned on
+
+This is the list the brief asked for, and every item on it is outside what I
+am authorised to do in this pass.
+
+1. **`supabase/migrations/20261113120000_ai_artifacts.sql` is UNAPPLIED, in
+   every environment.** Verified by querying the live database, not by reading
+   the migrations directory — which in this project does not describe
+   production. The table does not exist. Applying it is a production schema
+   change and belongs to its own approval.
+2. **`supabase/tests/ai-artifacts-authorization.sql` has never been
+   executed.** It is authored: 17 assertions, including five added in this
+   pass for the new association columns (a foreign project denied, a foreign
+   org's portfolio denied, a nonexistent theme denied, a legitimate
+   association allowed, a half-written subject pair rejected). It cannot run
+   from here — the Management API connection is read-only and refuses DDL with
+   `25006`, so the fixtures cannot be created. **The suite's own non-vacuity is
+   therefore asserted, not demonstrated.** Its header names the two injections
+   that must be performed when it is first run: dropping the trigger must fail
+   assertions 9, 13, 14 and 15 while 16 stays green, and dropping the
+   `ai_artifacts_subject_paired` constraint must fail 17. If either injection
+   does not produce those failures, the suite is decoration and the table
+   should not be trusted.
+3. **The run order is fixed:** apply the migration, then run the suite with
+   both injections, then revert the injections and confirm all 17 green. Not
+   the other way round, and not the first without the second.
+4. **No code change is needed to switch it on.** `useAiArtifacts` probes the
+   table — one list query whose missing-table error turns the feature off — so
+   the Keep menu's artifact row is *absent*, not disabled, until the table
+   exists, and becomes present the moment it does. There is no flag to
+   remember. This is also why the finished form is not a reason to apply the
+   migration: the form being complete and the feature being off are
+   independent.
+
+What the migration now carries that it did not before: `subject_type`,
+`subject_id` and `folder_id`, their two CHECK constraints (the type is one of
+three; the pair is both-or-neither), two partial indexes, and a widened
+`ai_artifact_conversation_must_be_own()` trigger. The trigger is the part worth
+reading — it refuses a project belonging to another user or another
+organization, refuses a portfolio or theme in another organization, and has an
+`ELSE` branch that raises, so adding a fourth type to the CHECK without adding
+a containment branch for it fails closed rather than open. Assets are checked
+for existence only: `assets` has no `organization_id` and is global reference
+data by design.
+
 ## 5. Non-vacuity
 
 Every gate below was proven to fail by injecting the behaviour it exists to
@@ -2221,6 +2296,55 @@ every render, so that is a `ReferenceError` before anything runs — the
 defect class this codebase has shipped before. The declaration was moved
 above the callbacks that depend on it.
 
+### The save form (Part VI)
+
+Injection A — `artifactAssociation` changed from `draft.folderId || null` to
+`?? null`, so the "No project" option's empty string would reach the column:
+
+```
+× sends no folder for an empty choice, rather than an empty string   (store)
+× sends no folder for an empty choice, rather than an empty string   (hook)
+Tests  2 failed | 46 passed (48)
+```
+
+Caught in both suites, which is the point of having the rule in one place and
+asserting it at both the rule and the call site.
+
+Injection B — the `isArtifactSubjectType` guard removed from the picker, so a
+note could become an artifact's subject:
+
+```
+× ignores a result of a type an artifact cannot be about
+Tests  1 failed | 18 passed (19)
+```
+
+Injection C — the subject chip's × made a no-op, which is the whole reason the
+subject is pre-filled rather than fixed:
+
+```
+× can be removed, because an answer read on AAPL can be about the sector
+Tests  1 failed | 18 passed (19)
+```
+
+Injection D — the blank-name check removed from the rename path:
+
+```
+× refuses a rename to a blank name, and says which refusal it was
+Tests  1 failed | 10 passed (11)
+```
+
+**The ratchet caught two real errors in this part, which is a non-vacuity
+demonstration I did not have to stage.** `guard:types` read 8581 against its
+ceiling of 8579. One was a dead `ConfirmDialog` import left behind when the
+form replaced it. The other was a live bug: I had dropped `artifactTitleError`
+from `useAiArtifacts`'s imports while swapping in `artifactDraftError`, and the
+*rename* path still called it. Renaming an artifact to a blank name would have
+thrown a `ReferenceError` instead of showing a reason — and every suite was
+green, because the rename path had no test at all. It has two now, and
+injection D above is the proof that the first of them would have caught this.
+Assertion on the message, not merely on rejection: a `ReferenceError` also
+rejects, and also leaves the update spy untouched.
+
 ## 6. RLS posture
 
 **No data path changed, and no policy was touched.**
@@ -2245,6 +2369,19 @@ above the callbacks that depend on it.
   (`user_id = auth.uid() AND is_member_of_org(organization_id)`, all four
   verbs), so the folder list the UI offers contains only the reader's own.
 * No new table, view, RPC, Edge Function or migration in Part IV either.
+* **Part VI changes no live data path, because its table does not exist.** The
+  save form reaches no database. `useAiArtifacts` is unchanged in posture: one
+  list query that is refused with "no such table" today. The migration's own
+  posture is documented at §4c — it stamps `organization_id` at write time,
+  keeps the table strictly `user_id = auth.uid()` (because
+  `ai_conversations` carries no organization at all, so an org-wide read here
+  would disclose a colleague's title with nothing behind it), and guards the
+  three new columns with a `SECURITY DEFINER` trigger rather than a policy,
+  since a policy subquery would run under the caller's own RLS and a
+  cross-organization portfolio would simply be invisible to the check rather
+  than refused by it. **None of that is proven, because the suite has never
+  run.** It is asserted by reading, and §4c says what must happen before it is
+  believed.
 * Object discovery adds no query of its own. It calls the existing
   `useEntitySearch` with four of its nine types, so every branch is a query
   that already ran elsewhere in the product under the reader's own RLS, and
@@ -2325,3 +2462,22 @@ payload assertion is made against the code path, not against a live
 `ai-chat`, because `ai-chat` is undeployed. The `tags` array in the body and
 the row delete are both assertable locally; what the deployed function then
 does with a shorter `tags` array is 2.3's change, not this one.
+
+Part VI is verified one step less than that, and the distinction matters: the
+form, the draft rules and the write payload are asserted by 67 tests with four
+injections, but **no artifact has ever been written**, by me or by anyone,
+because the table does not exist. The migration and its 17-assertion suite are
+read, not run. §4c is the list of what that requires.
+
+Counts at the end of this pass, for the AI area as a set:
+
+```
+Test Files  69 passed (69)
+     Tests  1437 passed (1437)
+guard:types  repo-wide errors: 8579  (ceiling 8579)   card-surface errors: 0
+             PASS
+```
+
+The five `no-unused-vars` lint errors in `AISection.tsx` are pre-existing:
+proven by linting `HEAD`'s copy of the file in place, which reports the same
+five.

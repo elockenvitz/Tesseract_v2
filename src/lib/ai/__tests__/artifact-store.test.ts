@@ -19,6 +19,9 @@ import { describe, it, expect } from 'vitest'
 import {
   isMissingTable, suggestArtifactTitle, clampTitle, artifactTitleError,
   ARTIFACT_TITLE_MAX, ARTIFACT_KEEP_OPTION,
+  ARTIFACT_SUBJECT_TYPES, isArtifactSubjectType, initialArtifactDraft,
+  artifactPreview, artifactDraftError, artifactAssociation, describeArtifactSave,
+  type ArtifactDraft,
 } from '../artifact-store'
 
 describe('whether the feature can be on at all', () => {
@@ -155,5 +158,191 @@ describe('the menu row', () => {
     const text = `${ARTIFACT_KEEP_OPTION.label} ${ARTIFACT_KEEP_OPTION.hint}`
     expect(text).toMatch(/not filed as research/i)
     expect(text).not.toMatch(/approved|verified|official|firm view/i)
+  })
+})
+
+/* ─── The draft the save form holds ────────────────────────────────────────
+ *
+ * The rules live here rather than in the component so that a test can read
+ * them without a DOM, and so the component is not the only thing that knows
+ * what a valid save looks like.
+ *
+ * Two of these mirror constraints in the (unapplied) migration, and that is
+ * the reason they are worth asserting: a mismatch between this file and the
+ * table is a row the database refuses, which the reader would see as a save
+ * that silently failed.
+ */
+
+const draft = (over: Partial<ArtifactDraft> = {}): ArtifactDraft => ({
+  title: 'Bear case', subject: null, folderId: null, ...over,
+})
+
+describe('what an artifact can be about', () => {
+  it('is the three the database guard can actually check', () => {
+    /*
+     * Not the four the sidebar's object search offers. A note lives in one
+     * of four separate tables; an asset, a portfolio and a theme are each
+     * one table the trigger can verify containment against -- which is why
+     * the CHECK and this list have to agree.
+     */
+    expect([...ARTIFACT_SUBJECT_TYPES]).toEqual(['asset', 'portfolio', 'theme'])
+  })
+
+  it('rejects the types the search can return but the column cannot hold', () => {
+    expect(isArtifactSubjectType('asset')).toBe(true)
+    expect(isArtifactSubjectType('note')).toBe(false)
+    expect(isArtifactSubjectType('user')).toBe(false)
+    expect(isArtifactSubjectType('')).toBe(false)
+  })
+})
+
+describe('what the form opens with', () => {
+  it('suggests the name and pre-fills from where the reader is', () => {
+    const d = initialArtifactDraft({
+      content: '## The bear case\n\nThree things hold it up.',
+      subject: { type: 'asset', id: 'a-1', label: 'AAPL' },
+      folderId: 'f-1',
+    })
+    expect(d.title).toBe('The bear case')
+    expect(d.subject).toEqual({ type: 'asset', id: 'a-1', label: 'AAPL' })
+    expect(d.folderId).toBe('f-1')
+  })
+
+  it('drops a pane subject an artifact cannot be about, rather than carrying it', () => {
+    /*
+     * The pane's subject can be a note or a workflow. Carrying one here
+     * would reach the column's CHECK and be refused at the database, which
+     * the reader would see as a save that did nothing.
+     */
+    const d = initialArtifactDraft({
+      content: 'Text',
+      subject: { type: 'note', id: 'n-1', label: 'A note' },
+    })
+    expect(d.subject).toBeNull()
+  })
+
+  it('drops a subject with no id, which names nothing', () => {
+    const d = initialArtifactDraft({
+      content: 'Text',
+      subject: { type: 'asset', id: null, label: 'AAPL' },
+    })
+    expect(d.subject).toBeNull()
+  })
+
+  it('falls back to the id when the label is missing, so the chip is never blank', () => {
+    const d = initialArtifactDraft({
+      content: 'Text',
+      subject: { type: 'theme', id: 't-1', label: '  ' },
+    })
+    expect(d.subject).toEqual({ type: 'theme', id: 't-1', label: 't-1' })
+  })
+
+  it('opens unfiled and unassociated when the pane knows nothing', () => {
+    const d = initialArtifactDraft({ content: 'Text' })
+    expect(d.subject).toBeNull()
+    expect(d.folderId).toBeNull()
+  })
+})
+
+describe('the preview', () => {
+  it('shows the answer without the markdown that would read as punctuation', () => {
+    const text = artifactPreview('## Heading\n\nIt holds up on **pricing** and `mix`.')
+    expect(text).toBe('Heading It holds up on pricing and mix.')
+  })
+
+  it('is a reminder of which answer, not a second copy to read', () => {
+    const text = artifactPreview('word '.repeat(200))
+    expect(text.length).toBeLessThanOrEqual(280)
+    expect(text.endsWith('…')).toBe(true)
+  })
+
+  it('cuts on a word when one is near the end, and mid-token when none is', () => {
+    expect(artifactPreview('alpha beta gamma delta', 12)).toBe('alpha beta…')
+    /* No space in the budget's last 40%: cutting on the only early space
+       would throw away most of what the preview is for. */
+    expect(artifactPreview('a bbbbbbbbbbbbbbbbbbbb', 12)).toBe('a bbbbbbbbb…')
+  })
+
+  it('is empty, never the string "undefined", for an answer with no text', () => {
+    expect(artifactPreview(null)).toBe('')
+    expect(artifactPreview(undefined)).toBe('')
+  })
+})
+
+describe('whether a draft can be saved', () => {
+  it('needs a name, and says so in a sentence', () => {
+    expect(artifactDraftError(draft({ title: '  ' }))).toMatch(/name you will recognise/i)
+  })
+
+  it('accepts a named draft with nothing else chosen', () => {
+    /*
+     * Deliberate. The association makes an artifact findable; it does not
+     * make it valid, and refusing to keep an answer for want of a shelf
+     * would be the wrong trade.
+     */
+    expect(artifactDraftError(draft())).toBeNull()
+  })
+
+  it('refuses a subject of a type the column cannot hold', () => {
+    const bad = { title: 'x', subject: { type: 'note', id: 'n-1', label: 'A note' }, folderId: null }
+    expect(artifactDraftError(bad as unknown as ArtifactDraft))
+      .toMatch(/asset, a portfolio or a theme/i)
+  })
+
+  it('refuses a subject with no id', () => {
+    expect(artifactDraftError(draft({
+      subject: { type: 'asset', id: '', label: 'AAPL' },
+    }))).toMatch(/could not be identified/i)
+  })
+})
+
+describe('the columns a write sends', () => {
+  it('produces the subject pair together, or two nulls', () => {
+    /*
+     * The table's CHECK is `(subject_type IS NULL) = (subject_id IS NULL)`.
+     * One written without the other is a rejected row, which is why the pair
+     * is produced in one place rather than assembled at each call site.
+     */
+    expect(artifactAssociation(draft())).toEqual({
+      subject_type: null, subject_id: null, folder_id: null,
+    })
+    expect(artifactAssociation(draft({
+      subject: { type: 'portfolio', id: 'p-1', label: 'Core' },
+    }))).toMatchObject({ subject_type: 'portfolio', subject_id: 'p-1' })
+  })
+
+  it('sends no folder for an empty choice, rather than an empty string', () => {
+    /* The select's "No project" option has a value of `''`, and `''` is not
+       a uuid -- the column would reject it rather than read it as unfiled. */
+    expect(artifactAssociation(draft({ folderId: '' })).folder_id).toBeNull()
+  })
+})
+
+describe('what the reader is told will happen', () => {
+  it('names the destinations rather than describing them generically', () => {
+    const text = describeArtifactSave(
+      draft({ subject: { type: 'asset', id: 'a-1', label: 'AAPL' }, folderId: 'f-1' }),
+      'Earnings season',
+    )
+    expect(text).toContain('about AAPL')
+    expect(text).toContain('in Earnings season')
+  })
+
+  it('omits a project it cannot name, rather than printing an id', () => {
+    const text = describeArtifactSave(draft({ folderId: 'f-1' }), null)
+    expect(text).not.toContain('f-1')
+    expect(text).toMatch(/outside this thread/i)
+  })
+
+  it('always says it is private to the reader', () => {
+    /*
+     * The one thing a reader could reasonably get wrong. `ai_conversations`
+     * is strictly `user_id = auth.uid()`, so a kept answer is not visible to
+     * a colleague however it is filed -- and a project that looks shared
+     * invites the opposite assumption.
+     */
+    for (const d of [draft(), draft({ folderId: 'f-1' })]) {
+      expect(describeArtifactSave(d, 'Earnings season')).toMatch(/private to you/i)
+    }
   })
 })
