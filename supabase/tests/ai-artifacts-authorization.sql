@@ -56,8 +56,21 @@
 -- Until that has happened this file is a specification, not evidence, and
 -- nothing here should be cited as a passing test.
 --
--- Self-cleaning. 12 assertions.
+-- Either injection is also what proves the VERDICT at the bottom is real.
+-- Until 2026-11-13 this suite recorded its failures in a table, printed them
+-- and exited 0: both injections above would have been "caught" in a report
+-- nothing reads, on a green run. A gate that cannot fail is decoration.
+--
+-- Self-cleaning, by the transaction opened below. 12 assertions, counted.
 -- =============================================================================
+
+-- The transaction the header above promises, which the file did not actually
+-- open. Without it a PASSING run COMMITS the fixture -- four `auth.users`, two
+-- organizations, three conversations, two artifacts -- and 196 unindexed
+-- foreign keys make deleting a test user take about 75 seconds. A FAILING run
+-- was always self-cleaning, because the verdict at the bottom aborts the
+-- statement; a passing one was not. That is the wrong way round.
+BEGIN;
 
 DROP TABLE IF EXISTS _sec_results;
 CREATE TEMP TABLE _sec_results(n int, result text, detail text);
@@ -324,3 +337,43 @@ BEGIN
 END $$;
 
 SELECT n, result, detail FROM _sec_results ORDER BY n;
+
+-- ─── The verdict ────────────────────────────────────────────────────────────
+--
+-- Without this the suite could not fail. Twelve FAIL rows printed, the script
+-- exited 0, and every other suite in this directory raises -- so a harness
+-- that reads the exit status would have reported this one green while the
+-- isolation it is supposed to prove was wide open.
+--
+-- Deliberately a SEPARATE statement from the DO block above, so the table of
+-- results prints BEFORE the run fails: an exception raised inside that block
+-- aborts the statement and takes the temp table with it, leaving a count and
+-- no names.
+--
+-- Two conditions, because a gate that looks only for FAIL rows cannot see the
+-- vacuous case -- a suite that aborted early, or an assertion edited out,
+-- records no failure at all.
+DO $$
+DECLARE
+  v_fail  int;
+  v_total int;
+BEGIN
+  SELECT count(*) FILTER (WHERE result = 'FAIL'), count(*)
+    INTO v_fail, v_total
+    FROM _sec_results;
+
+  IF v_total <> 12 THEN
+    RAISE EXCEPTION
+      'AI_ARTIFACTS AUTHORIZATION TEST INCOMPLETE: expected 12 assertions, recorded %',
+      v_total;
+  END IF;
+
+  IF v_fail > 0 THEN
+    RAISE EXCEPTION
+      'AI_ARTIFACTS AUTHORIZATION TEST FAILED: % of 12 assertion(s) failed', v_fail;
+  END IF;
+
+  RAISE NOTICE 'ai_artifacts authorization: 12 of 12 assertions passed';
+END $$;
+
+ROLLBACK;
