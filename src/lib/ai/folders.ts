@@ -167,6 +167,42 @@ export function moveConfirmation(folderName: string | null): string {
 }
 
 /**
+ * A refused move, in the reader's words.
+ *
+ * ── Why there is one sentence for two different refusals ────────────────
+ *
+ * The database guards `ai_conversations.folder_id` with a definer trigger
+ * (`ai_conversations_folder_own`) that raises 42501 when the named folder is
+ * not one the conversation's owner owns. It raises the SAME error whether the
+ * folder belongs to somebody else or does not exist at all, because the
+ * check is a single existence-and-ownership read -- and that is deliberate:
+ * two different messages would turn the control into an oracle for whether
+ * an arbitrary uuid is a real folder.
+ *
+ * So this must not improve on it. "You cannot file a conversation there" is
+ * true of both, and saying which would undo the property the trigger was
+ * written to have. The requirement is explicit: unauthorized ids must not
+ * expose folder existence through distinguishable behaviour.
+ *
+ * ── Why any message at all ──────────────────────────────────────────────
+ *
+ * Because the alternative shipped. The move was dispatched into a discarded
+ * promise, so a refusal closed the menu, left the thread where it was, and
+ * said nothing -- which reads as a broken menu rather than as a boundary.
+ */
+export const MOVE_REFUSED = 'You cannot file a conversation there. Pick one of your own projects.'
+
+export function moveRefusedMessage(error: unknown): string {
+  const code = (error as { code?: unknown } | null | undefined)?.code
+  /* 42501 is insufficient_privilege: the trigger's own raise, and also what
+     a policy refusal looks like. Both mean the same thing to the reader. */
+  if (code === '42501') return MOVE_REFUSED
+  /* Anything else is a transport or server fault, and saying so is more
+     useful than implying the reader did something wrong. */
+  return 'The conversation could not be moved. Try again in a moment.'
+}
+
+/**
  * What deleting a folder does, spelled out before it is done.
  *
  * `ON DELETE SET NULL` in the schema, so the conversations survive. The

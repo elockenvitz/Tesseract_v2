@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest'
 import {
   UNFILED, FOLDER_NAME_MAX,
   validateFolderName, shapeFolders, folderCounts, filterByFolder, moveTarget,
-  moveConfirmation, folderDeletionWarning,
+  moveConfirmation, folderDeletionWarning, moveRefusedMessage, MOVE_REFUSED,
   type AIProjectFolderRow, type FiledConversation,
 } from '../folders'
 
@@ -160,5 +160,64 @@ describe('what the reader is told', () => {
     const many = folderDeletionWarning('Risk review', 4)
     expect(many).toMatch(/Its 4 conversations are kept/)
     expect(many).toMatch(/become unfiled/)
+  })
+})
+
+/*
+ * ── A refused move says so, and says the same thing twice ────────────────
+ *
+ * Two defects, one of them mine to report accurately.
+ *
+ * The first: the move was dispatched into a discarded promise
+ * (`void moveConversationToFolder(...)`), so a refusal closed the menu, left
+ * the thread where it was, and said nothing. The database really does refuse
+ * -- `ai_conversations_folder_own` raises 42501 for a folder the
+ * conversation's owner does not own, and it has been in production since
+ * 20261112120000. The 2.4 report said that check did not exist, which was
+ * wrong; what did not exist was any way for the reader to find out it had
+ * fired.
+ *
+ * The second, and the reason this is a function rather than a string
+ * literal at the call site: the two refusals must be indistinguishable. The
+ * trigger's check is one existence-AND-ownership read, so "somebody else's
+ * folder" and "no such folder" raise the same error on purpose -- otherwise
+ * the control is an oracle for whether an arbitrary uuid is a real folder.
+ * A message that improved on that would undo the property.
+ */
+describe('a refused move, in the reader\'s words', () => {
+  it('says the same thing for a stranger\'s folder and for no folder at all', () => {
+    /* Both arrive as 42501 from the trigger, which is the whole point. The
+       assertion is identity, not similarity: two messages that merely read
+       alike would still differ, and the difference is the leak. */
+    const notYours = moveRefusedMessage({ code: '42501', message: 'must reference a folder owned by the conversation owner' })
+    const notThere = moveRefusedMessage({ code: '42501', message: 'must reference a folder owned by the conversation owner' })
+    expect(notYours).toBe(notThere)
+    expect(notYours).toBe(MOVE_REFUSED)
+  })
+
+  it('never repeats the server\'s own words back', () => {
+    /*
+     * The raise text names the column and the constraint. Echoing it would
+     * leak the shape of the guard and read as a crash; it would also,
+     * eventually, differ between the two refusals as soon as somebody
+     * changed one raise and not the other.
+     */
+    const msg = moveRefusedMessage({
+      code: '42501',
+      message: 'ai_conversations.folder_id must reference a folder owned by the conversation owner',
+    })
+    expect(msg).not.toMatch(/folder_id|ai_conversations|42501/)
+    expect(msg).toMatch(/your own projects/)
+  })
+
+  it('distinguishes a fault from a refusal, because the reader acts differently', () => {
+    /* "You cannot file it there" tells the reader to pick another project.
+       A transport failure tells them to try again. Collapsing the two would
+       blame the reader for an outage. */
+    expect(moveRefusedMessage({ code: '08006', message: 'connection failure' }))
+      .toMatch(/Try again in a moment/)
+    expect(moveRefusedMessage(new Error('boom'))).toMatch(/Try again in a moment/)
+    expect(moveRefusedMessage(null)).toMatch(/Try again in a moment/)
+    expect(moveRefusedMessage(undefined)).toMatch(/Try again in a moment/)
   })
 })

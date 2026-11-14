@@ -28,7 +28,7 @@ import {
 } from '../../hooks/ai/useReferenceTargets'
 import { openReference, referenceKey } from '../../lib/ai/reference-targets'
 import { manifestIndex, retrievalBanner, type ChipRetrieval } from '../../lib/ai/context-outcome'
-import { UNFILED, type FolderSelection } from '../../lib/ai/folders'
+import { UNFILED, moveRefusedMessage, type FolderSelection } from '../../lib/ai/folders'
 import { useAIConfig, AI_MODELS, AI_PROVIDERS, type AIProvider } from '../../hooks/useAIConfig'
 import { Button } from '../ui/Button'
 import { clsx } from 'clsx'
@@ -427,6 +427,10 @@ export function AISection({
   } = useAIFolders()
   const { getByShortcut: getTemplateByShortcut } = useTemplates()
   const [folderSelection, setFolderSelection] = useState<FolderSelection>(null)
+  /* A refused move, held here rather than in the folder hook: the move is a
+     write to `ai_conversations`, which `useAI` owns, and the hook that owns
+     the folders has no part in it. See `onMoveConversation` below. */
+  const [moveError, setMoveError] = useState<string | null>(null)
 
   useEffect(() => {
     if (folderSelection === null || folderSelection === UNFILED) return
@@ -560,10 +564,32 @@ export function AISection({
     onRenameFolder: renameFolder,
     onArchiveFolder: setFolderArchived,
     onDeleteFolder: deleteFolder,
+    /*
+     * ── A refused move used to be a silent one ────────────────────────────
+     *
+     * This was `void moveConversationToFolder(id, folderId)`, and the `void`
+     * was doing real damage. The database refuses a folder the conversation's
+     * owner does not own -- `ai_conversations_folder_own`, a definer trigger
+     * raising 42501 -- and the conversation's own policy refuses a thread
+     * that is not theirs. Both rejections went into a discarded promise: the
+     * menu closed, the thread did not move, and nothing said why. An
+     * unhandled rejection on top of that.
+     *
+     * It is the same channel the folder hook's own rejections use, so the
+     * reader reads one sentence in one place whichever write failed.
+     */
     onMoveConversation: (id: string, folderId: string | null) => {
-      void moveConversationToFolder(id, folderId)
+      setMoveError(null)
+      void moveConversationToFolder(id, folderId).catch((err: unknown) => {
+        setMoveError(moveRefusedMessage(err))
+      })
     },
-    folderError,
+    /*
+     * The move's own refusal wins while there is one, because it is the thing
+     * the reader just did. `moveError` is cleared at the start of every
+     * attempt, so a successful move clears the sentence from the failed one.
+     */
+    folderError: moveError ?? folderError,
     archivedConversations,
     onLoadArchived: handleLoadArchived,
     onUnarchive: handleUnarchive,
