@@ -23,6 +23,11 @@ import type { AssetWorkspaceData } from '../../../hooks/useAssetWorkspace'
 import { buildTargetHitCard } from '../../../lib/signals/builders/legacy-kinds'
 import { selectionFor } from '../../../lib/desktop-ideas/selection'
 import { entryContextFor } from '../../../lib/asset-workspace/entry-context'
+/* The set of focus values the Asset page actually lands on. Asserted against
+   rather than restated, so a control cannot be checked for a focus that the
+   receiver ignores -- which is the defect below. */
+import { FOCUS_LANDING_SUBPAGE } from '../../../lib/ai/source-focus'
+import type { AssetFocus } from '../../../lib/desktop-asset'
 /* The real handoff, not a spy: what the canonical page will take is exactly
    what these cases take. `clearEntryContext` keeps one case's offer out of
    the next one. */
@@ -497,13 +502,37 @@ describe('the orientation actions', () => {
     expect(opened[0]).toMatchObject({ assetId: 'a-aapl', focus: 'research' })
   })
 
-  it('sends the scenarios control to the asset page at its framework', async () => {
+  /*
+   * ── This asserted the opposite, and the opposite did nothing ───────────
+   *
+   * It asserted `focus: 'framework'`, which was exactly what the control
+   * sent. The problem is that `framework` is not a focus the Asset page
+   * honours: its arrival effect maps research, decisions, overview and
+   * position, and leaves the saved sub-page alone for everything else. The
+   * test passed, the descriptor was well formed, and pressing "open the
+   * scenarios" navigated to the asset and left the reader on whichever
+   * sub-page that tab had last been on.
+   *
+   * `lib/ai/source-focus.ts` had already found the same trap from the other
+   * side -- its own header records two process kinds pointed at `framework`
+   * and therefore dead -- and `FOCUS_LANDING_SUBPAGE` deliberately omits it.
+   * This control was the remaining sender.
+   *
+   * The scenarios are the price targets, and they live in the Research
+   * page's Forecasts section, so that is where the reader is sent now.
+   */
+  it('sends the scenarios control to the price targets, at a focus the page honours', async () => {
     render(pane({ entryContext: contextFromPress(targetEntry()) }))
     await userEvent.click(screen.getByTestId('target-open-scenarios'))
     expect(opened).toHaveLength(1)
     expect(opened[0]).toMatchObject({
-      assetId: 'a-aapl', symbol: 'AAPL', focus: 'framework', origin: 'target_hit',
+      assetId: 'a-aapl', symbol: 'AAPL', focus: 'research', section: 'targets',
+      origin: 'target_hit',
     })
+    /* Not `framework`, ever again: it is a focus the receiver ignores, so a
+       descriptor carrying it is a navigation that silently lands nowhere. */
+    expect(opened[0].focus).not.toBe('framework')
+    expect(FOCUS_LANDING_SUBPAGE[opened[0].focus as AssetFocus]).toBeDefined()
     /* The reason travels, so the reader does not have to restate it. */
     expect(opened[0].issue).toMatch(/reached the target/)
   })

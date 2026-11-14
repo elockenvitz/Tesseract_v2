@@ -46,12 +46,56 @@ import type { EngagementIssue } from '../engagement'
  */
 export type AssetFocus = 'overview' | 'research' | 'framework' | 'position' | 'decisions'
 
+/**
+ * The exact thing on the page, where the sender pressed a control about one.
+ *
+ * ── Why `focus` was not enough ───────────────────────────────────────────
+ *
+ * `focus` names a LENS — which question the reader arrived with, and which of
+ * the page's modes answers it. That is the right granularity for "they came
+ * from the Decision Inbox". It is the wrong granularity for "they pressed
+ * *Edit in research* inside The case", because Research is a long page and
+ * `focus: 'research'` lands the reader at whatever scroll position Research
+ * was last left at. The control named a section and the arrival forgot it.
+ *
+ * ── Why these five values and no more ────────────────────────────────────
+ *
+ * They are the anchors the Asset page already renders, and the ones its
+ * `attentionAnchor` effect already knows how to reach — including the part
+ * that is not obvious: the rating and the targets only EXIST in the DOM once
+ * the "All" view is forced and the Forecasts section is expanded, and that
+ * effect polls until the template query has rendered them. Naming a sixth
+ * section here without an anchor to match would be a request that scrolls
+ * nowhere, which is the defect `WORK_SECTION_ID.decisions` records.
+ *
+ * `case` and `thesis` resolve to the same anchor. The case BEGINS at the
+ * thesis, so that is the nearest truthful target rather than a redirect.
+ */
+export const ASSET_SECTION_TARGETS = ['case', 'thesis', 'risks', 'targets', 'rating'] as const
+export type AssetSectionTarget = typeof ASSET_SECTION_TARGETS[number]
+
+/** Is this a section the Asset page can actually reach? */
+export function isAssetSectionTarget(value: unknown): value is AssetSectionTarget {
+  return typeof value === 'string'
+    && (ASSET_SECTION_TARGETS as readonly string[]).includes(value)
+}
+
 export interface OpenAssetRequest {
   assetId: string
   /** Known to most senders, and the only thing a price read can key on. */
   symbol?: string | null
   companyName?: string | null
   focus?: AssetFocus
+  /**
+   * Which section of that lens, where the sender pressed a control about one.
+   *
+   * Optional and usually absent: most arrivals are about an asset, not about
+   * a paragraph of it. Set it only when the control the reader pressed names
+   * the section — "Edit in research" inside The case does; "open the asset"
+   * does not — because an arrival that scrolls when the reader did not ask it
+   * to is as disorienting as one that fails to.
+   */
+  section?: AssetSectionTarget | null
   /**
    * The book the reader was looking at this from.
    *
@@ -170,6 +214,16 @@ export function assetTabFor(request: OpenAssetRequest) {
       symbol: request.symbol ?? null,
       company_name: request.companyName ?? null,
       focus: request.focus ?? 'overview',
+      /*
+       * Written even when absent, like every other context key: a descriptor
+       * that omitted `section` would MERGE over the open tab and leave the
+       * last arrival's section attached to a different question, so the next
+       * generic open of the same name would scroll to a paragraph nobody
+       * asked about. The receiver pairs it with `focusRequestId` below, so a
+       * section is acted on once per request rather than every time the tab
+       * is returned to -- the durable-replay defect that id exists for.
+       */
+      section: request.section ?? null,
       /*
        * Stamped per call, never reused. The receiver consumes a focus once
        * per id, so this is what stops a remount replaying the arrival and

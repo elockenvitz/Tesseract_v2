@@ -22,6 +22,9 @@ import { useAuth } from '../../hooks/useAuth'
 import { useOrgAudienceContext } from '../../hooks/useOrgAudienceContext'
 import { useAIConfig } from '../../hooks/useAIConfig'
 import { initialResearchView } from '../../lib/desktop-asset/research-view'
+/* The five sections an arrival can name. Validated here rather than trusted:
+   `asset` is tab data, which outlives the build that wrote it. */
+import { isAssetSectionTarget, type AssetSectionTarget } from '../../lib/desktop-asset/navigate'
 import {
   fetchOneAssetResearch,
   fetchThesisReferences,
@@ -86,7 +89,9 @@ import {
 } from '../../lib/asset-workspace/modes'
 import { scrollToSection } from '../../lib/asset-workspace/scroll-to-section'
 import { stripTarget, type StripCell } from '../../lib/asset-workspace/strip-targets'
-import { focusIntentKey, shouldApplyFocus } from '../../lib/asset-workspace/arrival-focus'
+import {
+  focusIntentKey, shouldApplyFocus, sectionIntentKey, shouldApplySection,
+} from '../../lib/asset-workspace/arrival-focus'
 import { resolveEntry } from '../../lib/asset-workspace/entry'
 /*
  * The arrival a reader was sent here with, and the band that states it.
@@ -655,8 +660,12 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }, [])
   // Attention band → research-section deep link: anchor to scroll to, with a
   // nonce so re-clicking the same signal re-fires.
+  /* `AssetSectionTarget` rather than the same five strings written again: an
+     arrival can now NAME one of these (`openAsset({ section })`), so the
+     navigation contract and this state have to be the same set or a sender
+     could name a sixth that has no anchor here. */
   const [attentionAnchor, setAttentionAnchor] = useState<
-    { anchor: 'thesis' | 'risks' | 'targets' | 'rating' | 'case'; nonce: number } | null
+    { anchor: AssetSectionTarget; nonce: number } | null
   >(null)
   // Research layout mode: 'classic' uses hardcoded sections, 'dynamic' uses configurable fields
   // User asset widgets
@@ -1162,6 +1171,57 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     const initial = window.setTimeout(tick, 150)
     return () => { cancelled = true; window.clearTimeout(initial) }
   }, [attentionAnchor])
+
+  /*
+   * ── An arrival that named a section lands on it ────────────────────────
+   *
+   * `focus` picks the lens; `section` picks the paragraph. Without this, a
+   * reader who pressed "Edit in research" inside The case on a dashboard
+   * pane arrived at Research — and then at whatever scroll position Research
+   * had been left at, which on a long page is usually not the case at all.
+   * The control named a section and the arrival dropped it.
+   *
+   * It converts into `attentionAnchor` rather than scrolling here, which is
+   * deliberate: that effect already knows the three things this would
+   * otherwise have to learn again and drift on — that Research must be
+   * forced, that the "All" view must be forced because per-section prose does
+   * not render in the others, and that the DOM target may not exist until the
+   * template query resolves, so it polls. A second scroller beside it is how
+   * the `scrollTo` path above ended up knowing only two of the five anchors.
+   *
+   * ── Consumed once per request, not once per section ────────────────────
+   *
+   * Keyed on `focusRequestId`, the same discipline as the focus effect above
+   * and for the same reason: `section` lives in tab DATA, which is durable.
+   * Keying on the section value alone would scroll the reader back to the
+   * case every time they returned to this tab, forever — the exact defect
+   * documented at length on `focusRequestId` itself. A descriptor with no
+   * request id is an older hand-built one; it falls back to the section
+   * value, so it still fires once rather than always, and gives up only the
+   * ability to re-request the same section twice.
+   */
+  const consumedSectionRef = useRef<string | null>(null)
+  useEffect(() => {
+    const section = asset.section
+    const intent = sectionIntentKey(section, asset.focusRequestId)
+    /*
+     * Reachability is checked, not assumed. Only the five in
+     * `ASSET_SECTION_TARGETS` have an anchor in the map below; a sixth value
+     * — from a saved session written by a later build, or a hand-built
+     * descriptor — would set an anchor whose DOM id is `undefined`, and the
+     * anchor effect would poll for three seconds and give up silently.
+     */
+    if (!shouldApplySection(intent, consumedSectionRef.current, isAssetSectionTarget(section))) {
+      return
+    }
+    consumedSectionRef.current = intent
+    /* Per-section prose only renders in an individual research view, so the
+       firm (aggregated) view has no section to land on. Switch to the
+       reader's own research first — the same move `handleAttentionFocus` and
+       `handleStripJump` make, and for the same reason. */
+    if (researchViewFilter === 'aggregated' && user?.id) setResearchViewFilter(user.id)
+    setAttentionAnchor({ anchor: section, nonce: Date.now() })
+  }, [asset.section, asset.focusRequestId, researchViewFilter, user?.id])
 
   /*
    * Where an attention signal takes the reader — the precise `focus` first,

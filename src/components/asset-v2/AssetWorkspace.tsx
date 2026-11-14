@@ -339,13 +339,24 @@ export function AssetWorkspacePane({
    * on the research page still knowing why they came -- and the entry
    * handoff is what makes the canonical page able to say so.
    *
-   * ── What it does NOT yet do ─────────────────────────────────────────────
+   * ── Where it lands ──────────────────────────────────────────────────────
    *
-   * It does not scroll the research page to one named section, and it does
-   * not offer a Return to the dashboard. The asset opens as a tab beside the
-   * one the reader came from, so going back is a tab press rather than a
-   * dead end, but that is navigation the reader has to find. Both are real
-   * gaps and are listed as such rather than papered over.
+   * On the case, not at the top of Research. The request carries
+   * `section: 'case'`, which the Asset page turns into its existing research
+   * anchor — forcing the Research lens, forcing the reader's own view
+   * (per-section prose does not render on the firm view), and polling until
+   * the anchor is in the DOM, because the template query may not have
+   * resolved. See `AssetSectionTarget` for why that is a named set of five
+   * and not a free string.
+   *
+   * ── What it still does NOT do ───────────────────────────────────────────
+   *
+   * It does not offer a Return to the dashboard. The asset opens as a tab
+   * beside the one the reader came from, so going back is a tab press rather
+   * than a dead end — but that is navigation the reader has to find, and an
+   * affordance for it needs the sending surface to name its own tab, which
+   * two different hosts mount this pane from. It is listed as a finding
+   * rather than papered over.
    */
   const openCanonicalCase = () => {
     /* The arrival goes with them, where there was one. A reader who followed
@@ -357,6 +368,17 @@ export function AssetWorkspacePane({
       symbol,
       companyName: asset.company_name ?? null,
       focus: primaryFocus,
+      /*
+       * The control named a section, so the arrival names it too.
+       *
+       * `focus: 'research'` alone put the reader at whatever scroll position
+       * the Research page had last been left at, which on a long page is
+       * usually not the case. `'case'` resolves to the thesis anchor — the
+       * case begins there — and the receiver forces the Research lens and
+       * the reader's own view, which is the only one that renders
+       * per-section prose.
+       */
+      section: 'case',
       portfolioId: portfolioId ?? null,
       portfolioName: portfolioName ?? null,
       issue: issue ?? null,
@@ -686,7 +708,24 @@ export function AssetWorkspacePane({
               assetId: asset.id,
               symbol,
               companyName: asset.company_name ?? null,
-              focus: 'framework',
+              /*
+               * `focus: 'framework'` was inert, and that is not a style
+               * point -- the Asset page's arrival effect maps research,
+               * decisions, overview and position, and leaves the saved
+               * sub-page alone for everything else, `framework` included.
+               * So "open the scenarios" navigated to the asset and landed
+               * the reader wherever that tab had last been, which is the
+               * same failure as arriving at the top of Research but quieter,
+               * because nothing even changed page.
+               *
+               * The scenarios are the price targets, and they live in the
+               * Research page's Forecasts section. `section: 'targets'` is
+               * the anchor that is actually there -- and the receiving
+               * effect knows that section must be force-expanded before the
+               * anchor exists in the DOM at all.
+               */
+              focus: 'research',
+              section: 'targets',
               portfolioId: entry.portfolioId ?? portfolioId ?? null,
               portfolioName: entry.portfolioName ?? portfolioName ?? null,
               issue: entry.why?.headline ?? issue ?? null,

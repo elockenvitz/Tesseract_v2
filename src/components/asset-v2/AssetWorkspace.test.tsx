@@ -302,6 +302,25 @@ describe('the case is the object, and its absence is a finding', () => {
     expect(opened[0].focus).toBe('research')
   })
 
+  it('names the section, so the reader lands on the case and not on Research', async () => {
+    /*
+     * `focus: 'research'` alone is the right LENS and the wrong place. The
+     * Research page is long, and a reader arriving with no section named
+     * lands at whatever scroll position that page was last left at -- which
+     * is usually not the paragraph whose Edit control they just pressed.
+     *
+     * 'case' rather than 'thesis' because that is what the control is
+     * labelled; the receiver resolves both to the thesis anchor, since the
+     * case begins there.
+     */
+    const user = userEvent.setup()
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(30) }
+    render(<AssetWorkspacePane asset={asset} />)
+    await user.click(screen.getByTestId('workspace-open-case-editor'))
+
+    expect(opened[0].section).toBe('case')
+  })
+
   it('says where the control goes, since it goes somewhere', () => {
     /* "Edit" was honest about an editor that opened in place. On a control
        that navigates it is not: a press leaves the pane. */

@@ -2137,6 +2137,98 @@ a containment branch for it fails closed rather than open. Assets are checked
 for existence only: `assets` has no `organization_id` and is global reference
 data by design.
 
+## 4d. Edit the Case lands on the case
+
+**In plain language:** pressing "Edit in research" in The case opened the
+asset's Research page — and then left the reader wherever that page had last
+been scrolled to. On a long page that is usually not the paragraph whose Edit
+control they just pressed. The control named a section; the navigation threw
+it away.
+
+What `openAsset` carried was `focus`, and `focus` names a *lens* — which of
+the page's modes answers the question the reader arrived with. That is the
+right granularity for "they came from the Decision Inbox" and the wrong one
+for "they pressed Edit inside The case". So requests can now name a section
+as well, and "Edit in research" names `case`.
+
+**What could break, honestly:** a scroll the reader did not ask for is as
+disorienting as one that failed to happen, so two things are deliberate:
+
+- Only controls that *name* a section set one. A generic "open the asset"
+  still sets none, and arrives where the reader left that tab.
+- The section is acted on **once per press**, not once per value. This is the
+  one that would have bitten: `section` travels in tab data, and tab data is
+  durable. Keyed on the value alone, the reader would be yanked back to the
+  case every time they returned to that tab, forever — which is precisely the
+  defect `focusRequestId` was introduced to stop, reintroduced one field over.
+  The rule lives in `arrival-focus.ts` beside the focus rule it mirrors, and
+  the two keys are asserted to be different strings, because both effects fire
+  on the same arrival and a shared key would mean whichever ran first silently
+  cancelled the other.
+
+It reuses the Asset page's existing research anchor rather than scrolling on
+its own. That effect already knows three things a second scroller would have
+to learn again and then drift on: that the Research lens must be forced, that
+the reader's own view must be forced because per-section prose does not render
+on the firm view, and that the DOM target may not exist until the template
+query resolves — so it polls, with a deadline.
+
+### The audit of the other editing and workflow actions
+
+Asked for, and it found one real defect of the same class.
+
+**`openScenarios` was sending a focus the page ignores.** The orientation
+band's "open the scenarios" sent `focus: 'framework'`. The Asset page's
+arrival effect maps `research`, `decisions`, `overview` and `position`, and
+leaves the saved sub-page alone for everything else — `framework` included. So
+pressing it navigated to the asset and landed the reader on whichever sub-page
+that tab had last been on. Nothing even changed page, which is why it was
+quieter than the case defect and had a passing test: the test asserted
+`focus: 'framework'`, which is exactly what the control sent.
+
+`lib/ai/source-focus.ts` had already found the same trap from the other side —
+its header records two process kinds that pointed at `framework` and were
+therefore dead links, and its `FOCUS_LANDING_SUBPAGE` deliberately omits the
+value. This control was the last sender. It now sends
+`focus: 'research', section: 'targets'`: the scenarios *are* the price
+targets, they live in the Research page's Forecasts section, and the anchor
+effect already knows that section must be force-expanded before its anchor
+exists in the DOM at all. The test asserts against `FOCUS_LANDING_SUBPAGE`
+rather than restating a focus value, so a control can no longer be checked for
+a focus the receiver ignores.
+
+The rest are consistent:
+
+- The header's primary verb, the orientation band's "review the case" and the
+  case section's own Edit control are three labels for one navigation and all
+  call `openCanonicalCase`. All three therefore gained the section together.
+- `decisionHandoff` routes to the Idea object, or to the legacy page when
+  there is no live idea. A different object by design, not an asset-page
+  section.
+- `focus: 'framework'` now has no sender anywhere in the app.
+
+### What this still does NOT do
+
+**No Return affordance.** The asset opens as a tab beside the one the reader
+came from, so going back is a tab press rather than a dead end — the
+navigation is preserved, it is just unmarked. An affordance needs the sending
+surface to name its own tab, and this pane is mounted by two different hosts
+(`DashboardNext` and `IdeasApp`), so it cannot name itself. The shape of the
+fix: the host passes its own tab descriptor, it travels in the existing
+in-memory entry handoff (the right lifetime — a return offer is a property of
+an arrival, not of a tab), and `ArrivalOrientationBand` renders it as a
+control that dispatches `decision-engine-action`, which the shell already
+treats as "go to this tab". No new navigation model. It is listed as a finding
+rather than built, because it is a feature and this was a verification.
+
+**The effect in `AssetTab` itself is not covered by a mounted test.** The
+decision it makes is, in `arrival-section.test.ts`, which is why the decision
+was moved out of the component. What is untested is the four lines that turn a
+`true` into a `setAttentionAnchor` call, in a 4,500-line file that cannot be
+stood up here. That is the same limit the existing `asset-snapshot-landing`
+suite works around by asserting on source text; this went the other way and
+extracted the rule instead.
+
 ## 5. Non-vacuity
 
 Every gate below was proven to fail by injecting the behaviour it exists to
@@ -2345,6 +2437,50 @@ injection D above is the proof that the first of them would have caught this.
 Assertion on the message, not merely on rejection: a `ReferenceError` also
 rejects, and also leaves the update spy untouched.
 
+### The section an arrival names (Part 4d)
+
+Injection E — the request id dropped from the section key, so a section would
+be consumed once per VALUE:
+
+```
+× acts again when the reader presses the same control a second time
+Tests  1 failed | 8 passed (9)
+```
+
+Injection F — the section key given the focus key's own spelling, which is how
+two effects on one arrival cancel each other:
+
+```
+× are different strings for the same request
+Tests  1 failed | 8 passed (9)
+```
+
+Injection G — the reachability guard ignored, so a section with no anchor
+would be accepted and silently spend the reader's request:
+
+```
+× refuses a value the Asset page has no anchor for
+× leaves the request unconsumed, so a later build can still honour it
+Tests  2 failed | 7 passed (9)
+```
+
+Injection H — `section: 'case'` removed from the Edit control:
+
+```
+× names the section, so the reader lands on the case and not on Research
+Tests  1 failed | 55 passed (56)
+```
+
+Injection I — `section` written only when present, instead of always written
+as null. This is the merge-safety rule: a descriptor MERGES into an open tab,
+so an omitted key keeps the previous arrival's value and a later generic open
+of the same asset would inherit `section: 'case'`:
+
+```
+× is written as null when absent, not omitted
+Tests  1 failed | 20 passed (21)
+```
+
 ## 6. RLS posture
 
 **No data path changed, and no policy was touched.**
@@ -2369,6 +2505,11 @@ rejects, and also leaves the update spy untouched.
   (`user_id = auth.uid() AND is_member_of_org(organization_id)`, all four
   verbs), so the folder list the UI offers contains only the reader's own.
 * No new table, view, RPC, Edge Function or migration in Part IV either.
+* **Part 4d changes no data path at all.** `section` is one more field in a
+  client-side tab descriptor. It reads nothing, writes nothing, and reaches no
+  table — it decides which paragraph of a page the reader is already entitled
+  to read gets scrolled into view. The page's own org-scoped, RLS-backed
+  queries are untouched.
 * **Part VI changes no live data path, because its table does not exist.** The
   save form reaches no database. `useAiArtifacts` is unchanged in posture: one
   list query that is refused with "no such table" today. The migration's own

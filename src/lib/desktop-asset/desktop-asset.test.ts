@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   openAsset, assetTabFor, subscribeToOpenAsset, OPEN_ASSET_EVENT,
-  issueTitle, issueDetail,
+  issueTitle, issueDetail, isAssetSectionTarget, ASSET_SECTION_TARGETS,
 } from './navigate'
 /* The reader of this descriptor, so the stale-context cases below are
    asserted as the workspace actually resolves them rather than as a set of
@@ -200,5 +200,56 @@ describe('no window, no crash', () => {
     } finally {
       globalThis.window = w
     }
+  })
+})
+
+/* ─── The section a control named ──────────────────────────────────────────
+ *
+ * `focus` picks the lens, `section` picks the paragraph. The defect this
+ * closes: "Edit in research" inside The case sent `focus: 'research'` and
+ * nothing else, so the reader arrived at Research and then at whatever
+ * scroll position Research had last been left at.
+ */
+describe('the section a control named', () => {
+  it('travels in the descriptor', () => {
+    const d = assetTabFor({ assetId: 'a-1', symbol: 'AAPL', focus: 'research', section: 'case' })
+    expect(d.data.section).toBe('case')
+  })
+
+  it('is written as null when absent, not omitted', () => {
+    /*
+     * THE case for this field. A descriptor MERGES into an already-open tab,
+     * so a key left out keeps the previous arrival's value: a generic open of
+     * AAPL after an "Edit in research" would inherit `section: 'case'` and
+     * scroll to a paragraph nobody asked about. Every other context key in
+     * this descriptor is written for the same reason.
+     */
+    const d = assetTabFor({ assetId: 'a-1', symbol: 'AAPL' })
+    expect(d.data).toHaveProperty('section')
+    expect(d.data.section).toBeNull()
+  })
+
+  it('pairs with a fresh request id, so it is acted on once per request', () => {
+    /* The receiver consumes a section once per `focusRequestId`. Two sends of
+       the same section must therefore carry different ids, or the second
+       would be mistaken for the first replayed and would not scroll. */
+    const a = assetTabFor({ assetId: 'a-1', section: 'case' })
+    const b = assetTabFor({ assetId: 'a-1', section: 'case' })
+    expect(a.data.focusRequestId).not.toBe(b.data.focusRequestId)
+  })
+
+  it('names only sections the Asset page can actually reach', () => {
+    /*
+     * The guard exists because `asset` is tab DATA, which outlives the build
+     * that wrote it. An unrecognised value would set an anchor whose target
+     * id is undefined, and the receiving effect would poll for three seconds
+     * and give up silently -- a scroll that never happened and never said so.
+     */
+    for (const s of ASSET_SECTION_TARGETS) expect(isAssetSectionTarget(s)).toBe(true)
+    expect(isAssetSectionTarget('outcomes')).toBe(false)
+    expect(isAssetSectionTarget('')).toBe(false)
+    expect(isAssetSectionTarget(null)).toBe(false)
+    expect(isAssetSectionTarget(undefined)).toBe(false)
+    expect(isAssetSectionTarget({ anchor: 'case' })).toBe(false)
   })
 })
