@@ -82,8 +82,11 @@ vi.mock('../contributions', () => ({
  * whole point of putting the verdict on this surface.
  */
 const recordVerdict = vi.fn()
+/** Newest `holds` per asset, as the hook returns it. Set by the cases that
+ *  care whether a review has been recorded; emptied in `beforeEach`. */
+let reviewedAt = new Map<string, string>()
 vi.mock('../../hooks/useThesisReview', () => ({
-  useThesisReviews: () => new Map<string, string>(),
+  useThesisReviews: () => reviewedAt,
   useRecordThesisReview: () => ({
     record: recordVerdict, isPending: false, pendingOutcome: null,
   }),
@@ -166,10 +169,72 @@ beforeEach(() => {
   opened.length = 0
   openEngagement.mockClear()
   recordVerdict.mockClear()
+  reviewedAt = new Map<string, string>()
   /* The pane's own UI memory is module scope, so a case that opens a
      disclosure would otherwise leave it open for the next one. See
      `pane-place`. */
   forgetPaneViews()
+})
+
+/* ------------------------------------------------- one answer about review */
+
+/**
+ * Research status does not deny the record it is reading.
+ *
+ * The panel's own paragraph said "There is no separate 'reviewed, no change'
+ * record". That was true when it was written and stopped being true when
+ * thesis reviews shipped: `memory_events` carries `thesis.reviewed`, a
+ * `holds` outcome is exactly that record, and this pane reads it through
+ * `useThesisReviews` to decide the state pill directly above the sentence.
+ *
+ * So a reader could record a review, watch the pill say the case is current
+ * BECAUSE of it, and read underneath that no such record exists. Two answers
+ * to one question, on one panel, four lines apart.
+ */
+describe('research status, on whether the case has been reviewed', () => {
+  /* The whole pane. The panel's heading sits in its own element, so
+     `closest()` from it returns a wrapper holding the heading alone. */
+  const panel = (r: ReturnType<typeof render>) => r.container
+
+  it('names the date the case was confirmed to hold', () => {
+    reviewedAt = new Map([[asset.id, '2026-11-02T09:00:00Z']])
+    const r = render(<AssetWorkspacePane asset={asset} />)
+
+    expect(panel(r).textContent).toMatch(/Confirmed still to hold on/)
+    expect(panel(r).textContent).toContain(
+      new Date('2026-11-02T09:00:00Z').toLocaleDateString(),
+    )
+  })
+
+  it('never claims the record cannot exist', () => {
+    /* The exact sentence that was wrong, in both branches. */
+    reviewedAt = new Map([[asset.id, '2026-11-02T09:00:00Z']])
+    const withReview = render(<AssetWorkspacePane asset={asset} />)
+    expect(withReview.container.textContent).not.toMatch(/no separate/i)
+    withReview.unmount()
+
+    const without = render(<AssetWorkspacePane asset={asset} />)
+    expect(without.container.textContent).not.toMatch(/no separate/i)
+  })
+
+  it('says no one has reviewed it, rather than nothing, when none is recorded', () => {
+    /* The other branch. "Absent" and "impossible" are different facts and
+       the reader acts on them differently: one of them they can fix. */
+    const r = render(<AssetWorkspacePane asset={asset} />)
+
+    expect(panel(r).textContent).toMatch(/No one has recorded a review/)
+    expect(panel(r).textContent).not.toMatch(/Confirmed still to hold/)
+  })
+
+  it('still explains why the case date did not move', () => {
+    /* The part of the old paragraph that was right and has to survive: the
+       displayed case date tracks saves, not reviews, so a reader seeing an
+       old date beside a recent review is not looking at a bug. */
+    reviewedAt = new Map([[asset.id, '2026-11-02T09:00:00Z']])
+    const r = render(<AssetWorkspacePane asset={asset} />)
+
+    expect(panel(r).textContent).toMatch(/moves only when a core section is saved/)
+  })
 })
 
 /* ------------------------------------------------- the trip back */
@@ -459,11 +524,25 @@ describe('research focus: what changed since we wrote it', () => {
     expect(screen.queryByText(/since review/i)).not.toBeInTheDocument()
   })
 
-  it('says plainly that no reviewed-unchanged record exists', () => {
+  /*
+   * This case used to assert the opposite, and was right to at the time.
+   *
+   * It read `expect(screen.getByText(/no separate/i))` -- pinning the
+   * panel's claim that no "reviewed, unchanged" record existed anywhere in
+   * the schema. Thesis reviews shipped after it: `memory_events` carries
+   * `thesis.reviewed`, a `holds` outcome IS that record, and this pane reads
+   * it to decide the state pill printed directly above that sentence.
+   *
+   * So the assertion was holding a false sentence in place. What survives is
+   * the half that is still true and still worth pinning: the panel explains
+   * why the displayed case date did not move, and it still offers no control
+   * here that would fake a review. Recording one is the header's verb, which
+   * has its own cases.
+   */
+  it('explains why the case date did not move, without offering a fake review', () => {
     data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(200) }
     render(<AssetWorkspacePane asset={asset} focus="research" />)
-    expect(screen.getByText(/no separate/i)).toBeInTheDocument()
-    // And therefore no button pretending one can be written.
+    expect(screen.getByText(/moves only when a core section is saved/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /mark.*reviewed|confirm review/i }))
       .not.toBeInTheDocument()
   })

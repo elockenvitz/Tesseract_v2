@@ -673,12 +673,34 @@ export function AssetWorkspacePane({
           {priorEvidence.length !== data.evidence.length && `, ${newEvidence.length} since the case`}
         </span>
       </div>
-      {/* There is no reviewed_at column and no review event anywhere in the
-          schema, so "reviewed, unchanged" cannot be recorded. Said plainly
-          rather than papered over with a button that would fake it. */}
+      {/*
+        This paragraph said the opposite until now, and it was wrong.
+
+        It read: "There is no separate 'reviewed, no change' record." That
+        was true when it was written and stopped being true when thesis
+        reviews shipped: `memory_events` carries `thesis.reviewed`, and a
+        `holds` outcome is exactly the record the sentence denied. This
+        component reads it -- `useThesisReviews` at the top of the file,
+        into `subject.lastReviewedAt` -- and `stateOf` has been deciding the
+        pill above from it the whole time.
+
+        So the surface was stating a fact about the schema that the pill
+        beside it already contradicted. A reader who records a review, sees
+        Current, and is then told the record does not exist has been given
+        two answers to one question, which is the thing §9 is about.
+
+        The date is shown now, because "confirmed, and when" is the part a
+        reader acts on. Only the written date drives what the page DISPLAYS
+        as the case's own date; that distinction is the second sentence, and
+        it is the reason both dates have to be named.
+      */}
       <p className="mt-2 text-[11px] leading-snug text-gray-500">
-        The date on the case moves only when a core section is saved. There is
-        no separate &ldquo;reviewed, no change&rdquo; record.
+        {subject.lastReviewedAt
+          ? `Confirmed still to hold on ${new Date(subject.lastReviewedAt).toLocaleDateString()}.`
+          : 'No one has recorded a review of this case.'}
+        {' '}
+        The date on the case moves only when a core section is saved, so a
+        review that changed nothing is recorded separately from it.
       </p>
     </DesktopSection>
   )
