@@ -1472,3 +1472,194 @@ exactly as before.
 
 Context chips will all read `unknown` until `ai-chat` is deployed. That is
 expected and is the one thing on this list you cannot check yet.
+
+---
+
+# ACT AI 2.3, part two: real figures, kept answers, readable prose
+
+Three more changes landed on `discovery/asset-page-2`, at `ae3711a5`,
+`8cdd1d7c` and `6c1c9b38`. Nothing is merged and nothing is deployed.
+
+## 1. A data command returns a figure, not a question
+
+**What it did before.** You typed `/price.AAPL` and the box filled with
+"What is the current price of AAPL?" for you to send. A command that names a
+stored number became a question to a language model: it cost a request, it
+took a few seconds, and the answer could come back rounded, hedged, or about
+a different day. Nothing told you which.
+
+**What it does now.** It reads the stored price and shows you the number,
+what it is called, where it came from and the date it was true:
+
+> **$712.34**  LRCX last close
+> yahoo (chart_v8), stored, as of 2026-11-12
+
+Pressing it puts all of that into the box as one line. It cannot insert the
+number on its own: a figure that travels without its source gets quoted into
+a message, then into a note, and nobody can tell where it came from any more.
+
+**Three of the six work this way, and three say why they cannot.** `/price`,
+`/volume` and `/change` are answerable from the price cache. `/marketcap`,
+`/pe` and `/dividend` are not, and each names the exact thing it is missing
+-- market cap needs shares outstanding, which is not stored with a source or
+an as-of date. The model lookup is still offered for those three, as a
+labelled choice you make after being told the store cannot answer. That is a
+different act from the command pretending to have worked.
+
+**What could break.** If the cache holds nothing for a ticker you get
+"Nothing is stored for X yet" instead of a figure. That is the honest answer,
+and it is also how you can tell the nightly job has not run for that name. If
+a ticker matches two instruments the command refuses and names them rather
+than picking one: a price from the wrong listing with correct provenance
+under it is worse than no price.
+
+**`/help` stopped asking the model about itself.** It used to expand into
+"Which Tesseract commands work in this chat?" and you sent it. The registry
+knows the answer; it now just says it.
+
+**The chart commands got a real reason.** "Works in the editor" was a
+location, not an explanation. The notice now says what is actually missing: a
+chart is inserted into a live document as an object, and a chat message is
+stored text, so there is nothing to draw into. It points you at the asset
+page chart, which reads the same stored closes. I did not build a half-chart
+in the command menu: that is the "do not fake a chart" line in your brief,
+and a sparkline in a dropdown is not the thing you asked for.
+
+**One bug caught before it shipped.** My first version of `/change`
+differenced the two OLDEST closes in the window instead of the two newest,
+because the price reader returns bars oldest-first. It would have shown a
+plausible percentage about the wrong two days, with correct provenance under
+it. There is now a test whose only job is that case.
+
+## 2. Keeping an answer, and why you cannot do it yet
+
+**The gap.** An answer worth coming back to had one way out of a thread:
+promote it into a research record. That is right when the answer becomes
+research and wrong when it is just an answer. Filing a comparison table as a
+"quick thought" says something about it that is not true, and the alternative
+was leaving it buried in a long thread.
+
+**What is built.** "Keep as an artifact" is the first option in the Keep
+menu, with a confirmation that says what it is and is not: private to you,
+not filed as research, not a decision and not an approved firm view. An
+artifact stores a POINTER, being the conversation, the message and a title,
+and no copy of the text. The answer stays where it was written, so deleting
+the conversation removes the artifact rather than leaving a title pointing at
+nothing.
+
+**Why you will not see it.** The table it needs does not exist. Its migration
+is written and NOT APPLIED, in any environment, and applying it is a
+production schema change that is your call. So the menu row is absent rather
+than present-and-broken: the code asks the database whether the table is
+there, and applying the migration turns the feature on with no further change
+and no flag to flip.
+
+**What applying it would take**, when you want it:
+
+1. Apply `supabase/migrations/20261113120000_ai_artifacts.sql`.
+2. Run its authorization suite,
+   `supabase/tests/ai-artifacts-authorization.sql`, which has never been
+   executed: the connection available to me is read-only, so it cannot even
+   create the table inside a transaction it rolls back.
+3. The Keep row appears by itself.
+
+**One decision you should know about.** Artifacts are private to you, not
+shared with the firm, even though they carry an organization. The
+conversation they point at is private, so an org-wide list would show a
+colleague the TITLE of an answer they cannot open: that discloses what
+someone is working on and delivers nothing. Sharing these means moving the
+conversation's own boundary first, which is a product decision.
+
+**There is no list of them yet.** With no table, a list surface could not be
+built against anything or verified, and this repository already has features
+that were unreachable code with green tests. That slice comes after the
+migration, not before.
+
+## 3. Answers read like answers
+
+Measured rather than guessed. I counted every assistant message stored in
+production on 11 and 13 November, which is ten answers, the whole live corpus:
+
+| What                               | How many |
+|---|---|
+| used a real heading                | 0 of 10 |
+| faked one with a bold line         | 3 of 10 |
+| ran two sentences together         | 2 of 10 |
+| showed you a database column name  | 1 of 10 |
+
+**The sections are real sections now.** `**Bull case**` on its own line was
+the model reaching for emphasis, because emphasis is what it reaches for.
+Rendered as bold prose, every section had the same weight and a four-section
+answer read as one wall. Those lines are headings now, but only where there
+are two or more of them: a single bold line is usually the answer's own
+judgment, and rendering "**Still a buy on a 12-month view**" as a small caps
+label would bury the one sentence you opened the answer for.
+
+**Sentences get their space back.** "...is the trough.The next leg" read as a
+typo you had made. The rule is deliberately narrow and leaves `$BRK.B`,
+`U.S.A`, `18.5x`, every URL and everything in backticks alone, because
+`$BRK. B` is a dead link and a different instrument.
+
+**Column names became words.** One answer showed you `queue_status` and
+`outcome_note (from lifecycle_outcome: executed)` in a table header. Those now
+read "decision status" and "outcome note (from execution outcome: executed)",
+from the same vocabulary the evidence section uses. An identifier NOT in that
+list is left exactly as written: a guessed product word is worse than a
+visible `queue_status`, because you cannot tell it was guessed.
+
+**Nothing stored was rewritten.** All of this happens as the answer is drawn.
+The stored text stays the record of what the model actually said, which also
+keeps every citation that points into it by position working.
+
+**The prompt got the other half**, the rule that stops it being produced, on
+both sides of the mirror that a test holds character for character. That half
+reaches nothing until `ai-chat` is deployed; the rendering fixes work now.
+
+## What I could not check, and what you should click
+
+**I have no browser.** The Chrome extension is not connected to this session,
+so I took no screenshots and did no click-through, and nothing above is
+claimed from looking at the running app. What I have instead: 679 test files
+and 11,846 tests, including rendered tests that mount the real ACT AI pane and
+drive it with a real keyboard, plus thirteen deliberate breakages this session
+to prove the new tests fail when the behaviour regresses.
+
+The app is running at **http://localhost:5190**.
+
+Fifteen to twenty minutes, in this order:
+
+1. **A real figure.** In ACT AI, type `/price.LRCX`. You should get a number,
+   a provider and a date. Press it; the box should hold all three. Then try a
+   ticker with no stored price and read what it says.
+2. **A refusal that explains itself.** `/pe.LRCX`. It should name earnings as
+   the missing input and offer the model lookup as a separate row.
+3. **`/chart.price.AAPL`.** Read the sentence. It should tell you there is
+   nothing to draw into, not where charts live.
+4. **`/help`.** It should answer, with nothing to send.
+5. **An answer's shape.** Ask something that produces sections; "bull and bear
+   case for LRCX" works. Headings should be small caps labels rather than bold
+   lines, and no database column should appear anywhere in it.
+6. **Keep.** Press Keep on an answer. You should see three research options
+   and NO artifact row. That is correct until the migration is applied.
+7. **The 2.3 part-one list** above, which is still worth ten minutes.
+
+**Still blocked on a deploy, not on code:** context chips read `unknown` until
+`supabase functions deploy ai-chat`, which also carries the Large Cap Growth
+context fix and the honest-gap prompt. That is a production deploy and it is
+your call.
+
+## Adjacent problems found, not fixed
+
+* **The frontend tenant lint could not see the artifacts table.** No `ai_`
+  table was in its org-scoped list, so an unscoped read of one would have
+  passed silently. I added `ai_artifacts` and proved the gate then catches it.
+  `ai_project_folders`, which shipped earlier, is still invisible to it: same
+  gap, separate change.
+* **That lint appears to scan reads only.** The artifact update and delete
+  paths were not flagged when I checked. The database policies cover all four
+  verbs, so nothing is open, but the gate is narrower than it looks.
+* **`IdeaWorkSurface` flattens prose that could be rendered.** Left from the
+  Markdown change: it is a clamped pointer, so flattening is defensible, but
+  rendering would be better.
+* **`holdings-api` has no runtime authorization test.** The edge-authz guard
+  warns about it. Pre-existing and unrelated to this work.
