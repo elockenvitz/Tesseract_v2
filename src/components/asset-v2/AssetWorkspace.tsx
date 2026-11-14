@@ -106,6 +106,19 @@ import {
    for one navigation only -- see the module's own note on why not tab data. */
 import { offerEntryContext } from '../../lib/asset-workspace/entry-handoff'
 
+/**
+ * This pane has already explained the arrival.
+ *
+ * It draws `EntryOrientation` at the top of itself for exactly this context,
+ * so by the time the reader presses any control here they have read the
+ * orientation. Handing it on unmarked made the canonical Asset page state it
+ * a second time, as a second large band, in the research content the reader
+ * had navigated to in order to read. The context still travels -- the
+ * destination uses it for its focus and its way back -- it just stops being
+ * restated. See `entry-handoff`'s `Offer`.
+ */
+const ORIENTED_HERE = { oriented: true } as const
+
 export interface AssetWorkspaceProps {
   asset: { id: string; symbol?: string | null; company_name?: string | null } & Record<string, any>
   focus?: AssetFocus | null
@@ -411,7 +424,7 @@ export function AssetWorkspacePane({
     /* The arrival goes with them, where there was one. A reader who followed
        a target breach here should not have to restate why they went just
        because they left by one control rather than another. */
-    offerEntryContext(entry)
+    offerEntryContext(entry, undefined, ORIENTED_HERE)
     openAsset({
       assetId: asset.id,
       symbol,
@@ -457,7 +470,7 @@ export function AssetWorkspacePane({
    * rather than their request can get back to where they were in one press.
    */
   const openDecisionsLens = () => {
-    offerEntryContext(entry)
+    offerEntryContext(entry, undefined, ORIENTED_HERE)
     openAsset({
       assetId: asset.id,
       symbol,
@@ -811,7 +824,7 @@ export function AssetWorkspacePane({
                -- which target, which mark, how far through -- cannot live in
                tab data without being restated as current every time the
                reader returns to that tab. See `entry-handoff`. */
-            offerEntryContext(entry)
+            offerEntryContext(entry, undefined, ORIENTED_HERE)
             openAsset({
               assetId: asset.id,
               symbol,

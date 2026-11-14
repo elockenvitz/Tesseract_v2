@@ -61,7 +61,7 @@ const WORKSPACE: AssetWorkspaceData = {
     ],
     updatedAt: daysAgo(30), valid: true, reason: '',
   } as never,
-  target: 230, positions: [], liveIdeas: [], decisions: [],
+  target: 230, targetStanding: null, positions: [], liveIdeas: [], decisions: [],
 }
 
 /* ---------------------------------------------------- the shell's lenses */

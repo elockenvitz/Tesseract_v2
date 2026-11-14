@@ -1,8 +1,26 @@
 import React from 'react'
 import { clsx } from 'clsx'
 import { AlertTriangle, X, ChevronRight, RefreshCw } from 'lucide-react'
-import { useExpiredTargetsByAsset, useCheckExpiredTargets } from '../../hooks/useExpiredTargets'
+import { useExpiredTargetsByAsset, useCheckExpiredTargets, useExpirySweepOnce } from '../../hooks/useExpiredTargets'
 
+/**
+ * ── Where this is, and is not, rendered ───────────────────────────────────
+ *
+ * It opened the price-target section of the canonical Asset page, and does
+ * not any more. A reader who followed a valuation alert in from the Dashboard
+ * met the same fact four times on one screen: the carried-over arrival band,
+ * the research toolbar's warning control, this banner, and the ⚡ trigger that
+ * is meant to be the single attention entry point.
+ *
+ * A lapsed valuation is now a reason inside that one surface, read from
+ * `price_target_outcomes` through `targetFreshness` -- the same authoritative
+ * record this banner's RPC reads.
+ *
+ * The component is kept rather than deleted because a full contextual
+ * attention card is the right presentation on the DASHBOARD, which is the
+ * surface whose job is surfacing attention. It has no caller today, and that
+ * is stated here rather than left to be discovered.
+ */
 interface ExpiredTargetsAlertProps {
   className?: string
   onNavigateToAsset?: (assetId: string) => void
@@ -31,23 +49,17 @@ export function ExpiredTargetsAlert({
   const [dismissed, setDismissed] = React.useState(false)
 
   /*
-    Fire the expiry sweep once, not once per mount.
+    The once-per-session sweep, through the shared hook.
 
-    `check_and_expire_user_targets` is a read-then-write loop over the pending
-    outcomes. StrictMode invokes this effect twice, so the two executions
-    overlapped and each claimed the same pending rows — three expired AMZN
-    targets came back as six notifications. The database now takes the rows
-    with SKIP LOCKED and folds duplicate alerts onto one semantic key, which is
-    where that had to be fixed; this stops the app asking for the same work
-    twice in the first place, and stops a remount re-running a sweep that
-    already ran this session.
+    This used to be a local ref plus effect here, which meant the expiry of a
+    horizon was a side effect of rendering the banner that announced it. The
+    guard is now at module scope in `useExpirySweepOnce` so that two mounted
+    surfaces cannot both claim the same pending rows, and so that the sweep
+    survives this banner not being rendered: it no longer appears on the
+    canonical Asset page, where a lapsed valuation is a reason inside the one
+    ⚡ attention surface instead.
   */
-  const sweepRequested = React.useRef(false)
-  React.useEffect(() => {
-    if (sweepRequested.current) return
-    sweepRequested.current = true
-    checkExpiredTargets()
-  }, [])
+  useExpirySweepOnce()
 
   if (isLoading || !hasExpiredTargets || dismissed) {
     return null

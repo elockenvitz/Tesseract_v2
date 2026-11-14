@@ -31,7 +31,7 @@ const dateAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString().slic
 
 const BASE: AssetWorkspaceData = {
   sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
-  history: [], spot: null, ladder: null, target: null,
+  history: [], spot: null, ladder: null, target: null, targetStanding: null,
   positions: [], liveIdeas: [], decisions: [],
 }
 

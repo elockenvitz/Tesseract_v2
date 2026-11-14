@@ -20,7 +20,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   offerEntryContext,
-  takeEntryContext,
+  takeEntryArrival,
   clearEntryContext,
   hasPendingEntryContext,
   HANDOFF_TTL_MS,
@@ -59,12 +59,12 @@ beforeEach(clearEntryContext)
 describe('the normal hop', () => {
   it('hands the context to the page that was opened', () => {
     offerEntryContext(AAPL, 1_000)
-    expect(takeEntryContext(here, 1_050)).toBe(AAPL)
+    expect(takeEntryArrival(here, 1_050)?.context).toBe(AAPL)
   })
 
   it('is empty before anyone offers anything', () => {
     expect(hasPendingEntryContext()).toBe(false)
-    expect(takeEntryContext(here)).toBeNull()
+    expect(takeEntryArrival(here)).toBeNull()
   })
 })
 
@@ -73,24 +73,24 @@ describe('one offer, one take', () => {
     /* Returning to a tab is a remount. The band is an orientation for an
        arrival, not a property of the page, so the second take is empty. */
     offerEntryContext(AAPL, 1_000)
-    expect(takeEntryContext(here, 1_010)).toBe(AAPL)
-    expect(takeEntryContext(here, 1_020)).toBeNull()
+    expect(takeEntryArrival(here, 1_010)?.context).toBe(AAPL)
+    expect(takeEntryArrival(here, 1_020)).toBeNull()
   })
 
   it('empties the slot even when the context did not apply', () => {
     /* An offer that did not apply never will, and leaving it would hand it to
        whatever arrival came next. */
     offerEntryContext(AAPL, 1_000)
-    expect(takeEntryContext({ assetId: 'a-msft', organizationId: 'o1' }, 1_010)).toBeNull()
+    expect(takeEntryArrival({ assetId: 'a-msft', organizationId: 'o1' }, 1_010)).toBeNull()
     expect(hasPendingEntryContext()).toBe(false)
-    expect(takeEntryContext(here, 1_020)).toBeNull()
+    expect(takeEntryArrival(here, 1_020)).toBeNull()
   })
 
   it('replaces an unclaimed offer rather than queueing behind it', () => {
     const other = { ...AAPL, symbol: 'AAPL (second press)' } as WorkspaceEntryContext
     offerEntryContext(AAPL, 1_000)
     offerEntryContext(other, 1_100)
-    expect(takeEntryContext(here, 1_110)).toBe(other)
+    expect(takeEntryArrival(here, 1_110)?.context).toBe(other)
   })
 
   it('clears the slot when offered nothing', () => {
@@ -103,12 +103,12 @@ describe('one offer, one take', () => {
 describe('the wrong page', () => {
   it('refuses another name', () => {
     offerEntryContext(AAPL, 1_000)
-    expect(takeEntryContext({ assetId: 'a-msft', organizationId: 'o1' }, 1_010)).toBeNull()
+    expect(takeEntryArrival({ assetId: 'a-msft', organizationId: 'o1' }, 1_010)).toBeNull()
   })
 
   it('refuses another organisation', () => {
     offerEntryContext(AAPL, 1_000)
-    expect(takeEntryContext({ assetId: 'a-aapl', organizationId: 'o2' }, 1_010)).toBeNull()
+    expect(takeEntryArrival({ assetId: 'a-aapl', organizationId: 'o2' }, 1_010)).toBeNull()
   })
 
   it('refuses a page whose organisation is not known yet', () => {
@@ -116,24 +116,24 @@ describe('the wrong page', () => {
        organisation" is unknown, and unknown must not render another
        organisation's event. The receiver waits for the id instead. */
     offerEntryContext(AAPL, 1_000)
-    expect(takeEntryContext({ assetId: 'a-aapl', organizationId: null }, 1_010)).toBeNull()
+    expect(takeEntryArrival({ assetId: 'a-aapl', organizationId: null }, 1_010)).toBeNull()
   })
 
   it('refuses a context built before its own organisation resolved', () => {
     offerEntryContext({ ...AAPL, organizationId: null } as WorkspaceEntryContext, 1_000)
-    expect(takeEntryContext(here, 1_010)).toBeNull()
+    expect(takeEntryArrival(here, 1_010)).toBeNull()
   })
 })
 
 describe('the wrong moment', () => {
   it('discards an offer nobody claimed in time', () => {
     offerEntryContext(AAPL, 1_000)
-    expect(takeEntryContext(here, 1_000 + HANDOFF_TTL_MS + 1)).toBeNull()
+    expect(takeEntryArrival(here, 1_000 + HANDOFF_TTL_MS + 1)).toBeNull()
   })
 
   it('still honours one claimed right on the limit', () => {
     offerEntryContext(AAPL, 1_000)
-    expect(takeEntryContext(here, 1_000 + HANDOFF_TTL_MS)).toBe(AAPL)
+    expect(takeEntryArrival(here, 1_000 + HANDOFF_TTL_MS)?.context).toBe(AAPL)
   })
 
   it('keeps the window short enough that a stale orientation is not plausible', () => {
@@ -144,10 +144,46 @@ describe('the wrong moment', () => {
   })
 })
 
+describe('an orientation the reader has already been given', () => {
+  /*
+    The fourth property. The embedded workspace draws the band for this
+    context before the reader presses anything in it, so handing the context
+    on unmarked made the canonical Asset page state the same thing a second
+    time, in the research content the reader had navigated to in order to
+    read. The flag is the sender saying "I have already explained this".
+  */
+  it('carries the declaration to the receiver', () => {
+    offerEntryContext(AAPL, 1_000, { oriented: true })
+    expect(takeEntryArrival(here, 1_010)?.oriented).toBe(true)
+  })
+
+  it('treats a sender that says nothing as one that explained nothing', () => {
+    /* The default has to fail towards drawing. A band that never draws is
+       invisible; a band that draws twice gets reported. */
+    offerEntryContext(AAPL, 1_000)
+    expect(takeEntryArrival(here, 1_010)?.oriented).toBe(false)
+  })
+
+  it('does not let the declaration outlive its own offer', () => {
+    /* A marked offer followed by an unmarked one must not leave the mark
+       behind: the second sender gets its band. */
+    offerEntryContext(AAPL, 1_000, { oriented: true })
+    offerEntryContext(AAPL, 1_100)
+    expect(takeEntryArrival(here, 1_110)?.oriented).toBe(false)
+  })
+
+  it('still carries the context itself, mark or no mark', () => {
+    /* The flag changes what the receiver DRAWS, never what it receives. The
+       destination still uses the context for its focus and its way back. */
+    offerEntryContext(AAPL, 1_000, { oriented: true })
+    expect(takeEntryArrival(here, 1_010)?.context).toBe(AAPL)
+  })
+})
+
 describe('a sender that changes its mind', () => {
   it('can withdraw the offer', () => {
     offerEntryContext(AAPL, 1_000)
     clearEntryContext()
-    expect(takeEntryContext(here, 1_010)).toBeNull()
+    expect(takeEntryArrival(here, 1_010)).toBeNull()
   })
 })

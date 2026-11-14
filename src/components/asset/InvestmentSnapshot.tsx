@@ -1342,6 +1342,10 @@ export function InvestmentSnapshot({
     writtenSections: core.map(c => ({ section: c.section, updatedAt: c.updatedAt ?? null })),
     rating: dominant ? { value: dominant.value, count: dominant.count, total: ratings.length } : null,
     target: data.target,
+    /* Whether that number still stands, from the same cached read. The
+       Snapshot does not draw the attention band itself any more, but it does
+       resolve the state, and a lapsed valuation is part of the situation. */
+    targetStanding: data.targetStanding,
     spot: quotePrice ?? data.spot,
     newEvidenceCount: newEvidence.length,
     openDecisions: openDecisions.map(d => ({

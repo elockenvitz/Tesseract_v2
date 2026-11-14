@@ -6,7 +6,7 @@
  * It was four lines in `AssetTab`, and those four lines carried three
  * decisions that can each be wrong in a way nobody would see in review:
  *
- *   wait for the organisation  `takeEntryContext` discards a context whose
+ *   wait for the organisation  `takeEntryArrival` discards a context whose
  *                              organisation does not match, and a null
  *                              organisation matches nothing. Taking before
  *                              the id resolves therefore CONSUMES the offer
@@ -49,7 +49,7 @@
  * every time the reader came back to the tab.
  */
 import { useEffect, useRef, useState } from 'react'
-import { takeEntryContext } from './entry-handoff'
+import { takeEntryArrival } from './entry-handoff'
 import type { WorkspaceEntryContext } from './entry-context'
 
 export interface ArrivalOrientationInput {
@@ -69,6 +69,24 @@ function arrivalKey({ assetId, organizationId, focusRequestId }: ArrivalOrientat
  * The context the reader arrived with, or null when they arrived some other
  * way. Null is the normal answer: most visits to an asset page are not
  * handed an event.
+ *
+ * ── The fifth decision: an orientation already given is not given again ──
+ *
+ * The offer carries the sender's `oriented` declaration. Every offer in this
+ * product is made by the embedded Asset Workspace, which has already drawn
+ * the band for this arrival; "Review the case" then handed the canonical page
+ * the same context and the page stated it a second time, as a second large
+ * band, in the research content the reader had navigated to in order to read.
+ *
+ * So an oriented arrival is CONSUMED and discarded: the slot still empties
+ * (which is what stops a later unrelated mount inheriting it) and the page
+ * draws nothing. The reason itself is not lost -- a lapsed valuation and a
+ * price past its target are both canonical facts the ⚡ attention surface
+ * resolves from the page's own records.
+ *
+ * Returning null rather than refusing the take matters: refusing would leave
+ * the offer in the slot for the next arrival, which is the third guard this
+ * module exists to provide.
  */
 export function useArrivalOrientation(input: ArrivalOrientationInput): WorkspaceEntryContext | null {
   const { assetId, organizationId } = input
@@ -80,7 +98,8 @@ export function useArrivalOrientation(input: ArrivalOrientationInput): Workspace
     if (!organizationId) return
     if (consumed.current === key) return
     consumed.current = key
-    setArrival(takeEntryContext({ assetId, organizationId }) ?? null)
+    const taken = takeEntryArrival({ assetId, organizationId })
+    setArrival(taken && !taken.oriented ? taken.context : null)
   }, [assetId, organizationId, key])
 
   return arrival

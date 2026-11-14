@@ -34,6 +34,10 @@
  *   once       the slot is cleared on the first take, so a remount -- which
  *              is what returning to a tab is -- gets nothing. The band is an
  *              orientation for an ARRIVAL, not a property of the page.
+ *   not twice  the sender says whether it has ALREADY shown the reader this
+ *              orientation. Every offer today comes from the embedded
+ *              workspace, which has, so the canonical page stops restating
+ *              it. See `Offer`.
  *
  * The receiving page pairs this with `asset.focusRequestId`, the id
  * `openAsset` stamps per call, so a fresh request lands even when the tab was
@@ -58,9 +62,38 @@ import { contextAppliesTo, type WorkspaceEntryContext } from './entry-context'
  */
 export const HANDOFF_TTL_MS = 10_000
 
+/**
+ * Whether the reader has ALREADY been shown this orientation.
+ *
+ * ── The fourth property, and the defect it closes ────────────────────────
+ *
+ * Every offer in this product is made by the embedded Asset Workspace, and
+ * that workspace has already drawn the band for this arrival before the
+ * reader presses anything. So "Review the case" handed the canonical Asset
+ * page a context it then stated a SECOND time, as a second large band, in
+ * the research content the reader had navigated to in order to read.
+ *
+ * The reported symptom was four competing attention indicators on one
+ * screen. One of the four was this band, restating what the pane beside it
+ * had just said.
+ *
+ * `oriented` is the sender declaring "I have already explained this". The
+ * receiving surface decides what to do with that; the handoff only carries
+ * it. An un-oriented offer -- a future Dashboard control that opens the
+ * canonical page directly, with no pane in between -- still earns its band,
+ * which is why this is a flag rather than a deletion.
+ */
 interface Offer {
   context: WorkspaceEntryContext
   offeredAt: number
+  oriented: boolean
+}
+
+/** An offer that applied, with the sender's declaration alongside it. */
+export interface TakenArrival {
+  context: WorkspaceEntryContext
+  /** True when the sender had already shown the reader this orientation. */
+  oriented: boolean
 }
 
 /* Module scope, deliberately: this is a handoff between two surfaces that are
@@ -77,8 +110,15 @@ let pending: Offer | null = null
 export function offerEntryContext(
   context: WorkspaceEntryContext | null | undefined,
   now = Date.now(),
+  /* Defaults to false so that a sender which says nothing is treated as one
+     that has explained nothing. The failure mode of the wrong default is a
+     band that never draws, which is invisible; this way it is a band that
+     draws, which a reader reports. */
+  opts: { oriented?: boolean } = {},
 ): void {
-  pending = context ? { context, offeredAt: now } : null
+  pending = context
+    ? { context, offeredAt: now, oriented: opts.oriented === true }
+    : null
 }
 
 /**
@@ -86,17 +126,21 @@ export function offerEntryContext(
  *
  * Empties the slot either way: an offer that did not apply is an offer that
  * will never apply, and leaving it would hand it to the next arrival.
+ *
+ * Returns the sender's `oriented` declaration alongside the context rather
+ * than the context alone, because the receiver cannot otherwise tell a first
+ * explanation from a second one. See `Offer`.
  */
-export function takeEntryContext(
+export function takeEntryArrival(
   to: { assetId: string | null; organizationId: string | null },
   now = Date.now(),
-): WorkspaceEntryContext | null {
+): TakenArrival | null {
   const offer = pending
   pending = null
   if (!offer) return null
   if (now - offer.offeredAt > HANDOFF_TTL_MS) return null
   if (!contextAppliesTo(offer.context, to)) return null
-  return offer.context
+  return { context: offer.context, oriented: offer.oriented }
 }
 
 /** Drop any outstanding offer. For a sender that decides not to navigate. */

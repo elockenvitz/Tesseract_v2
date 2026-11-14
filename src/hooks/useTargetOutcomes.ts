@@ -1,8 +1,50 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { EXPIRED_TARGETS_KEY } from './useExpiredTargets'
 import { useAuth } from './useAuth'
 
 export type OutcomeStatus = 'pending' | 'hit' | 'missed' | 'expired' | 'cancelled'
+
+/** The prefix the evaluated outcome rows are cached under. */
+export const TARGET_OUTCOMES_KEY = ['target-outcomes'] as const
+
+/**
+ * Every cached surface that states whether a price target still stands.
+ *
+ * ── The defect this closes ───────────────────────────────────────────────
+ *
+ * `price_target_outcomes` is the authoritative record of a target's standing
+ * -- `targetFreshness` says so, and the database agrees: publishing or
+ * renewing a target fires `create_outcome_for_target`, which resets that
+ * target's outcome row to `pending` and clears its evaluation. So the moment
+ * a reader publishes a new target with a future horizon, the DATABASE stops
+ * calling it expired.
+ *
+ * The client did not. Five write paths in `useAnalystPriceTargets` -- save,
+ * publish, save-draft, discard-draft and delete -- invalidated the targets
+ * themselves, the scenario cards and the asset pane, and none of them
+ * invalidated the two keys that carry the EXPIRY:
+ *
+ *   ['target-outcomes', assetId, ...]   30s. The price-target section, the
+ *                                       outcome timeline and the target chart
+ *                                       all read freshness from here.
+ *   ['expired-targets', userId]         FIVE MINUTES, and the banner that
+ *                                       says "Price Targets Expired" reads
+ *                                       only this.
+ *
+ * So the reader published a target for next year and the page kept reporting
+ * the old one as expired -- not as a rendering quirk but as a cached answer
+ * from before the write, held for up to five minutes. That is precisely the
+ * substitution of a short expiry for a correct invalidation that must not
+ * stand in for one.
+ *
+ * Prefix keys on purpose: `['target-outcomes']` matches every asset / user /
+ * status / scenario variant, and only the mounted ones refetch.
+ */
+export function invalidateTargetLifecycle(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: TARGET_OUTCOMES_KEY })
+  queryClient.invalidateQueries({ queryKey: EXPIRED_TARGETS_KEY })
+}
 
 export interface TargetOutcome {
   id: string
@@ -86,7 +128,7 @@ export function useTargetOutcomes({
     error,
     refetch
   } = useQuery({
-    queryKey: ['target-outcomes', assetId, userId, status, scenarioType],
+    queryKey: [...TARGET_OUTCOMES_KEY, assetId, userId, status, scenarioType],
     queryFn: async () => {
       let query = supabase
         .from('price_target_outcomes')
@@ -217,7 +259,10 @@ export function useTargetOutcomes({
       return data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['target-outcomes', assetId] })
+      /* Through the helper: both mutations here write `status` directly, up to
+         and including 'expired', so the expiry list is downstream of them too
+         and an asset-scoped invalidation of this one key was never enough. */
+      invalidateTargetLifecycle(queryClient)
       queryClient.invalidateQueries({ queryKey: ['analyst-performance'] })
     }
   })
@@ -296,7 +341,10 @@ export function useTargetOutcomes({
       return data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['target-outcomes', assetId] })
+      /* Through the helper: both mutations here write `status` directly, up to
+         and including 'expired', so the expiry list is downstream of them too
+         and an asset-scoped invalidation of this one key was never enough. */
+      invalidateTargetLifecycle(queryClient)
       queryClient.invalidateQueries({ queryKey: ['analyst-performance'] })
     }
   })

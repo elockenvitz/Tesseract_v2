@@ -1102,7 +1102,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
    * Leaving the tab therefore drops it, which is correct: the orientation
    * belongs to the arrival, not to the page.
    *
-   * The org id is waited for rather than defaulted. `takeEntryContext`
+   * The org id is waited for rather than defaulted. `takeEntryArrival`
    * discards a context whose organisation does not match, and a null
    * organisation matches nothing, so taking early would consume the offer and
    * throw it away.
@@ -4599,12 +4599,36 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       <div className="flex-1 overflow-auto px-8 py-4">
 
         {/*
-          Why the reader is here, where they arrived on an event.
+          Why the reader is here, where they arrived on an event AND nobody
+          has explained it to them yet.
 
           Above the mode's own content and inside the scroller, so it is the
           first thing read and then scrolls away. It is not sticky: an
           orientation is read once, and a band pinned over a page the reader
           has moved on to is chrome.
+
+          ── Why this is usually absent now ────────────────────────────────
+
+          Every arrival context in this product is offered by the Dashboard's
+          embedded Asset Workspace, and that pane draws the orientation band
+          itself before the reader presses anything in it. So "Review the
+          case" used to hand this page the same context and this page stated
+          it again, as a second large band, in the research content the
+          reader had navigated here to read. Together with the price-target
+          expiry banner, the research toolbar's warning control and the
+          header's ⚡ trigger that makes four competing indicators on one
+          screen for one fact.
+
+          `useArrivalOrientation` now consumes an already-explained arrival
+          and returns null for it, so this renders nothing on that journey.
+          The reason is not lost: a lapsed valuation and a price past its
+          target are canonical facts the ⚡ surface resolves from this page's
+          own records.
+
+          It is left in place rather than deleted because a surface that
+          opens this page DIRECTLY, with no pane in between, has oriented
+          nobody and still earns a band. Both branches are covered in
+          `arrival-orientation.test.tsx`.
         */}
         <ArrivalOrientationBand
           context={arrivalContext}

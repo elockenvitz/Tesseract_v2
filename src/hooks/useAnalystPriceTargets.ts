@@ -6,6 +6,7 @@ import { SCENARIO_CARDS_KEY } from '../lib/signals/scenario-cards-key'
 /* The dashboard asset pane is a third reader of these rows. See the
    function's own note for the staleness it was showing. */
 import { invalidateAssetWorkspace } from './useAssetWorkspace'
+import { invalidateTargetLifecycle } from './useTargetOutcomes'
 
 export type TimeframeType = 'preset' | 'date' | 'custom'
 
@@ -302,6 +303,12 @@ export function useAnalystPriceTargets({
          cached read, which nothing here marked stale. Same gap as the
          scenario cards above, one surface further out. */
       invalidateAssetWorkspace(queryClient)
+      /* And the expiry. Writing a target changes whether it is expired --
+         the database's own trigger resets its outcome row to pending -- and
+         the two keys that carry that answer were cached for 30 seconds and
+         five minutes respectively with nothing here marking them stale. See
+         `invalidateTargetLifecycle`. */
+      invalidateTargetLifecycle(queryClient)
     }
   })
 
@@ -440,6 +447,12 @@ export function useAnalystPriceTargets({
          cached read, which nothing here marked stale. Same gap as the
          scenario cards above, one surface further out. */
       invalidateAssetWorkspace(queryClient)
+      /* And the expiry. Writing a target changes whether it is expired --
+         the database's own trigger resets its outcome row to pending -- and
+         the two keys that carry that answer were cached for 30 seconds and
+         five minutes respectively with nothing here marking them stale. See
+         `invalidateTargetLifecycle`. */
+      invalidateTargetLifecycle(queryClient)
       queryClient.invalidateQueries({ queryKey: ['asset-revisions', assetId] })
       queryClient.invalidateQueries({ queryKey: ['price-target-history'] })
     }
@@ -504,6 +517,12 @@ export function useAnalystPriceTargets({
          cached read, which nothing here marked stale. Same gap as the
          scenario cards above, one surface further out. */
       invalidateAssetWorkspace(queryClient)
+      /* And the expiry. Writing a target changes whether it is expired --
+         the database's own trigger resets its outcome row to pending -- and
+         the two keys that carry that answer were cached for 30 seconds and
+         five minutes respectively with nothing here marking them stale. See
+         `invalidateTargetLifecycle`. */
+      invalidateTargetLifecycle(queryClient)
     }
   })
 
@@ -617,6 +636,12 @@ export function useAnalystPriceTargets({
          cached read, which nothing here marked stale. Same gap as the
          scenario cards above, one surface further out. */
       invalidateAssetWorkspace(queryClient)
+      /* And the expiry. Writing a target changes whether it is expired --
+         the database's own trigger resets its outcome row to pending -- and
+         the two keys that carry that answer were cached for 30 seconds and
+         five minutes respectively with nothing here marking them stale. See
+         `invalidateTargetLifecycle`. */
+      invalidateTargetLifecycle(queryClient)
     }
   })
 
@@ -656,6 +681,12 @@ export function useAnalystPriceTargets({
          cached read, which nothing here marked stale. Same gap as the
          scenario cards above, one surface further out. */
       invalidateAssetWorkspace(queryClient)
+      /* And the expiry. Writing a target changes whether it is expired --
+         the database's own trigger resets its outcome row to pending -- and
+         the two keys that carry that answer were cached for 30 seconds and
+         five minutes respectively with nothing here marking them stale. See
+         `invalidateTargetLifecycle`. */
+      invalidateTargetLifecycle(queryClient)
     }
   })
 

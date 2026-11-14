@@ -26,6 +26,7 @@ const facts = (over: Partial<WorkspaceFacts> = {}): WorkspaceFacts => ({
   writtenSections: [],
   rating: null,
   target: null,
+  targetStanding: null,
   spot: null,
   newEvidenceCount: 0,
   openDecisions: [],
@@ -278,6 +279,81 @@ describe('signals state relationships the data supports, and no others', () => {
     for (const sig of s) {
       expect(sig.headline, sig.id).not.toMatch(/\byou should\b|\bconsider\b|\brecommend(ed)?\b|\bmust\b|\bneed to\b/i)
     }
+  })
+})
+
+describe('a lapsed valuation is a reason, not a banner', () => {
+  /*
+   * The canonical Asset page used to open its price-target section with a
+   * large amber "Price Targets Expired" panel, from its own RPC on its own
+   * five-minute cache. A reader who followed a valuation alert in met the
+   * same fact four times on one screen. The banner is gone and the reason
+   * lives here, read from the evaluated record through `targetFreshness`.
+   */
+  const signal = (over: Partial<WorkspaceFacts>) =>
+    resolveWorkspaceSignals(facts(over), NOW).find(s => s.id.startsWith('staleness-target-'))
+
+  it('states an expired target with the date on record', () => {
+    const s = signal({ target: 240, targetStanding: { state: 'expired', asOf: '2026-08-30' } })
+    expect(s?.headline).toBe('The price target on record ran out on 2026-08-30')
+    expect(s?.kind).toBe('staleness')
+    /* The reader has to be able to see WHICH record said so. */
+    expect(s?.evidence).toEqual([{ label: 'Price target outcome', table: 'price_target_outcomes' }])
+  })
+
+  it('lands the reader on the targets, not just the page', () => {
+    const s = signal({ target: 240, targetStanding: { state: 'expired', asOf: '2026-08-30' } })
+    expect(s?.destination).toBe('research')
+    expect(s?.focus).toEqual({ kind: 'research-section', anchor: 'targets' })
+  })
+
+  it('omits the date rather than inventing one', () => {
+    const s = signal({ target: 240, targetStanding: { state: 'expired', asOf: null } })
+    expect(s?.headline).toBe('The price target on record ran out')
+  })
+
+  it('says nothing at all for a target that still stands', () => {
+    expect(signal({ target: 240, targetStanding: { state: 'current', asOf: '2027-08-30' } }))
+      .toBeUndefined()
+  })
+
+  it('does not read an absent horizon as expiry', () => {
+    /* `unknown` is a real verdict and it is not a synonym for expired.
+       Retiring live work on the strength of a missing field is the failure
+       this whole freshness rule was written to avoid. */
+    expect(signal({ target: 240, targetStanding: { state: 'unknown', asOf: null } }))
+      .toBeUndefined()
+  })
+
+  it('says nothing when there is no target to judge', () => {
+    expect(signal({ target: null, targetStanding: null })).toBeUndefined()
+  })
+
+  it('does not call a disagreeing framework expired', () => {
+    /* A framework whose rungs disagree has not run out, it has stopped
+       agreeing. Telling the reader the wrong one of those sends them to fix
+       the wrong thing. */
+    const s = signal({ target: 240, targetStanding: { state: 'mixed', asOf: '2026-08-30' } })
+    expect(s?.headline).toBe('The scenario targets do not agree on whether the valuation still stands')
+    expect(s?.headline).not.toMatch(/ran out/)
+  })
+
+  it('reports a target resolved against the case as itself', () => {
+    const s = signal({ target: 240, targetStanding: { state: 'missed', asOf: '2026-08-30' } })
+    expect(s?.headline).toBe('The price target on record resolved against the case on 2026-08-30')
+  })
+
+  it('ranks below a price that has left a live framework', () => {
+    /* Both are facts about the valuation. The reader whose price has passed a
+       target that still stands has the more urgent one. */
+    const all = resolveWorkspaceSignals(facts({
+      target: 240, spot: 266,
+      targetStanding: { state: 'expired', asOf: '2026-08-30' },
+    }), NOW)
+    const expired = all.findIndex(s => s.id.startsWith('staleness-target-'))
+    const past = all.findIndex(s => s.id === 'contradiction-spot-past-target')
+    expect(past).toBeGreaterThanOrEqual(0)
+    expect(expired).toBeGreaterThan(past)
   })
 })
 

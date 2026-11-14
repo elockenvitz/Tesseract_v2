@@ -88,6 +88,42 @@ describe('the page takes what it was handed', () => {
   })
 })
 
+describe('an orientation the sender already gave', () => {
+  /*
+   * The reported defect: a reader opened a target-reached card, read the
+   * orientation in the Dashboard's asset pane, pressed "Review the case",
+   * and met the same orientation again as a second large band in the
+   * canonical page's research content. Four competing attention indicators
+   * on one screen, and this was one of them.
+   *
+   * The offer now carries the sender's declaration, and an orientation the
+   * reader has already been given is consumed and not drawn.
+   */
+  it('draws nothing for an arrival the sender already explained', () => {
+    offerEntryContext(AAPL, undefined, { oriented: true })
+    const { result } = mount({})
+    expect(result.current).toBeNull()
+  })
+
+  it('still consumes it, so a later unrelated mount cannot inherit it', () => {
+    /* Refusing the take instead of consuming it would leave the offer in the
+       slot for whatever arrived next, which is the guard this module exists
+       to provide. The slot must be empty either way. */
+    offerEntryContext(AAPL, undefined, { oriented: true })
+    mount({})
+    expect(hasPendingEntryContext()).toBe(false)
+  })
+
+  it('still draws for a sender that has explained nothing', () => {
+    /* The other branch, which is what makes the one above a check rather
+       than a deletion: a surface that opens the canonical page directly,
+       with no pane in between, has not oriented anybody. */
+    offerEntryContext(AAPL, undefined, { oriented: false })
+    const { result } = mount({})
+    expect(result.current).toBe(AAPL)
+  })
+})
+
 describe('waiting for the organisation', () => {
   /*
    * The defect: the org id arrives a tick after the tab does, and a null

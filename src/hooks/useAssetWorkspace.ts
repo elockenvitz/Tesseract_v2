@@ -38,6 +38,13 @@ import {
 import {
   selectCurrentLadders, type TargetRow, type CurrentLadder,
 } from '../lib/signals/current-ladder'
+/* The one rule for "does this price target still stand". Imported, never
+   restated: the pane and the canonical page reporting different answers for
+   the same row is the defect this closes. */
+import {
+  targetFreshness, scenarioFreshness,
+  type TargetFreshness, type FreshnessTargetInput, type FreshnessOutcomeInput,
+} from '../lib/outcomes/target-freshness'
 import {
   CORE_SECTIONS, type ThesisSection, type EvidenceItem,
 } from '../lib/desktop-research/model'
@@ -147,6 +154,14 @@ export interface AssetWorkspaceData {
   /** The whole ladder, so FrameworkScale can be reused rather than reshaped. */
   ladder: CurrentLadder | null
   target: number | null
+  /**
+   * Whether the number in `target` still stands, and as of when.
+   *
+   * From `price_target_outcomes` through the shared `targetFreshness` rule,
+   * never from a countdown off `updated_at`. Null when there is no target to
+   * judge; `unknown` is a real verdict and is not the same as null.
+   */
+  targetStanding: TargetFreshness | null
   positions: AssetPosition[]
   liveIdeas: AssetLiveIdea[]
   decisions: AssetDecisionRow[]
@@ -154,7 +169,7 @@ export interface AssetWorkspaceData {
 
 const EMPTY: AssetWorkspaceData = {
   sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
-  history: [], spot: null, ladder: null, target: null,
+  history: [], spot: null, ladder: null, target: null, targetStanding: null,
   positions: [], liveIdeas: [], decisions: [],
 }
 
@@ -223,7 +238,7 @@ export function useAssetWorkspace(
     queryFn: async () => {
       const floor = new Date(Date.now() - days * DAY).toISOString().slice(0, 10)
 
-      const [contribs, notes, history, mine, targets, ideas, decisions] = await Promise.all([
+      const [contribs, notes, history, mine, targets, outcomes, ideas, decisions] = await Promise.all([
         supabase.from('asset_contributions')
           .select('section, content, supporting_detail, updated_at, users:created_by(first_name, last_name, email)')
           .eq('organization_id', currentOrgId!)
@@ -243,8 +258,42 @@ export function useAssetWorkspace(
         supabase.from('portfolio_holdings')
           .select('portfolio_id').eq('asset_id', assetId!),
         supabase.from('analyst_price_targets')
-          .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
+          /* `target_date`, `is_rolling`, `timeframe` and `timeframe_type` are
+             here for `targetFreshness`. Without them this pane could report a
+             price and not whether it still stood, which is how the pane and
+             the canonical page came to disagree about the same number. */
+          .select('id, asset_id, price, is_official, created_at, updated_at, target_date, is_rolling, timeframe, timeframe_type, scenarios(name), assets(id, symbol, company_name)')
           .eq('organization_id', currentOrgId!)
+          .eq('asset_id', assetId!),
+        /*
+         * The EVALUATED standing of those targets.
+         *
+         * `price_target_outcomes` is authoritative for "does this number still
+         * stand" -- see `target-freshness` for why a client-side countdown
+         * from `updated_at` is not. Read in parallel with the targets, so it
+         * adds a request and no waterfall.
+         *
+         * ── RLS posture, and why there is no client-side org filter ──────
+         *
+         * Unlike the four tables above, this one's RLS IS organisation-aware.
+         * Verified against production: RLS enabled, no anon SELECT, and the
+         * SELECT policy is
+         *
+         *   organization_id IS NOT NULL
+         *   AND is_active_member_of_current_org()
+         *   AND organization_id = current_org_id()
+         *
+         * so the server already restricts these rows to the reader's active
+         * organisation. Adding `.eq('organization_id', currentOrgId)` on top
+         * would intersect the SERVER's org id with the CLIENT provider's,
+         * and those two disagree while membership is loading or just after a
+         * self-heal. That intersection returning zero rows is the documented
+         * defect that made the Case-vs-Price card vanish (see the header of
+         * `current-ladder.ts`), and zero rows here would read as "no target
+         * has ever been evaluated", which is a claim about the firm's work.
+         */
+        supabase.from('price_target_outcomes')
+          .select('price_target_id, status, target_date')
           .eq('asset_id', assetId!),
         supabase.from('trade_queue_items')
           .select('id, action, stage, status, outcome, rationale, portfolios(name)')
@@ -300,6 +349,32 @@ export function useAssetWorkspace(
       if (ladder) out.ladder = ladder
       const official = targetRows.find((t: any) => t.is_official && Number((t as any).price) > 0)
       if (official) out.target = Number((official as any).price)
+
+      /*
+       * Does the number above still stand?
+       *
+       * The pane used to report `target` as a bare price with no horizon and
+       * no status, which is the same defect `target-freshness` was written to
+       * fix on the Research surface one table over: a target whose horizon
+       * ran out in August read as the firm's current valuation. The rule is
+       * imported rather than restated, so this pane and the canonical page
+       * cannot drift apart.
+       *
+       * The verdict is for the OFFICIAL target when there is one, because
+       * that is the number this pane publishes. With no official target the
+       * whole framework is judged, and `scenarioFreshness` reports `mixed`
+       * rather than picking a winner when its rungs disagree.
+       */
+      const outcomeRows = ((outcomes.data ?? []) as any[]).map((r): FreshnessOutcomeInput => ({
+        price_target_id: r.price_target_id,
+        status: r.status,
+        target_date: r.target_date ?? null,
+      }))
+      out.targetStanding = official
+        ? targetFreshness(official as FreshnessTargetInput, outcomeRows)
+        : targetRows.length > 0
+          ? scenarioFreshness(targetRows as FreshnessTargetInput[], outcomeRows)
+          : null
 
       /* ------------------------------------------------------- positions */
       const books = [...new Set(((mine.data ?? []) as any[]).map(r => r.portfolio_id))]

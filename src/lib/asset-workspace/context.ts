@@ -39,6 +39,10 @@
  * chip around it. `evidence` is what the UI links to.
  */
 
+/* The one rule for whether a price target still stands. Imported so that the
+   attention surface and the Research surface cannot answer it differently. */
+import { isStale, type FreshnessState } from '../outcomes/target-freshness'
+
 /** The five destinations the Asset page already has. */
 export type WorkspaceDestination = 'snapshot' | 'research' | 'workflow' | 'decisions' | 'lists'
 
@@ -127,6 +131,16 @@ export interface WorkspaceFacts {
   /** Dominant rating and the n behind it, from `useAnalystRatings`. */
   rating: { value: string; count: number; total: number } | null
   target: number | null
+  /**
+   * Whether the number in `target` still stands, and as of when.
+   *
+   * The EVALUATED verdict, from `price_target_outcomes` through
+   * `targetFreshness`. Required rather than optional on purpose: a surface
+   * that forgets to pass it would quietly stop reporting a lapsed valuation,
+   * and an omission that typechecks is the defect class this project keeps
+   * finding. `null` is the honest value for a surface with no target to judge.
+   */
+  targetStanding: { state: FreshnessState; asOf: string | null } | null
   spot: number | null
   /** Research items dated after the case was last written. */
   newEvidenceCount: number
@@ -145,6 +159,29 @@ export interface WorkspaceFacts {
 }
 
 /* ──────────────────────────────────────────────────────────── state ─── */
+
+/**
+ * One line for a lapsed valuation, naming the state rather than generalising.
+ *
+ * `mixed` is deliberately not called expired: a framework whose rungs
+ * disagree has not run out, it has stopped agreeing, and telling a reader the
+ * wrong one of those sends them to fix the wrong thing. The date is stated
+ * only when one is on record, because a reason that invents a date is worse
+ * than one that omits it.
+ */
+function targetStandingHeadline(state: FreshnessState, asOf: string | null): string {
+  const on = asOf ? ` on ${asOf}` : ''
+  switch (state) {
+    case 'expired': return `The price target on record ran out${on}`
+    case 'missed': return `The price target on record resolved against the case${on}`
+    case 'cancelled': return `The price target on record was withdrawn${on}`
+    case 'mixed': return 'The scenario targets do not agree on whether the valuation still stands'
+    /* `isStale` admits no other state, so this is unreachable rather than a
+       fallback. Stated as the state's own name so a new stale state surfaces
+       as itself instead of being absorbed into one of the four above. */
+    default: return `The price target on record is ${state}${on}`
+  }
+}
 
 const DAY = 86_400_000
 
@@ -386,6 +423,46 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
       focus: { kind: 'research-section', anchor: 'targets' },
       evidence: [{ label: 'Price target', table: 'price_targets' }],
       weight: 80,
+    })
+  }
+
+  /*
+   * The valuation on record has lapsed.
+   *
+   * ── Why this signal exists ──────────────────────────────────────────────
+   *
+   * The canonical Asset page used to state this as a banner of its own, in
+   * amber, above the price-target section, from a separate query on a
+   * separate five-minute cache. So one page carried a valuation-review band,
+   * a warning control, this reason as a banner, and the attention trigger
+   * that was supposed to be the single entry point. Four surfaces, one fact.
+   *
+   * It is an outstanding reason, so it belongs here with the others. The
+   * banner is gone and nothing is lost, because this reads the same
+   * authoritative record the banner's RPC read.
+   *
+   * ── Where the verdict comes from ────────────────────────────────────────
+   *
+   * `targetStanding` is `targetFreshness` over `price_target_outcomes`:
+   * evaluated, dated, and not a countdown from `updated_at` that any
+   * unrelated save would push forward. `isStale` is that module's own
+   * definition of "this number no longer stands", so expired, resolved
+   * against, withdrawn and internally-disagreeing all qualify and `unknown`
+   * does not. Absence of a horizon is not expiry.
+   */
+  if (f.targetStanding && isStale(f.targetStanding.state)) {
+    const asOf = f.targetStanding.asOf
+    out.push({
+      id: `staleness-target-${f.targetStanding.state}`,
+      kind: 'staleness',
+      headline: targetStandingHeadline(f.targetStanding.state, asOf),
+      destination: 'research',
+      focus: { kind: 'research-section', anchor: 'targets' },
+      evidence: [{ label: 'Price target outcome', table: 'price_target_outcomes' }],
+      /* Above a thin case and below spot having left the framework: a target
+         that has run out is a fact about the valuation, and the reader whose
+         price has passed a live target has the more urgent one. */
+      weight: 75,
     })
   }
 

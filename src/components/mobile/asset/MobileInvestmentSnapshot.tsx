@@ -389,6 +389,10 @@ export function MobileInvestmentSnapshot({
     writtenSections: core.map(s => ({ section: s.section, updatedAt: s.updatedAt ?? null })),
     rating: dominant ? { value: dominant.value, count: dominant.count, total: ratings.length } : null,
     target: data.target,
+    /* The same cached read the phone already has. A lapsed valuation is as
+       true on the phone as on the desk, and this is the surface the desktop
+       banner never existed on. */
+    targetStanding: data.targetStanding,
     spot: data.spot,
     newEvidenceCount: 0,
     openDecisions: openDecisions.map(d => ({

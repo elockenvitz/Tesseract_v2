@@ -32,7 +32,7 @@ import type { AssetFocus } from '../../../lib/desktop-asset'
    what these cases take. `clearEntryContext` keeps one case's offer out of
    the next one. */
 import {
-  takeEntryContext, clearEntryContext, hasPendingEntryContext,
+  takeEntryArrival, clearEntryContext, hasPendingEntryContext,
 } from '../../../lib/asset-workspace/entry-handoff'
 import type { AttentionEntry } from '../../../hooks/useDesktopAttentionFeed'
 
@@ -41,7 +41,7 @@ const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString()
 
 const BASE: AssetWorkspaceData = {
   sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
-  history: [], spot: null, ladder: null, target: null,
+  history: [], spot: null, ladder: null, target: null, targetStanding: null,
   positions: [], liveIdeas: [], decisions: [],
 }
 
@@ -561,16 +561,21 @@ describe('the orientation actions', () => {
 
     await userEvent.click(screen.getByTestId('target-open-scenarios'))
 
-    const carried = takeEntryContext({ assetId: 'a-aapl', organizationId: ORG })
-    expect(carried?.event?.kind).toBe('target_reached')
-    expect(carried?.symbol).toBe('AAPL')
+    const carried = takeEntryArrival({ assetId: 'a-aapl', organizationId: ORG })
+    expect(carried?.context.event?.kind).toBe('target_reached')
+    expect(carried?.context.symbol).toBe('AAPL')
+    /* And marked as already explained. This pane drew the band for this
+       context above the control that was just pressed, so the destination
+       must not draw a second one. See `entry-handoff`'s `Offer`. */
+    expect(carried?.oriented).toBe(true)
   })
 
   it('offers the same event when the reader leaves by the headers verb instead', async () => {
     render(pane({ entryContext: contextFromPress(targetEntry()) }))
     await userEvent.click(document.querySelector('[data-slot="asset-primary"]') as HTMLElement)
-    expect(takeEntryContext({ assetId: 'a-aapl', organizationId: ORG })?.event?.kind)
-      .toBe('target_reached')
+    const carried = takeEntryArrival({ assetId: 'a-aapl', organizationId: ORG })
+    expect(carried?.context.event?.kind).toBe('target_reached')
+    expect(carried?.oriented).toBe(true)
   })
 
   it('offers no request control when no request is waiting', async () => {
