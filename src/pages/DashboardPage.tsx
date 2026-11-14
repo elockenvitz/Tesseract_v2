@@ -59,10 +59,11 @@ import { AdminConsolePage } from './AdminConsolePage'
 import { ASSET_REFERENCE_SELECT } from '../lib/assets/asset-columns'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
-/* The Return seam: `returnTargetFrom` turns a sender's ASK for a way back
-   into the tab that was active when they pressed, and the subscription is how
+/* The Return seam: `returnTabPatch` turns a sender's ASK for a way back into
+   the tab that was active when they pressed -- or into "leave the keys alone"
+   when the navigation does not move the reader -- and the subscription is how
    the canonical page asks to go there. See `lib/desktop-asset/return-to`. */
-import { returnTargetFrom, returnTabData, subscribeToActivateTab } from '../lib/desktop-asset'
+import { returnTabPatch, subscribeToActivateTab } from '../lib/desktop-asset'
 import { PilotWelcomeBanner } from '../components/dashboard/PilotWelcomeBanner'
 import { FirstSessionCoveragePrompt } from '../components/coverage/FirstSessionCoveragePrompt'
 import { CoverageSummaryBanner } from '../components/coverage/CoverageSummaryBanner'
@@ -562,7 +563,14 @@ export function DashboardPage() {
        * be offered a way back to a surface they had not come from.
        */
       const backFrom = activeTabIdRef.current
-      const back = returnTargetFrom({
+      /*
+       * `returnTabPatch`, not `returnTabData(returnTargetFrom(...))`: the
+       * third outcome is "write nothing". A navigation whose destination is
+       * the tab the reader is already on has not moved them, and rewriting
+       * the keys there deleted a Return they had arrived with. See the note
+       * on `returnTabPatch`.
+       */
+      const back = returnTabPatch({
         requested: result.data?.returnRequested === true,
         activeTabId: backFrom,
         hosts: prev,
@@ -570,7 +578,7 @@ export function DashboardPage() {
         organizationId: currentOrgId ?? null,
       })
       const withReturn = (data: Record<string, unknown> | undefined) =>
-        result.type === 'asset' ? { ...(data ?? {}), ...returnTabData(back) } : data
+        result.type === 'asset' ? { ...(data ?? {}), ...(back ?? {}) } : data
 
       if (existingTab) {
         finalActiveId = existingTab.id

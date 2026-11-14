@@ -160,6 +160,45 @@ export function returnTabData(target: ReturnTarget | null | undefined): ReturnTa
 }
 
 /**
+ * The return keys a navigation should WRITE, or null for "write none".
+ *
+ * ── Why "write none" has to be a separate answer ────────────────────────
+ *
+ * There are three outcomes, not two, and collapsing the third into "no
+ * return" is a defect I shipped and found by walking §5D's repeated
+ * navigation:
+ *
+ *   set      the reader moved from somewhere worth coming back to
+ *   clear    the reader moved, and the origin is not worth coming back to
+ *            (a search box, a blank tab, another firm's feed)
+ *   none     the reader did not move
+ *
+ * The third case is a navigation whose destination is the tab the reader is
+ * already on: a control pressed on the Asset page that re-opens the same
+ * asset at a different section. `returnTargetFrom` correctly answers "no
+ * target" for it -- returning to yourself is not a return -- but the shell
+ * then wrote all three keys as null, which DELETED a Return the reader had
+ * arrived with and still needed. They followed a breach from the Dashboard
+ * into AAPL, pressed one source chip on the page they landed on, and the way
+ * back disappeared without them ever leaving.
+ *
+ * So the rule is: the return keys are rewritten by a navigation that MOVES
+ * the reader, and left alone by one that does not. Clearing still happens on
+ * a real move with no valid origin -- that is the leak this module was
+ * written to prevent, and it is untouched.
+ */
+export function returnTabPatch(input: {
+  requested: boolean
+  activeTabId: string | null | undefined
+  hosts: readonly ReturnHost[]
+  targetId: string
+  organizationId: string | null
+}): ReturnTabData | null {
+  if (input.activeTabId && input.activeTabId === input.targetId) return null
+  return returnTabData(returnTargetFrom(input))
+}
+
+/**
  * The Return the landing page should offer, read back out of tab data.
  *
  * `organizationId` is the reader's CURRENT organisation. A target stamped in

@@ -15,5 +15,5 @@ export {
 export type { ReturnTarget, ReturnHost, ReturnTabData } from './return-to'
 export {
   ACTIVATE_TAB_EVENT, activateTab, subscribeToActivateTab,
-  returnTargetFrom, returnTabData, readReturnTarget, returnLabelFor,
+  returnTargetFrom, returnTabData, returnTabPatch, readReturnTarget, returnLabelFor,
 } from './return-to'

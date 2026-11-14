@@ -20,7 +20,7 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import {
-  returnTargetFrom, returnTabData, readReturnTarget, returnLabelFor,
+  returnTargetFrom, returnTabData, returnTabPatch, readReturnTarget, returnLabelFor,
   activateTab, subscribeToActivateTab, ACTIVATE_TAB_EVENT,
 } from '../return-to'
 
@@ -236,5 +236,121 @@ describe('asking the shell to go there', () => {
     stop()
     activateTab('dashboard')
     expect(seen).toEqual([])
+  })
+})
+
+/*
+ * ── §5D: the same trip, over and over ────────────────────────────────────
+ *
+ * The brief asks what happens when a reader navigates repeatedly: open,
+ * return, open again, switch tabs, return, open again. Each of those steps
+ * passed on its own. Walking them in sequence is what found the defect,
+ * because the bug is in what one step does to the state another step left.
+ *
+ * This harness is the shell, reduced to the two things that matter: it keeps
+ * one tab's data, and it merges each arrival into it the way `DashboardPage`
+ * does (`{ ...tab.data, ...arrival }`). The merge is the whole hazard -- a
+ * key left out of a later arrival keeps an earlier arrival's value -- so a
+ * test that replaced the data instead of merging it would prove nothing.
+ */
+describe('a reader who makes the same trip repeatedly', () => {
+  const ASSET = 'a-1'
+
+  /** The shell, as far as the Return keys are concerned. */
+  function shell(active: string) {
+    let tabData: Record<string, unknown> = {}
+    let activeTabId = active
+    return {
+      /** A navigation to the asset tab, which is already open. */
+      open(opts: { requested: boolean; org?: string | null }) {
+        const patch = returnTabPatch({
+          requested: opts.requested,
+          activeTabId,
+          hosts: HOSTS,
+          targetId: ASSET,
+          organizationId: opts.org === undefined ? ORG : opts.org,
+        })
+        tabData = { ...tabData, ...(patch ?? {}) }
+        activeTabId = ASSET
+        return this
+      },
+      /** The reader presses the Back button, or any tab. */
+      goTo(tabId: string) { activeTabId = tabId; return this },
+      /** What the landing page would offer, in the given organisation. */
+      offered(org: string | null = ORG) {
+        return readReturnTarget(tabData, { organizationId: org })
+      },
+    }
+  }
+
+  it('offers the same way back after open, return, open again', () => {
+    const s = shell('dashboard')
+    expect(s.open({ requested: true }).offered()?.label).toBe('Dashboard')
+    /* Back to the Dashboard, then in again by the same control. The second
+       arrival must not degrade the first -- this is the step where a stale
+       `activeTabId` would resolve the Return to the asset tab itself. */
+    expect(s.goTo('dashboard').open({ requested: true }).offered()?.label).toBe('Dashboard')
+  })
+
+  it('follows the reader to a new origin instead of offering the old one', () => {
+    const s = shell('dashboard').open({ requested: true })
+    expect(s.offered()?.tabId).toBe('dashboard')
+    /* Same asset, different origin. The Return must name Ideas, because
+       that is where this press happened. */
+    expect(s.goTo('ideas').open({ requested: true }).offered())
+      .toMatchObject({ tabId: 'ideas', label: 'Ideas' })
+  })
+
+  it('keeps the way back when a control on the asset page does not move the reader', () => {
+    /*
+     * THE §5D DEFECT. The reader followed a breach from the Dashboard into
+     * AAPL, then pressed one control on the page they landed on -- a source
+     * chip, a section link -- which re-opens the same asset at a different
+     * section. The destination is the tab they are already on, so there is
+     * no Return to resolve, and the shell wrote all three keys as null: the
+     * way back vanished without the reader ever leaving.
+     *
+     * Both spellings are tested because both are reachable: a same-tab
+     * navigation that asks for a Return and one that does not.
+     */
+    const asked = shell('dashboard').open({ requested: true })
+    expect(asked.open({ requested: true }).offered()?.label).toBe('Dashboard')
+
+    const unasked = shell('dashboard').open({ requested: true })
+    expect(unasked.open({ requested: false }).offered()?.label).toBe('Dashboard')
+  })
+
+  it('still clears the way back when the reader really does arrive from nowhere', () => {
+    /* The counterpart, and the reason the fix is not "never clear". A
+       reader who came from the Dashboard and then opens the same name from
+       the global search box must NOT be offered a way back to a surface
+       they did not come from. That is a real move, so the keys are
+       rewritten -- and this is the leak the module exists to prevent. */
+    const s = shell('dashboard').open({ requested: true })
+    expect(s.goTo('ideas').open({ requested: false }).offered()).toBeNull()
+  })
+
+  it('drops a way back that was stamped in another organisation', () => {
+    const s = shell('dashboard').open({ requested: true })
+    expect(s.offered('org-2')).toBeNull()
+    /* And it comes back when the reader switches back, because the stamp is
+       a comparison and not a deletion. */
+    expect(s.offered('org-1')?.label).toBe('Dashboard')
+  })
+
+  it('writes all three keys on a move, so nothing survives by omission', () => {
+    /* The merge rule, asserted directly on the patch rather than through
+       the harness: a clearing patch has to SAY null three times. */
+    const patch = returnTabPatch({
+      requested: false, activeTabId: 'ideas', hosts: HOSTS,
+      targetId: ASSET, organizationId: ORG,
+    })
+    expect(patch).toEqual({ returnTabId: null, returnTabLabel: null, returnOrgId: null })
+    /* And a non-move patch says nothing at all, which is a different thing
+       from saying null. */
+    expect(returnTabPatch({
+      requested: false, activeTabId: ASSET, hosts: HOSTS,
+      targetId: ASSET, organizationId: ORG,
+    })).toBeNull()
   })
 })
