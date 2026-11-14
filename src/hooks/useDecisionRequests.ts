@@ -20,6 +20,7 @@ import {
   revertAcceptFromInbox,
   findAcceptedTradeForDecisionRequest,
 } from '../lib/services/inbox-accept-pipeline'
+import { invalidateAssetWorkspace } from './useAssetWorkspace'
 import type { CreateDecisionRequestInput, UpdateDecisionRequestInput } from '../lib/services/decision-request-service'
 import type { AcceptFromInboxParams, RejectFromInboxParams, RevertAcceptParams } from '../lib/services/inbox-accept-pipeline'
 import type { DecisionRequest } from '../types/trading'
@@ -106,7 +107,11 @@ export function useDecisionRequestsForIdea(tradeQueueItemId: string | undefined)
  */
 function invalidateDecisionSurfaces(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ['decision-requests'] })
-  queryClient.invalidateQueries({ queryKey: ['asset-workspace'] })
+  /* Through the helper, not a second literal `['asset-workspace']`. Twelve
+     other writers call `invalidateAssetWorkspace`; this was the one site
+     that spelled the key itself, which is how a key change goes green in
+     eleven places and silently stale in the twelfth. */
+  invalidateAssetWorkspace(queryClient)
   queryClient.invalidateQueries({ queryKey: ['asset-work-requests'] })
   queryClient.invalidateQueries({ queryKey: ['asset-decision-timeline'] })
 }
