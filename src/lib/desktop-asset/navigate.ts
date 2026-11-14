@@ -35,6 +35,7 @@
  */
 
 import type { EngagementIssue } from '../engagement'
+import { returnTabData } from './return-to'
 
 /**
  * Which question the reader arrived with.
@@ -44,7 +45,62 @@ import type { EngagementIssue } from '../engagement'
  * Asset page's Research/Workflow/Decisions/Lists tab bar is exactly the thing
  * this must not become.
  */
-export type AssetFocus = 'overview' | 'research' | 'framework' | 'position' | 'decisions'
+export const ASSET_FOCUSES = ['overview', 'research', 'framework', 'position', 'decisions'] as const
+export type AssetFocus = typeof ASSET_FOCUSES[number]
+
+/**
+ * ── `framework` is not dead code, and that changes the fix ───────────────
+ *
+ * The 2.4 audit reported it as an inert value with one sender, and half of
+ * that was right: nothing it was sent to on the ASSET PAGE understood it.
+ * `AssetTab`'s arrival effect mapped research, decisions, overview and
+ * position to a sub-page and left the saved page alone for anything else, so
+ * a link routed through `framework` opened the asset and dropped the reader
+ * wherever that tab had last been -- indistinguishable, from their side,
+ * from a control that did nothing.
+ *
+ * What the audit missed is that `framework` has a LIVE sender into the
+ * dashboard PANE: `FOCUS_FOR_FAMILY.scenario_gap` in
+ * `lib/desktop-ideas/selection`, which is how a "the case has no scenarios
+ * against this price" finding opens, and in the pane the value does real
+ * work -- it is the one focus that puts the ladder above the case, which is
+ * the right order for a finding whose whole subject is the ladder.
+ *
+ * So the member stays and the HOLE is closed: `framework` now lands on the
+ * research sub-page, which is where the Forecasts section containing the
+ * ladder actually is. Two focuses sharing one sub-page is not a new idea
+ * here -- `overview` and `position` have both mapped to `snapshot` from the
+ * start -- because a focus decides the pane's ORDER as well as the page's
+ * sub-page, and those are different questions.
+ *
+ * It is deliberately NOT a synonym for `section: 'targets'`. A focus names a
+ * lens; a section names a paragraph. "Open the scenarios" wants the anchor
+ * and sends `research` + `section: 'targets'`; a scenario-gap finding wants
+ * the lens and sends `framework`. Collapsing the two would lose the pane
+ * ordering, and making `framework` scroll by itself would mean a focus that
+ * secretly carries a section.
+ */
+
+/**
+ * A focus value from outside the type system, resolved to one inside it.
+ *
+ * `focus` lives in tab DATA, which is durable and is restored from saved
+ * sessions, and it also arrives from feed selections built by code this
+ * module cannot see. The type system has no authority over bytes already on
+ * disk, so the value is normalised at the boundary -- an unrecognised focus
+ * becomes `overview`, the page's own calm default -- rather than being
+ * compared against string literals in each component that reads it.
+ *
+ * Used by the PANE, which only orders sections. `AssetTab` deliberately does
+ * not normalise: an unrecognised focus there leaves the reader's saved
+ * sub-page alone, and moving them to the snapshot because a previous build
+ * wrote a spelling this one retired would be worse than doing nothing.
+ */
+export function asAssetFocus(value: unknown): AssetFocus {
+  return (ASSET_FOCUSES as readonly string[]).includes(value as string)
+    ? value as AssetFocus
+    : 'overview'
+}
 
 /**
  * The exact thing on the page, where the sender pressed a control about one.
@@ -109,6 +165,21 @@ export interface OpenAssetRequest {
   issue?: EngagementIssue | string | null
   /** Quiet provenance: which lens raised this. */
   origin?: string | null
+  /**
+   * Ask for a way back to wherever the reader pressed this.
+   *
+   * A declaration of INTENT, not a destination: the sender says "this is a
+   * trip the reader should be able to come back from", and the shell -- the
+   * only thing that knows what is open -- resolves it against the tab that
+   * was active at the moment of the press. `lib/desktop-asset/return-to`
+   * has the full reasoning, including why the sender naming its own tab
+   * would hardcode the list of hosts.
+   *
+   * Absent for a plain "show me this asset". A Return offered on every
+   * asset tab, including ones opened from the search box, is an affordance
+   * that means nothing.
+   */
+  returnTo?: boolean
   /**
    * The decision request the reader was sent to rule on.
    *
@@ -234,6 +305,24 @@ export function assetTabFor(request: OpenAssetRequest) {
       portfolioName: request.portfolioName ?? null,
       issue: request.issue ?? null,
       origin: request.origin ?? null,
+      /*
+       * The REQUEST for a way back. The shell turns this into the three
+       * `return*` keys, because only the shell knows which tab was active.
+       *
+       * Written even when absent, like every other context key, and for a
+       * reason this one makes vivid: a reader who arrived from the Dashboard
+       * and then opened the same asset from the search box would otherwise
+       * keep the earlier arrival's merged `returnRequested: true` and be
+       * offered a Return by a navigation that had nothing to do with one.
+       */
+      returnRequested: request.returnTo === true,
+      /*
+       * And the resolved keys, as nulls. The shell overwrites them on an
+       * arrival that asked for a Return; writing them here is what stops the
+       * PREVIOUS arrival's resolved target surviving the merge into one that
+       * did not ask.
+       */
+      ...returnTabData(null),
       /* Why the reader is here, as records rather than as a mood. Written
          even when absent: see the comment on `work` above. */
       decisionId: request.decisionId ?? null,

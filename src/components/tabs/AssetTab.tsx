@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 /* `Sparkles` is gone with the "AI summary" read mode: the only remaining
    sparkles on this page belong to ThesisUnifiedSummary, which draws its own. */
-import { Target, FileText, Plus, Calendar, User, Users, Activity, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3, GitBranch, CheckCircle2, RotateCcw, Play } from 'lucide-react'
+import { Target, FileText, Plus, Calendar, User, Users, Activity, ChevronDown, ChevronUp, AlertTriangle, Zap, Copy, Download, Trash2, ExternalLink, Star, History, Layers, Lock, Share2, Link2, File, X, Check, FileSpreadsheet, Globe, Building2, FolderTree, Briefcase, Settings2, LayoutDashboard, Edit3, GitBranch, CheckCircle2, RotateCcw, Play, ArrowLeft } from 'lucide-react'
 import { clsx } from 'clsx'
 /* `effectiveMemberCounts` left with the org-chart query, which is now
    `useOrgAudienceContext`. `buildAudienceOptions` had already stopped being
@@ -25,6 +25,11 @@ import { initialResearchView } from '../../lib/desktop-asset/research-view'
 /* The five sections an arrival can name. Validated here rather than trusted:
    `asset` is tab data, which outlives the build that wrote it. */
 import { isAssetSectionTarget, type AssetSectionTarget } from '../../lib/desktop-asset/navigate'
+/* The way back to the surface that sent the reader here. `readReturnTarget`
+   is the guard -- it drops a target stamped in another organisation -- and
+   `activateTab` asks the shell for a tab it already has open, never for a new
+   one. See `lib/desktop-asset/return-to`. */
+import { readReturnTarget, activateTab } from '../../lib/desktop-asset/return-to'
 import {
   fetchOneAssetResearch,
   fetchThesisReferences,
@@ -1029,11 +1034,40 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     if (!focus) return
 
     const target: AssetSubPage | null =
-      focus === 'research' ? 'research'
+      /*
+       * `framework` lands on research, and that is the 2.4 hole being
+       * closed rather than a new routing idea.
+       *
+       * It used to fall through to `null` below, so a link routed through it
+       * opened this tab and left the reader on whatever sub-page they had
+       * last used -- the one focus value in the union that silently meant
+       * "no focus". The ladder it names lives in the research page's
+       * Forecasts section, so research is where it belongs; `scenario_gap`
+       * findings, its live sender, reach the pane rather than this page, but
+       * a value in the union that this page cannot honour is the ambiguity
+       * worth removing whether or not anything exercises it today.
+       *
+       * It does not scroll. An arrival that wants the ladder's anchor sends
+       * `section: 'targets'` as well, which the effect further down turns
+       * into an `attentionAnchor`; a focus that secretly carried a section
+       * would be a second way to express one navigation.
+       */
+      (focus === 'research' || focus === 'framework') ? 'research'
       : focus === 'decisions' ? 'decisions'
       : (focus === 'overview' || focus === 'position') ? 'snapshot'
       : null
-    /* `framework` and anything unrecognised still leave the saved page alone. */
+    /*
+     * An unrecognised focus leaves the saved page alone, and that is the
+     * right answer rather than a gap.
+     *
+     * `focus` is restored from saved sessions, so a value written by a build
+     * that knew a spelling this one does not can still arrive here.
+     * Normalising it to `overview` would be worse than ignoring it: a reader
+     * returning to a tab they had left in Research would be moved to the
+     * snapshot by a value from a previous build. Doing nothing keeps where
+     * they were. (`asAssetFocus` exists for the pane, which only decides the
+     * ORDER of sections and has no "where they were" to protect.)
+     */
     if (!target) return
 
     const intent = focusIntentKey(focus, asset.focusRequestId)
@@ -1079,6 +1113,33 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     focusRequestId: asset.focusRequestId ?? null,
   })
 
+  /*
+   * ── The way back to the surface that sent them ─────────────────────────
+   *
+   * Every substantial control in the Dashboard's asset pane opens this page,
+   * because this is where the case is written, the targets are set and the
+   * recommendation is ruled on. What the hop lacked was a way back: the
+   * asset opens as a tab BESIDE the one the reader came from, so returning
+   * was always possible and nothing on this page said so, or said which of
+   * eleven tabs it was.
+   *
+   * The shell resolved the sender's ask into a tab id when it opened this
+   * tab; this reads it back and checks it still applies. `readReturnTarget`
+   * drops a target stamped in another organisation -- a reader can switch
+   * firm with both tabs open, and the Dashboard tab is then showing another
+   * firm's feed, in which the item they were sent from does not exist.
+   *
+   * Nothing is cleared when the reader uses it. Returning does not close
+   * this tab, so coming back here and pressing it again must work -- which
+   * is also why it is not consumed the way the arrival CONTEXT is: that
+   * states a reading of one moment, while this is a fact about where the
+   * tab came from and stays true until a different arrival replaces it.
+   */
+  const returnTarget = React.useMemo(
+    () => readReturnTarget(asset, { organizationId: assetExploredOrgId ?? null }),
+    [asset.returnTabId, asset.returnTabLabel, asset.returnOrgId, assetExploredOrgId],
+  )
+
   // Handle researchViewFilter from navigation data (e.g., Trade Queue linking to proposer's research view)
   useEffect(() => {
     if (asset.data?.researchViewFilter) {
@@ -1091,60 +1152,45 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     }
   }, [asset.data?.researchViewFilter])
 
-  // Handle `scrollTo` navigation hint — used by tutorial steps in
-  // PilotWelcomeBanner to deep-link into a specific section of the asset
-  // page. Effect re-runs on every (scrollTo, scrollNonce) change so a
-  // second click of the same step also fires. The poll handles two
-  // realities: (a) the layout/template query may still be loading, and
-  // (b) the section containing the anchor may be collapsed so we
-  // expand it first.
-  useEffect(() => {
-    const scrollTo = asset.data?.scrollTo
-    if (!scrollTo) return
-    const targetId = scrollTo === 'rating' ? 'asset-warning-anchor-rating'
-      : scrollTo === 'targets' ? 'asset-warning-anchor-targets'
-      : null
-    if (!targetId) return
-    setActiveSubPage('research')
-    // The rating anchor only exists in the Individual "All" view branch
-    // (thesisViewMode='all' + researchViewFilter !== 'aggregated'). If a
-    // saved state restored 'history' or 'references', the anchor isn't in
-    // the DOM at all. Force 'all' so the field renders.
-    setThesisViewMode('all')
-    // Rating + Price Targets live in the Forecasts section, keyed
-    // 'outcomes' for collapsed state. Force-expand so the anchor
-    // element is in the DOM.
-    if (scrollTo === 'rating' || scrollTo === 'targets') {
-      setCollapsedSections(prev => ({ ...prev, outcomes: false }))
-    }
-    let cancelled = false
-    let attempts = 0
-    const tick = () => {
-      if (cancelled) return
-      const el = document.getElementById(targetId)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        return
-      }
-      // Retry for up to ~3s while the layout/template query resolves.
-      if (attempts++ < 30) window.setTimeout(tick, 100)
-    }
-    const initial = window.setTimeout(tick, 200)
-    return () => {
-      cancelled = true
-      window.clearTimeout(initial)
-    }
-    // scrollNonce is a millisecond timestamp set by the caller — used
-    // so re-clicking the same banner step re-fires the scroll even
-    // though `scrollTo` itself didn't change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asset.data?.scrollTo, asset.data?.scrollNonce])
+  /*
+   * ── The second section-navigation mechanism is gone ───────────────────
+   *
+   * A `(scrollTo, scrollNonce)` pair used to sit here as a parallel way to
+   * reach a section of this page, reading `asset.data?.scrollTo` and
+   * resolving exactly two ids -- `rating` and `targets` -- against the five
+   * anchors the page actually renders. It was written for a pilot tutorial
+   * banner that deep-linked into the page.
+   *
+   * It was removed rather than extended, for three reasons, in order of how
+   * much they matter:
+   *
+   *   1. Nothing sends it. No surface in the application writes `scrollTo`
+   *      into an asset descriptor; the tutorial that did has no such step
+   *      left. Grep for `scrollTo:` -- there are no hits.
+   *   2. The path was wrong even if something did. `AssetTab` is handed
+   *      `activeTab.data` as its `asset` prop, so this read
+   *      `activeTab.data.data.scrollTo` -- a nested `data` key that no
+   *      sender has ever written. It could not have fired.
+   *   3. Two mechanisms for one job is the defect, not the duplication.
+   *      Arrival-focus already carries a section (`openAsset({ section })`),
+   *      validates it against `ASSET_SECTION_TARGETS`, consumes it once per
+   *      request so a remount does not replay it, and converts it into the
+   *      `attentionAnchor` effect below -- which knows all five anchors and
+   *      the three preconditions each needs. A second scroller that knew two
+   *      of five is how a link to the risks section would have silently done
+   *      nothing.
+   *
+   * So there is one authoritative way to reach a section of this page:
+   * `section` on the arrival, then `attentionAnchor`. A future deep link
+   * from a banner or a tutorial uses `openAsset({ focus, section })` like
+   * every other sender.
+   */
 
-  // Attention band → an exact research anchor. Reuses the same approach as the
-  // external scrollTo above (force Research + the All view, expand the section,
-  // then poll until the anchor is in the DOM). The anchors already exist in the
-  // render; this adds no new routing. 'case' has no anchor of its own — the
-  // case begins at the thesis, which is the nearest truthful target.
+  // Attention band → an exact research anchor. Forces Research + the All view,
+  // expands the section, then polls until the anchor is in the DOM. The
+  // anchors already exist in the render; this adds no new routing. 'case' has
+  // no anchor of its own — the case begins at the thesis, which is the nearest
+  // truthful target.
   useEffect(() => {
     if (!attentionAnchor) return
     const map: Record<string, string> = {
@@ -4158,6 +4204,36 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
       {/* Tightened from pt-6/space-y-3: the identity row lost a line, and the
           vertical rhythm around it was still sized for the two-line block. */}
       <div className="flex-shrink-0 sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 px-8 pt-4 space-y-2 shadow-sm">
+      {/*
+        The way back, where there is one.
+
+        Inside the sticky region and above the identity band, so it is on
+        screen for the whole visit rather than only at the top of a page the
+        reader is about to scroll. It is a thin row and it is absent -- not
+        disabled -- when this tab was not opened from a surface that asked
+        for a Return, which is most of the time: an asset opened from the
+        search box is not a trip you come back from.
+
+        It names the destination. "Back" on a tab shell is a guess about
+        which of eleven tabs, and a reader who has moved around since
+        arriving has no way to check it.
+      */}
+      {returnTarget && (
+        <div className="flex items-center">
+          <button
+            type="button"
+            data-testid="asset-return-to-origin"
+            onClick={() => activateTab(returnTarget.tabId)}
+            title={`Go back to ${returnTarget.label}. This asset stays open.`}
+            className="-ml-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]
+                       font-medium text-gray-600 hover:bg-gray-200 hover:text-gray-900
+                       dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+          >
+            <ArrowLeft className="h-3 w-3" aria-hidden="true" />
+            Back to {returnTarget.label}
+          </button>
+        </div>
+      )}
       {/* UX2 Phase 1 — deep-navy identity band. Replaces the former identity row
           + state chips + context strip + arrival row with one band: ticker +
           company together, price/change, Ask AI, the ⚡ attention popover (one

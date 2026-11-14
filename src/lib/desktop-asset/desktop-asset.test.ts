@@ -253,3 +253,45 @@ describe('the section a control named', () => {
     expect(isAssetSectionTarget({ anchor: 'case' })).toBe(false)
   })
 })
+
+/* ─── The ask for a way back ───────────────────────────────────────────────
+ *
+ * The descriptor carries the sender's INTENT, not a tab id: the pane that
+ * presses these controls cannot know which tab it is in. The shell resolves
+ * the ask -- `lib/desktop-asset/return-to` has the reasoning and its own
+ * tests for the resolution.
+ */
+describe('the ask for a way back', () => {
+  it('travels as a flag the shell can resolve', () => {
+    const d = assetTabFor({ assetId: 'a-1', symbol: 'AAPL', returnTo: true })
+    expect(d.data.returnRequested).toBe(true)
+  })
+
+  it('is false, not absent, when nobody asked', () => {
+    /*
+     * The merge trap again, and this one is worth being concrete about: a
+     * reader follows a target breach from the Dashboard into AAPL (asked
+     * for), then opens AAPL again from the global search box (did not ask).
+     * The second descriptor merges over the first. With the flag omitted
+     * rather than written false, the tab would still say `returnRequested:
+     * true` and the shell would hand them a Return to a surface the second
+     * navigation had nothing to do with.
+     */
+    const d = assetTabFor({ assetId: 'a-1', symbol: 'AAPL' })
+    expect(d.data).toHaveProperty('returnRequested')
+    expect(d.data.returnRequested).toBe(false)
+  })
+
+  it('clears the previous arrival\'s RESOLVED target as well as the ask', () => {
+    /*
+     * Two layers, both needed. The flag above stops the ask surviving; these
+     * three keys stop the shell's ANSWER surviving. The shell overwrites them
+     * on an arrival that asked, so writing them as nulls here is what makes
+     * an arrival that did not ask clear them.
+     */
+    const d = assetTabFor({ assetId: 'a-1', returnTo: true })
+    expect(d.data.returnTabId).toBeNull()
+    expect(d.data.returnTabLabel).toBeNull()
+    expect(d.data.returnOrgId).toBeNull()
+  })
+})

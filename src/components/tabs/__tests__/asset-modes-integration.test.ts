@@ -269,16 +269,26 @@ describe('handoffs land where they used to', () => {
     const at = TAB.indexOf("if (!workAnchor || activeMode !== 'work') return")
     expect(TAB.slice(at, at + 1200)).toMatch(/scrollToSection\(workAnchor\.id\)/)
     /*
-     * Every scroll INTO a Work section goes through the helper. The three
-     * remaining `scrollIntoView` calls in the file are Research anchors with
-     * their own retry loops and are deliberately untouched here; a fourth
-     * appearing inside Work would be the overshoot bug returning.
+     * Every scroll INTO a Work section goes through the helper. The one
+     * remaining `scrollIntoView` call in the file is the Research attention
+     * anchor, which has its own retry loop and is deliberately untouched
+     * here; a second appearing inside Work would be the overshoot bug
+     * returning.
+     *
+     * It was two until 2.4. The other was a parallel `(scrollTo,
+     * scrollNonce)` section-navigation path that no sender wrote and that
+     * read a nested `data.data.scrollTo` key nothing has ever set, so it
+     * could not fire; it knew two of the page's five anchors. Arrival-focus
+     * `section` is the one authoritative mechanism now. A number rising here
+     * means a third scroller, which is how the first one drifted.
      */
     /* The Open Items scroll is gone with the section: an attention signal
        about open items now selects the work instead of scrolling to a list
        of it. */
     expect(TAB).not.toMatch(/decisions-open-items/)
-    expect((TAB.match(/scrollIntoView/g) ?? []).length).toBe(2)
+    expect((TAB.match(/scrollIntoView/g) ?? []).length).toBe(1)
+    /* And the retired mechanism is gone rather than merely unused. */
+    expect(TAB).not.toMatch(/scrollNonce/)
   })
 
   it('does not scroll merely because the reader entered Work', () => {
@@ -289,10 +299,21 @@ describe('handoffs land where they used to', () => {
   })
 
   it('still routes asset.focus to a destination', () => {
-    /* The mapping became a table when the arrival effect learned to consume a
-       focus once per request rather than on every mount. Same two routes. */
-    expect(TAB).toMatch(/focus === 'decisions' \? 'decisions'/)
-    expect(TAB).toMatch(/focus === 'research' \? 'research'/)
+    /*
+     * The mapping became a table when the arrival effect learned to consume a
+     * focus once per request rather than on every mount.
+     *
+     * Matched on the DESTINATION rather than on the whole ternary arm. This
+     * asserted `focus === 'research' \? 'research'` and broke when
+     * `framework` joined research on the left of that arm -- a formatting
+     * change with no behavioural content, which is not what a test should
+     * fail for. `source-focus.test.ts` holds the assertion that the set of
+     * honoured values matches the landing table, and that one is about
+     * behaviour.
+     */
+    expect(TAB).toMatch(/focus === 'decisions'/)
+    expect(TAB).toMatch(/focus === 'research'/)
+    expect(TAB).toMatch(/\? 'research'/)
     expect(TAB).toMatch(/setActiveSubPage\(target\)/)
   })
 

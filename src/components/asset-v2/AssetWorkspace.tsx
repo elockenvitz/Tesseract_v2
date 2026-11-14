@@ -61,7 +61,7 @@ import {
   type AssetPosition, type AssetDecisionRow, type AssetLiveIdea,
 } from '../../hooks/useAssetWorkspace'
 import {
-  type AssetFocus, openAsset,
+  type AssetFocus, openAsset, asAssetFocus,
 } from '../../lib/desktop-asset'
 import { ideasTabFor } from '../../lib/desktop-ideas'
 import {
@@ -212,7 +212,18 @@ export function AssetWorkspacePane({
   asset, focus, portfolioId, portfolioName, issue, origin, onOpenLegacy, why,
   entryContext, organizationId,
 }: AssetWorkspaceProps) {
-  const activeFocus: AssetFocus = focus ?? 'overview'
+  /*
+   * Normalised, not defaulted.
+   *
+   * `focus ?? 'overview'` handled the absent case and trusted everything
+   * else. `focus` reaches this pane from feed selections and from saved
+   * sessions written by earlier builds, so "everything else" includes values
+   * no longer in the union. `asAssetFocus` resolves those to the page's own
+   * calm default, which here only decides the ORDER of the sections below --
+   * so an unrecognised focus reads like an overview rather than falling
+   * through four branches to the same place by accident.
+   */
+  const activeFocus: AssetFocus = asAssetFocus(focus)
   const symbol = asset.symbol ?? null
   const { data, isLoading } = useAssetWorkspace(asset.id, symbol, activeFocus)
 
@@ -383,6 +394,18 @@ export function AssetWorkspacePane({
       portfolioName: portfolioName ?? null,
       issue: issue ?? null,
       origin: origin ?? null,
+      /*
+       * And a way back, which is what the header comment above used to list
+       * as the one thing this still did not do.
+       *
+       * `true` and not a tab id: this pane cannot know which tab it is in --
+       * it is mounted by `IdeasWorkPane`, under both `DashboardNext` and
+       * `IdeasApp`, and `DashboardNext` renders under three different tab
+       * ids. The shell resolves the ask against whatever was active when the
+       * reader pressed, so every host gets a Return including ones added
+       * later. See `lib/desktop-asset/return-to`.
+       */
+      returnTo: true,
     })
   }
 
@@ -730,6 +753,10 @@ export function AssetWorkspacePane({
               portfolioName: entry.portfolioName ?? portfolioName ?? null,
               issue: entry.why?.headline ?? issue ?? null,
               origin: entry.sourceItem?.family ?? origin ?? null,
+              /* Same ask as the case control: the reader came here from an
+                 event on their feed and should be able to get back to it
+                 once the target is set. */
+              returnTo: true,
             })
           },
           openFullWorkspace: onOpenLegacy,
@@ -758,6 +785,14 @@ export function AssetWorkspacePane({
   if (activeFocus === 'position' || activeFocus === 'framework') {
     // The framework is the only thing here that can say the position is wrong,
     // so it leads; the case is what a reader checks it against.
+    //
+    // `framework` shares this branch, and it is the reason the focus value
+    // still exists: a scenario-gap finding ("the case has no scenarios
+    // against this price") arrives with it, and this is the only ordering on
+    // the surface that puts the ladder above the case -- which is the right
+    // order when the ladder is the subject. The 2.4 audit called the value
+    // dead; it was dead on the Asset PAGE, which never mapped it to a
+    // sub-page, and live here. The page now lands it on research.
     if (framework) lead.push(framework)
     lead.push(theCase)
     if (positionModule) context.push(positionModule)

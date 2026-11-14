@@ -20,11 +20,12 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
-  FOCUS_BY_SOURCE_KIND, FOCUS_LANDING_SUBPAGE,
-  focusForSourceKind, landingModeForSourceKind,
+  FOCUS_BY_SOURCE_KIND, FOCUS_LANDING_SUBPAGE, SECTION_BY_SOURCE_KIND,
+  focusForSourceKind, landingModeForSourceKind, sectionForSourceKind,
   type AiResearchSourceKind,
 } from '../source-focus'
 import { SUBPAGE_MODE } from '../../asset-workspace/modes'
+import { ASSET_FOCUSES, isAssetSectionTarget } from '../../desktop-asset/navigate'
 
 const ALL_KINDS = Object.keys(FOCUS_BY_SOURCE_KIND) as AiResearchSourceKind[]
 
@@ -34,8 +35,42 @@ describe('research source focus', () => {
     expect(dead).toEqual([])
   })
 
-  it('never routes a kind through framework, which does not land', () => {
-    expect(FOCUS_LANDING_SUBPAGE.framework).toBeUndefined()
+  /*
+   * `framework` lands now, and the assertion flipped with it.
+   *
+   * This test used to pin `FOCUS_LANDING_SUBPAGE.framework` as undefined --
+   * it asserted the DEFECT, on the reasoning that nothing should route
+   * through a focus the page ignores. The right fix was to stop the page
+   * ignoring it: the value has a live sender into the dashboard pane
+   * (`FOCUS_FOR_FAMILY.scenario_gap`), where it is the only ordering that
+   * puts the ladder above the case, so deleting it would have cost a real
+   * product distinction to close a page-side hole.
+   *
+   * What is still asserted is the thing that actually matters and is
+   * stronger than before: the landing table is TOTAL over `AssetFocus`, so
+   * no focus value is a dead link for anything to route through.
+   */
+  it('gives every focus value a landing, so none of them is a dead link', () => {
+    const landless = ASSET_FOCUSES.filter(f => !FOCUS_LANDING_SUBPAGE[f])
+    expect(landless).toEqual([])
+  })
+
+  it('lands the framework on research, where the ladder is', () => {
+    expect(FOCUS_LANDING_SUBPAGE.framework).toBe('research')
+    expect(landingModeForSourceKind('price_target')).toBe('research')
+  })
+
+  /*
+   * No SOURCE kind routes through `framework`, and that is a separate
+   * judgement from whether it lands.
+   *
+   * A research-trail row is a link to one RECORD -- this target, this
+   * contribution -- so naming the lens is less precise than naming the
+   * paragraph. `price_target` therefore goes to `research` + `targets`
+   * rather than to `framework`, which would land on the same page without
+   * the anchor.
+   */
+  it('keeps source kinds on a lens plus a section, not on the framework lens', () => {
     expect(Object.values(FOCUS_BY_SOURCE_KIND)).not.toContain('framework')
   })
 
@@ -101,8 +136,64 @@ describe('AssetTab agreement', () => {
     expect([...honoured].sort()).toEqual(Object.keys(FOCUS_LANDING_SUBPAGE).sort())
   })
 
-  it('still records that framework does not land', () => {
-    expect(effect).toMatch(/framework/)
-    expect(effect).not.toMatch(/focus === 'framework'/)
+  it('honours framework, which it used to drop on the floor', () => {
+    expect(effect).toMatch(/focus === 'framework'/)
+  })
+})
+
+/*
+ * ── The section half of the routing ──────────────────────────────────────
+ *
+ * `focus` picks the lens, `section` picks the paragraph. The defect these
+ * cover is the one the 2.4 report named: an assistant citing "the bull case
+ * is $260" linked to the asset's SNAPSHOT, which shows today's price and
+ * nothing about the target it had just quoted.
+ */
+describe('research source sections', () => {
+  it('sends a cited price target to the targets anchor, not to the snapshot', () => {
+    expect(focusForSourceKind('price_target')).toBe('research')
+    expect(sectionForSourceKind('price_target')).toBe('targets')
+  })
+
+  it('sends a cited contribution to the case it is part of', () => {
+    expect(focusForSourceKind('contribution')).toBe('research')
+    expect(sectionForSourceKind('contribution')).toBe('case')
+  })
+
+  /*
+   * The default is NO section, and that is a product decision rather than an
+   * omission. A reader who clicks the asset a claim was made about wants the
+   * asset; an arrival that scrolls when nobody asked is as disorienting as
+   * one that fails to.
+   */
+  it('names no section for the kinds that name no paragraph', () => {
+    for (const kind of ['asset', 'note', 'portfolio', 'theme', 'recommendation',
+      'decision_request', 'accepted_trade', 'workflow', 'idea'] as const) {
+      expect(sectionForSourceKind(kind)).toBeNull()
+    }
+    expect(sectionForSourceKind('some_future_kind')).toBeNull()
+  })
+
+  /*
+   * THE non-obvious one.
+   *
+   * A section the Asset page has no anchor for is worse than no section: the
+   * receiving effect sets an anchor whose DOM id is `undefined`, polls for
+   * three seconds, and gives up without saying anything. So every value in
+   * this table has to be one of the five the page can actually reach, and
+   * that is checked against the page's own list rather than restated here.
+   */
+  it('only names sections the asset page can actually reach', () => {
+    for (const section of Object.values(SECTION_BY_SOURCE_KIND)) {
+      expect(isAssetSectionTarget(section)).toBe(true)
+    }
+  })
+
+  /* A section without a lens that renders it is the same dead link one
+     layer down: `targets` only exists on the research page. */
+  it('pairs every section with a focus that lands where the section is', () => {
+    for (const kind of Object.keys(SECTION_BY_SOURCE_KIND) as AiResearchSourceKind[]) {
+      expect(FOCUS_LANDING_SUBPAGE[focusForSourceKind(kind)]).toBe('research')
+    }
   })
 })

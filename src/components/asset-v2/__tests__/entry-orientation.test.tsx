@@ -515,11 +515,17 @@ describe('the orientation actions', () => {
    *
    * `lib/ai/source-focus.ts` had already found the same trap from the other
    * side -- its own header records two process kinds pointed at `framework`
-   * and therefore dead -- and `FOCUS_LANDING_SUBPAGE` deliberately omits it.
-   * This control was the remaining sender.
+   * and therefore dead. This control was the remaining sender into the PAGE.
    *
    * The scenarios are the price targets, and they live in the Research
    * page's Forecasts section, so that is where the reader is sent now.
+   *
+   * `framework` itself has since been given a landing (research), because it
+   * has a live sender into the dashboard PANE that this audit missed. That
+   * does not make it right here: it would land on the research page without
+   * the anchor, and this control names the targets. So the assertion below
+   * still refuses it -- now because it is less precise, not because it is
+   * inert.
    */
   it('sends the scenarios control to the price targets, at a focus the page honours', async () => {
     render(pane({ entryContext: contextFromPress(targetEntry()) }))
@@ -529,12 +535,17 @@ describe('the orientation actions', () => {
       assetId: 'a-aapl', symbol: 'AAPL', focus: 'research', section: 'targets',
       origin: 'target_hit',
     })
-    /* Not `framework`, ever again: it is a focus the receiver ignores, so a
-       descriptor carrying it is a navigation that silently lands nowhere. */
+    /* Not `framework`: this control names the targets, and the framework
+       lens lands on the same page without the anchor. The landing check is
+       the stronger half -- it would fail for ANY focus the page does not
+       honour, not only for the one spelling this defect happened to use. */
     expect(opened[0].focus).not.toBe('framework')
     expect(FOCUS_LANDING_SUBPAGE[opened[0].focus as AssetFocus]).toBeDefined()
     /* The reason travels, so the reader does not have to restate it. */
     expect(opened[0].issue).toMatch(/reached the target/)
+    /* And a way back to the feed item they pressed. The 2.4 report listed
+       the absent Return as its leading unfixed finding. */
+    expect(opened[0].returnTo).toBe(true)
   })
 
   it('leaves the whole event for the page it is opening, not just the ids', async () => {

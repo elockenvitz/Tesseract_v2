@@ -172,6 +172,11 @@ const personName = (u: any): string | null =>
  * closes to render nothing.
  */
 function historyDaysFor(focus: AssetFocus): number {
+  /* `framework` stays in this list. It is the focus a scenario-gap finding
+     arrives with, and that finding is the ladder measured against price --
+     the one reading on this surface that cannot be drawn without the deep
+     history. Dropping it would have made the chart the finding is ABOUT
+     render from four closes. */
   return focus === 'research' || focus === 'framework' || focus === 'position'
     ? DEEP_HISTORY_DAYS
     : SHALLOW_HISTORY_DAYS

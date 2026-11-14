@@ -928,6 +928,23 @@ describe('the action row names the one thing to do, and goes there', () => {
     expect(opened[0].focus).toBe('research')
     expect(opened[0].assetId).toBe('a-1')
   })
+
+  /*
+   * ── And it asks for a way back ────────────────────────────────────────
+   *
+   * The 2.4 report's leading unfixed finding was that leaving had no Return.
+   * The ask lives on the sender, because only the sender knows that this is a
+   * trip rather than a link; the shell resolves it against whatever tab was
+   * active, because this pane genuinely cannot know which tab it is in.
+   *
+   * Asserted as `true` and not merely truthy: the shell reads `=== true`, so
+   * a sender that passed the string "yes" would be silently ignored.
+   */
+  it('asks for a way back, because this is a trip and not a link', async () => {
+    render(<AssetWorkspacePane asset={asset} />)
+    await userEvent.click(screen.getByTestId('workspace-open-case-editor'))
+    expect(opened[0].returnTo).toBe(true)
+  })
 })
 
 /**
