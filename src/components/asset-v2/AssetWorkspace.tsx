@@ -161,21 +161,38 @@ function decisionHandoff(
 }
 
 /**
- * The measure the written case is read at.
+ * The measure the written case is read at: the column it sits in, and nothing
+ * narrower.
  *
- * The body column around it is 140ch, which is right for the panels, the
- * price visual and the position table that sit beside the case -- structured
- * content that wants the width. Prose does not: a line of 140 characters
- * loses the reader on the return sweep.
+ * ── Why there is no second cap here any more ──────────────────────────────
  *
- * It was 74ch, which is inside the typographic 45-75ch band and was still
- * wrong HERE, because the case was rendering at roughly half the width of
- * everything around it and read as a narrow strip in a wide page. 90ch at
- * 15px is about 700px: longer lines than a book, shorter than the column,
- * and the one measure both the section body and its supporting detail use so
- * they stay aligned down the left and the right.
+ * There were two caps stacked on the same prose, and the inner one won. The
+ * stack is `max-w-[140ch]` (see the note at the column itself) and this was
+ * `max-w-[90ch]`, and the two numbers do NOT compare the way they read,
+ * because `ch` resolves against each element's OWN font size: 140ch at the
+ * stack's size is about 1,100px, while 90ch at the case's 15px is about
+ * 700px. So the written case ran to roughly 64% of the column it was given
+ * and stopped, with the right third of every section blank -- reported from
+ * the running page as "the text is wrapping 2/3 of the way instead of at
+ * full width", on AAPL reached from the dashboard.
+ *
+ * This is the same `ch` trap that produced `max-w-[78ch]` inside a 1,190px
+ * requirement column (see `RequirementWorkspace`), and it is worth stating
+ * plainly: a measure cap expressed in `ch` cannot be reasoned about next to
+ * another one unless both font sizes are in front of you.
+ *
+ * The cap that remains is the COLUMN, which is where it belongs -- one
+ * number governing the whole surface instead of a second, invisibly
+ * narrower one governing only the prose. The honest cost is that a line is
+ * now as long as the column allows, which at a wide window is longer than
+ * typography would choose; the lever for that is the column's own 140ch,
+ * not a cap that makes the case look like a strip in its own page.
+ *
+ * Kept as a constant rather than deleted so the section body and its
+ * supporting detail stay provably the same width, and so changing this is
+ * one edit in one place.
  */
-const CASE_MEASURE = 'max-w-[90ch]'
+const CASE_MEASURE = 'max-w-none'
 
 /** Ideas is a separate object; this is the typed hop, not an embedded workspace. */
 function routeToIdea(ideaId: string, issue: string) {

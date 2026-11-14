@@ -671,6 +671,33 @@ describe('the workspace is one column, not a mosaic', () => {
   })
 
   /**
+   * ── The column is the ONLY measure ──────────────────────────────────────
+   *
+   * The case above caps the stack, and for a while the written case was
+   * capped a SECOND time inside it: the stack at `max-w-[140ch]` and the
+   * prose at `max-w-[90ch]`. Those numbers do not compare, because `ch`
+   * resolves against each element's own font size -- 140ch at the stack's
+   * size is about 1,100px and 90ch at the case's 15px about 700px -- so the
+   * case ran to roughly 64% of its column and stopped, with the right third
+   * of every section blank. Reported from the running page as the text
+   * wrapping two thirds of the way across.
+   *
+   * jsdom performs no layout, so this asserts the fact that produced it: no
+   * element inside the case carries a `ch` cap of its own. A cap belongs to
+   * the column, where one number governs the whole surface.
+   */
+  it('does not cap the written case a second time inside the column', () => {
+    data = populated()
+    render(<AssetWorkspacePane asset={asset} />)
+    const theCase = screen.getByTestId('asset-workspace').querySelector('#the-case')
+    expect(theCase, 'the case section did not render').not.toBeNull()
+    const capped = [...theCase!.querySelectorAll<HTMLElement>('[class*="max-w-"]')]
+      .filter(el => /max-w-\[\d+ch\]/.test(el.className))
+      .map(el => el.className.match(/max-w-\[\d+ch\]/)![0])
+    expect(capped, `a ch measure cap is back inside the case: ${capped.join(', ')}`).toEqual([])
+  })
+
+  /**
    * The focus rule is unchanged, and this is what proves it survived: it
    * produced a lead list and a context list, and concatenating them has to
    * leave what led still leading.

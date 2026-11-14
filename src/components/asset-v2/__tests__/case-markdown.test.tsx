@@ -282,13 +282,24 @@ describe('the case is sized and measured as the page content it is', () => {
        the parent of every rendered block, rather than by selecting on the
        class, so the assertion does not depend on how Tailwind spells it. */
     const columns = [...document.querySelectorAll('.smart-input-rendered')]
-      .map(el => el.parentElement?.className.match(/max-w-\[\d+ch\]/)?.[0])
+      .map(el => el.parentElement?.className.match(/max-w-\S+/)?.[0])
       .filter((m): m is string => Boolean(m))
 
+    /* What this case is for, and it is unchanged: the body and the detail
+       below it are measured identically, so they align down both edges. */
     expect(columns).toHaveLength(2)
     expect(new Set(columns).size).toBe(1)
-    /* 90ch, not the 74ch that read as a narrow strip inside a 140ch column. */
-    expect(columns[0]).toBe('max-w-[90ch]')
+    /*
+     * It pinned the literal `max-w-[90ch]` until 2026-11-13. That number was
+     * a SECOND cap inside the stack's own `max-w-[140ch]`, and the two do not
+     * compare, because `ch` resolves against each element's own font size:
+     * 90ch at the case's 15px is about 700px against a column of about
+     * 1,100px, so the case ran to roughly 64% of its width and left the right
+     * third of every section blank. The measure now belongs to the column
+     * alone, so what is asserted here is the parity, plus the absence of the
+     * inner cap that caused it.
+     */
+    expect(columns[0]).not.toMatch(/max-w-\[\d+ch\]/)
   })
 
   it('renders the supporting detail through the renderer too', () => {
