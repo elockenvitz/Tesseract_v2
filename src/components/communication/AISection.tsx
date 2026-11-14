@@ -22,7 +22,10 @@ import { useTemplates } from '../../hooks/useTemplates'
 /* The one opener the application has for a tagged object. It dispatches the
    tab descriptor and the typed event together, so a chip press lands on the
    canonical page rather than on a page that happens to be open. */
-import { useReferenceTargets } from '../../hooks/ai/useReferenceTargets'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  useReferenceTargets, resolveReferences, referenceSetKey, REFERENCE_TARGETS_KEY,
+} from '../../hooks/ai/useReferenceTargets'
 import { openReference, referenceKey } from '../../lib/ai/reference-targets'
 import { manifestIndex, retrievalBanner, type ChipRetrieval } from '../../lib/ai/context-outcome'
 import { UNFILED, type FolderSelection } from '../../lib/ai/folders'
@@ -456,6 +459,9 @@ export function AISection({
    * given.
    */
   const [objectQuery, setObjectQuery] = useState('')
+  /* The cache the reference resolver shares with `useReferenceTargets`, so
+     opening an object the chips have already resolved is free. */
+  const objectQueryClient = useQueryClient()
   const searchObjects = shouldSearchObjects(objectQuery)
   const { results: objectHits, isLoading: isSearchingObjects } = useEntitySearch({
     query: objectQuery.trim(),
@@ -484,6 +490,66 @@ export function AISection({
     setTags([objectTag(object) as TagRef])
   }, [newConversation, setTags])
 
+  /*
+   * ── Opening the object itself ───────────────────────────────────────────
+   *
+   * The band could narrow the list to an object's conversations and start a
+   * new one about it, and could not open the object. That is the third of
+   * the three things the brief asks of searchable discovery, and its absence
+   * made the band a filter with a name rather than a place: a reader who
+   * found CEG could talk about it and could not go and look at it.
+   *
+   * ── Resolved on press, through the same resolver the chips use ──────────
+   *
+   * `resolveReferences` is the function `useReferenceTargets` calls, shared
+   * rather than copied, and `fetchQuery` on its own key so the two callers
+   * populate one cache entry. Pressing is also the right moment: the band
+   * renders for every object the reader opens, and resolving on render would
+   * query four tables for a destination most of them never press.
+   *
+   * ── Why resolving IS the permission check ──────────────────────────────
+   *
+   * The probe runs as the reader under RLS, so an object they may not read
+   * comes back empty and nothing is dispatched. That is the same mechanism
+   * the reference chips use to decide whether they are links, and it means
+   * "can I open this" and "is it still there" cannot disagree -- a search
+   * result the reader found a moment ago can have been deleted since, and an
+   * optimistic hop would open a tab on an id that resolves to nothing.
+   *
+   * A note needs the resolution for a second reason: its id does not say
+   * which of three tables it is in, and the tab id is built from the entity
+   * that owns it.
+   */
+  const openObjectDestination = useCallback(async (object: DiscoveredObject) => {
+    const tag = { type: object.type, id: object.id }
+    const key = referenceSetKey([tag])
+    if (!key) return false
+    try {
+      const targets = await objectQueryClient.fetchQuery({
+        queryKey: [REFERENCE_TARGETS_KEY, key],
+        staleTime: 30_000,
+        queryFn: () => resolveReferences(key),
+      })
+      const resolved = targets.get(referenceKey(tag)) ?? null
+      if (!resolved) return false
+      /*
+       * Through `followReference`, the same seam the answer's own chips use.
+       * Expanded research mode covers the destination, so a hop that did not
+       * step out of it would navigate somewhere the reader cannot see -- the
+       * defect that seam exists for -- and the conversation and draft are
+       * preserved either way.
+       */
+      let went = false
+      followReference(() => { went = openReference(resolved) })
+      return went
+    } catch {
+      /* A failed read is "we could not confirm this is still yours", which
+         is the same answer as a row that did not come back: do not navigate.
+         The band says so rather than opening a tab that cannot render. */
+      return false
+    }
+  }, [objectQueryClient, followReference])
+
   /** Everything the list needs to show and change folders, in one object. */
   const folderProps = {
     folders,
@@ -505,6 +571,7 @@ export function AISection({
     isSearchingObjects,
     onQueryChange: setObjectQuery,
     onNewConversationAbout: startConversationAbout,
+    onOpenObject: openObjectDestination,
   }
 
   const { effectiveConfig, updateUserPrefs } = useAIConfig()

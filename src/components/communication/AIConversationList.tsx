@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import {
   Plus, Archive, ArchiveRestore, Trash2, Pencil, MessageSquare, Search, X, Tag,
-  Folder, FolderOpen, ChevronRight, TrendingUp, Briefcase, FileText,
+  Folder, FolderOpen, ChevronRight, TrendingUp, Briefcase, FileText, ArrowUpRight,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { AIConversationSummary, TagRef } from '../../hooks/useAI'
@@ -79,6 +79,17 @@ interface Props {
   onQueryChange?: (query: string) => void
   /** Start a thread with this object as its context. */
   onNewConversationAbout?: (object: DiscoveredObject) => void
+  /**
+   * Open the object itself, in its own canonical destination.
+   *
+   * Resolves and navigates, and resolves BEFORE navigating, which is why it
+   * is async and returns a verdict rather than being fire-and-forget: the
+   * probe runs under the reader's RLS, so an object that has been deleted or
+   * is no longer theirs comes back empty and nothing is dispatched. False
+   * therefore means "there is nowhere to go", and the band says so instead
+   * of looking like it did nothing.
+   */
+  onOpenObject?: (object: DiscoveredObject) => Promise<boolean>
 
   /* ─── Archived conversations ─────────────────────────────────────────────
      Archiving was one-way in practice: the sidebar query filters
@@ -139,6 +150,7 @@ export function AIConversationList({
   isSearchingObjects = false,
   onQueryChange,
   onNewConversationAbout,
+  onOpenObject,
 }: Props) {
   const [query, setQuery] = useState('')
   const [showArchivedThreads, setShowArchivedThreads] = useState(false)
@@ -174,9 +186,14 @@ export function AIConversationList({
    */
   const [activeObject, setActiveObject] = useState<DiscoveredObject | null>(null)
   const activeTagFilter = activeObject ? discoveryKey(activeObject) : null
+  /* Opening the object's own destination: in flight, and the last answer.
+     Both are per-object, so both reset when the band changes object. */
+  const [opening, setOpening] = useState(false)
+  const [openFailed, setOpenFailed] = useState(false)
 
   const openObject = useCallback((object: DiscoveredObject) => {
     setActiveObject(object)
+    setOpenFailed(false)
     /* The archive is part of "this object's conversations". Without this the
        band would quietly mean "the live ones", which is the defect the chip
        row had before it counted both. */
@@ -468,7 +485,54 @@ export function AIConversationList({
               activeObject.label,
             )}
           </p>
+          {/*
+            Why the object could not be opened, where that happened.
+
+            Not a toast and not silence. A search result the reader found a
+            moment ago can have been deleted since, or can have stopped being
+            theirs, and the resolution that decides whether there is a
+            destination is the same read that decides whether they may see it
+            -- so "no" is a real answer the band has to be able to give. It
+            clears on the next press.
+          */}
+          {openFailed && (
+            <p data-testid="ai-object-open-failed" className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-400">
+              {activeObject.label} could not be opened. It may have been deleted, or it is
+              no longer available to you.
+            </p>
+          )}
           <div className="mt-1 flex items-center gap-3">
+            {/*
+              Open the object, which is the third thing discovery is for.
+
+              The band could narrow to an object's conversations and start a
+              new one about it, and could not go and look at the object --
+              which made it a filter with a name rather than a place.
+
+              First in the row, because it is the plainest reading of
+              pressing a search result: the reader typed a ticker and meant
+              the name.
+            */}
+            {onOpenObject && (
+              <button
+                type="button"
+                data-testid="ai-object-open"
+                disabled={opening}
+                onClick={async () => {
+                  setOpening(true)
+                  setOpenFailed(false)
+                  try {
+                    if (!(await onOpenObject(activeObject))) setOpenFailed(true)
+                  } finally {
+                    setOpening(false)
+                  }
+                }}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-primary-600 hover:underline disabled:opacity-60 disabled:hover:no-underline dark:text-primary-400"
+              >
+                <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
+                {opening ? `Opening ${activeObject.label}…` : `Open ${activeObject.label}`}
+              </button>
+            )}
             {onNewConversationAbout && (
               <button
                 type="button"

@@ -351,6 +351,92 @@ describe('the archive respects the open object', () => {
       expect.objectContaining({ type: 'asset', id: 'a-nvda' }),
     )
   })
+
+  /*
+   * ── And offers to open the object itself ───────────────────────────────
+   *
+   * The third of the three things the brief asks of searchable discovery,
+   * and the one that was missing: the band could narrow to an object's
+   * conversations and start a new one about it, and could not go and look at
+   * the object. That made it a filter with a name rather than a place.
+   *
+   * The resolution runs in `AISection` under the reader's own RLS, so these
+   * cases drive the two answers it can give.
+   */
+  it('offers to open the object itself, by its canonical id', async () => {
+    const onOpenObject = vi.fn().mockResolvedValue(true)
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS, onOpenObject }))
+    await openObject(user, OBJECTS[0])
+
+    /* Named, because "Open" alone on a sidebar is a guess about what. */
+    expect(screen.getByTestId('ai-object-open')).toHaveTextContent('Open NVDA')
+    await user.click(screen.getByTestId('ai-object-open'))
+
+    expect(onOpenObject).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'asset', id: 'a-nvda' }),
+    )
+    expect(screen.queryByTestId('ai-object-open-failed')).not.toBeInTheDocument()
+  })
+
+  it('says so when there is nowhere to go, rather than looking inert', async () => {
+    /*
+     * THE case that justifies the async verdict. A search result the reader
+     * found a moment ago can have been deleted since, or can have stopped
+     * being theirs -- and the read that resolves the destination is the same
+     * read that decides whether they may see it. So "no" is a real answer
+     * the band has to be able to give, and giving it silently would read as
+     * a broken button.
+     */
+    const onOpenObject = vi.fn().mockResolvedValue(false)
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS, onOpenObject }))
+    await openObject(user, OBJECTS[0])
+
+    await user.click(screen.getByTestId('ai-object-open'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ai-object-open-failed'))
+        .toHaveTextContent(/NVDA could not be opened/)
+    })
+    /* And the band is still there: failing to open an object does not throw
+       the reader out of the place they were looking at. */
+    expect(screen.getByTestId('ai-object-view')).toBeInTheDocument()
+  })
+
+  it('clears the failure when the reader opens a different object', async () => {
+    /* Otherwise "AAPL could not be opened" sits under NVDA's name, which is
+       a statement about the wrong object. */
+    const onOpenObject = vi.fn().mockResolvedValue(false)
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS, onOpenObject }))
+    await openObject(user, OBJECTS[0])
+    await user.click(screen.getByTestId('ai-object-open'))
+    await waitFor(() => expect(screen.getByTestId('ai-object-open-failed')).toBeInTheDocument())
+
+    await openObject(user, OBJECTS[1])
+
+    expect(screen.getByTestId('ai-object-name')).toHaveTextContent('AAPL')
+    expect(screen.queryByTestId('ai-object-open-failed')).not.toBeInTheDocument()
+  })
+
+  it('offers no Open control on a surface that did not wire one', async () => {
+    /*
+     * The list predates every one of these props and still renders without
+     * them. A dead control is worse than an absent one.
+     *
+     * The object is OPENED first, deliberately: asserting the control's
+     * absence on a sidebar with no band showing would pass whatever the
+     * guard did, which is the vacuous shape this codebase has a standing
+     * rule about.
+     */
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS }))
+    await openObject(user, OBJECTS[0])
+
+    expect(screen.getByTestId('ai-object-view')).toBeInTheDocument()
+    expect(screen.queryByTestId('ai-object-open')).not.toBeInTheDocument()
+  })
 })
 
 describe('the object results are a search, not a band', () => {
