@@ -96,7 +96,7 @@ function list(overrides: Partial<Parameters<typeof AIConversationList>[0]> = {})
   )
 }
 
-const search = () => screen.getByPlaceholderText('Search conversations and objects…')
+const search = () => screen.getByPlaceholderText('Search conversations, projects and objects…')
 const toggle = () => screen.getByTestId('ai-archived-toggle')
 const archived = () => screen.getByTestId('ai-archived-list')
 const archivedTitles = () =>

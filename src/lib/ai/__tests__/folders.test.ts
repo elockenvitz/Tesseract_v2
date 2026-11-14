@@ -12,6 +12,7 @@ import {
   UNFILED, FOLDER_NAME_MAX,
   validateFolderName, shapeFolders, folderCounts, filterByFolder, moveTarget,
   moveConfirmation, folderDeletionWarning, moveRefusedMessage, MOVE_REFUSED,
+  searchFolders,
   type AIProjectFolderRow, type FiledConversation,
 } from '../folders'
 
@@ -219,5 +220,78 @@ describe('a refused move, in the reader\'s words', () => {
     expect(moveRefusedMessage(new Error('boom'))).toMatch(/Try again in a moment/)
     expect(moveRefusedMessage(null)).toMatch(/Try again in a moment/)
     expect(moveRefusedMessage(undefined)).toMatch(/Try again in a moment/)
+  })
+})
+
+/**
+ * Searching the project tree.
+ *
+ * One field above the rail searched conversations and objects and left the
+ * tree untouched, so typing a project's name found threads that mentioned
+ * the word and not the project sitting six rows above the cursor.
+ *
+ * Two cases carry the rule, and they pull in opposite directions: a search
+ * has to narrow, and a search must not hide its own results.
+ */
+describe('searching for a project', () => {
+  const tree = [
+    { id: 'f-1', name: 'Earnings season' },
+    { id: 'f-2', name: 'Apple investment case' },
+    { id: 'f-3', name: 'Semis' },
+  ]
+  const nothingMatches = () => false
+
+  it('leaves the whole tree alone when nothing was typed', () => {
+    expect(searchFolders(tree, '', nothingMatches)).toEqual(tree)
+    expect(searchFolders(tree, '   ', nothingMatches)).toEqual(tree)
+  })
+
+  it('hands back a copy rather than the array it was given', () => {
+    /* It feeds a `useMemo` whose result is rendered. Returning the input
+       would make the memo's identity depend on the caller's. */
+    const out = searchFolders(tree, '', nothingMatches)
+    expect(out).not.toBe(tree)
+  })
+
+  it('keeps a project whose name matches', () => {
+    expect(searchFolders(tree, 'apple', nothingMatches).map(f => f.id)).toEqual(['f-2'])
+  })
+
+  it('ignores case and surrounding space, as every other match here does', () => {
+    expect(searchFolders(tree, '  EARNINGS ', nothingMatches).map(f => f.id)).toEqual(['f-1'])
+  })
+
+  it('matches inside the name, not only at its start', () => {
+    /* A reader who types "earnings" means to find "Q4 earnings". */
+    expect(searchFolders([{ id: 'f-4', name: 'Q4 earnings' }], 'earnings', nothingMatches))
+      .toHaveLength(1)
+  })
+
+  it('keeps a project whose name does not match but whose contents do', () => {
+    /* The half that stops a search hiding its own results. The rail expands
+       a project that holds a hit, and a project filtered out of the tree
+       cannot expand -- so the thread would be unreachable in both places. */
+    const holds = (id: string) => id === 'f-3'
+    expect(searchFolders(tree, 'apple', holds).map(f => f.id)).toEqual(['f-2', 'f-3'])
+  })
+
+  it('returns nothing when neither the names nor the contents match', () => {
+    expect(searchFolders(tree, 'zzzz', nothingMatches)).toEqual([])
+  })
+
+  it('keeps the order it was given', () => {
+    /* The query already carries `order('name')`, and sorting again here
+       would be a second answer to one question. */
+    const holds = () => true
+    expect(searchFolders(tree, 'q', holds).map(f => f.id)).toEqual(['f-1', 'f-2', 'f-3'])
+  })
+
+  it('asks what a project holds only for the names that did not match', () => {
+    /* The predicate reads a map built from the filtered conversations. It is
+       cheap, but a name match must not pay for it at all -- which is also
+       what makes the short-circuit observable. */
+    const asked: string[] = []
+    searchFolders(tree, 'apple', id => { asked.push(id); return false })
+    expect(asked).toEqual(['f-1', 'f-3'])
   })
 })

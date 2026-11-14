@@ -137,21 +137,56 @@ describe('a conversation can be opened from the keyboard', () => {
   })
 })
 
-describe('the row draws no control that does nothing', () => {
-  it('reports attached objects as a label rather than a dead button', () => {
+/**
+ * The rail draws no object tags.
+ *
+ * Every row that had attached objects used to carry a chip -- a tag icon and
+ * a count, with the names in a tooltip. It has been asked for three times
+ * and removed once; these are the two halves of it staying removed.
+ *
+ * The first half is that nothing object-shaped is DRAWN in the rail. It was
+ * a dead label by the end, not a control, so "no dead buttons" was no longer
+ * the point: an object presentation in a navigation rail is the point, and a
+ * reader choosing where to go is not helped by "2".
+ *
+ * The second half is that the fact is not lost with the chip. A screen
+ * reader has no object band or search field to fall back on, so the names
+ * stay in the row's accessible description -- clipped, not hidden, so they
+ * are still read.
+ */
+describe('the rail draws no object tags', () => {
+  it('draws nothing for the objects a thread is about', () => {
     renderList()
 
-    /* It was a button with a propagation-stopping handler and no action. */
-    const tags = screen.getAllByRole('img', { name: /attached object/i })
-    expect(tags).toHaveLength(2)
-    for (const tag of tags) expect(tag.tagName).not.toBe('BUTTON')
+    /* The chip's own role, and the icon it drew. `sr-only` is clipped rather
+       than hidden, so this asks about PAINT: a tag chip would still be an
+       `img` in the tree. */
+    expect(screen.queryAllByRole('img', { name: /attached object/i })).toHaveLength(0)
+    expect(document.querySelectorAll('.lucide-tag')).toHaveLength(0)
   })
 
-  it('says which objects are attached, not just how many', () => {
+  it('takes up no room in the row for them', () => {
     renderList()
 
-    expect(
-      screen.getAllByRole('img', { name: /attached object/i })[0],
-    ).toHaveAccessibleName(/AAPL/)
+    /* The chip sat in the row's bottom line, between the timestamp and the
+       actions, and pushed the actions along. What is left occupies no space
+       at all, which is what `sr-only` means and what a layout-free renderer
+       can still check: the class is the contract. */
+    const stated = Array.from(
+      document.querySelectorAll('[data-slot="ai-conversation-objects"]'),
+    )
+    expect(stated.length).toBeGreaterThan(0)
+    for (const el of stated) expect(el).toHaveClass('sr-only')
+  })
+
+  it('still says which objects, for a reader who cannot see the row', () => {
+    renderList()
+
+    /* Named, not counted. "2 attached objects" was the old chip's whole
+       accessible name and it is the thing a screen reader could not act on. */
+    const stated = document.querySelectorAll('[data-slot="ai-conversation-objects"]')
+    expect(stated).toHaveLength(2)
+    expect(stated[0].textContent).toMatch(/AAPL/)
+    expect(stated[0].textContent).not.toMatch(/^\d/)
   })
 })

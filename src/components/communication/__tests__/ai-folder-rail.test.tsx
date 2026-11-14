@@ -92,6 +92,21 @@ const titles = () =>
       .querySelectorAll('[data-testid="ai-conversation-title"]'),
   ).map(n => n.textContent)
 
+/*
+ * A project's actions are behind its `···`, the same as a conversation's.
+ *
+ * They were three bare icon buttons revealed on hover, so these tests used
+ * to press `Rename Earnings season` directly. The icons are gone because
+ * revealing them resized the row -- see `AiFolderMenu` -- so the path is
+ * now: open the menu, then pick the named item.
+ */
+const searchBox = () => screen.getByPlaceholderText('Search conversations, projects and objects…')
+
+const folderMenu = async (id: string) => {
+  await userEvent.click(screen.getByTestId(`ai-folder-menu-${id}`))
+  return screen.getByTestId(`ai-folder-menu-panel-${id}`)
+}
+
 beforeEach(() => {
   for (const fn of Object.values(handlers)) fn.mockReset()
 })
@@ -389,7 +404,7 @@ describe('creating and renaming a shelf', () => {
 
   it('renames one in place', async () => {
     render(list())
-    await userEvent.click(screen.getByRole('button', { name: 'Rename Earnings season' }))
+    await userEvent.click(within(await folderMenu('f-earnings')).getByRole('menuitem', { name: 'Rename' }))
     const input = within(rows()[1]).getByRole('textbox')
     await userEvent.clear(input)
     await userEvent.type(input, 'Q4 earnings{Enter}')
@@ -402,7 +417,7 @@ describe('creating and renaming a shelf', () => {
       archivedFolders: [{ id: 'f-old', name: 'Last cycle', isArchived: true, organizationId: 'org-a', updatedAt: null }],
     }))
 
-    await userEvent.click(screen.getByRole('button', { name: 'Archive Earnings season' }))
+    await userEvent.click(within(await folderMenu('f-earnings')).getByRole('menuitem', { name: 'Archive' }))
     expect(handlers.onArchiveFolder).toHaveBeenCalledWith('f-earnings', true)
 
     /* Archived is not deleted, and it is not a dead end: the list is behind a
@@ -423,7 +438,7 @@ describe('creating and renaming a shelf', () => {
    */
   it('says what survives before deleting a folder', async () => {
     render(list())
-    await userEvent.click(screen.getByRole('button', { name: 'Delete Earnings season' }))
+    await userEvent.click(within(await folderMenu('f-earnings')).getByRole('menuitem', { name: 'Delete' }))
 
     const dialog = await screen.findByText(/Delete Earnings season\?/)
     expect(dialog).toHaveTextContent('Its 2 conversations are kept')
@@ -651,12 +666,77 @@ describe('archived conversations', () => {
 
 describe('what the rail does not do', () => {
   it('leaves search working alongside the folder scope', async () => {
-    /* The placeholder names objects too now: the same box reaches assets,
+    /* The placeholder names all three now: the same box reaches assets,
        portfolios, themes and notes, which is what replaced the permanent
-       chip row. The conversation-title half of it is unchanged. */
+       chip row, and it narrows the project tree. The conversation-title half
+       of it is unchanged. */
     render(list({ activeFolderId: 'f-earnings' }))
-    await userEvent.type(screen.getByPlaceholderText('Search conversations and objects…'), 'nvda')
+    await userEvent.type(searchBox(), 'nvda')
     expect(titles()).toEqual(['NVDA supply chain'])
+  })
+
+  /**
+   * One field, and the tree answers it too.
+   *
+   * The box said "Search conversations and objects" and the tree below it
+   * did not move, so typing a project's name found the threads whose titles
+   * mentioned the word and left the project itself unmatched a few rows up.
+   * That is the reported fragmentation: one search that answered for some of
+   * what was under it.
+   */
+  it('narrows the project tree to the names that match', async () => {
+    render(list())
+    expect(rows()).toHaveLength(2)
+
+    await userEvent.type(searchBox(), 'apple')
+    const names = rows().map(r => r.querySelector('[data-slot="ai-folder-open"]')?.textContent)
+    expect(names).toEqual(['Apple investment case'])
+  })
+
+  it('keeps a project whose name misses but whose threads hit', async () => {
+    /* Search must not hide its own results. The rail expands a project
+       holding a hit, and a project filtered out of the tree cannot expand,
+       so the thread would be unreachable in both places at once. */
+    render(list())
+    await userEvent.type(searchBox(), 'nvda')
+
+    const names = rows().map(r => r.querySelector('[data-slot="ai-folder-open"]')?.textContent)
+    expect(names).toEqual(['Earnings season'])
+    expect(titles()).toEqual([])
+    expect(within(screen.getByTestId('ai-folder-threads-f-earnings')).getByText('NVDA supply chain'))
+      .toBeInTheDocument()
+  })
+
+  it('says the query matched no project, not that there are none', async () => {
+    /* "No projects yet" to a reader who has two is a lie about their own
+       data, and the + it points at is not what they need. */
+    render(list())
+    await userEvent.type(searchBox(), 'zzzz')
+
+    expect(screen.getByTestId('ai-folder-empty'))
+      .toHaveTextContent('No project matches what you typed.')
+    expect(screen.getByTestId('ai-folder-empty')).not.toHaveTextContent('No projects yet')
+  })
+
+  it('gives the whole tree back when the query is cleared', async () => {
+    render(list())
+    await userEvent.type(searchBox(), 'apple')
+    expect(rows()).toHaveLength(1)
+
+    await userEvent.clear(searchBox())
+    expect(rows()).toHaveLength(2)
+  })
+
+  it('does not narrow the band naming the project the reader is in', async () => {
+    /* Only the tree narrows. A reader inside Earnings season who searches
+       for something else still has to be told where they are and offered the
+       way out, and a project that vanished from both the tree and the band
+       would read as deleted. */
+    render(list({ activeFolderId: 'f-earnings' }))
+    await userEvent.type(searchBox(), 'apple')
+
+    expect(screen.getByTestId('ai-project-name')).toHaveTextContent('Earnings season')
+    expect(screen.getByTestId('ai-project-leave')).toBeInTheDocument()
   })
 
   it('reports a rejection from the server in the readers words', () => {

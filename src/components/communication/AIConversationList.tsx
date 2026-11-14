@@ -1,14 +1,15 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import {
-  Plus, Archive, ArchiveRestore, Trash2, Pencil, MessageSquare, Search, X, Tag,
+  Plus, Archive, ArchiveRestore, Trash2, MessageSquare, Search, X, Tag,
   Folder, FolderOpen, ChevronRight, TrendingUp, Briefcase, FileText, ArrowUpRight,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { AIConversationSummary, TagRef } from '../../hooks/useAI'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { AiConversationMenu } from './AiConversationMenu'
+import { AiFolderMenu } from './AiFolderMenu'
 import {
-  UNFILED, folderCounts, folderDeletionWarning, validateFolderName,
+  UNFILED, folderCounts, folderDeletionWarning, searchFolders, validateFolderName,
   type AIProjectFolder, type FolderSelection,
 } from '../../lib/ai/folders'
 import {
@@ -41,10 +42,11 @@ interface Props {
   onDelete: (id: string) => void
   isLoading: boolean
   // When true, the list fills its parent's width (used for the compact
-  // "screen-takeover" mode in the right pane). Default false uses w-60.
+  // "screen-takeover" mode in the right pane). Default false uses w-72.
   fullWidth?: boolean
-  // Map of `${tag.type}:${tag.id}` → display name (e.g. "AAPL"). Used to
-  // render tag chips on each conversation row + filter chips at top.
+  // Map of `${tag.type}:${tag.id}` → display name (e.g. "AAPL"). Names the
+  // objects a conversation is about in its accessible description. It drew
+  // a tag chip on every row until that presentation was removed.
   tagLabels?: Record<string, string>
 
   /* ─── Project folders ────────────────────────────────────────────────────
@@ -310,6 +312,32 @@ export function AIConversationList({
   }, [expandedFolders, query, activeTagFilter, conversationsByFolder])
 
   /*
+   * The projects the tree shows, which a search narrows like everything else.
+   *
+   * The field above said "Search conversations and objects" and the tree
+   * below it did not move: typing a project's name found conversations that
+   * mentioned the word and left the project unmatched six rows up. One field
+   * that answers for some of what is under it is the fragmentation the brief
+   * names. `searchFolders` carries the rule and its reasoning.
+   *
+   * Only the TREE narrows. `folderList` stays whole for everything that has
+   * to keep working while a search is open -- which project is selected,
+   * what its band is called, and which conversations fall to the list below
+   * because no project will draw them. Narrowing those would make a search
+   * look like a project had been deleted.
+   */
+  const shownFolders = useMemo(
+    () => searchFolders(folderList, query, id => (conversationsByFolder.get(id)?.length ?? 0) > 0),
+    [folderList, query, conversationsByFolder],
+  )
+  const shownArchivedFolders = useMemo(
+    /* The archive is behind a disclosure and holds no live threads, so a
+       name match is all there is to go on here. */
+    () => searchFolders(archivedFolders, query, () => false),
+    [archivedFolders, query],
+  )
+
+  /*
    * The list below the projects: everything the tree above does not show.
    *
    * NOT simply "unfiled". A thread whose project has been archived or
@@ -369,10 +397,32 @@ export function AIConversationList({
     : null
 
   return (
-    <div className={clsx(
-      'flex flex-col h-full border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40',
-      fullWidth ? 'w-full' : 'w-60',
-    )}>
+    <div
+      data-slot="ai-conversation-rail"
+      className={clsx(
+        'flex flex-col h-full border-r border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40',
+        /*
+          The rail's width.
+          ───────────────────────────────────────────────────────────────
+          `w-60` was 240px, and a conversation title is indented 22px,
+          sits after a 14px icon and a gap, and shares its row with
+          nothing -- but the row BELOW it carries the timestamp and the
+          actions, so the title had roughly 200px and a model-written
+          title is a sentence. Almost every one truncated.
+
+          288px is the step that stops that for ordinary titles without
+          taking the reading column below the width the thread needs. The
+          pane it sits in is `flex-1 min-w-0`, so this comes out of slack
+          rather than out of the transcript's minimum.
+
+          Still a fixed width, deliberately: a rail that grows with its
+          longest title moves the reading column when a conversation is
+          renamed. Truncation at a predictable edge, with the full title
+          in `title`, is the trade this takes.
+        */
+        fullWidth ? 'w-full' : 'w-72',
+      )}
+    >
       {/* Header — new conversation button + search */}
       <div className="p-2 border-b border-gray-200 dark:border-gray-700 space-y-2">
         <button
@@ -394,11 +444,12 @@ export function AIConversationList({
           <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             type="search"
-            /* Named for both now. It has always matched conversation titles;
+            /* Named for all three. It has always matched conversation titles;
                it reaches objects as well, which is what replaced the chip
-               row -- so a placeholder promising only conversations would
-               hide the feature. */
-            placeholder="Search conversations and objects…"
+               row, and it now narrows the project tree below it -- so a
+               placeholder promising less than it does hides the feature, and
+               one promising more is why the tree had to start answering. */
+            placeholder="Search conversations, projects and objects…"
             value={query}
             onChange={e => { setQuery(e.target.value); onQueryChange?.(e.target.value) }}
             className="w-full pl-7 pr-7 py-1.5 text-sm bg-white dark:bg-gray-800
@@ -420,8 +471,13 @@ export function AIConversationList({
 
       {hasFolders && (
         <FolderRail
-          folders={folderList}
-          archivedFolders={archivedFolders}
+          folders={shownFolders}
+          archivedFolders={shownArchivedFolders}
+          /* So the empty row can say WHICH emptiness it is: a reader with no
+             projects and a reader whose query matched none of theirs need
+             different sentences, and "No projects yet" to the second one is
+             a lie about their own data. */
+          searching={searching}
           counts={counts}
           total={conversations.length}
           activeFolderId={activeFolderId}
@@ -841,7 +897,7 @@ export function AIConversationList({
  * contract has its own suite and this is a presentation change.
  */
 function FolderRail({
-  folders, archivedFolders, counts, total, activeFolderId, error,
+  folders, archivedFolders, counts, total, activeFolderId, error, searching,
   expanded, onToggleExpanded, conversationsFor,
   activeConversationId, tagLabels, onNewConversation,
   onSelectConversation, onRenameConversation, onArchiveConversation,
@@ -850,6 +906,8 @@ function FolderRail({
 }: {
   folders: AIProjectFolder[]
   archivedFolders: AIProjectFolder[]
+  /** True while a query is narrowing this tree, which changes one sentence. */
+  searching: boolean
   counts: Map<string, number>
   total: number
   activeFolderId: FolderSelection
@@ -943,7 +1001,9 @@ function FolderRail({
             data-testid="ai-folder-empty"
             className="px-2 py-1.5 text-[11px] italic text-gray-400 dark:text-gray-500"
           >
-            No projects yet. Group related conversations with the + above.
+            {searching
+              ? 'No project matches what you typed.'
+              : 'No projects yet. Group related conversations with the + above.'}
           </li>
         )}
         {folders.map(f => {
@@ -952,6 +1012,7 @@ function FolderRail({
           return (
             <li key={f.id}>
               <FolderRow
+                folderId={f.id}
                 label={f.name}
                 count={counts.get(f.id) ?? 0}
                 icon={isOpen
@@ -1086,9 +1147,11 @@ function FolderRail({
  * a thread from another one, which a single handler made impossible.
  */
 function FolderRow({
-  label, count, icon, isActive, isExpanded, testId,
+  folderId, label, count, icon, isActive, isExpanded, testId,
   onOpen, onToggle, onRename, onArchive, onDelete,
 }: {
+  /** Identifies this row's menu, so two projects never share a test id. */
+  folderId: string
   label: string
   count: number
   icon: React.ReactNode
@@ -1185,24 +1248,35 @@ function FolderRow({
         {!editing && (
           <>
             <span className="shrink-0 tabular-nums text-[11px] opacity-60">{count}</span>
+            {/*
+              One control, in space that is always reserved.
+              ─────────────────────────────────────────────────────────────
+              This was three icon buttons inside `hidden group-hover:flex`,
+              which is a LAYOUT change: `display: flex` adds their width to
+              the row, the `flex-1 truncate` name above shrinks and
+              re-truncates, and the count slides left -- every time the
+              pointer crosses a project. That is the reported shift.
+
+              The menu is in the tree whether or not the row is hovered, so
+              the row's width never changes; only its opacity does.
+              `focus-within` because otherwise a keyboard reader tabs onto a
+              button at zero opacity. The menu does its own focus management
+              and needs to be mounted for it to work, which is the other
+              reason this is not conditional.
+            */}
             {(onRename || onArchive || onDelete) && (
-              <span className="hidden group-hover:flex items-center gap-0.5">
-                {onRename && (
-                  <IconBtn title={`Rename ${label}`} onClick={() => { setDraft(label); setEditing(true) }}>
-                    <Pencil className="w-3 h-3" />
-                  </IconBtn>
-                )}
-                {onArchive && (
-                  <IconBtn title={`Archive ${label}`} onClick={onArchive}>
-                    <Archive className="w-3 h-3" />
-                  </IconBtn>
-                )}
-                {onDelete && (
-                  <IconBtn title={`Delete ${label}`} variant="danger" onClick={onDelete}>
-                    <Trash2 className="w-3 h-3" />
-                  </IconBtn>
-                )}
-              </span>
+              <div
+                data-slot="ai-folder-actions"
+                className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+              >
+                <AiFolderMenu
+                  folderId={folderId}
+                  name={label}
+                  onRename={onRename ? () => { setDraft(label); setEditing(true) } : undefined}
+                  onArchive={onArchive}
+                  onRequestDelete={onDelete}
+                />
+              </div>
             )}
           </>
         )}
@@ -1289,9 +1363,9 @@ function ConversationItem({
     else setDraft(conversation.title || '')
   }
 
-  // Build a single tag-summary string for the hover tooltip — keeps the
-  // row compact while still letting users see which assets/portfolios a
-  // conversation is about by hovering the Tag icon.
+  // One sentence naming the objects the thread is about. It is no longer
+  // drawn: it is the row's accessible description. See the `sr-only` span
+  // below for why the chip it used to label is gone.
   const tagSummary = (conversation.tags || [])
     .map(t => `${t.type}: ${tagLabels[tagKey(t)] || t.id.slice(0, 6)}`)
     .join('\n')
@@ -1365,20 +1439,37 @@ function ConversationItem({
           <span className="shrink-0">{ago}</span>
           {tagCount > 0 && (
             /*
-             * A label, not a button. It was a `<button>` whose only handler
-             * stopped propagation, so it looked pressable, took a tab stop,
-             * and did nothing at all -- the shape this file already rejects
-             * two screens up ("an enabled button that does nothing is worse
-             * than no button"). The tooltip and the name carry what it knows.
+             * The objects this thread is about, stated and not drawn.
+             *
+             * This was a tag chip -- an icon and a count -- on every row
+             * that had one, which is an object presentation permanently
+             * rendered in the navigation rail, below the projects. The
+             * reader has asked for it to go three times now, and the
+             * reasons it keeps coming back are worth writing down:
+             *
+             *   it duplicated           The composer's attach row says what
+             *                           the OPEN conversation may use, and
+             *                           says it where it can be changed.
+             *                           This said a number about threads
+             *                           the reader was not in.
+             *   it was not navigation   A rail is for choosing where to go.
+             *                           "2" does not help choose, and the
+             *                           tooltip that explained it needed a
+             *                           hover on a 12px icon to appear.
+             *   it was not discovery    Finding the threads about an object
+             *                           is what the search field and the
+             *                           object band do, from the object's
+             *                           side, which is the direction a
+             *                           reader actually asks in.
+             *
+             * The fact itself is not lost: it stays in the row's accessible
+             * description, because a screen reader has no object band to
+             * fall back on and nothing visual replaced this. It occupies no
+             * space and draws nothing -- `sr-only` is clipped, not hidden,
+             * so it is still read.
              */
-            <span
-              className="inline-flex items-center gap-0.5 px-1 py-0 text-gray-500 dark:text-gray-400"
-              title={tagSummary}
-              role="img"
-              aria-label={`${tagCount} attached object${tagCount === 1 ? '' : 's'}: ${tagSummary.replace(/\n/g, ', ')}`}
-            >
-              <Tag className="w-3 h-3" aria-hidden="true" />
-              <span className="text-[10px]">{tagCount}</span>
+            <span className="sr-only" data-slot="ai-conversation-objects">
+              {`About ${tagSummary.replace(/\n/g, ', ')}`}
             </span>
           )}
           {!editing && (

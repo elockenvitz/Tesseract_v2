@@ -217,3 +217,44 @@ export function folderDeletionWarning(folderName: string, conversationCount: num
   return `Delete ${folderName}? Its ${n} conversation${n === 1 ? '' : 's'} ${
     n === 1 ? 'is' : 'are'} kept and ${n === 1 ? 'becomes' : 'become'} unfiled. Nothing is deleted with it.`
 }
+
+/**
+ * The projects a search leaves in the tree.
+ *
+ * ── Why the tree has to answer a query at all ───────────────────────────
+ *
+ * One field above the rail searches conversations and, since object
+ * discovery, assets, portfolios, themes and notes. It did not search
+ * PROJECTS -- so typing the name of a project listed six rows above the
+ * cursor found conversations whose titles happened to contain the word and
+ * left the project itself sitting there unmatched, in a tree that had not
+ * reacted. That is the reported "search and object discovery feel
+ * fragmented": the field looked like one search and behaved like two.
+ *
+ * ── The rule ────────────────────────────────────────────────────────────
+ *
+ * No query: every project, in the order it was given. A project's absence
+ * from the tree must never be something the reader has to deduce.
+ *
+ * With a query: a project is kept when its own NAME matches, or when it
+ * holds a conversation that matched. The second half is what stops the
+ * search from hiding its own results -- the rail auto-expands a project
+ * with a hit, and a project that has been filtered out cannot expand -- and
+ * it is why this takes a predicate rather than a list of conversations.
+ * Whether a conversation matches is `matchesFilter`'s question, asked once,
+ * in `conversation-filter`, and asking it a second way here is how two
+ * answers to one question get shipped.
+ *
+ * Case and surrounding space are ignored, the same as every other text
+ * match on this surface. Matching is `includes`, not a prefix: a reader who
+ * types "earnings" means to find "Q4 earnings".
+ */
+export function searchFolders<T extends { id: string; name: string }>(
+  folders: readonly T[],
+  query: string,
+  holdsAMatch: (folderId: string) => boolean,
+): T[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return [...folders]
+  return folders.filter(f => f.name.toLowerCase().includes(q) || holdsAMatch(f.id))
+}
