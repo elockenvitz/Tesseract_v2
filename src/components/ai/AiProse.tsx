@@ -40,6 +40,7 @@ import { clsx } from 'clsx'
 import { figureTone, cellKind, valueColumns } from '../../lib/ai/figures'
 import type { ColumnKind } from '../../lib/ai/figures'
 import { preprocessTickers, extractText, tableBodyRows } from '../../lib/ai/markdown'
+import { repairAnswerProse } from '../../lib/ai/prose-repair'
 
 interface AiProseProps {
   content: string
@@ -99,7 +100,15 @@ const PROSE_CLASSES = [
 ].join(' ')
 
 export function AiProse({ content, onTickerClick, className }: AiProseProps) {
-  const processed = useMemo(() => preprocessTickers(content), [content])
+  /*
+   * Repaired, then linked.
+   *
+   * In that order because `repairAnswerProse` promotes a standalone bold
+   * line to a heading, and a heading's text still has tickers in it. The
+   * repairs are what the reader sees rather than what was stored: the stored
+   * answer remains the record of what the model said.
+   */
+  const processed = useMemo(() => preprocessTickers(repairAnswerProse(content)), [content])
   const components = useMemo<Components>(
     () => ({ ...STABLE_COMPONENTS, a: linkRenderer(onTickerClick) }),
     [onTickerClick],

@@ -1051,6 +1051,11 @@ Tables:
 - A column must hold figures or short labels, never sentences. A table of prose is a list with extra lines.
 - Keep figures in their own columns so they align for comparison down the column.
 
+Headings and emphasis:
+- A section label is a heading: "### Bear case". A bold line on its own is not a heading and will not read as one.
+- Bold marks a word or two inside a sentence. Never a whole sentence: a bolded claim reads as shouting, not as structure.
+- Leave a blank line between a heading and the prose under it, and between paragraphs. Two sentences must never run together without a space.
+
 Shape. These are the forms available, not a template to fill in:
 - plain prose: the default, and correct for almost every question
 - a short list: three or more parallel items that are genuinely parallel

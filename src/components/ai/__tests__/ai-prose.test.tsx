@@ -234,3 +234,69 @@ describe('ticker pills', () => {
     expect(container.querySelectorAll('button').length).toBe(0)
   })
 })
+
+describe('the repairs reach the rendered answer', () => {
+  /*
+   * `prose-repair` has its own suite for the string work. These are the
+   * cases only a render can be wrong about: whether the promoted line
+   * becomes a real heading ELEMENT with the section styling, and whether the
+   * repair happens before tickers are linked.
+   *
+   * The whole live corpus of stored answers -- ten, on 11 and 13 November
+   * 2026 -- used zero headings and faked three with bold lines, which is
+   * what this is here to stop a reader seeing.
+   */
+  /* Two labels, because two is where a section system begins: one bold line
+     is the answer's lead judgment and stays emphasis. `prose-repair`'s own
+     suite carries that case. */
+  const SECTIONS = '**Bear case**\n\nWafer spending is the risk.\n\n**Bull case**\n\nCapex recovers.'
+
+  it('turns a standalone bold line into a heading element', () => {
+    const { container } = render(<AiProse content={SECTIONS} />)
+
+    const headings = container.querySelectorAll('h3')
+    expect(headings).toHaveLength(2)
+    expect(headings[0].textContent).toBe('Bear case')
+    /* And they are not left as bold prose, which is the defect. */
+    expect(container.querySelector('strong')).toBeNull()
+  })
+
+  it('still links a ticker inside a promoted heading', () => {
+    /* Order: repair first, then tickers. A heading's text has tickers in it,
+       and a reader who cannot open the one in the section label is looking
+       at a dead end they cannot see. */
+    const onTickerClick = vi.fn()
+    const { container } = render(
+      <AiProse
+        content={'**Bear case for $LRCX**\n\nCapex.\n\n**Bull case**\n\nRecovery.'}
+        onTickerClick={onTickerClick}
+      />,
+    )
+    const heading = container.querySelector('h3')
+    expect(heading).not.toBeNull()
+    expect(heading!.querySelector('button')?.textContent).toBe('$LRCX')
+  })
+
+  it('shows the product word where the answer showed a column name', () => {
+    const { container } = render(<AiProse content="The `queue_status` is deciding." />)
+    expect(container.textContent).toContain('decision status')
+    expect(container.textContent).not.toContain('queue_status')
+  })
+
+  it('leaves an unknown identifier as code, rather than guessing a word', () => {
+    const { container } = render(<AiProse content="The `ebitda_margin_ttm` column." />)
+    expect(container.querySelector('code')?.textContent).toBe('ebitda_margin_ttm')
+  })
+
+  it('separates two sentences that ran together', () => {
+    const { container } = render(<AiProse content="This is the trough.The next leg is capex." />)
+    expect(container.textContent).toContain('trough. The next')
+  })
+
+  it('leaves a bolded sentence as emphasis', () => {
+    /* Promoting a claim to a heading would restructure the argument. */
+    const { container } = render(<AiProse content="**Decisions are fragmented and the backlog is substantial.**" />)
+    expect(container.querySelector('h3')).toBeNull()
+    expect(container.querySelector('strong')).not.toBeNull()
+  })
+})

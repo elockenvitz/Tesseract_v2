@@ -140,6 +140,25 @@ export const TABLE_RULES: readonly string[] = Object.freeze([
  * Ordered by how often they are right. A reader asking "is this still a buy"
  * wants the first one.
  */
+/**
+ * How a section is marked, because measurement said it was not.
+ *
+ * Counted over the whole live corpus of stored answers (ten, 11 and 13
+ * November 2026): ZERO used a heading and three faked one with a standalone
+ * bold line -- `**Bull case**`, `**Bear case**`, `**Price Target
+ * Outcomes**`. The shape rules below said headings were available; nothing
+ * said that bold is not one, and emphasis is what a model reaches for.
+ *
+ * `prose-repair.ts` promotes those lines at render time, because a rule the
+ * model breaks is not a fix. This is the other half: the rule that stops it
+ * being produced, stated as the thing not to do.
+ */
+export const EMPHASIS_RULES: readonly string[] = Object.freeze([
+  'A section label is a heading: "### Bear case". A bold line on its own is not a heading and will not read as one.',
+  'Bold marks a word or two inside a sentence. Never a whole sentence: a bolded claim reads as shouting, not as structure.',
+  'Leave a blank line between a heading and the prose under it, and between paragraphs. Two sentences must never run together without a space.',
+])
+
 export const ANSWER_FORMS: readonly { form: string; when: string }[] = Object.freeze([
   { form: 'plain prose', when: 'the default, and correct for almost every question' },
   { form: 'a short list', when: 'three or more parallel items that are genuinely parallel' },
@@ -173,6 +192,9 @@ export function presentationContract(): string {
   lines.push('')
   lines.push('Tables:')
   for (const r of TABLE_RULES) lines.push(`- ${r}`)
+  lines.push('')
+  lines.push('Headings and emphasis:')
+  for (const r of EMPHASIS_RULES) lines.push(`- ${r}`)
   lines.push('')
   lines.push('Shape. These are the forms available, not a template to fill in:')
   for (const f of ANSWER_FORMS) lines.push(`- ${f.form}: ${f.when}`)
