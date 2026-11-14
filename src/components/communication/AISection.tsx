@@ -81,6 +81,11 @@ import { activeContext, describeActiveContext } from '../../lib/ai/active-contex
 /* The routing a cited source follows, shared with `SourceRef`'s own default
    so the pane can wrap the hop without re-deriving where it goes. */
 import { openSourceRef } from '../../lib/ai/source-focus'
+import { useEntitySearch } from '../../hooks/useEntitySearch'
+import {
+  DISCOVERY_TYPES, objectTag, rankObjects, shouldSearchObjects,
+  type DiscoveredObject,
+} from '../../lib/ai/object-discovery'
 
 interface AISectionProps {
   isOpen: boolean
@@ -432,6 +437,48 @@ export function AISection({
     [draftFolderId, folders],
   )
 
+  /*
+   * ── Object discovery, for the sidebar ───────────────────────────────────
+   *
+   * The search lives here rather than in the list because the list is driven
+   * entirely by props and has never needed a Supabase client, which is what
+   * makes it testable without auth or an organization provider. It mirrors
+   * its query up; this runs the search and hands back ranked results.
+   *
+   * Permission scoping is `useEntitySearch`'s own: every branch queries
+   * under the reader's RLS, so an object they cannot read never comes back.
+   * Nothing here can widen that -- `rankObjects` only ever sorts what it was
+   * given.
+   */
+  const [objectQuery, setObjectQuery] = useState('')
+  const searchObjects = shouldSearchObjects(objectQuery)
+  const { results: objectHits, isLoading: isSearchingObjects } = useEntitySearch({
+    query: objectQuery.trim(),
+    /* The four types the request can carry. `useEntitySearch` defaults to
+       nine, including users and workflows, and offering one of those would
+       be a dead end: there is nothing ACT AI could be asked about it. */
+    types: [...DISCOVERY_TYPES],
+    limit: 4,
+    enabled: searchObjects,
+  })
+  const objectResults = useMemo(
+    () => (searchObjects ? rankObjects(objectHits, objectQuery) : []),
+    [searchObjects, objectHits, objectQuery],
+  )
+
+  /*
+   * Starting a thread about an object the reader found.
+   *
+   * `newConversation()` first, because it resets to the entry point's tags,
+   * and then the object as the only one -- the same order and the same
+   * reason as `startHere`. Nothing is written until something is sent, so
+   * changing their mind costs nothing.
+   */
+  const startConversationAbout = useCallback((object: DiscoveredObject) => {
+    newConversation()
+    setTags([objectTag(object) as TagRef])
+  }, [newConversation, setTags])
+
   /** Everything the list needs to show and change folders, in one object. */
   const folderProps = {
     folders,
@@ -449,6 +496,10 @@ export function AISection({
     archivedConversations,
     onLoadArchived: handleLoadArchived,
     onUnarchive: handleUnarchive,
+    objectResults,
+    isSearchingObjects,
+    onQueryChange: setObjectQuery,
+    onNewConversationAbout: startConversationAbout,
   }
 
   const { effectiveConfig, updateUserPrefs } = useAIConfig()

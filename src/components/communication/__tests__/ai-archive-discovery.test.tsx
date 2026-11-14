@@ -96,19 +96,53 @@ function list(overrides: Partial<Parameters<typeof AIConversationList>[0]> = {})
   )
 }
 
-const search = () => screen.getByPlaceholderText('Search conversations…')
+const search = () => screen.getByPlaceholderText('Search conversations and objects…')
 const toggle = () => screen.getByTestId('ai-archived-toggle')
 const archived = () => screen.getByTestId('ai-archived-list')
 const archivedTitles = () =>
   [...archived().querySelectorAll('li')].map(li => li.textContent?.trim() ?? '')
+const titlesOf = (root: HTMLElement) =>
+  [...root.querySelectorAll('[data-testid="ai-conversation-title"]')].map(n => n.textContent)
 const openArchive = async (user: ReturnType<typeof userEvent.setup>) => {
   if (toggle().getAttribute('aria-expanded') !== 'true') await user.click(toggle())
 }
-/* Scoped to the chip row, because a conversation TITLE is a button now too --
-   it had to become one to be reachable from the keyboard -- and "AAPL target
-   review" matches `/^AAPL/` exactly as the chip does. */
-const chip = (name: RegExp) =>
-  within(screen.getByTestId('ai-tag-filters')).getByRole('button', { name })
+/*
+ * ── How a reference is chosen now ────────────────────────────────────────
+ *
+ * This used to be `chip()`, scoped to `ai-tag-filters`: a permanent row of
+ * every reference across both lists, frequency-sorted and cut to twelve.
+ * That band is gone -- twelve chips out of two hundred objects is a sample
+ * rather than an index, and it was on screen whether or not the reader was
+ * looking for an object.
+ *
+ * The CAPABILITY these cases were written for is unchanged, and still runs
+ * through the same `filter.tag` axis: opening an object narrows both the live
+ * list and the archive to its conversations. What changed is how the object
+ * is reached. So they drive it by searching and pressing the result, which is
+ * also the path a reader now takes.
+ *
+ * The results are a prop, because the list is props-driven and holds no
+ * Supabase client; `AISection` owns the search, and `object-discovery.test`
+ * owns the ranking.
+ */
+const OBJECTS = [
+  { type: 'asset' as const, id: 'a-nvda', label: 'NVDA', detail: 'NVIDIA Corp' },
+  { type: 'asset' as const, id: 'a-aapl', label: 'AAPL', detail: 'Apple Inc.' },
+]
+
+/** Type into the search, then press the object result it offers. */
+async function openObject(
+  user: ReturnType<typeof userEvent.setup>,
+  object: { type: string; id: string; label: string },
+) {
+  await user.clear(search())
+  await user.type(search(), object.label)
+  await user.click(screen.getByTestId(`ai-object-result-${object.type}-${object.id}`))
+  /* The query has done its job -- it was how the object was found. Leaving it
+     in place would narrow the object's own conversations by its label as
+     well, which is a second filter the reader did not ask for. */
+  await user.clear(search())
+}
 
 beforeEach(() => {
   onUnarchive.mockClear()
@@ -221,30 +255,60 @@ describe('the archive respects the folder rail', () => {
   })
 })
 
-describe('the archive respects the reference chips', () => {
-  it('offers a chip for a reference only archived threads carry', async () => {
+describe('the archive respects the open object', () => {
+  it('reaches an object carried only by archived threads', async () => {
     /*
-     * The chip row used to be built from the live list alone, so a reference
-     * carried only by archived threads had no chip -- nothing to press, in
-     * the one case where pressing it is the point. NVDA is on no live
-     * thread in this fixture.
+     * The case the chip row was fixed for and the search must not regress.
+     * NVDA is on no LIVE thread in this fixture, so a discovery mechanism
+     * built from the live list alone would offer nothing to press in the one
+     * situation where pressing it is the point. The search queries the
+     * database rather than the rendered list, so it does not have that
+     * failure mode at all.
      */
-    render(list())
-    expect(chip(/^NVDA/)).toBeTruthy()
-  })
-
-  it('counts a reference across both lists, not just the live one', () => {
-    render(list())
-    /* One live AAPL thread; the count is what the reader's conversations
-       hold, archived ones included. */
-    expect(chip(/^AAPL/).textContent).toContain('1')
-    expect(chip(/^NVDA/).textContent).toContain('1')
-  })
-
-  it('shows only the archived threads carrying the chosen reference', async () => {
     const user = userEvent.setup()
-    render(list())
-    await user.click(chip(/^NVDA/))
+    render(list({ objectResults: OBJECTS }))
+    await openObject(user, OBJECTS[0])
+
+    expect(screen.getByTestId('ai-object-name')).toHaveTextContent('NVDA')
+  })
+
+  it('counts an object’s conversations across both lists', async () => {
+    /* One archived NVDA thread and no live one. The count answers "how many
+       of my conversations were about this", and a reader who archived them
+       all is not helped by being told there are none. */
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS }))
+    await openObject(user, OBJECTS[0])
+
+    expect(screen.getByTestId('ai-object-threads'))
+      .toHaveTextContent('1 conversation about NVDA.')
+  })
+
+  it('loads the archive when an object is opened, without being asked', async () => {
+    /*
+     * Otherwise the band would quietly mean "the live ones" -- it would say
+     * "no conversations about NVDA yet" while one sat unfetched.
+     *
+     * The mock is cleared between typing and pressing, which this test
+     * needed and did not have at first: typing already loads the archive
+     * through a different effect (searching reaches archived threads), so
+     * asserting after the whole gesture passed with the object-open call
+     * deleted. It proved the search, not the thing it was written for.
+     */
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS, archivedConversations: undefined }))
+    await user.type(search(), 'NVDA')
+    onLoadArchived.mockClear()
+
+    await user.click(screen.getByTestId('ai-object-result-asset-a-nvda'))
+
+    expect(onLoadArchived).toHaveBeenCalled()
+  })
+
+  it('shows only the archived threads carrying the open object', async () => {
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS }))
+    await openObject(user, OBJECTS[0])
     await openArchive(user)
 
     expect(archivedTitles().some(t => t.includes('NVDA supply chain'))).toBe(true)
@@ -253,12 +317,89 @@ describe('the archive respects the reference chips', () => {
 
   it('says so when no archived thread carries it', async () => {
     const user = userEvent.setup()
-    render(list())
-    await user.click(chip(/^AAPL/))
+    render(list({ objectResults: OBJECTS }))
+    await openObject(user, OBJECTS[1])
     await openArchive(user)
 
     expect(screen.getByTestId('ai-archived-empty').textContent)
       .toContain('No archived conversation carries that reference.')
+  })
+
+  it('lets the reader out again', async () => {
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS }))
+    await openObject(user, OBJECTS[0])
+
+    await user.click(screen.getByTestId('ai-object-leave'))
+
+    expect(screen.queryByTestId('ai-object-view')).not.toBeInTheDocument()
+    expect(titlesOf(screen.getByTestId('ai-conversation-list')))
+      .toContain('A thought about rates')
+  })
+
+  it('offers to start a thread about it', async () => {
+    const onNewConversationAbout = vi.fn()
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS, onNewConversationAbout }))
+    await openObject(user, OBJECTS[0])
+
+    await user.click(screen.getByTestId('ai-object-new-chat'))
+
+    /* The canonical id, not the label: a symbol can be reassigned and two
+       themes can share a name. */
+    expect(onNewConversationAbout).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'asset', id: 'a-nvda' }),
+    )
+  })
+})
+
+describe('the object results are a search, not a band', () => {
+  it('shows nothing until there is a query worth searching for', () => {
+    render(list({ objectResults: OBJECTS }))
+    expect(screen.queryByTestId('ai-object-results')).not.toBeInTheDocument()
+  })
+
+  it('still shows nothing at one character', async () => {
+    /* One character matches most of the database and costs the same four
+       round trips. See `OBJECT_SEARCH_FLOOR`. */
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS }))
+    await user.type(search(), 'N')
+    expect(screen.queryByTestId('ai-object-results')).not.toBeInTheDocument()
+  })
+
+  it('appears once the query is long enough, and goes when it is cleared', async () => {
+    const user = userEvent.setup()
+    render(list({ objectResults: OBJECTS }))
+    await user.type(search(), 'NV')
+    expect(screen.getByTestId('ai-object-results')).toBeInTheDocument()
+
+    await user.clear(search())
+    expect(screen.queryByTestId('ai-object-results')).not.toBeInTheDocument()
+  })
+
+  it('mirrors the query up so the host can run the search', async () => {
+    const onQueryChange = vi.fn()
+    const user = userEvent.setup()
+    render(list({ onQueryChange }))
+    await user.type(search(), 'NV')
+    expect(onQueryChange).toHaveBeenLastCalledWith('NV')
+  })
+
+  it('says it is searching rather than that there is nothing', async () => {
+    /* "No objects" and "not back yet" are different facts, and the first one
+       shown in place of the second reads as an answer. */
+    const user = userEvent.setup()
+    render(list({ objectResults: [], isSearchingObjects: true }))
+    await user.type(search(), 'NV')
+    expect(screen.getByTestId('ai-object-results')).toHaveTextContent('Searching…')
+  })
+
+  it('draws no band at all once a search has come back empty', async () => {
+    const user = userEvent.setup()
+    render(list({ objectResults: [], isSearchingObjects: false }))
+    await user.type(search(), 'zzzz')
+    expect(screen.queryByTestId('ai-object-results')).not.toBeInTheDocument()
   })
 })
 

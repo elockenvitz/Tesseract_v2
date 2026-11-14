@@ -2003,6 +2003,65 @@ because that window is the only time the assignment exists in one place.
 no artifacts of its own, and there is no drag-and-drop filing. Moving a
 thread is still the row menu.
 
+## 4b. The object chip row is gone, and objects became searchable
+
+The sidebar carried a permanent row of object chips: every asset, portfolio
+and theme any of your conversations had ever been tagged with, frequency
+sorted, cut to twelve, and on screen whether or not you were looking for an
+object. It was presented as a filter and worked as one, and it had two
+problems that get worse with use rather than better. Twelve chips out of two
+hundred objects is a sample, not an index, and which twelve you get is
+decided by a sort you cannot see. And most of the time you are looking for a
+conversation, not an object, so the band was in the way.
+
+**What it is now.** The search box reaches objects as well as conversation
+titles. Type two characters and matching assets, portfolios, themes and notes
+appear above the conversations; press one and you are on it.
+
+**The capability did not change, only the way in.** Opening an object still
+narrows the live list AND the archive to its conversations, through the same
+`filter.tag` axis the chips wrote. Four tests that drove that filter by
+pressing a chip now drive it by searching and pressing a result — the same
+claims, the path a reader actually takes.
+
+**An object you have opened looks like a project you have opened.** Same
+band, deliberately: a name, how many conversations are about it, a New
+conversation about it, and the way out. Being in a project and being on an
+object are the same kind of thing from your side, and giving them two shapes
+would make them look like two mechanisms.
+
+**Canonical ids, never labels.** A conversation is matched to an object by
+`type:id`. `AAPL` is a symbol that can be reassigned, two themes can share a
+name, and a note's title is whatever someone typed — so the theme called
+"Power demand" and an asset whose company name contains "power demand" are
+different objects, and a label match would put one in the other's list.
+There is a test for exactly that, because it is the kind of wrong that looks
+right.
+
+**Permission scoping is the query's, not the client's.** The search runs
+through the existing `useEntitySearch`, under your own RLS, so an object you
+cannot read never comes back. `object-discovery` only ever sorts and filters
+results it was handed, and says so in its own header — a client-side
+permission filter would be the wrong place for one and would imply the query
+needed it.
+
+Two details worth knowing:
+
+* **It waits for two characters.** One character matches most of the database
+  and costs the same four round trips. Two is the shortest query that can
+  mean something, since there are two-letter tickers.
+* **Ranking is not arrival order.** `useEntitySearch` resolves its per-type
+  queries in parallel and appends them as they land, so for `AAPL` an asset
+  note whose title contains AAPL could arrive above the asset itself — a
+  worse answer in a higher position, decided by network timing. Exact match
+  first, then starts-with, then the rest, ties broken by type, and stable
+  within a band so the list does not move under the pointer.
+
+**Not done in Part V:** artifacts are not in the results (the table is
+unapplied — see Part VI), and an object's band shows its conversations but
+not its artifacts for the same reason. There is no recent-objects list for an
+empty query, and no keyboard navigation of the results beyond Tab.
+
 ## 5. Non-vacuity
 
 Every gate below was proven to fail by injecting the behaviour it exists to
@@ -2132,6 +2191,30 @@ receiving the MouseEvent as its folder id. The reader would have pressed New
 conversation and had the thread filed into a project whose id was a React
 synthetic event. It is now `onClick={() => onNewConversation()}`.
 
+**`ai-archive-discovery.test.tsx`** — object discovery, after the chip row.
+
+Injection 1 — the two-character floor dropped, so one keystroke fans out
+four table searches:
+
+```
+× still shows nothing at one character
+  TestingLibraryElementError: expected not.toBeInTheDocument
+```
+
+Injection 2 — the archive load removed from opening an object:
+
+```
+× loads the archive when an object is opened, without being asked
+  AssertionError: expected "onLoadArchived" to be called at least once
+```
+
+**One of my own tests was vacuous and I caught it with injection 2.** It
+first asserted after the whole gesture — type the name, press the result —
+and passed with the object-open call deleted, because TYPING already loads
+the archive through a different effect (searching reaches archived threads).
+It was proving the search, not the thing it was written for. It now clears
+the mock between typing and pressing, and fails as it should.
+
 **One TDZ avoided.** The dependency array that `selectConversation` needed
 named `setDraftFolder`, declared below it. A dependency array is evaluated on
 every render, so that is a `ReferenceError` before anything runs — the
@@ -2162,6 +2245,11 @@ above the callbacks that depend on it.
   (`user_id = auth.uid() AND is_member_of_org(organization_id)`, all four
   verbs), so the folder list the UI offers contains only the reader's own.
 * No new table, view, RPC, Edge Function or migration in Part IV either.
+* Object discovery adds no query of its own. It calls the existing
+  `useEntitySearch` with four of its nine types, so every branch is a query
+  that already ran elsewhere in the product under the reader's own RLS, and
+  an object they cannot read never comes back. `rankObjects` sorts results it
+  was handed and can only ever return a subset of them.
 
 **One thing I checked and did not like, stated plainly.** I was going to
 write that the foreign key stops a reader filing a thread into another
@@ -2210,8 +2298,6 @@ but its owner.
 
 Unchanged from 2.3. None of these is half-built.
 
-* **Part V — Searchable objects, and the tag clutter in the sidebar.** The
-  object tags above the conversation list are still there.
 * **Part VI — Save as artifact.** The Keep menu is unchanged and its artifact
   row is still absent, because `ai_artifacts` is still unapplied. There is no
   naming step, no preview, no object-association picker, no project

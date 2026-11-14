@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import {
   Plus, Archive, ArchiveRestore, Trash2, Pencil, MessageSquare, Search, X, Tag,
-  Folder, FolderOpen, ChevronRight,
+  Folder, FolderOpen, ChevronRight, TrendingUp, Briefcase, FileText,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { AIConversationSummary, TagRef } from '../../hooks/useAI'
@@ -15,6 +15,10 @@ import {
   groupConversations, filterConversations, archiveEmptyReason,
   type ConversationFilter,
 } from '../../lib/ai/conversation-filter'
+import {
+  conversationsAbout, describeObjectThreads, discoveryKey, shouldSearchObjects,
+  type DiscoveredObject,
+} from '../../lib/ai/object-discovery'
 
 interface Props {
   /*
@@ -60,6 +64,22 @@ interface Props {
   /** A rejection in the reader's words, from the folder hook. */
   folderError?: string | null
 
+  /* ─── Object discovery ───────────────────────────────────────────────────
+     The sidebar used to carry a permanent row of object chips: a twelve-item
+     frequency-sorted sample of an index, on screen whether or not the reader
+     was looking for an object. It is a search now. The results arrive as a
+     prop rather than from a hook in here, because this list is driven
+     entirely by props and has never needed a Supabase client -- which is
+     what makes it testable. See `lib/ai/object-discovery`. */
+  /** Objects matching the current query, already ranked. */
+  objectResults?: DiscoveredObject[]
+  /** True while the search for them is in flight. */
+  isSearchingObjects?: boolean
+  /** The query, mirrored up so the host can run the object search. */
+  onQueryChange?: (query: string) => void
+  /** Start a thread with this object as its context. */
+  onNewConversationAbout?: (object: DiscoveredObject) => void
+
   /* ─── Archived conversations ─────────────────────────────────────────────
      Archiving was one-way in practice: the sidebar query filters
      `is_archived = false`, so an archived thread was reachable by id and by
@@ -72,6 +92,22 @@ interface Props {
 
 function tagKey(t: TagRef): string {
   return `${t.type}:${t.id}`
+}
+
+/**
+ * One glyph per object type, so a result list is scannable without reading.
+ *
+ * The same icons the rest of the product uses for these types -- an asset is
+ * a trend line everywhere else in Tesseract, and inventing a second
+ * vocabulary for the AI sidebar would make the same object look like two
+ * different kinds of thing depending on where you found it.
+ */
+function ObjectIcon({ type }: { type: DiscoveredObject['type'] }) {
+  const className = 'h-3.5 w-3.5 shrink-0 text-gray-400'
+  if (type === 'asset') return <TrendingUp className={className} aria-hidden="true" />
+  if (type === 'portfolio') return <Briefcase className={className} aria-hidden="true" />
+  if (type === 'theme') return <Tag className={className} aria-hidden="true" />
+  return <FileText className={className} aria-hidden="true" />
 }
 
 export function AIConversationList({
@@ -99,10 +135,13 @@ export function AIConversationList({
   archivedConversations,
   onLoadArchived,
   onUnarchive,
+  objectResults,
+  isSearchingObjects = false,
+  onQueryChange,
+  onNewConversationAbout,
 }: Props) {
   const [query, setQuery] = useState('')
   const [showArchivedThreads, setShowArchivedThreads] = useState(false)
-  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null)
   // App-native delete confirmation — replaces window.confirm so the
   // modal matches the rest of the product visually + is testable.
   const [deletePrompt, setDeletePrompt] = useState<{ id: string; title: string } | null>(null)
@@ -118,31 +157,31 @@ export function AIConversationList({
   const folderList = useMemo(() => folders ?? [], [folders])
 
   /*
-   * The reference chips, over live AND archived threads.
+   * ── The object chip row is gone ─────────────────────────────────────────
    *
-   * The row used to be built from the live list alone, which made the
-   * archive's reference filter unusable in the one case it matters: a
-   * reference carried only by threads you have archived had no chip, so
-   * there was nothing to press to find them. The archive is counted here
-   * once it has been loaded -- which, since searching now loads it, is
-   * whenever the reader is actually looking for something.
+   * It was built here from every reference across the live and archived
+   * lists, frequency-sorted, truncated to twelve, and drawn above the
+   * conversation list permanently. Two problems, both of which get worse
+   * with use: twelve chips out of two hundred objects is a sample rather
+   * than an index, and the band was on screen whether or not the reader was
+   * looking for an object -- which they usually are not.
    *
-   * The count is across both, because it answers "how many of my
-   * conversations were about this", and a reader who archived four of five
-   * AAPL threads is not helped by being told there is one.
+   * Discovery is a search now (`lib/ai/object-discovery`). The CAPABILITY
+   * the chips provided is unchanged: opening an object still narrows both
+   * lists to its conversations through the same `filter.tag` axis, reached
+   * by naming the object instead of hunting for its chip. `activeTagFilter`
+   * below is that axis, now written only by the object band.
    */
-  const tagFilterChips = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const c of [...conversations, ...(archivedConversations ?? [])]) {
-      for (const t of (c.tags || [])) {
-        const k = tagKey(t)
-        counts.set(k, (counts.get(k) || 0) + 1)
-      }
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([key, count]) => ({ key, count }))
-  }, [conversations, archivedConversations])
+  const [activeObject, setActiveObject] = useState<DiscoveredObject | null>(null)
+  const activeTagFilter = activeObject ? discoveryKey(activeObject) : null
+
+  const openObject = useCallback((object: DiscoveredObject) => {
+    setActiveObject(object)
+    /* The archive is part of "this object's conversations". Without this the
+       band would quietly mean "the live ones", which is the defect the chip
+       row had before it counted both. */
+    void onLoadArchived?.()
+  }, [onLoadArchived])
 
   /* Counted from the conversations the reader can actually see, so the number
      beside a folder is a number they can reach. */
@@ -338,9 +377,13 @@ export function AIConversationList({
           <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             type="search"
-            placeholder="Search conversations…"
+            /* Named for both now. It has always matched conversation titles;
+               it reaches objects as well, which is what replaced the chip
+               row -- so a placeholder promising only conversations would
+               hide the feature. */
+            placeholder="Search conversations and objects…"
             value={query}
-            onChange={e => setQuery(e.target.value)}
+            onChange={e => { setQuery(e.target.value); onQueryChange?.(e.target.value) }}
             className="w-full pl-7 pr-7 py-1.5 text-sm bg-white dark:bg-gray-800
                        border border-gray-200 dark:border-gray-700 rounded-md
                        placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-primary-400"
@@ -348,7 +391,7 @@ export function AIConversationList({
           {query && (
             <button
               type="button"
-              onClick={() => setQuery('')}
+              onClick={() => { setQuery(''); onQueryChange?.('') }}
               className="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
               title="Clear search"
             >
@@ -386,43 +429,67 @@ export function AIConversationList({
         />
       )}
 
-      {/* Tag filter chips — click to scope the list to one tag at a time. */}
-      {tagFilterChips.length > 0 && (
+      {/*
+        An object you have opened, and its conversations.
+
+        The same band as a project's, deliberately: being in a project and
+        being on an object are the same kind of thing from the reader's side
+        -- a place with a name, some threads, a way to add one and a way out
+        -- and giving them two different shapes would make them look like two
+        different mechanisms.
+      */}
+      {activeObject && (
         <div
-          data-testid="ai-tag-filters"
-          className="px-2 py-1.5 border-b border-gray-200 dark:border-gray-700 flex flex-wrap gap-1"
+          data-testid="ai-object-view"
+          className="border-b border-gray-200 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-800/60"
         >
-          {activeTagFilter && (
+          <div className="flex items-center gap-1.5">
+            <ObjectIcon type={activeObject.type} />
+            <h3
+              data-testid="ai-object-name"
+              className="min-w-0 flex-1 truncate text-[13px] font-semibold text-gray-900 dark:text-white"
+              title={activeObject.detail || activeObject.label}
+            >
+              {activeObject.label}
+            </h3>
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">
+              {activeObject.type}
+            </span>
+          </div>
+          {/* The number, because "none about AAPL" and "none that match what
+              you typed" are different facts the reader acts on differently.
+              Counted across the live list and the archive. */}
+          <p data-testid="ai-object-threads" className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+            {describeObjectThreads(
+              conversationsAbout(
+                [...conversations, ...(archivedConversations ?? [])],
+                activeObject,
+              ).length,
+              activeObject.label,
+            )}
+          </p>
+          <div className="mt-1 flex items-center gap-3">
+            {onNewConversationAbout && (
+              <button
+                type="button"
+                data-testid="ai-object-new-chat"
+                onClick={() => onNewConversationAbout(activeObject)}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-primary-600 hover:underline dark:text-primary-400"
+              >
+                <Plus className="h-3 w-3" aria-hidden="true" />
+                New conversation about this
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setActiveTagFilter(null)}
-              className="text-[11px] px-2 py-0.5 rounded-full font-medium
-                         bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300
-                         hover:bg-gray-300 dark:hover:bg-gray-600"
+              data-testid="ai-object-leave"
+              onClick={() => setActiveObject(null)}
+              className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200"
             >
-              Clear ✕
+              <MessageSquare className="h-3 w-3" aria-hidden="true" />
+              All conversations
             </button>
-          )}
-          {tagFilterChips.slice(0, 12).map(({ key, count }) => {
-            const label = tagLabels[key] || key.split(':')[1].slice(0, 6)
-            const isActive = activeTagFilter === key
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setActiveTagFilter(isActive ? null : key)}
-                className={clsx(
-                  'text-[11px] px-2 py-0.5 rounded-full font-medium transition-colors',
-                  isActive
-                    ? 'bg-primary-600 text-white'
-                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:border-primary-400',
-                )}
-                title={label}
-              >
-                {label} <span className="opacity-60">{count}</span>
-              </button>
-            )
-          })}
+          </div>
         </div>
       )}
 
@@ -477,6 +544,50 @@ export function AIConversationList({
       )}
 
       <div className="flex-1 overflow-y-auto py-1" data-testid="ai-conversation-list">
+        {/*
+          Objects matching what was typed, above the conversations.
+
+          Above, because a reader who types a ticker usually means the thing
+          rather than a thread whose title mentions it -- and if they meant
+          the thread it is immediately underneath. Only while there is a
+          query: this is a search result, not a permanent band, which is the
+          whole difference from the chip row it replaces.
+        */}
+        {shouldSearchObjects(query) && (objectResults?.length || isSearchingObjects) ? (
+          <div className="mb-2" data-testid="ai-object-results">
+            <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+              Objects
+            </div>
+            {!objectResults?.length ? (
+              <p className="px-3 py-1 text-[11px] italic text-gray-400">Searching…</p>
+            ) : (
+              <ul>
+                {objectResults.map(o => (
+                  <li key={discoveryKey(o)}>
+                    <button
+                      type="button"
+                      data-testid={`ai-object-result-${o.type}-${o.id}`}
+                      onClick={() => openObject(o)}
+                      className="flex w-full items-center gap-2 px-3 py-1 text-left text-[12px]
+                                 text-gray-800 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800"
+                    >
+                      <ObjectIcon type={o.type} />
+                      <span className="min-w-0 flex-1 truncate" title={o.detail || o.label}>
+                        {o.label}
+                        {o.detail && (
+                          <span className="ml-1 text-gray-400 dark:text-gray-500">{o.detail}</span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                        {o.type}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : null}
         {isLoading && conversations.length === 0 ? (
           <div className="p-4 text-xs text-gray-400 italic">Loading…</div>
         ) : conversations.length === 0 ? (
@@ -487,11 +598,18 @@ export function AIConversationList({
           <div className="p-4 text-xs text-gray-400 italic" data-testid="ai-conversation-empty">
             {/* Named, so the empty state tells the reader WHICH shelf is empty
                 rather than implying they have nothing. */}
-            {selectedFolderName
-              ? `Nothing is filed in ${selectedFolderName} yet.`
-              : activeFolderId === UNFILED
-                ? 'Every conversation is filed in a folder.'
-                : 'No conversations match the current filter.'}
+            {activeObject
+              /* Named too, and distinguished from "none at all": the band
+                 above says how many exist, so this line is about what the
+                 query left of them. */
+              ? query.trim()
+                ? `No conversation about ${activeObject.label} matches what you typed.`
+                : `No conversations about ${activeObject.label} yet.`
+              : selectedFolderName
+                ? `Nothing is filed in ${selectedFolderName} yet.`
+                : activeFolderId === UNFILED
+                  ? 'Every conversation is filed in a folder.'
+                  : 'No conversations match the current filter.'}
           </div>
         ) : (
           <>

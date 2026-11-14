@@ -650,9 +650,12 @@ describe('archived conversations', () => {
 })
 
 describe('what the rail does not do', () => {
-  it('leaves search and the tag filter working alongside the folder scope', async () => {
+  it('leaves search working alongside the folder scope', async () => {
+    /* The placeholder names objects too now: the same box reaches assets,
+       portfolios, themes and notes, which is what replaced the permanent
+       chip row. The conversation-title half of it is unchanged. */
     render(list({ activeFolderId: 'f-earnings' }))
-    await userEvent.type(screen.getByPlaceholderText('Search conversations…'), 'nvda')
+    await userEvent.type(screen.getByPlaceholderText('Search conversations and objects…'), 'nvda')
     expect(titles()).toEqual(['NVDA supply chain'])
   })
 
