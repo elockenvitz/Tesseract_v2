@@ -119,6 +119,7 @@ vi.mock('../../lib/engagement', async importOriginal => {
 })
 
 import { AssetWorkspacePane } from './AssetWorkspace'
+import { forgetPaneViews } from '../ideas-app/pane-place'
 
 const asset = { id: 'a-1', symbol: 'AAPL', company_name: 'Apple Inc.' }
 
@@ -165,6 +166,90 @@ beforeEach(() => {
   opened.length = 0
   openEngagement.mockClear()
   recordVerdict.mockClear()
+  /* The pane's own UI memory is module scope, so a case that opens a
+     disclosure would otherwise leave it open for the next one. See
+     `pane-place`. */
+  forgetPaneViews()
+})
+
+/* ------------------------------------------------- the trip back */
+
+describe('what the reader had open survives leaving the tab', () => {
+  /*
+   * This application renders the active tab only, so leaving the Dashboard
+   * unmounts this pane entirely. Reported as the pane appearing "to reload
+   * and rebuild its content" on the way back from editing the case.
+   *
+   * `place.ts` already returns the lens and the selected name. These are the
+   * two things the reader had done BY HAND inside the pane, which is why
+   * losing them reads as a rebuild rather than as a refresh.
+   */
+  const withSupporting = () => ({
+    ...BASE,
+    sections: [
+      section(),
+      section({ section: 'catalysts', content: 'Services pricing in the spring.' }),
+    ],
+  })
+
+  it('reopens the supporting sections the reader had opened', async () => {
+    data = withSupporting()
+    const first = render(<AssetWorkspacePane asset={asset} />)
+    await userEvent.click(first.getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]') as HTMLElement)
+    expect(first.getByText(/Services pricing in the spring/)).toBeTruthy()
+
+    /* The real unmount, not a simulation of one. */
+    first.unmount()
+
+    const second = render(<AssetWorkspacePane asset={asset} />)
+    expect(second.getByText(/Services pricing in the spring/)).toBeTruthy()
+    expect(second.getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]')
+      ?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('leaves them closed for a reader who never opened them', () => {
+    /* The other branch. Without it the case above would pass against a
+       disclosure that was simply open by default, which is the presentation
+       the disclosure exists to replace. */
+    data = withSupporting()
+    const { getByTestId, queryByText } = render(<AssetWorkspacePane asset={asset} />)
+    expect(queryByText(/Services pricing in the spring/)).toBeNull()
+    expect(getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]')
+      ?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('does not carry a disclosure from one name onto another', async () => {
+    /* The choice is about the NAME. A reader who opened AAPL's supporting
+       detail has said nothing about MSFT's. */
+    data = withSupporting()
+    const first = render(<AssetWorkspacePane asset={asset} />)
+    await userEvent.click(first.getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]') as HTMLElement)
+    first.unmount()
+
+    const other = render(
+      <AssetWorkspacePane asset={{ id: 'a-2', symbol: 'MSFT', company_name: 'Microsoft' }} />,
+    )
+    expect(other.getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]')
+      ?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('forgets one the reader closed again before leaving', async () => {
+    data = withSupporting()
+    const first = render(<AssetWorkspacePane asset={asset} />)
+    const toggle = () => first.getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]') as HTMLElement
+    await userEvent.click(toggle())
+    await userEvent.click(toggle())
+    first.unmount()
+
+    const second = render(<AssetWorkspacePane asset={asset} />)
+    expect(second.queryByText(/Services pricing in the spring/)).toBeNull()
+  })
 })
 
 /* ------------------------------------------------------------- identity */

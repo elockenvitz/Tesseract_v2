@@ -105,6 +105,8 @@ import {
 /* The arrival travels with the reader into the canonical page. In memory and
    for one navigation only -- see the module's own note on why not tab data. */
 import { offerEntryContext } from '../../lib/asset-workspace/entry-handoff'
+/* What the reader had open here, kept across a tab switch. See `pane-place`. */
+import { isDisclosed, rememberDisclosure } from '../ideas-app/pane-place'
 
 /**
  * This pane has already explained the arrival.
@@ -550,7 +552,7 @@ export function AssetWorkspacePane({
               </div>
             </div>
           ))}
-          <SupportingSections sections={peripheral} />
+          <SupportingSections sections={peripheral} rememberAs={asset.id} />
         </div>
       ) : (
         /* The absence IS the finding, and it is stated at the size of one.
@@ -1429,11 +1431,28 @@ function AssetHeader({
  * the one that opens the research page.
  */
 function SupportingSections({
-  sections,
+  sections, rememberAs,
 }: {
   sections: { section: string; content: string | null }[]
+  /**
+   * The name this choice is about, so it survives a tab switch.
+   *
+   * This application renders the active tab only, so leaving the Dashboard
+   * unmounts this pane; a reader who opened the supporting sections to read
+   * them, went to the canonical page to edit the case and came back found
+   * them closed again. Keyed on the ASSET rather than the card that opened
+   * it, because "show me what else is on record for AAPL" is a decision
+   * about AAPL and holds whichever finding brought them back. See
+   * `pane-place`.
+   */
+  rememberAs: string
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(() => isDisclosed(rememberAs))
+  const toggle = () => {
+    const next = !open
+    setOpen(next)
+    rememberDisclosure(rememberAs, next)
+  }
   if (sections.length === 0) return null
 
   const count = `${sections.length} supporting section${sections.length === 1 ? '' : 's'}`
@@ -1444,7 +1463,7 @@ function SupportingSections({
         type="button"
         data-slot="case-supporting-toggle"
         aria-expanded={open}
-        onClick={() => setOpen(o => !o)}
+        onClick={toggle}
         className="inline-flex items-center gap-1 text-[13px] text-gray-500 underline-offset-2 hover:text-gray-800 hover:underline dark:hover:text-gray-200"
       >
         {open ? 'Hide' : 'Show'} {count} also on record

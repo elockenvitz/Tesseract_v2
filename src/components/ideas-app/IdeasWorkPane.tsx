@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import { Lightbulb } from 'lucide-react'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
@@ -13,6 +13,72 @@ import type { Progression } from '../../lib/desktop-ideas/progression'
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import { entryContextFor } from '../../lib/asset-workspace/entry-context'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
+import { readPaneView, rememberPaneScroll } from './pane-place'
+
+/**
+ * The work pane scroller's offset, kept across a tab switch.
+ *
+ * ── Why the restore is not a single assignment ────────────────────────────
+ *
+ * Setting `scrollTop` on an element whose content is shorter than the offset
+ * silently clamps to whatever height exists at that instant. On the way back
+ * into the Dashboard the pane's data is usually already in the React Query
+ * cache and the surface is at full height on the first paint, so a layout
+ * effect is enough. Usually is not always: a cold cache, a slow image, or a
+ * section that measures itself all make the first paint shorter than the
+ * final one, and a clamped offset is indistinguishable from "it forgot".
+ *
+ * So the offset is applied in a layout effect, and once more on the next
+ * frame if the first attempt was clamped short.
+ *
+ * ── Why two attempts and not a window that keeps trying ───────────────────
+ *
+ * A loop that re-applies the offset for as long as the surface is growing
+ * cannot tell its own scroll events from the reader's, so a reader who
+ * starts scrolling into a still-settling surface gets pulled back by it.
+ * That is worse than landing near the top: being moved while reading is a
+ * fault the reader cannot work around, and a short restore is one they do
+ * not have to. Two attempts covers the case this exists for -- a warm React
+ * Query cache, where the surface is at full height on the first paint -- and
+ * degrades to the top of the page rather than to a fight.
+ *
+ * `ResizeObserver` would be the precise tool and is not available in this
+ * project's test environment, which would make the mechanism unobservable.
+ */
+function useRememberedScroll(key: string | null) {
+  const scroller = useRef<HTMLDivElement | null>(null)
+  /* True only while this hook is doing the scrolling, so the events it
+     causes are not written back down as the reader's position. */
+  const applying = useRef(false)
+
+  useLayoutEffect(() => {
+    const want = readPaneView(key).scrollTop
+    if (want <= 0) return
+
+    const apply = () => {
+      const el = scroller.current
+      if (!el) return false
+      applying.current = true
+      el.scrollTop = want
+      applying.current = false
+      /* `scrollTop` reads back clamped, so this is the surface telling us
+         whether it was tall enough yet. */
+      return el.scrollTop >= want
+    }
+
+    if (apply()) return
+    const raf = requestAnimationFrame(() => { apply() })
+    return () => cancelAnimationFrame(raf)
+  }, [key])
+
+  const onScroll = useCallback(() => {
+    const el = scroller.current
+    if (!el || applying.current) return
+    rememberPaneScroll(key, el.scrollTop)
+  }, [key])
+
+  return { scroller, onScroll }
+}
 
 /**
  * The contextual workspace.
@@ -80,6 +146,9 @@ export function IdeasWorkPane({
   const [whyOpen, setWhyOpen] = useState(false)
   const selectionKey = selection?.key ?? null
   useEffect(() => { setWhyOpen(false) }, [selectionKey])
+  /* Also before the guard, same reason. Unlike `whyOpen` this one IS
+     remembered: see `pane-place`. */
+  const { scroller, onScroll } = useRememberedScroll(selectionKey)
 
   if (!selection) {
     return (
@@ -163,7 +232,21 @@ export function IdeasWorkPane({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/*
+        The scroller, and the one thing it remembers.
+
+        This application renders the active tab only, so leaving the Dashboard
+        unmounts this pane and coming back rebuilds it at the top of a surface
+        the reader had scrolled through. `place.ts` gives the shell back its
+        lens and its selected name; `useRememberedScroll` gives this scroller
+        back its offset for the object that is open. Both are memory that
+        lasts exactly as long as a tab switch, and a reload starts at the top.
+      */}
+      <div
+        ref={scroller}
+        onScroll={onScroll}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
         {/* Keyed on the selection, so the leg a pair is open at is dropped
             when a different candidate arrives. Remounting also resets the
             surfaces below, which is what opening another object means. */}
