@@ -1560,8 +1560,11 @@ async function buildContextPrompt(
       if (theme.description) prompt += `Description: ${truncate(theme.description, 500)}\n`;
     }
 
+    // `theme_assets`, not `asset_themes` — the same correction already made
+    // for the `get_theme` tool below. The error was discarded here too, so
+    // every theme-context conversation was told the theme had no assets.
     const { data: themeAssets } = await supabase
-      .from("asset_themes")
+      .from("theme_assets")
       .select("asset:assets(symbol, company_name)")
       .eq("theme_id", context.id)
       .limit(10);

@@ -1235,7 +1235,10 @@ export function AuditExplorerPage({ onNavigate }: AuditExplorerPageProps = {}) {
     queryKey: ['user-covered-assets', user?.id],
     queryFn: async () => {
       if (!user?.id) return []
-      const { data } = await supabase.from('coverage_assignments').select('asset_id').eq('user_id', user.id).eq('is_active', true)
+      // `coverage`, not `coverage_assignments` — the latter does not exist,
+      // so the "My coverage" scope filtered to an empty asset list and the
+      // Audit Explorer showed nothing under it.
+      const { data } = await supabase.from('coverage').select('asset_id').eq('user_id', user.id).eq('is_active', true)
       return data?.map(r => r.asset_id) || []
     },
     enabled: !!user?.id && scope === 'my_coverage',
