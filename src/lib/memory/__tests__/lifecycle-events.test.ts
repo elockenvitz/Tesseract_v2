@@ -49,6 +49,11 @@ import {
   resolveOrganizationIdForPortfolio,
   __resetOrgCacheForTests,
 } from '../lifecycle-events'
+// The reconciler is pure, so it runs here under the same supabase double. It
+// is imported into the WRITER's suite deliberately: the property that matters
+// is agreement between the two, and a property split across two files is one
+// neither file asserts.
+import { reconcileCapture } from '../capture-reconciliation'
 
 /**
  * Stand-in for `memory_events_dedupe_uk`:
@@ -205,6 +210,119 @@ describe('idempotency: a retry cannot record the same action twice', () => {
     }
     await recordRecommendationSubmitted(args)
     expect((await recordRecommendationSubmitted(args)).duplicate).toBe(true)
+  })
+})
+
+/**
+ * The round trip, which is the property the old key actually broke.
+ *
+ * Every other case here tests the writer against itself. These two test the
+ * writer against the RECONCILER: the key emitted live, for a decision, must
+ * be the key the detector rebuilds later from that decision's canonical row.
+ *
+ * Nothing asserted that before, and that is how the defect survived. The key
+ * was internally consistent and self-consistent on retry; it was simply not
+ * reproducible from the database, because it froze `accepted_trade_id` — a
+ * field a later statement writes. A backfill would have rebuilt the
+ * trade-bearing form, missed, and appended a second event for a decision
+ * already recorded.
+ */
+describe('reconciliation and live recording agree', () => {
+  it('the detector rebuilds the exact key the writer emitted', async () => {
+    installUniqueIndex()
+    const canonical = {
+      id: 'dr-1',
+      status: 'accepted',
+      reviewedAt: '2026-11-15T12:00:00.123Z',
+      acceptedTradeId: null as string | null,
+    }
+
+    await recordDecisionRecorded({
+      ...BASE,
+      decisionRequestId: canonical.id,
+      status: canonical.status,
+      reviewedAt: canonical.reviewedAt,
+    })
+    const emitted = (insertSpy.mock.calls[0][0] as Record<string, unknown>).dedupe_key
+
+    const rebuilt = reconcileCapture({
+      decisions: [canonical],
+      trades: [],
+      presentEventKeys: [],
+      epoch: '2026-09-16T00:00:00Z',
+    }).rows[0].dedupeKey
+
+    expect(rebuilt).toBe(emitted)
+  })
+
+  it('...and still rebuilds it after the trade link is filled in', async () => {
+    installUniqueIndex()
+    // The exact production sequence. `markDRAccepted` emits with no trade,
+    // `createAcceptedTrade` runs, `linkDecisionRequestToTrade` sets
+    // `accepted_trade_id`. A reconciler reads the row in its FINAL state, so
+    // it must land on the key emitted in the earlier state.
+    const reviewedAt = '2026-11-15T12:00:00.123Z'
+    await recordDecisionRecorded({
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted', reviewedAt,
+      acceptedTradeId: null,
+    })
+    const emitted = (insertSpy.mock.calls[0][0] as Record<string, unknown>).dedupe_key
+
+    const rebuilt = reconcileCapture({
+      // The row AFTER the later UPDATE: same reviewed_at, now with a trade.
+      decisions: [{ id: 'dr-1', status: 'accepted', reviewedAt, acceptedTradeId: 'at-9' }],
+      trades: [],
+      presentEventKeys: [],
+      epoch: '2026-09-16T00:00:00Z',
+    }).rows[0]
+
+    expect(rebuilt.dedupeKey).toBe(emitted)
+    // ...while the old formula would have produced a key that never existed,
+    // which is precisely what made a key-based backfill duplicate.
+    expect(rebuilt.legacyDedupeKey).not.toBe(emitted)
+  })
+})
+
+describe('concurrency: repeated writers do not create duplicate facts', () => {
+  it('five simultaneous emits for one decision write one event', async () => {
+    const seen = installUniqueIndex()
+    // Two surfaces can observe the same resolution at once — the inbox accept
+    // and the Trade Lab orphan scan both reach `recordDecisionRecorded` for a
+    // sibling request. Serial idempotency is not the same claim as
+    // concurrent idempotency, so it is asserted separately.
+    const args = {
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted', reviewedAt: REVIEWED_AT,
+    }
+    const results = await Promise.all([
+      recordDecisionRecorded(args), recordDecisionRecorded(args),
+      recordDecisionRecorded(args), recordDecisionRecorded(args),
+      recordDecisionRecorded(args),
+    ])
+
+    expect(results.filter(r => r.written)).toHaveLength(1)
+    expect(results.filter(r => r.duplicate)).toHaveLength(4)
+    // One key reached the index, so one row exists.
+    expect(seen.size).toBe(1)
+    // ...and the duplicates are reported as success, never as failure: a
+    // duplicate means the action was already recorded.
+    expect(results.every(r => r.written || r.duplicate)).toBe(true)
+  })
+
+  it('two concurrent emits for two different decisions write two events', async () => {
+    const seen = installUniqueIndex()
+    // The guard against an over-eager key: collapsing concurrent writes is
+    // only correct when they describe the same decision.
+    const [a, b] = await Promise.all([
+      recordDecisionRecorded({
+        ...BASE, decisionRequestId: 'dr-1', status: 'accepted', reviewedAt: REVIEWED_AT,
+      }),
+      recordDecisionRecorded({
+        ...BASE, decisionRequestId: 'dr-2', status: 'accepted', reviewedAt: REVIEWED_AT,
+      }),
+    ])
+    expect(a.written).toBe(true)
+    expect(b.written).toBe(true)
+    expect(seen.size).toBe(2)
   })
 })
 
