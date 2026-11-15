@@ -367,7 +367,7 @@ files went back with a path-scoped `git restore`, untracked files were deleted
 one named file at a time, and a directory was removed only after it was
 observed empty.
 
-What those 82 files actually were: **71 Playwright screenshots** written by
+What those 82 files actually were: **67 Playwright screenshots** written by
 `e2e/signal-cards.spec.ts`, `responsive.spec.ts` and `case-vs-price.spec.ts`,
 which no test ever reads back — grep finds only `screenshot({ path: ... })`
 writes, never a snapshot comparison — so they are test output, not baselines;
