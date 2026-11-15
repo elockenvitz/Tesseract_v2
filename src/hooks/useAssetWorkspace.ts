@@ -31,6 +31,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { ASSET_SURFACE_GC_TIME } from '../lib/ui/asset-surface-retention'
 import {
   buildBook, unrealised,
   type HoldingRow, type Position,
@@ -235,6 +236,20 @@ export function useAssetWorkspace(
     queryKey: [ASSET_WORKSPACE_KEY, assetId, symbol, days, currentOrgId],
     enabled: !!assetId && !!currentOrgId,
     staleTime: 60_000,
+    /*
+     * Kept well past the unmount, which is a different question from the
+     * 60 seconds above.
+     *
+     * The Dashboard renders the active tab only, so this hook unmounts
+     * whenever the reader looks at anything else, and with the app's
+     * five-minute `gcTime` default the entry was collected on any trip
+     * longer than that. Coming back then hit `if (isLoading) return
+     * <Skeleton />` and refired all eight reads, which is the "appeared to
+     * reload" the pane was reported for. Freshness is unchanged: 60 seconds
+     * still decides when to refetch, and every writer still invalidates.
+     * See `lib/ui/asset-surface-retention`.
+     */
+    gcTime: ASSET_SURFACE_GC_TIME,
     queryFn: async () => {
       const floor = new Date(Date.now() - days * DAY).toISOString().slice(0, 10)
 

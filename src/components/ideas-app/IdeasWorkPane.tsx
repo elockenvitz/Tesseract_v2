@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { Lightbulb } from 'lucide-react'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
@@ -13,10 +13,20 @@ import type { Progression } from '../../lib/desktop-ideas/progression'
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
 import { entryContextFor } from '../../lib/asset-workspace/entry-context'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
-import { readPaneView, rememberPaneScroll } from './pane-place'
+import { paneScroll } from './pane-place'
+import { useRememberedScroll } from '../../lib/ui/scroll-memory'
 
-/**
- * The work pane scroller's offset, kept across a tab switch.
+/*
+ * The scroller's offset, kept across a tab switch.
+ *
+ * This hook used to be declared here. It moved to `lib/ui/scroll-memory`
+ * when the canonical Asset Page turned out to need the same thing for a
+ * different reason -- `Layout` owns one scroller that every non-full-width
+ * tab renders into, so its offset survives the tab change and gets clamped
+ * by the next tab's height instead. The reasoning that was written here,
+ * including why the restore is two attempts and not a loop, went with it.
+ *
+ * What was here, for anyone looking for it:
  *
  * ── Why the restore is not a single assignment ────────────────────────────
  *
@@ -45,40 +55,6 @@ import { readPaneView, rememberPaneScroll } from './pane-place'
  * `ResizeObserver` would be the precise tool and is not available in this
  * project's test environment, which would make the mechanism unobservable.
  */
-function useRememberedScroll(key: string | null) {
-  const scroller = useRef<HTMLDivElement | null>(null)
-  /* True only while this hook is doing the scrolling, so the events it
-     causes are not written back down as the reader's position. */
-  const applying = useRef(false)
-
-  useLayoutEffect(() => {
-    const want = readPaneView(key).scrollTop
-    if (want <= 0) return
-
-    const apply = () => {
-      const el = scroller.current
-      if (!el) return false
-      applying.current = true
-      el.scrollTop = want
-      applying.current = false
-      /* `scrollTop` reads back clamped, so this is the surface telling us
-         whether it was tall enough yet. */
-      return el.scrollTop >= want
-    }
-
-    if (apply()) return
-    const raf = requestAnimationFrame(() => { apply() })
-    return () => cancelAnimationFrame(raf)
-  }, [key])
-
-  const onScroll = useCallback(() => {
-    const el = scroller.current
-    if (!el || applying.current) return
-    rememberPaneScroll(key, el.scrollTop)
-  }, [key])
-
-  return { scroller, onScroll }
-}
 
 /**
  * The contextual workspace.
@@ -148,7 +124,7 @@ export function IdeasWorkPane({
   useEffect(() => { setWhyOpen(false) }, [selectionKey])
   /* Also before the guard, same reason. Unlike `whyOpen` this one IS
      remembered: see `pane-place`. */
-  const { scroller, onScroll } = useRememberedScroll(selectionKey)
+  const { scroller, onScroll } = useRememberedScroll<HTMLDivElement>(paneScroll, selectionKey)
 
   if (!selection) {
     return (

@@ -42,16 +42,27 @@
  * map that only ever grows is a leak however small each entry is. The oldest
  * entries are dropped past `LIMIT`, which costs nothing a reader would
  * notice: the point of this is the trip they JUST made.
+ *
+ * ── Where the scroll half lives now ───────────────────────────────────────
+ *
+ * In `lib/ui/scroll-memory`, because the canonical Asset Page needs exactly
+ * the same thing for a different reason -- `Layout` owns one scroller that
+ * every non-full-width tab renders into, so its offset is clamped by the
+ * next tab's height rather than destroyed with the element. Two surfaces
+ * losing an offset two ways is still one question about what to do with it,
+ * and the subtle part is the restore rather than the map: see that module
+ * for why it assigns once and retries once instead of looping.
+ *
+ * The functions below keep their names and their behaviour. What they do not
+ * keep is a second implementation of it.
  */
+import { createScrollMemory, TOP, type ScrollPosition } from '../../lib/ui/scroll-memory'
 
 /** What is remembered for one open object. */
-export interface PaneView {
-  /** The work pane scroller's offset, in CSS pixels. */
-  scrollTop: number
-}
+export type PaneView = ScrollPosition
 
 /** The default for an object the reader has not been in. The top of it. */
-export const NO_PANE_VIEW: PaneView = { scrollTop: 0 }
+export const NO_PANE_VIEW: PaneView = TOP
 
 /**
  * How many open objects are remembered at once.
@@ -62,7 +73,8 @@ export const NO_PANE_VIEW: PaneView = { scrollTop: 0 }
  */
 export const LIMIT = 8
 
-const views = new Map<string, PaneView>()
+/** This pane's own budget. Tab offsets have theirs; neither evicts the other. */
+export const paneScroll = createScrollMemory(LIMIT)
 
 /**
  * Disclosures the reader has opened, by a stable id of their own choosing.
@@ -77,32 +89,12 @@ const disclosed = new Set<string>()
 
 /** Hand back what was remembered for this object, or the top of it. */
 export function readPaneView(key: string | null | undefined): PaneView {
-  if (!key) return NO_PANE_VIEW
-  return views.get(key) ?? NO_PANE_VIEW
+  return paneScroll.read(key)
 }
 
-/**
- * Remember the scroller's offset for this object.
- *
- * A zero is stored like any other value rather than treated as "nothing":
- * scrolling back to the top is a deliberate act, and dropping it would hand
- * the reader back an offset they had just left.
- */
+/** Remember the scroller's offset for this object. */
 export function rememberPaneScroll(key: string | null | undefined, scrollTop: number): void {
-  if (!key) return
-  /* Not a finite number means the DOM gave us something we cannot use. A
-     stored NaN would be applied on the way back and move the reader nowhere
-     in particular. */
-  if (!Number.isFinite(scrollTop)) return
-  /* Re-inserted rather than mutated, so the Map's insertion order tracks
-     recency and the eviction below drops the right one. */
-  views.delete(key)
-  views.set(key, { scrollTop: Math.max(0, Math.round(scrollTop)) })
-  while (views.size > LIMIT) {
-    const oldest = views.keys().next()
-    if (oldest.done) break
-    views.delete(oldest.value)
-  }
+  paneScroll.remember(key, scrollTop)
 }
 
 /** Whether the reader had this disclosure open. */
@@ -119,6 +111,6 @@ export function rememberDisclosure(id: string | null | undefined, open: boolean)
 
 /** For tests, and for a deliberate reset. */
 export function forgetPaneViews(): void {
-  views.clear()
+  paneScroll.forget()
   disclosed.clear()
 }

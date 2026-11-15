@@ -39,6 +39,7 @@ import { useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { ASSET_SURFACE_GC_TIME } from '../lib/ui/asset-surface-retention'
 import {
   resolveLayout,
   logResolutionDiagnostics,
@@ -330,7 +331,10 @@ export function useResearchPagePreferences(subject: ResearchSubject) {
       if (error) throw error
       return data as SavedLayout | null
     },
-    enabled: !!user?.id
+    enabled: !!user?.id,
+    /* The fourth input to the page's loading gate. See
+       `lib/ui/asset-surface-retention`. */
+    gcTime: ASSET_SURFACE_GC_TIME
   })
 
   // Fetch asset-specific layout selection (if any)
@@ -374,6 +378,10 @@ export function useResearchPagePreferences(subject: ResearchSubject) {
     },
     enabled: !!user?.id && !!assetId,
     staleTime: 0, // Always refetch to ensure fresh data
+    /* Kept past the unmount for the same reason as the two catalogues: this
+       one inherited the app's five-minute default, so a quick trip away
+       survived and a long one came back to the skeleton. */
+    gcTime: ASSET_SURFACE_GC_TIME,
     refetchOnMount: 'always'
   })
 
@@ -413,7 +421,14 @@ export function useResearchPagePreferences(subject: ResearchSubject) {
     },
     enabled: !!user?.id && !!currentOrgId,
     staleTime: 0,
-    gcTime: 0,
+    /* Was `gcTime: 0`. That discarded the catalogue the instant the Asset
+       tab unmounted, so returning to it put `sectionsLoading` true again and
+       `AssetTab`'s `pageReady` gate replaced the whole page with a skeleton
+       on EVERY tab switch. `staleTime: 0` with `refetchOnMount: 'always'`
+       keeps the freshness guarantee -- every mount revalidates -- without
+       the blank page, because the cached rows render while the refetch runs.
+       See `lib/ui/asset-surface-retention`. */
+    gcTime: ASSET_SURFACE_GC_TIME,
     refetchOnMount: 'always'
   })
 
@@ -542,7 +557,9 @@ export function useResearchPagePreferences(subject: ResearchSubject) {
     },
     enabled: !!user?.id,
     staleTime: 0,
-    gcTime: 0, // Don't cache - always fetch fresh data
+    /* Was `gcTime: 0`, same fault as the section catalogue above and the
+       other half of the Asset Page's skeleton on every return. */
+    gcTime: ASSET_SURFACE_GC_TIME,
     refetchOnMount: 'always'
   })
 

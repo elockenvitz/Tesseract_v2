@@ -211,6 +211,14 @@ export const GATED_DIRS = [
   // unsigned. Getting that wrong shows a sale as money coming in, so it
   // arrives gated.
   'src/lib/trade-book/__tests__',
+  // What a surface keeps while the reader is somewhere else: the per-scroller
+  // offset memory, and how long an asset surface's query data is retained
+  // after it unmounts. Both exist because leaving a tab and returning drew a
+  // skeleton over content that was already fetched and put the reader back at
+  // the top of a page they had read down. Gated on arrival, and gated rather
+  // than deferred because the whole point is a value that LOOKS safe to
+  // lower: `gcTime: 0` reads like caution and is what caused the reload.
+  'src/lib/ui/__tests__',
   // Where a Projects row menu opens. The status, priority and tag menus are
   // `position: fixed` and were placed straight from the anchor's rect, so on a
   // phone a menu opened from a card low in the list ran off the bottom edge —

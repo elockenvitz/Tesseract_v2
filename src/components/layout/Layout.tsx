@@ -21,6 +21,33 @@ import { useIsMobile } from '../../hooks/useMediaQuery'
 import { MobileNavDrawer } from '../mobile/MobileNavDrawer'
 import { OverflowAuditOverlay } from '../mobile/OverflowAuditOverlay'
 import { ownsMobileViewport } from '../../lib/mobile/mobile-surfaces'
+import { createScrollMemory, useRememberedScroll } from '../../lib/ui/scroll-memory'
+
+/**
+ * Where each tab had been scrolled to.
+ *
+ * ── Why the Asset Page loses its place, and why the fix is here ───────────
+ *
+ * Reported: "Both the canonical Asset Page and embedded Asset Workspace
+ * appear to reload when I navigate to another application tab and return."
+ *
+ * The Asset Page does not own a scroller. `asset` is not in
+ * `FULL_WIDTH_TAB_TYPES`, so it renders into the one `overflow-auto` div
+ * below, which every other non-full-width tab also renders into. That div is
+ * not keyed by tab and does not unmount, so the element SURVIVES the tab
+ * change -- and its `scrollTop` does not survive what happens next: the new
+ * tab's content is a different height, the browser clamps the offset to that
+ * height, and coming back the reader is at the top of a page they had read
+ * a long way down. Nothing had reloaded. They had been moved.
+ *
+ * That is why this is in `Layout` and not in `AssetTab`. A page cannot
+ * remember a position in a scroller it does not own, and fixing it here
+ * fixes it for every tab that shares the scroller rather than for one.
+ *
+ * Twelve, because a session's worth of open tabs is the thing being moved
+ * between, and it is cheap: one number per tab.
+ */
+const tabScroll = createScrollMemory(12)
 
 interface LayoutProps {
   children: React.ReactNode
@@ -92,6 +119,19 @@ export function Layout({
   const [engagementTarget, setEngagementTarget] = useState<EngagementTarget | null>(null)
   const [isFocusMode, setIsFocusMode] = useState(false)
   const { hasUnreadNotifications } = useNotifications()
+
+  /*
+   * The shared scroller's offset, per tab. See `tabScroll` above for why the
+   * Asset Page cannot do this for itself.
+   *
+   * Keyed on the tab id and not on what the tab holds: two asset tabs are two
+   * places the reader has been, and one offset for both would move each of
+   * them to the other's position. A tab that is closed and reopened is a new
+   * id and starts at the top, which is right -- closing it was the reader
+   * saying they were done with it.
+   */
+  const { scroller: scrollport, onScroll: onScrollportScroll } =
+    useRememberedScroll<HTMLDivElement>(tabScroll, activeTabId ?? null)
 
   // On phones the tab strip is replaced by a nav drawer opened from the
   // Tesseract mark — the Chrome-tab metaphor assumes you are juggling several
@@ -678,7 +718,11 @@ export function Layout({
           const ownsViewport = !!activeTab && isMobile && ownsMobileViewport(activeTab.type)
           const isBare = isFullWidth || ownsViewport
           return (
-            <div className={clsx(
+            <div
+              ref={scrollport}
+              onScroll={onScrollportScroll}
+              data-slot="tab-scrollport"
+              className={clsx(
               "relative h-full flex flex-col",
               isBare || isMobileNote ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
               !isBare && !isCompactPad && (isMobileNote ? "px-3" : "px-3 py-4 sm:px-6 sm:py-6 lg:px-8"),
