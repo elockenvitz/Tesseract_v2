@@ -1238,6 +1238,21 @@ export function AuditExplorerPage({ onNavigate }: AuditExplorerPageProps = {}) {
       // `coverage`, not `coverage_assignments` — the latter does not exist,
       // so the "My coverage" scope filtered to an empty asset list and the
       // Audit Explorer showed nothing under it.
+      //
+      // That rename is what made this query visible to the org-scope guard:
+      // `coverage_assignments` is not a real table and so is not in
+      // ORG_SCOPED_TABLES, while `coverage` is. The query was no safer
+      // before — it was unscoped AND reading nothing.
+      //
+      // This page carries no organisation context at all. Introducing one
+      // here to restate a filter the policy already applies would add a
+      // second source of truth for the active org, which is the shape of bug
+      // this guard's own baseline is full of.
+      //
+      // `coverage` has exactly one SELECT policy, read from production on
+      // 2026-11-15:
+      //   coverage_select_org_members USING (organization_id = current_org_id())
+      // org-scope-exempt: that policy holds the tenant boundary on this read.
       const { data } = await supabase.from('coverage').select('asset_id').eq('user_id', user.id).eq('is_active', true)
       return data?.map(r => r.asset_id) || []
     },
