@@ -36,6 +36,40 @@ function captureEvents() {
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
+describe('the deferred event outliving its surface', () => {
+  /**
+   * The 50ms timer fires after the caller may be gone.
+   *
+   * This is the shape that cost a release: in CI, vitest reported
+   * `ReferenceError: window is not defined` at `open-idea.ts` as an unhandled
+   * error and exited 1 with `343 passed, 0 failed` -- a required check red
+   * with every test passing, reported against a test file that does not
+   * import this module. The timer had simply outlived whichever file was
+   * running when it was set.
+   *
+   * Driven here by removing `window` between scheduling and firing, which is
+   * what teardown does and what a navigated-away page does.
+   */
+  it('does not throw when the window is gone before it fires', () => {
+    openIdeaDetail(IDEA_ID)
+    vi.stubGlobal('window', undefined)
+    try {
+      expect(() => vi.runAllTimers()).not.toThrow()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('still fires normally when the window is there', () => {
+    /* So the guard above cannot pass by never dispatching at all. */
+    const cap = captureEvents()
+    openIdeaDetail(IDEA_ID)
+    vi.runAllTimers()
+    expect(cap.seen.map(e => e.type)).toContain(OPEN_IDEA_EVENTS.modal)
+    cap.stop()
+  })
+})
+
 describe('openIdeaDetail', () => {
   it('asks for the pipeline tab, then the idea, with that id', () => {
     const cap = captureEvents()
