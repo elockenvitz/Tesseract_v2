@@ -8,6 +8,13 @@
  * events — we treat it as a plain string identifier and rely on the
  * UNIQUE constraint on the column to enforce one review per decision.
  *
+ * Since 20261115120000_decision_review_typed_subject the DATABASE resolves
+ * that polymorphic id into `subject_type` plus one typed foreign key
+ * (trade_queue_item_id / decision_request_id / portfolio_trade_event_id) in a
+ * BEFORE-write trigger, discarding anything this module sends for those
+ * columns. `decision_id` remains the write key and the upsert conflict target;
+ * the typed columns are what a reader should join on.
+ *
  * A "completed review" is defined by the presence of a non-null
  * decision_quality field (i.e. the PM has at minimum made a quality
  * call). The Outcomes verdict engine reads this to promote a row from
@@ -21,9 +28,20 @@ export type DecisionQuality = 'good' | 'mixed' | 'bad' | 'unrated'
 export type ThesisOutcome = 'yes' | 'partial' | 'no' | 'unknown'
 export type SizingQuality = 'too_small' | 'appropriate' | 'too_large' | 'unknown'
 
+/** What a review is about, as the DATABASE resolved it — not as a caller
+ *  claimed. `unknown` is a legacy row whose `decision_id` matches no canonical
+ *  record; six such rows exist in production and are invisible under RLS. */
+export type ReviewSubjectType = 'idea' | 'decision' | 'trade' | 'unknown'
+
 export interface DecisionReview {
   id: string
   decision_id: string
+  /** Absent until 20261115120000 is applied, so every read treats it as
+   *  optional and falls back to the caller's own inference. */
+  subject_type?: ReviewSubjectType
+  trade_queue_item_id?: string | null
+  decision_request_id?: string | null
+  portfolio_trade_event_id?: string | null
   decision_quality: DecisionQuality | null
   thesis_played_out: ThesisOutcome | null
   sizing_quality: SizingQuality | null
@@ -101,7 +119,12 @@ export function useUpsertDecisionReview() {
       /** Which table `decisionId` belongs to. `AccountabilityRow.decision_id`
        *  is polymorphic and (source, category) is what disambiguates it:
        *  discretionary → portfolio_trade_events, acted → trade_queue_items,
-       *  passed → decision_requests. The caller knows; this does not guess. */
+       *  passed → decision_requests. The caller knows; this does not guess.
+       *
+       *  Now a FALLBACK only: the trigger resolves the same question from the
+       *  data and its answer wins for both the review row and the event. This
+       *  is used when the server has no answer — before the migration is
+       *  applied, or for an id that resolves to nothing. */
       subjectType?: 'idea' | 'decision' | 'trade'
       organizationId?: string | null
     }) => {
@@ -155,12 +178,33 @@ export function useUpsertDecisionReview() {
        * genuinely new conclusion and gets its own event. Not calendar-day
        * granularity, which would swallow a same-afternoon correction.
        */
+      /*
+       * Prefer the subject kind the DATABASE resolved over the one this call
+       * inferred.
+       *
+       * `args.subjectType` is derived in the UI from (source, category). It is
+       * right today, but it is an inference, and the event and the review row
+       * must not be able to disagree about what was reviewed. The trigger
+       * resolves `decision_id` against the three canonical tables, so its
+       * answer is the one backed by data.
+       *
+       * Two fallbacks, both deliberate. Before the migration is applied
+       * `subject_type` is simply absent, and `unknown` is not a value
+       * `memory_events.subject_type` permits — its CHECK allows asset / idea /
+       * decision / trade / batch / portfolio / obligation. In neither case
+       * should the event be lost, so the caller's inference stands.
+       */
+      const resolvedSubjectType =
+        review.subject_type && review.subject_type !== 'unknown'
+          ? review.subject_type
+          : (args.subjectType ?? 'decision')
+
       if (args.organizationId) {
         const { error: evErr } = await supabase.from('memory_events').insert({
           organization_id: args.organizationId,
           actor_id: userId,
           event_type: 'decision.reviewed',
-          subject_type: args.subjectType ?? 'decision',
+          subject_type: resolvedSubjectType,
           subject_id: decisionId,
           source_type: 'decision_reviews',
           source_id: review.id,
