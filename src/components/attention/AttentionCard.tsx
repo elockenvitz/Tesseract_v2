@@ -45,6 +45,7 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { AttentionItem, AttentionType, AttentionSourceType } from '../../types/attention'
+import { attentionSourceSupportsSharedDefer } from '../../lib/attention-state'
 
 // Dismiss reason type
 export type DismissReason = 'duplicate' | 'incorrect_signal' | 'not_my_responsibility' | 'no_longer_relevant'
@@ -100,7 +101,26 @@ interface AttentionCardProps {
   onMarkDone?: (sourceId: string) => Promise<void>
   onApprove?: (sourceId: string) => Promise<void>
   onReject?: (sourceId: string) => Promise<void>
-  onDefer?: (sourceId: string, hours: number) => Promise<void>
+  /**
+   * Move the SHARED, desk-wide revisit date on a trade idea.
+   *
+   * Deliberately not called `onDefer`. It used to be, and `Defer` called it
+   * for `trade_queue_item` and the personal `onSnooze` for everything else,
+   * with the same label and the same "Deferred" toast. One control, two
+   * ownership models, no way for the user to tell which they had just used.
+   *
+   * Renamed rather than re-pointed so the type checker visits every call
+   * site: a prop named `onDefer` next to a `Defer` button is how the
+   * confusion happened, and the name is the fix that cannot regress.
+   *
+   * Authorization is real but is NOT role-restricted to a PM. RLS on
+   * `trade_queue_items` UPDATE is
+   * `created_by OR assigned_to OR is_portfolio_pm(portfolio_id)`, so an
+   * idea's author or assignee may reschedule it for everyone. Whether that
+   * is the right rule is a product decision; it is at least now a decision
+   * about a control that says what it does.
+   */
+  onRescheduleShared?: (sourceId: string, hours: number) => Promise<void>
   onQuickCapture?: (item: AttentionItem, mode: QuickCaptureMode) => void
   showScore?: boolean
   compact?: boolean
@@ -411,12 +431,15 @@ export function AttentionCard({
   onMarkDone,
   onApprove,
   onReject,
-  onDefer,
+  onRescheduleShared,
   onQuickCapture,
   showScore = false,
   compact = false,
 }: AttentionCardProps) {
   const [showDeferMenu, setShowDeferMenu] = useState(false)
+  /** Separate from `showDeferMenu`: two different actions, two menus. */
+  const [showRescheduleMenu, setShowRescheduleMenu] = useState(false)
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
   /** Which decision is armed, if any. Cleared on scroll-away and on the other
    *  button, so an armed Approve cannot be committed by a stray Reject tap. */
   const [pendingDecision, setPendingDecision] = useState<'approve' | 'reject' | null>(null)
@@ -502,33 +525,76 @@ export function AttentionCard({
     }
   }
 
+  /**
+   * Defer is PERSONAL. Always. For every source type.
+   *
+   * It writes `attention_user_state` through `snooze_attention`, which is
+   * per-user, durable across devices, and read back by the one filter at
+   * `useAttention.ts:1547-1551` that applies to every item in the feed
+   * regardless of where it came from. So routing trade ideas here needs no
+   * new table, no new RPC and no new identity — the mechanism was already
+   * general; only this branch was not.
+   *
+   * What it replaced, and why that was worse than it looked. The old branch
+   * sent `trade_queue_item` to the SHARED `trade_queue_items.revisit_at`,
+   * which the whole desk reads, under the same label and the same toast.
+   * It had three outcomes depending on who you were, none of them visible:
+   *
+   *   author / assignee / PM   moved the date for everyone
+   *   anyone else              RLS matched no row, `.maybeSingle()` returned
+   *                            null without an error, nothing happened at
+   *                            all — and the card still said "Deferred"
+   *   every other source type  a genuine personal snooze
+   *
+   * Shared rescheduling still exists. It is `onRescheduleShared`, it is in
+   * the overflow menu, and it says who it affects.
+   */
   const handleDefer = async (e: React.MouseEvent, hours: number) => {
     e.stopPropagation()
     setShowDeferMenu(false)
     setPendingDecision(null)
+    if (!onSnooze || isActionPending) return
 
-    // For trade items, use onDefer; for others, use onSnooze
-    if (item.source_type === 'trade_queue_item' && onDefer) {
-      if (isActionPending) return
-      setIsActionPending('defer')
-      try {
-        await onDefer(item.source_id, hours)
-        setResolutionState('resolving')
-        setResolutionMessage(hours >= 24 ? 'Deferred' : `Deferred ${hours}h`)
-        setTimeout(() => setResolutionState('resolved'), 200)
-      } finally {
-        setIsActionPending(null)
-      }
-    } else if (onSnooze) {
-      setIsActionPending('defer')
-      try {
-        await onSnooze(item.attention_id, hours)
-        setResolutionState('resolving')
-        setResolutionMessage(hours >= 24 ? 'Deferred' : `Deferred ${hours}h`)
-        setTimeout(() => setResolutionState('resolved'), 200)
-      } finally {
-        setIsActionPending(null)
-      }
+    setIsActionPending('defer')
+    try {
+      await onSnooze(item.attention_id, hours)
+      setResolutionState('resolving')
+      setResolutionMessage(hours >= 24 ? 'Deferred for you' : `Deferred ${hours}h for you`)
+      setTimeout(() => setResolutionState('resolved'), 200)
+    } finally {
+      setIsActionPending(null)
+    }
+  }
+
+  /**
+   * Reschedule the idea for everyone. Separate action, separate name,
+   * separate confirmation, separate message.
+   *
+   * Armed like Approve and Reject: first click arms, second commits. A
+   * change the rest of the desk will see should cost two deliberate taps,
+   * and the armed label states the blast radius rather than a date.
+   */
+  const handleRescheduleShared = async (e: React.MouseEvent, hours: number) => {
+    e.stopPropagation()
+    setRescheduleError(null)
+    if (!onRescheduleShared || isActionPending) return
+
+    setIsActionPending('reschedule')
+    try {
+      await onRescheduleShared(item.source_id, hours)
+      // Closed only on success. On a refusal the menu stays open so the
+      // reason is attached to the control that produced it.
+      setShowRescheduleMenu(false)
+      setShowOverflowMenu(false)
+      setResolutionState('resolving')
+      setResolutionMessage('Rescheduled for everyone')
+      setTimeout(() => setResolutionState('resolved'), 200)
+    } catch (err) {
+      // A refusal must be visible. The handler rejects when RLS matched no
+      // row, which is the case the old code reported as success.
+      setRescheduleError(err instanceof Error ? err.message : 'Could not reschedule this.')
+    } finally {
+      setIsActionPending(null)
     }
   }
 
@@ -757,8 +823,12 @@ export function AttentionCard({
               </button>
             )}
 
-            {/* Tertiary: Defer (smaller visual weight) */}
-            {(isTradeItem ? onDefer : onSnooze) && (
+            {/* Tertiary: Defer (smaller visual weight).
+                Gated on `onSnooze` for every source type — Defer is
+                personal, so the personal handler is the only requirement.
+                It used to read `isTradeItem ? onDefer : onSnooze`, which is
+                how one button came to mean two things. */}
+            {onSnooze && (
               <div className="relative">
                 <button
                   onClick={(e) => {
@@ -834,6 +904,61 @@ export function AttentionCard({
           </button>
         )}
 
+        {/* Reschedule for the whole desk.
+            Only for trade ideas, only when a handler is wired, and in the
+            overflow menu rather than beside Defer — a shared change should
+            not sit one pixel from a personal one wearing the same word. */}
+        {attentionSourceSupportsSharedDefer(item.source_type) && onRescheduleShared && (
+          <>
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowRescheduleMenu(!showRescheduleMenu)
+              }}
+              disabled={isActionPending === 'reschedule'}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-gray-800"
+            >
+              {isActionPending === 'reschedule' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
+              ) : (
+                <Users className="w-3.5 h-3.5 text-gray-400" />
+              )}
+              Reschedule for everyone…
+            </button>
+            {showRescheduleMenu && (
+              <div className="px-3 pb-1.5 pt-0.5">
+                <p className="text-[10px] leading-snug text-gray-500 dark:text-gray-400">
+                  Moves this idea's revisit date for the whole desk, not just
+                  for you.
+                </p>
+                {rescheduleError && (
+                  <p
+                    data-slot="reschedule-error"
+                    className="mt-1 text-[10px] leading-snug text-red-600 dark:text-red-400"
+                  >
+                    {rescheduleError}
+                  </p>
+                )}
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {[
+                    { hours: 24, label: 'Tomorrow' },
+                    { hours: 168, label: 'Next week' },
+                  ].map(({ hours, label }) => (
+                    <button
+                      key={hours}
+                      onClick={(e) => handleRescheduleShared(e, hours)}
+                      className="px-2 py-1 text-[11px] font-medium rounded border border-gray-200 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="border-t border-gray-100 my-1 dark:border-gray-800" />
+          </>
+        )}
+
         {/* Not relevant - always available except alignment */}
         {attention_type !== 'alignment' && onDismissWithReason && (
           <>
@@ -858,7 +983,11 @@ export function AttentionCard({
 
   const hasOverflowItems =
     (item.attention_type === 'decision_required' && onQuickCapture) ||
-    (item.attention_type !== 'alignment' && onDismissWithReason)
+    (item.attention_type !== 'alignment' && onDismissWithReason) ||
+    // Without this, wiring `onRescheduleShared` on a card whose only other
+    // overflow entry is absent would render the entry into a menu with no
+    // button to open it — the shared action would exist and be unreachable.
+    (attentionSourceSupportsSharedDefer(item.source_type) && Boolean(onRescheduleShared))
 
   return (
     <div
@@ -1012,6 +1141,12 @@ export function AttentionCard({
         {hasOverflowItems && (
           <div className="relative">
             <button
+              type="button"
+              // An icon-only trigger with no name. It now hides the shared
+              // reschedule, so it has to be addressable by assistive tech
+              // and by a test that asserts the shared action is reachable.
+              aria-label="More actions"
+              aria-expanded={showOverflowMenu}
               onClick={(e) => {
                 e.stopPropagation()
                 setShowOverflowMenu(!showOverflowMenu)

@@ -6,7 +6,8 @@
  * "Defer" is shared-workflow language. It means the team's revisit date moved,
  * and everyone sees it. Exactly one object in this product has that concept:
  * `trade_queue_items.revisit_at`, already written by `useAttention`'s
- * `deferTradeIdeaMutation`.
+ * `rescheduleTradeIdeaForDeskMutation` (named `deferTradeIdeaMutation` until
+ * the control it fed was separated from the personal one).
  *
  * The bug being fixed is that the desktop menu offered "Defer" on everything,
  * and for everything else it quietly performed a personal localStorage snooze
@@ -46,4 +47,26 @@ export function sharedDeferCapability(target: EngagementTarget): SharedDeferCapa
 
 export function supportsSharedDefer(target: EngagementTarget): boolean {
   return sharedDeferCapability(target).supported
+}
+
+/**
+ * The attention-feed shape of the same question.
+ *
+ * `AttentionCard` holds an `AttentionItem` with a `source_type`, not an
+ * `EngagementTarget`, so it cannot call `sharedDeferCapability`. Rather than
+ * let it inline `source_type === 'trade_queue_item'` — which is how the
+ * original defect was written, and how it would come back — both shapes
+ * answer from the one list below.
+ *
+ * `trade_queue_item` is the attention feed's name for the object whose
+ * `revisit_at` is the desk-wide revisit date. If a second object ever grows
+ * a genuine shared revisit date, it is added here and in
+ * `sharedDeferCapability` together, and nowhere else.
+ */
+export const SHARED_DEFER_ATTENTION_SOURCE_TYPES: readonly string[] = ['trade_queue_item']
+
+export function attentionSourceSupportsSharedDefer(
+  sourceType: string | null | undefined,
+): boolean {
+  return !!sourceType && SHARED_DEFER_ATTENTION_SOURCE_TYPES.includes(sourceType)
 }
