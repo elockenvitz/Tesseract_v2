@@ -21,7 +21,7 @@ import {
   eventKey,
   SPINE_EPOCH,
 } from '../capture-reconciliation'
-import { dedupeKeys } from '../lifecycle-events'
+import { dedupeKeys, legacyDedupeKeys } from '../lifecycle-events'
 
 const BEFORE = '2026-08-01T12:00:00Z'
 const AFTER = '2026-10-12T13:41:29Z'
@@ -136,7 +136,52 @@ describe('matching is on (event_type, source_id), not on the dedupe key', () => 
     })
     // Reported, never matched on. If the writers change their key builder
     // this assertion moves with them, which is the point of importing it.
-    expect(r.rows[0].dedupeKey).toBe(dedupeKeys.decisionRecorded('dr-1', 'accepted', 'at-1'))
+    expect(r.rows[0].dedupeKey).toBe(dedupeKeys.decisionRecorded('dr-1', 'accepted', AFTER))
+  })
+
+  it('reports the legacy key too, so the rows written under it stay findable', () => {
+    const r = reconcileCapture({
+      decisions: [{ id: 'dr-1', status: 'accepted', reviewedAt: AFTER, acceptedTradeId: 'at-1' }],
+      trades: [{ id: 'at-1', createdAt: AFTER }],
+      presentEventKeys: [],
+    })
+    const decision = r.rows.find(x => x.expectedEventType === 'decision.recorded')!
+    const execution = r.rows.find(x => x.expectedEventType === 'execution.recorded')!
+
+    // The two production rows carry the pre-2026-11-15 shape and are NOT
+    // rewritten. A backfill has to be able to recognise them, so the detector
+    // reports what that shape would be for each decision alongside the
+    // current one.
+    expect(decision.legacyDedupeKey)
+      .toBe(legacyDedupeKeys.decisionRecorded('dr-1', 'accepted', 'at-1'))
+    expect(decision.legacyDedupeKey).toContain(':at-1')
+    expect(decision.legacyDedupeKey).not.toBe(decision.dedupeKey)
+
+    // Only `decision.recorded` ever had a second shape. Inventing a legacy
+    // key for the other event types would imply a migration that never
+    // happened.
+    expect(execution.legacyDedupeKey).toBeNull()
+  })
+
+  it('the current decision key is derived from reviewed_at, not from the trade', () => {
+    // The defect, stated as a test on the detector rather than on the writer:
+    // two decisions resolved at the same instant whose trade links differ
+    // must produce the SAME key, because they are one decision whose trade
+    // id was filled in by a later call.
+    const atEmitTime = reconcileCapture({
+      decisions: [{ id: 'dr-1', status: 'accepted', reviewedAt: AFTER, acceptedTradeId: null }],
+      trades: [], presentEventKeys: [],
+    }).rows[0]
+    const afterTheLink = reconcileCapture({
+      decisions: [{ id: 'dr-1', status: 'accepted', reviewedAt: AFTER, acceptedTradeId: 'at-9' }],
+      trades: [], presentEventKeys: [],
+    }).rows[0]
+
+    expect(afterTheLink.dedupeKey).toBe(atEmitTime.dedupeKey)
+    // ...while the old formula produced two different keys for that one
+    // decision, which is exactly why a key-based backfill would have
+    // appended a duplicate.
+    expect(afterTheLink.legacyDedupeKey).not.toBe(atEmitTime.legacyDedupeKey)
   })
 
   it('does not double-count when two events share one source', () => {

@@ -844,6 +844,10 @@ async function resolveOrphanedIdeaArtifacts(params: {
           actorId: ctx.actorId,
           decisionRequestId: sibling.id,
           status: 'accepted',
+          // `now` is the exact value this function's bulk UPDATE wrote to
+          // `reviewed_at` for every sibling, so the key is reproducible from
+          // the row afterwards. See `dedupeKeys.decisionRecorded`.
+          reviewedAt: now,
           tradeQueueItemId,
           proposalId: sibling.proposal_id ?? null,
           portfolioId,
@@ -902,6 +906,12 @@ async function markDRAccepted(decisionRequestId: string, ctx: ActionContext): Pr
       actorId: ctx.actorId,
       decisionRequestId,
       status: 'accepted',
+      // THIS is the path whose key was unreproducible. The trade does not
+      // exist yet — `linkDecisionRequestToTrade` writes `accepted_trade_id`
+      // after `createAcceptedTrade` returns — so the old key froze a field
+      // that the canonical row would contradict minutes later. `now` is what
+      // this UPDATE wrote to `reviewed_at` and it does not move again.
+      reviewedAt: now,
       tradeQueueItemId: row?.trade_queue_item_id ?? null,
       proposalId: row?.proposal_id ?? null,
       portfolioId: row?.portfolio_id ?? null,

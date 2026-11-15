@@ -82,6 +82,14 @@ function installUniqueIndex() {
 
 const BASE = { organizationId: 'org-1', actorId: 'user-1' }
 
+/**
+ * One resolving write's `reviewed_at`, which is now a decision event's
+ * identity. Written out at every `recordDecisionRecorded` call site rather
+ * than folded into BASE, so that a case which deliberately uses a DIFFERENT
+ * instant is visibly different from one that reuses the same one.
+ */
+const REVIEWED_AT = '2026-11-15T12:00:00.123Z'
+
 beforeEach(() => {
   insertSpy.mockReset()
   portfolioOrg.value = 'org-1'
@@ -110,21 +118,83 @@ describe('idempotency: a retry cannot record the same action twice', () => {
     expect(await recordDecisionReverted(args)).toEqual({ written: false, duplicate: true })
   })
 
-  it('decision — a retried accept lands once even though reviewed_at moved', async () => {
+  it('decision — a retried emit over one resolving write lands once', async () => {
     installUniqueIndex()
-    // The real failure this guards: `updateDecisionRequest` stamps a fresh
-    // reviewed_at/updated_at on EVERY call, so a client that retries after
-    // losing the response re-writes the row with a new timestamp. A dedupe
-    // key derived from that timestamp would not collide, and the retry would
-    // record a second decision that never happened.
-    const args = { ...BASE, decisionRequestId: 'dr-1', status: 'accepted', acceptedTradeId: 'trade-9' }
+    // The retry that actually happens here is an EMIT retry: the UPDATE
+    // succeeded, the insert did not, and the caller tries again with the same
+    // inputs. The identity is the resolving write's own `reviewed_at`, so the
+    // second emit rebuilds the same key and collides.
+    //
+    // This case previously asserted that the key contained no timestamp at
+    // all, which the current epoch-millisecond encoding would have satisfied
+    // by accident — the key holds an instant but not in `YYYY-MM-DDT` form.
+    // Asserting the shape would therefore have passed while testing nothing.
+    // It asserts the behaviour instead.
+    const args = {
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted',
+      reviewedAt: REVIEWED_AT, acceptedTradeId: 'trade-9',
+    }
     await recordDecisionRecorded(args)
     const retry = await recordDecisionRecorded(args)
     expect(retry.duplicate).toBe(true)
 
     const keys = insertSpy.mock.calls.map(c => (c[0] as Record<string, unknown>).dedupe_key)
     expect(keys[0]).toBe(keys[1])
-    expect(keys[0]).not.toMatch(/\d{4}-\d{2}-\d{2}T/) // no timestamp in the key
+  })
+
+  it('decision — the key is reproducible from the canonical row, in any timestamp spelling', async () => {
+    installUniqueIndex()
+    // The reason the key carries epoch milliseconds and not the string. The
+    // live writer sends the browser's ISO form; a later reconciler reads the
+    // same instant back from PostgREST as `+00:00` with microseconds. If the
+    // key were the literal text, the reconciler would rebuild a key that
+    // never matched, decide the decision was uncaptured, and append a second
+    // event into an append-only table.
+    const asSentByBrowser = '2026-11-15T12:00:00.123Z'
+    const asReturnedByPostgrest = '2026-11-15T12:00:00.123456+00:00'
+
+    await recordDecisionRecorded({
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted', reviewedAt: asSentByBrowser,
+    })
+    const reconciled = await recordDecisionRecorded({
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted', reviewedAt: asReturnedByPostgrest,
+    })
+
+    expect(reconciled.duplicate).toBe(true)
+    const keys = insertSpy.mock.calls.map(c => (c[0] as Record<string, unknown>).dedupe_key)
+    expect(keys[0]).toBe(keys[1])
+
+    // ...and the instant is genuinely IN the key, not merely ignored. Without
+    // this, a key that dropped `reviewed_at` altogether would satisfy the
+    // assertion above by collapsing every resolution of the request into one
+    // event — which is the failure in the other direction.
+    await recordDecisionRecorded({
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted',
+      reviewedAt: '2026-11-15T14:30:00.000Z',
+    })
+    const laterKey = (insertSpy.mock.calls[2][0] as Record<string, unknown>).dedupe_key
+    expect(laterKey).not.toBe(keys[0])
+  })
+
+  it('decision — the key does NOT embed the accepted trade, which is written later', async () => {
+    installUniqueIndex()
+    // The defect this replaces. `markDRAccepted` resolves the request and
+    // emits before `createAcceptedTrade` runs, so the trade id is null at
+    // emit time and `linkDecisionRequestToTrade` fills it in afterwards. A
+    // key naming the trade froze a field the canonical row would contradict
+    // minutes later, which is why reconciliation could not match it.
+    //
+    // Same request, same resolving instant, trade id absent then present:
+    // one decision, so one event.
+    await recordDecisionRecorded({
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted',
+      reviewedAt: REVIEWED_AT, acceptedTradeId: null,
+    })
+    const afterLink = await recordDecisionRecorded({
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted',
+      reviewedAt: REVIEWED_AT, acceptedTradeId: 'trade-9',
+    })
+    expect(afterLink.duplicate).toBe(true)
   })
 
   it('recommendation — an identical resubmission lands once', async () => {
@@ -151,16 +221,24 @@ describe('distinctness: a genuinely different action is still a new event', () =
 
   it('accept → revert → accept-again records two decisions, not one', async () => {
     installUniqueIndex()
-    // Each accept produces a NEW accepted_trade, and the trade id is in the
-    // key — so the second accept is correctly distinct. Without the trade id
-    // the second decision would be swallowed as a duplicate of the first and
-    // the record would show one decision for two.
+    // Two resolutions of one request, so two events. The discriminator is
+    // each resolution's own `reviewed_at`: a revert sets the request back to
+    // `pending` and leaves `reviewed_at` alone, and the re-accept overwrites
+    // it with a new instant.
+    //
+    // This is what the old key CLAIMED to do with the accepted trade id and
+    // did not: the id is null at emit time on the paths that matter, so both
+    // accepts produced `...:accepted:no-trade` and the second was swallowed.
+    // Here the trade ids are deliberately left out, to show the distinction
+    // comes from the resolution instant and not from them.
     const d1 = await recordDecisionRecorded({
-      ...BASE, decisionRequestId: 'dr-1', status: 'accepted', acceptedTradeId: 'trade-1',
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted',
+      reviewedAt: '2026-11-15T12:00:00.000Z',
     })
     await recordDecisionReverted({ ...BASE, acceptedTradeId: 'trade-1' })
     const d2 = await recordDecisionRecorded({
-      ...BASE, decisionRequestId: 'dr-1', status: 'accepted', acceptedTradeId: 'trade-2',
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted',
+      reviewedAt: '2026-11-15T14:30:00.000Z',
     })
     expect(d1.written).toBe(true)
     expect(d2.written).toBe(true)
@@ -168,8 +246,12 @@ describe('distinctness: a genuinely different action is still a new event', () =
 
   it('the same request rejected then (after reopen) deferred is two decisions', async () => {
     installUniqueIndex()
-    expect((await recordDecisionRecorded({ ...BASE, decisionRequestId: 'dr-1', status: 'rejected' })).written).toBe(true)
-    expect((await recordDecisionRecorded({ ...BASE, decisionRequestId: 'dr-1', status: 'deferred' })).written).toBe(true)
+    expect((await recordDecisionRecorded({
+      ...BASE, decisionRequestId: 'dr-1', status: 'rejected', reviewedAt: REVIEWED_AT,
+    })).written).toBe(true)
+    expect((await recordDecisionRecorded({
+      ...BASE, decisionRequestId: 'dr-1', status: 'deferred', reviewedAt: REVIEWED_AT,
+    })).written).toBe(true)
   })
 
   it('two different trades are two executions', async () => {
@@ -192,7 +274,9 @@ describe('failure isolation: memory never breaks the portfolio action', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     insertSpy.mockRejectedValue(new Error('Failed to fetch'))
     await expect(
-      recordDecisionRecorded({ ...BASE, decisionRequestId: 'dr-1', status: 'accepted' }),
+      recordDecisionRecorded({
+        ...BASE, decisionRequestId: 'dr-1', status: 'accepted', reviewedAt: REVIEWED_AT,
+      }),
     ).resolves.toEqual({ written: false, duplicate: false })
   })
 
@@ -208,7 +292,9 @@ describe('failure isolation: memory never breaks the portfolio action', () => {
 describe('honesty: events say what happened, never why', () => {
   it('decision.recorded carries a status and nothing resembling a reason', async () => {
     installUniqueIndex()
-    await recordDecisionRecorded({ ...BASE, decisionRequestId: 'dr-1', status: 'rejected' })
+    await recordDecisionRecorded({
+      ...BASE, decisionRequestId: 'dr-1', status: 'rejected', reviewedAt: REVIEWED_AT,
+    })
     const row = insertSpy.mock.calls[0][0] as Record<string, any>
     expect(row.payload).toEqual({ status: 'rejected' })
     for (const forbidden of ['rationale', 'reason', 'decision_note', 'note', 'thesis']) {
@@ -256,7 +342,7 @@ describe('shape: every event is navigable back to canonical truth', () => {
       ...BASE, tradeQueueItemId: 'tqi-1', decisionRequestId: 'dr-1',
     }), 'idea', 'decision_requests'],
     ['decision.recorded', () => recordDecisionRecorded({
-      ...BASE, decisionRequestId: 'dr-1', status: 'accepted',
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted', reviewedAt: REVIEWED_AT,
     }), 'decision', 'decision_requests'],
     ['decision.reverted', () => recordDecisionReverted({
       ...BASE, acceptedTradeId: 'trade-9',
@@ -284,7 +370,7 @@ describe('shape: every event is navigable back to canonical truth', () => {
       ...BASE, tradeQueueItemId: 'tqi-1', decisionRequestId: 'dr-1',
     })
     await recordDecisionRecorded({
-      ...BASE, decisionRequestId: 'dr-1', status: 'accepted',
+      ...BASE, decisionRequestId: 'dr-1', status: 'accepted', reviewedAt: REVIEWED_AT,
       tradeQueueItemId: 'tqi-1', acceptedTradeId: 'trade-1',
     })
     await recordExecutionRecorded({

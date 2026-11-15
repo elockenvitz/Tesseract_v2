@@ -67,7 +67,7 @@
  */
 
 import { supabase } from '../supabase'
-import { dedupeKeys, type LifecycleEventType } from './lifecycle-events'
+import { dedupeKeys, legacyDedupeKeys, type LifecycleEventType } from './lifecycle-events'
 
 /**
  * When each writer began to exist, as a date the DB can compare against.
@@ -93,8 +93,18 @@ export interface CaptureRow {
   sourceId: string
   /** The event that should exist for it. */
   expectedEventType: LifecycleEventType
-  /** The deterministic key that event would carry. */
+  /** The deterministic key that event would carry, built today. */
   dedupeKey: string
+  /**
+   * The key the SAME row would have carried under the pre-2026-11-15 formula,
+   * on `decision.recorded` only. Null for every other event type.
+   *
+   * Reported, not matched on. It is here so that a future backfill can look
+   * for either shape before inserting, and so the count of rows still
+   * carrying the old shape is observable without re-deriving it. The two
+   * production rows that carry it are not rewritten.
+   */
+  legacyDedupeKey: string | null
   /** When the canonical mutation happened. */
   occurredAt: string
   verdict: CaptureVerdict
@@ -136,43 +146,40 @@ export interface ReconcileInput {
    * The `(event_type, source_id)` pairs `memory_events` already holds, as
    * `"<event_type>|<source_id>"`.
    *
-   * ── Why NOT the dedupe key, which was the first design ───────────────
+   * ── Why NOT the dedupe key, even now that the key is sound ───────────
    *
-   * Matching on the writers' `dedupe_key` looks obviously right and is
-   * wrong, and production says so. `decision.recorded`'s key is
+   * Matching on the writers' `dedupe_key` looks obviously right. It was
+   * tried, and production refuted it. `decision.recorded` was keyed
    *
    *     decision.recorded:<drId>:<status>:<acceptedTradeId ?? 'no-trade'>
    *
-   * and on the inbox accept path the decision request is resolved — and the
-   * event emitted — BEFORE the accepted trade exists. `accepted_trade_id`
-   * is written by a later call. So both `decision.recorded` rows in
-   * production carry `...:accepted:no-trade`, while the rows they describe
-   * now carry a real trade id. Rebuilding the key from current state
-   * reproduces neither.
+   * and on the inbox accept path and `markDRAccepted` the request is
+   * resolved — and the event emitted — BEFORE the trade exists;
+   * `accepted_trade_id` is written by a later call. So both live
+   * `decision.recorded` rows carry `...:accepted:no-trade` while the rows
+   * they describe now carry a real trade id.
    *
    * Measured 2026-11-15: key matching reported 0 captured / 4 missing;
-   * matching on `(event_type, source_id)` reports 2 captured / 2 missing,
+   * matching on `(event_type, source_id)` reported 2 captured / 2 missing,
    * which is the truth.
    *
-   * This matters well beyond the detector, and is written up rather than
-   * worked around silently:
+   * The key itself has since been fixed — it is now derived from
+   * `reviewed_at`, which the resolving statement writes, so it IS
+   * reproducible from the canonical row. See `dedupeKeys` in
+   * `lifecycle-events.ts`. Two things follow, and neither makes key
+   * matching correct here:
    *
-   *   1. A key-based BACKFILL would insert a second event for every
-   *      decision already recorded — it would rebuild the trade-bearing
-   *      key, miss, and append. Into an append-only table. The brief's
-   *      "retries cannot multiply the same historical fact" requirement is
-   *      not met by the current key.
-   *   2. The key's documented purpose is not achieved. It includes
-   *      `accepted_trade_id` so that accept -> revert -> accept-again reads
-   *      as two decisions; because the value is null at emit time on that
-   *      path, both accepts produce `...:accepted:no-trade` and the SECOND
-   *      one is swallowed as a duplicate. The key currently does the
-   *      opposite of what its comment claims.
-   *
-   * Changing the writer's key is deliberately NOT done here: it would make
-   * every existing row unmatchable by the new key, and it is a change to an
-   * append-only table's idempotency contract, which deserves its own
-   * review. Recommended fix is recorded in the phase report.
+   *   1. The two rows already in production carry the OLD shape and are
+   *      not rewritten. Rewriting an append-only history so a new formula
+   *      matches it is rewriting decision history to suit the code. A
+   *      key-matching detector would therefore still report them missing.
+   *      `legacyDedupeKey` on each row is how a reader or a future backfill
+   *      recognises them instead.
+   *   2. `(event_type, source_id)` is the weaker, safer predicate: it asks
+   *      "is there any event about this row", which is the question a
+   *      capture detector should ask. A detector keyed on identity would
+   *      report a miss every time the identity formula changed, which is a
+   *      property of the code and not of the data.
    */
   presentEventKeys: Iterable<string>
   epoch?: string
@@ -216,7 +223,10 @@ export function reconcileCapture(input: ReconcileInput): CaptureReport {
       sourceType: 'decision_requests',
       sourceId: d.id,
       expectedEventType: 'decision.recorded',
-      dedupeKey: dedupeKeys.decisionRecorded(d.id, d.status, d.acceptedTradeId ?? null),
+      dedupeKey: dedupeKeys.decisionRecorded(d.id, d.status, d.reviewedAt),
+      legacyDedupeKey: legacyDedupeKeys.decisionRecorded(
+        d.id, d.status, d.acceptedTradeId ?? null,
+      ),
       occurredAt: d.reviewedAt ?? '',
       verdict: verdictFor(d.reviewedAt, epoch, present.has(eventKey('decision.recorded', d.id))),
     })
@@ -228,6 +238,7 @@ export function reconcileCapture(input: ReconcileInput): CaptureReport {
       sourceId: t.id,
       expectedEventType: 'execution.recorded',
       dedupeKey: dedupeKeys.executionRecorded(t.id),
+      legacyDedupeKey: null,
       occurredAt: t.createdAt,
       verdict: verdictFor(t.createdAt, epoch, present.has(eventKey('execution.recorded', t.id))),
     })
@@ -241,6 +252,7 @@ export function reconcileCapture(input: ReconcileInput): CaptureReport {
         sourceId: t.id,
         expectedEventType: 'decision.reverted',
         dedupeKey: dedupeKeys.decisionReverted(t.id),
+        legacyDedupeKey: null,
         occurredAt: t.revertedAt,
         verdict: verdictFor(t.revertedAt, epoch, present.has(eventKey('decision.reverted', t.id))),
       })

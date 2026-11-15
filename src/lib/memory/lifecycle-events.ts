@@ -175,6 +175,112 @@ export function __resetOrgCacheForTests() {
   orgByPortfolio.clear()
 }
 
+/* ──────────────────────── canonical event identity ─────────────────────── */
+
+/**
+ * A timestamp reduced to the one form both sides of a comparison can agree on.
+ *
+ * This exists because a dedupe key containing a timestamp is only idempotent
+ * if the live writer and a later reconciler render that timestamp identically,
+ * and by default they do not:
+ *
+ *   the browser sends   2026-11-15T12:00:00.123Z     (JS, millisecond)
+ *   Postgres stores     2026-11-15 12:00:00.123+00   (timestamptz, microsecond)
+ *   PostgREST returns   2026-11-15T12:00:00.123+00:00
+ *
+ * Three different strings for one instant. Keying on any of them literally
+ * would mean the reconciler rebuilt a key that never matched, appended a
+ * second event into an append-only table, and called it a repair.
+ *
+ * So the key carries epoch MILLISECONDS as an integer: no colons to collide
+ * with the key's own separator, no timezone spelling, no trailing-zero
+ * question. Microseconds are truncated on both sides identically. Two
+ * resolutions of the same request inside one millisecond would collapse to one
+ * event, which is the correct answer for a double-submit and is not reachable
+ * by a human through two network round trips.
+ */
+export function eventInstantToken(value: string | null | undefined): string {
+  if (!value) return 'no-instant'
+  const t = Date.parse(value)
+  if (!Number.isFinite(t)) return 'no-instant'
+  return String(t)
+}
+
+/**
+ * The identity of each event, as one definition.
+ *
+ * Exported for the detector, the backfill dry-run and the tests so the key
+ * cannot drift from the writers — and the writers below now CALL these rather
+ * than re-deriving the same string inline, which is what let
+ * `decision.recorded` drift in the first place.
+ *
+ * ── Why `decision.recorded` is keyed on `reviewed_at` ────────────────────
+ *
+ * It used to be keyed on `accepted_trade_id`, and that was wrong in both
+ * directions at once. Measured in production on 2026-11-15:
+ *
+ *   both live `decision.recorded` rows carry  ...:accepted:no-trade
+ *   both decision requests they describe now carry a real accepted_trade_id
+ *
+ * because on the inbox path and on `markDRAccepted` the request is resolved —
+ * and the event emitted — BEFORE the trade exists; `accepted_trade_id` is
+ * written by a separate later call (`linkDecisionRequestToTrade`). The
+ * consequences:
+ *
+ *   1. Reconciliation was impossible. A backfill rebuilding the key from the
+ *      canonical row produces the trade-bearing form, misses, and appends a
+ *      SECOND event for a decision already recorded. The detector had to
+ *      match on `(event_type, source_id)` instead and said so at length.
+ *   2. The key did the OPPOSITE of its stated purpose. It named the trade so
+ *      that accept → revert → accept-again read as two decisions; because the
+ *      value is null at emit time, both accepts produced
+ *      `...:accepted:no-trade` and the second was swallowed as a duplicate.
+ *
+ * `reviewed_at` has neither problem. It is written by the SAME statement that
+ * sets the status, so it is final at emit time and reproducible from the row
+ * afterwards; and a revert leaves it in place while a re-accept overwrites it
+ * with a new instant, so the two accepts are genuinely two keys.
+ *
+ * The honest residual: if the resolving UPDATE itself runs twice (a true
+ * double-submit, not an emit retry), it mints a second `reviewed_at` and
+ * yields a second event. That is a fair reading of the data — after the second
+ * UPDATE the canonical row says the decision was made at the later instant and
+ * no longer records the earlier one — and it is the case the old key handled
+ * by accident while breaking the two above. An emit retry over one UPDATE,
+ * which is the retry that actually happens here, lands exactly once.
+ */
+export const dedupeKeys = {
+  recommendationSubmitted: (
+    drId: string, proposalId: string | null, sizingMode: string | null,
+    weight: number | null, shares: number | null,
+  ) => [
+    'recommendation.submitted', drId, proposalId ?? 'no-proposal',
+    sizingMode ?? 'no-mode', weight ?? 'no-weight', shares ?? 'no-shares',
+  ].join(':'),
+  decisionRecorded: (drId: string, status: string, reviewedAt: string | null) =>
+    ['decision.recorded', drId, status, eventInstantToken(reviewedAt)].join(':'),
+  decisionReverted: (acceptedTradeId: string) => `decision.reverted:${acceptedTradeId}`,
+  executionRecorded: (acceptedTradeId: string) => `execution.recorded:${acceptedTradeId}`,
+}
+
+/**
+ * The `decision.recorded` key as it was written before 2026-11-15.
+ *
+ * READ-ONLY. Nothing may emit with this. It exists so that a future backfill
+ * can recognise the rows that already carry the old shape instead of appending
+ * duplicates beside them, and so the detector can report how many of those
+ * remain. Production holds exactly two such rows and they are NOT rewritten:
+ * editing an append-only history to match a new formula would be rewriting
+ * decision history to suit the code.
+ *
+ * Frozen deliberately. If the current key changes again, this stays as it is
+ * and a second legacy entry joins it.
+ */
+export const legacyDedupeKeys = {
+  decisionRecorded: (drId: string, status: string, acceptedTradeId: string | null) =>
+    ['decision.recorded', drId, status, acceptedTradeId ?? 'no-trade'].join(':'),
+}
+
 /* ─────────────────────────── the four writers ───────────────────────────── */
 
 export interface RecommendationSubmittedInput {
@@ -240,14 +346,13 @@ export async function recordRecommendationSubmitted(input: RecommendationSubmitt
       weight: input.weight,
       shares: input.shares,
     },
-    dedupeKey: [
-      'recommendation.submitted',
+    dedupeKey: dedupeKeys.recommendationSubmitted(
       input.decisionRequestId,
-      input.proposalId ?? 'no-proposal',
-      input.sizingMode ?? 'no-mode',
-      input.weight ?? 'no-weight',
-      input.shares ?? 'no-shares',
-    ].join(':'),
+      input.proposalId ?? null,
+      input.sizingMode ?? null,
+      input.weight ?? null,
+      input.shares ?? null,
+    ),
     provenance: input.provenance ?? 'ui:recommendation',
   })
 }
@@ -258,6 +363,20 @@ export interface DecisionRecordedInput {
   decisionRequestId: string
   /** accepted | accepted_with_modification | rejected | deferred */
   status: string
+  /**
+   * `decision_requests.reviewed_at` AS THE RESOLVING WRITE SET IT. Required,
+   * not optional, and that is the whole point — see `dedupeKeys` below.
+   *
+   * Pass the value the UPDATE actually wrote (read back from its `returning`
+   * row, or the exact string that was sent). Never `new Date()` at the moment
+   * of the emit: a freshly minted clock reading is not the canonical row's
+   * identity and would make the key unreproducible from the database.
+   *
+   * Required so that a sixth decision path cannot be added without supplying
+   * it. The compiler is the gate; a nullable field would have let the defect
+   * this replaces reappear silently.
+   */
+  reviewedAt: string | null
   tradeQueueItemId?: string | null
   proposalId?: string | null
   portfolioId?: string | null
@@ -279,9 +398,9 @@ export interface DecisionRecordedInput {
  * assert durable knowledge of why, which the product does not have. When
  * structured reasons exist (a later slice) they belong in their own event.
  *
- * Dedupe includes `accepted_trade_id` so that accept → revert → accept-again
- * is two distinct decisions — because it is — while a retry of one accept,
- * which produces no new trade, lands once.
+ * Dedupe is the request plus the resolution's own timestamp. See `dedupeKeys`
+ * for why it is not the accepted trade id, which was the previous choice and
+ * was unsound in both directions.
  */
 export async function recordDecisionRecorded(input: DecisionRecordedInput) {
   return emit({
@@ -299,12 +418,11 @@ export async function recordDecisionRecorded(input: DecisionRecordedInput) {
       accepted_trade_id: input.acceptedTradeId,
     },
     payload: { status: input.status },
-    dedupeKey: [
-      'decision.recorded',
+    dedupeKey: dedupeKeys.decisionRecorded(
       input.decisionRequestId,
       input.status,
-      input.acceptedTradeId ?? 'no-trade',
-    ].join(':'),
+      input.reviewedAt,
+    ),
     provenance: input.provenance ?? 'ui:decision-inbox',
   })
 }
@@ -353,7 +471,7 @@ export async function recordDecisionReverted(input: DecisionRevertedInput) {
       trade_queue_item_id: input.tradeQueueItemId,
       portfolio_id: input.portfolioId,
     },
-    dedupeKey: `decision.reverted:${input.acceptedTradeId}`,
+    dedupeKey: dedupeKeys.decisionReverted(input.acceptedTradeId),
     provenance: input.provenance ?? 'ui:decision-inbox',
   })
 }
@@ -404,22 +522,7 @@ export async function recordExecutionRecorded(input: ExecutionRecordedInput) {
       asset_id: input.assetId,
     },
     payload: { action: input.action },
-    dedupeKey: `execution.recorded:${input.acceptedTradeId}`,
+    dedupeKey: dedupeKeys.executionRecorded(input.acceptedTradeId),
     provenance: input.provenance ?? 'ui:trade-lab',
   })
-}
-
-/** Exported for the backfill dry-run and for tests, so keys cannot drift. */
-export const dedupeKeys = {
-  recommendationSubmitted: (
-    drId: string, proposalId: string | null, sizingMode: string | null,
-    weight: number | null, shares: number | null,
-  ) => [
-    'recommendation.submitted', drId, proposalId ?? 'no-proposal',
-    sizingMode ?? 'no-mode', weight ?? 'no-weight', shares ?? 'no-shares',
-  ].join(':'),
-  decisionRecorded: (drId: string, status: string, acceptedTradeId: string | null) =>
-    ['decision.recorded', drId, status, acceptedTradeId ?? 'no-trade'].join(':'),
-  decisionReverted: (acceptedTradeId: string) => `decision.reverted:${acceptedTradeId}`,
-  executionRecorded: (acceptedTradeId: string) => `execution.recorded:${acceptedTradeId}`,
 }
