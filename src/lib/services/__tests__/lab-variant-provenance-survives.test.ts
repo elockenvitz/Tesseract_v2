@@ -9,18 +9,48 @@
  * `ON DELETE SET NULL`, so each one erased the link in the same operation
  * that wrote it.
  *
- * Measured on production 2026-11-15:
+ * ── The numbers, reconciled ──────────────────────────────────────────────
  *
- *     accepted_trades                                    53
- *       carrying a lab_variant_id                         0
- *     accepted_trades WHERE source = 'simulation'        10
- *       carrying a lab_variant_id                         0
- *     lab_variants                                       21
- *       carrying a decision_request_id                    0
+ * Measured on production 2026-11-15. The denominator that matters is NOT the
+ * whole table: 43 of the 53 trades came from `adhoc` or `inbox` and were
+ * never meant to carry a variant, so "0 of 53" overstates the surface and
+ * understates the defect. The population that should be linked is the trades
+ * Trade Lab committed, and the writer's epoch for them is 2026-03-20 (commit
+ * 640b3503, where all three `lab_variant_id` writes were introduced):
  *
- * So ten trades assert in an enum that they came from a simulation while the
- * typed edge that would make that traceable is empty. The column was written
- * on every Trade Lab execute and survived none of them.
+ *     accepted_trades                                       53
+ *       source = 'simulation'                               10   <- the population
+ *       source = 'simulation' AND created_at >= 2026-03-20   10   (all of them)
+ *       of those, carrying a lab_variant_id                   0   <- 0%
+ *     accepted_trades carrying a lab_variant_id, any source   0
+ *     lab_variants                                           21
+ *       visibility_tier = 'active'                           21
+ *       visibility_tier = 'archive'                           0
+ *       deleted_at IS NOT NULL                                0
+ *
+ * So the rate is 0 of 10, not 0 of 53, and unlike the Memory Spine's capture
+ * figure it does not soften under the epoch correction: every simulation
+ * trade in production postdates the writer. Ten trades assert in an enum that
+ * they came from a simulation while the typed edge that would make that
+ * traceable is empty. The column was written on every Trade Lab execute and
+ * survived none of them.
+ *
+ * ── Acceptance, stated so it can only be met one way ─────────────────────
+ *
+ * Nothing is backfilled: the 53 existing trades keep their NULL, because the
+ * variants they pointed at were hard-deleted and are gone. The criterion is
+ * therefore about the NEXT execute, and it is three numbers moving together.
+ * After one Trade Lab Execute of one variant:
+ *
+ *     accepted_trades                                  53 -> 54
+ *     accepted_trades carrying a lab_variant_id          0 -> 1
+ *     lab_variants WHERE visibility_tier = 'archive'     0 -> 1
+ *     lab_variants (total)                              21 -> 22   (never lower)
+ *
+ * The last line is what makes it unfalsifiable by the old behaviour: the
+ * previous code hard-deleted the variant, so the total could not rise and the
+ * archive count could not leave zero. `supabase/tests/lab-variant-provenance-counts.sql`
+ * prints all four.
  *
  * ── What the fix is ──────────────────────────────────────────────────────
  *
