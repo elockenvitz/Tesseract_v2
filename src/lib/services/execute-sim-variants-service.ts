@@ -45,7 +45,7 @@ import {
   resolveOrganizationIdForPortfolio,
 } from '../memory/lifecycle-events'
 import { createAcceptedTrade, type CreateAcceptedTradeInput } from './accepted-trade-service'
-import { deleteVariant } from './intent-variant-service'
+import { archiveCommittedVariant } from './intent-variant-service'
 import { resolveIdeaAfterDecision, type FanInResult } from '../decisions/decision-fan-in'
 import type {
   IntentVariantWithDetails,
@@ -1127,9 +1127,22 @@ export async function executeSimVariants(
       await Promise.all([
         bulkDeleteSimulationTradesForAssets(portfolioId, committedAssetIds),
         Promise.all(
+          /*
+           * ARCHIVED, not deleted.
+           *
+           * `createAcceptedTrade` above wrote `lab_variant_id = v.id`, the
+           * only record of which simulated line produced this trade. The FK
+           * is ON DELETE SET NULL, so hard-deleting the variant here erased
+           * that link seconds after writing it. Measured on production
+           * 2026-11-15: 0 of 53 accepted trades carry a variant id, including
+           * all 10 whose `source` is 'simulation'.
+           *
+           * `getVariantsForLab` filters `visibility_tier = 'active'`, so the
+           * variant still leaves the working set and the Lab is unchanged.
+           */
           committedVariantIds.map(vid =>
-            deleteVariant(vid, context).catch(e => {
-              console.warn('[ExecuteSim] deleteVariant failed (non-fatal, trade already committed)', vid, e)
+            archiveCommittedVariant(vid, context).catch(e => {
+              console.warn('[ExecuteSim] archiveCommittedVariant failed (non-fatal, trade already committed)', vid, e)
             }),
           ),
         ),

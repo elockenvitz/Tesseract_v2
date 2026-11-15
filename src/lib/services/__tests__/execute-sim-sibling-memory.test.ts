@@ -99,7 +99,10 @@ vi.mock('../accepted-trade-service', () => ({
     id: `at-for-${input.decision_request_id}`, asset_id: input.asset_id,
   })),
 }))
-vi.mock('../intent-variant-service', () => ({ deleteVariant: vi.fn(async () => {}) }))
+vi.mock('../intent-variant-service', () => ({
+  deleteVariant: vi.fn(async () => {}),
+  archiveCommittedVariant: vi.fn(async () => {}),
+}))
 
 import { executeSimVariants } from '../execute-sim-variants-service'
 import { resolveOrganizationIdForPortfolio } from '../../memory/lifecycle-events'

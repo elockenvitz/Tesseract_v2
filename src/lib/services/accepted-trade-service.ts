@@ -13,7 +13,7 @@
 
 import { supabase } from '../supabase'
 import { updateDecisionRequest } from './decision-request-service'
-import { deleteVariant } from './intent-variant-service'
+import { archiveCommittedVariant } from './intent-variant-service'
 import { moveTradeIdea, reconcileOutcomeAfterRevert } from './trade-idea-service'
 import { FINAL_STAGE } from '../ideas/stage-model'
 import { resolveAcceptSizingBasis, computeAcceptSizing, isRefusal } from '../decisions/accept-sizing'
@@ -1319,15 +1319,21 @@ export async function bulkPromoteFromSimulation(
     }
   }
 
-  // Delete promoted variants and their simulation_trades from simulation.
+  // Archive promoted variants and their simulation_trades from simulation.
   // This removes them from the Trade Lab view so the simulation reverts
   // to baseline for those assets. Committed trades live in Trade Book.
+  //
+  // ARCHIVED, not deleted. The insert above set `lab_variant_id: variant.id`
+  // and `source: 'simulation'`; the FK is ON DELETE SET NULL, so deleting the
+  // variant here erased the link in the same loop that wrote it. Measured on
+  // production 2026-11-15: 0 of 53 accepted trades carry a variant id,
+  // including all 10 whose source is 'simulation'.
   const promotedAssetIds = variants.map(v => v.asset_id)
   for (const variantId of variantIds) {
     try {
-      await deleteVariant(variantId, context)
+      await archiveCommittedVariant(variantId, context)
     } catch (e) {
-      console.warn(`[AcceptedTrade] Failed to delete variant ${variantId}:`, e)
+      console.warn(`[AcceptedTrade] Failed to archive variant ${variantId}:`, e)
     }
   }
 
@@ -2135,12 +2141,14 @@ export async function bulkPromoteWithBatch(params: {
     }
   }
 
-  // Delete promoted variants from simulation
+  // Archive promoted variants from simulation. Not deleted: the insert above
+  // set `lab_variant_id: variant.id`, and the FK is ON DELETE SET NULL, so a
+  // delete here erases this trade's only link to the line that produced it.
   for (const variantId of params.variantIds) {
     try {
-      await deleteVariant(variantId, params.context)
+      await archiveCommittedVariant(variantId, params.context)
     } catch (e) {
-      console.warn(`[AcceptedTrade] Failed to delete variant ${variantId}:`, e)
+      console.warn(`[AcceptedTrade] Failed to archive variant ${variantId}:`, e)
     }
   }
 
