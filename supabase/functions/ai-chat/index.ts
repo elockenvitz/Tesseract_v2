@@ -2299,7 +2299,7 @@ async function executeResearchTool(
       const recRows = recs.data || [];
       const recIds = recRows.map((r: any) => r.id).filter(Boolean);
 
-      const [rulings, trades, reviews, outcomes] = await Promise.all([
+      const [rulings, trades, outcomes] = await Promise.all([
         recIds.length
           ? runQuery<any[]>("get_decisions", "pm_rulings",
               supabase.from("decision_requests")
@@ -2324,14 +2324,6 @@ async function executeResearchTool(
             .eq("asset_id", asset.id)
             .order("created_at", { ascending: false })
             .limit(12)),
-        recIds.length
-          ? runQuery<any[]>("get_decisions", "decision_reviews",
-              supabase.from("decision_reviews")
-                .select("id, decision_id, decision_quality, thesis_played_out, sizing_quality, " +
-                        "process_note, reviewed_by, reviewed_at")
-                .in("decision_id", recIds)
-                .limit(20))
-          : Promise.resolve({ data: [] as any[], failed: false }),
         runQuery<any[]>("get_decisions", "price_target_outcomes",
           supabase.from("price_target_outcomes")
             .select("id, price_target_id, scenario_type, target_price, target_date, status, " +
@@ -2340,6 +2332,50 @@ async function executeResearchTool(
             .order("created_at", { ascending: false })
             .limit(10)),
       ]);
+
+      /*
+       * ── Stage 3: the reviews ──────────────────────────────────────────
+       *
+       * A third pass, because `decision_reviews.decision_id` is POLYMORPHIC
+       * and the ids it can name are not all known until the rulings land.
+       *
+       * It holds a `trade_queue_items` id when the PM acted on an idea, a
+       * `decision_requests` id when the PM PASSED, and a
+       * `portfolio_trade_events` id for a discretionary trade -- see
+       * `DecisionAccountabilityPage`, which derives the kind from
+       * (source, category), and `decision_reviews.subject_type`, which since
+       * 20261115120000 records the database's own answer on the row.
+       *
+       * This offered `recIds` ALONE. So a review of a decision the PM passed
+       * on -- the "why did we not buy it" half of the record, and the half
+       * this tool's own instructions tell the model never to merge with the
+       * others -- was invisible to the model, which then reported that no
+       * review existed. Reviews of ideas happened to be found, which is why
+       * it looked like it worked: both reviews in production as of
+       * 2026-11-15 name a `trade_queue_items` row.
+       *
+       * STILL MISSING, and deliberately not fixed here: a review of a
+       * DISCRETIONARY trade, whose `decision_id` is a
+       * `portfolio_trade_events` id. This tool does not read that table at
+       * all, so there is no id to offer. Adding it changes what the four
+       * record kinds mean to the model and belongs in its own change.
+       */
+      const rulingIds = (rulings.data || []).map((r: any) => r.id).filter(Boolean);
+      const reviewSubjectIds = [...new Set([...recIds, ...rulingIds])];
+      const reviews = reviewSubjectIds.length
+        ? await runQuery<any[]>("get_decisions", "decision_reviews",
+            supabase.from("decision_reviews")
+              /* `subject_type` is deliberately NOT selected. The column
+               * arrives with 20261115120000, which is not applied, and
+               * PostgREST fails the WHOLE query with 42703 on an unknown
+               * column -- so naming it here would take `get_decisions` out
+               * entirely until the migration landed. This fix must not
+               * depend on that one. */
+              .select("id, decision_id, decision_quality, thesis_played_out, " +
+                      "sizing_quality, process_note, reviewed_by, reviewed_at")
+              .in("decision_id", reviewSubjectIds)
+              .limit(20))
+        : { data: [] as any[], failed: false };
 
       const badStage = rulings.failed ? "pm_rulings"
         : trades.failed ? "committed_trades"

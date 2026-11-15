@@ -127,6 +127,18 @@ export function useUpsertDecisionReview() {
        *  applied, or for an id that resolves to nothing. */
       subjectType?: 'idea' | 'decision' | 'trade'
       organizationId?: string | null
+      /** Where the reviewed decision sits, for the event's `related` map.
+       *
+       *  Measured on production 2026-11-15: both `decision.reviewed` rows
+       *  carry `related = {}`. Every other lifecycle event carries pointers --
+       *  `execution.recorded` names the asset, the portfolio, the trade, the
+       *  request and the idea -- so the Spine's record of what the desk
+       *  CONCLUDED is the one kind of event reachable from nothing but its own
+       *  subject_id. Asking "what have we learned about this name" of the
+       *  event log returns nothing, while the same question of
+       *  `decision_reviews` answers fine. */
+      assetId?: string | null
+      portfolioId?: string | null
     }) => {
       const { decisionId, userId, patch } = args
       /*
@@ -208,6 +220,30 @@ export function useUpsertDecisionReview() {
           subject_id: decisionId,
           source_type: 'decision_reviews',
           source_id: review.id,
+          /*
+           * Pointers, so the conclusion is reachable from the asset and the
+           * portfolio rather than only from its own subject_id.
+           *
+           * The typed ids come from the SERVER-resolved review row, not from
+           * the caller: the trigger decided which canonical table
+           * `decision_id` names, so exactly one of the three is set and it
+           * cannot contradict `subject_type`. Before the migration is applied
+           * all three are absent and `related` falls back to the asset and
+           * the portfolio alone, which is still strictly more than the `{}`
+           * both production rows carry.
+           *
+           * Nulls are stripped so an absent pointer is omitted rather than
+           * recorded as a known absence.
+           */
+          related: Object.fromEntries(
+            Object.entries({
+              asset_id: args.assetId ?? null,
+              portfolio_id: args.portfolioId ?? null,
+              trade_queue_item_id: review.trade_queue_item_id ?? null,
+              decision_request_id: review.decision_request_id ?? null,
+              portfolio_trade_event_id: review.portfolio_trade_event_id ?? null,
+            }).filter(([, v]) => v != null),
+          ),
           provenance: 'ui:outcomes',
           payload: {
             thesis_played_out: review.thesis_played_out,

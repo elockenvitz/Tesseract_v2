@@ -180,6 +180,68 @@ describe('the memory event follows the server-resolved subject', () => {
     expect(JSON.stringify(db.events[0])).not.toContain('sized too late')
   })
 
+  /*
+   * `related` is how a lifecycle event is reachable from anything other than
+   * its own subject_id. Measured on production 2026-11-15: both
+   * `decision.reviewed` rows carry `related = {}`, while every
+   * `execution.recorded` row names the asset, the portfolio, the trade, the
+   * request and the idea. So the Spine's record of what the desk CONCLUDED
+   * was the one kind of event that answered nothing about an asset.
+   */
+  describe('the conclusion is reachable from the asset and the portfolio', () => {
+    it('carries the asset, the portfolio and the server-resolved typed id', async () => {
+      await save({ ...baseArgs, assetId: 'asset-9', portfolioId: 'pf-3' })
+
+      expect(db.events[0].related).toEqual({
+        asset_id: 'asset-9',
+        portfolio_id: 'pf-3',
+        decision_request_id: 'dr-7',
+      })
+    })
+
+    it('takes the typed pointer from the server row, not from the caller', async () => {
+      // The row came back resolved as an idea. The event must point at the
+      // idea, even though this call passed the same `decisionId` it always
+      // does — the trigger decided which table it names.
+      db.upserted = serverRow({
+        subject_type: 'idea',
+        decision_request_id: null,
+        trade_queue_item_id: 'tqi-4',
+      })
+
+      await save({ ...baseArgs, assetId: 'asset-9', portfolioId: 'pf-3' })
+
+      const related = db.events[0].related as Row
+      expect(related.trade_queue_item_id).toBe('tqi-4')
+      expect(related.decision_request_id).toBeUndefined()
+    })
+
+    it('omits an absent pointer rather than recording a known absence', async () => {
+      // A null in `related` would read as "this decision has no portfolio",
+      // which is a claim. An absent key is the absence of a claim.
+      await save({ ...baseArgs, assetId: 'asset-9', portfolioId: null })
+
+      const related = db.events[0].related as Row
+      expect(Object.keys(related)).not.toContain('portfolio_id')
+      expect(related.asset_id).toBe('asset-9')
+    })
+
+    it('still carries the asset before the migration is applied', async () => {
+      // Pre-migration the row has no typed columns at all. Falling back to
+      // `{}` here would reproduce exactly the state production is in.
+      db.upserted = serverRow({
+        subject_type: undefined,
+        decision_request_id: undefined,
+        trade_queue_item_id: undefined,
+        portfolio_trade_event_id: undefined,
+      })
+
+      await save({ ...baseArgs, assetId: 'asset-9', portfolioId: 'pf-3', subjectType: 'decision' })
+
+      expect(db.events[0].related).toEqual({ asset_id: 'asset-9', portfolio_id: 'pf-3' })
+    })
+  })
+
   it('emits no event when no organisation is known', async () => {
     await save({ ...baseArgs, organizationId: null, subjectType: 'decision' })
     expect(db.events).toHaveLength(0)
