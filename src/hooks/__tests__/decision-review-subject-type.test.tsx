@@ -37,7 +37,32 @@ const db = vi.hoisted(() => ({
   events: [] as Row[],
   /** Rejection for the event insert, when a test wants one. */
   eventError: null as { message: string } | null,
+  /** The upsert payload, as sent. */
+  upsertPayload: null as Row | null,
+  /** The argument to `.select()` after the upsert, as sent. */
+  selectArg: undefined as unknown,
+  /**
+   * Behave like a database on which 20261115120000 has NOT been applied.
+   *
+   * PostgREST fails the WHOLE statement with 42703 on an unknown column, so
+   * on a pre-migration database naming any of the four new columns — in the
+   * payload or in a select list — takes the review panel out entirely rather
+   * than degrading. That is the broken path the gate below exists to catch.
+   */
+  preMigration: false,
 }))
+
+/** `decision_reviews` as it stands in production today. */
+const PRE_MIGRATION_COLUMNS = vi.hoisted(() => new Set([
+  'id', 'decision_id', 'organization_id',
+  'decision_quality', 'thesis_played_out', 'sizing_quality', 'process_note',
+  'reviewed_by', 'reviewed_at', 'created_at', 'updated_at',
+]))
+
+const MIGRATION_PENDING_COLUMNS = vi.hoisted(() => [
+  'subject_type', 'trade_queue_item_id', 'decision_request_id',
+  'portfolio_trade_event_id',
+])
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
@@ -51,10 +76,32 @@ vi.mock('../../lib/supabase', () => ({
         }
       }
       // decision_reviews
+      let failure: { message: string; code: string } | null = null
+      const undefinedColumn = (name: string) => ({
+        code: '42703',
+        message: `column decision_reviews.${name} does not exist`,
+      })
       const chain: Record<string, unknown> = {}
-      chain.upsert = () => chain
-      chain.select = () => chain
-      chain.single = async () => ({ data: db.upserted, error: null })
+      chain.upsert = (payload: Row) => {
+        db.upsertPayload = payload
+        if (db.preMigration) {
+          const unknown = Object.keys(payload).find(k => !PRE_MIGRATION_COLUMNS.has(k))
+          if (unknown) failure = undefinedColumn(unknown)
+        }
+        return chain
+      }
+      chain.select = (arg?: unknown) => {
+        db.selectArg = arg
+        if (db.preMigration && typeof arg === 'string' && arg !== '*') {
+          const unknown = arg.split(',').map(s => s.trim())
+            .find(c => c && !PRE_MIGRATION_COLUMNS.has(c))
+          if (unknown) failure = undefinedColumn(unknown)
+        }
+        return chain
+      }
+      chain.single = async () => failure
+        ? { data: null, error: failure }
+        : { data: db.upserted, error: null }
       return chain
     },
   },
@@ -106,6 +153,80 @@ beforeEach(() => {
   db.events.length = 0
   db.eventError = null
   db.upserted = serverRow()
+  db.upsertPayload = null
+  db.selectArg = undefined
+  db.preMigration = false
+})
+
+/**
+ * The review panel must work on a database where the migration is NOT applied.
+ *
+ * This is a shipping constraint, not a nicety. The frontend change and the
+ * migration are reviewed together but deploy separately, and the frontend goes
+ * first — so for some window the code runs against today's `decision_reviews`.
+ * If any statement named a column the migration adds, PostgREST would fail the
+ * whole statement with 42703 and saving a review would simply stop working.
+ *
+ * The protection is a backward-compatible READER, not a feature flag: reads
+ * use `select('*')` and the write names only columns that already exist, so
+ * the typed columns appear by themselves once the migration lands and no
+ * second deploy is needed. These cases hold that shape in place.
+ */
+describe('the review panel is safe while the migration is unapplied', () => {
+  it('saves and records the event against a pre-migration database', async () => {
+    db.preMigration = true
+    // What such a database returns: the row, without the four new columns.
+    db.upserted = serverRow({
+      subject_type: undefined,
+      trade_queue_item_id: undefined,
+      decision_request_id: undefined,
+      portfolio_trade_event_id: undefined,
+    })
+
+    const result = await save({ ...baseArgs, subjectType: 'idea', assetId: 'asset-9' })
+
+    expect(result.current.isError).toBe(false)
+    expect(db.events).toHaveLength(1)
+    expect(db.events[0].subject_type).toBe('idea')
+    expect(db.events[0].related).toEqual({ asset_id: 'asset-9' })
+  })
+
+  it('writes no column the migration has yet to add', async () => {
+    db.preMigration = true
+    await save({ ...baseArgs, subjectType: 'decision' })
+
+    const written = Object.keys(db.upsertPayload ?? {})
+    for (const column of MIGRATION_PENDING_COLUMNS) {
+      expect(written, `upsert must not write ${column}`).not.toContain(column)
+    }
+    // Belt and braces: the double would have failed the statement, so this
+    // also proves the assertion above is not the only thing holding the line.
+    expect(written.length).toBeGreaterThan(0)
+  })
+
+  it('reads the row whole rather than naming columns', async () => {
+    // `select('*')` is what makes this forward-compatible in BOTH directions:
+    // it cannot 42703 before the migration, and it starts returning the typed
+    // columns the moment the migration lands, with no second deploy.
+    db.preMigration = true
+    await save({ ...baseArgs, subjectType: 'decision' })
+
+    expect(db.selectArg === undefined || db.selectArg === '*').toBe(true)
+  })
+
+  it('the pre-migration double is not a rubber stamp', async () => {
+    // Standing Rule 3 applied to the double itself. If `preMigration` did not
+    // actually reject an unknown column, the three cases above would pass on
+    // a frontend that names `subject_type` and breaks in production.
+    db.preMigration = true
+    const { supabase } = await import('../../lib/supabase')
+    const { error } = await (supabase.from('decision_reviews') as never as {
+      upsert: (p: Row) => { select: () => { single: () => Promise<{ error: unknown }> } }
+    }).upsert({ decision_id: 'dr-7', subject_type: 'decision' }).select().single()
+
+    expect(error).toMatchObject({ code: '42703' })
+    expect((error as { message: string }).message).toContain('subject_type')
+  })
 })
 
 describe('the memory event follows the server-resolved subject', () => {
