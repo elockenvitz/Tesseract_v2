@@ -779,7 +779,7 @@ async function resolveOrphanedIdeaArtifacts(params: {
   try {
     let query = supabase
       .from('decision_requests')
-      .select('id')
+      .select('id, proposal_id')
       .eq('trade_queue_item_id', tradeQueueItemId)
       .eq('portfolio_id', portfolioId)
       .in('status', ['pending', 'under_review', 'needs_discussion'])
@@ -792,7 +792,8 @@ async function resolveOrphanedIdeaArtifacts(params: {
     }
     if (!staleDRs || staleDRs.length === 0) return
 
-    const ids = (staleDRs as any[]).map(r => r.id)
+    const siblings = staleDRs as { id: string; proposal_id?: string | null }[]
+    const ids = siblings.map(r => r.id)
     const { error: updErr } = await supabase
       .from('decision_requests')
       .update({
@@ -804,7 +805,53 @@ async function resolveOrphanedIdeaArtifacts(params: {
         updated_at: now,
       })
       .in('id', ids)
-    if (updErr) console.warn('[ExecuteSim] Failed to resolve orphan DRs', updErr)
+    if (updErr) {
+      console.warn('[ExecuteSim] Failed to resolve orphan DRs', updErr)
+      return
+    }
+
+    // ── The sixth decision path, and the one that recorded nothing ───────
+    //
+    // This bulk update moves every sibling decision request to `accepted`
+    // and links it to the committed trade. That is a resolution of a real
+    // recommendation by a real actor, identical in kind to the one
+    // `markDRAccepted` emits for 30 lines above — and it emitted nothing,
+    // so the Spine showed one decision where N were made.
+    //
+    // Measured in production on 2026-11-15: of the 4 decision requests
+    // resolved since the Spine shipped, 2 carry a `decision.recorded`
+    // event and 2 do not. This path is a proven structural gap. It is not
+    // the proven cause of those particular two (their `decision_note` is
+    // user-authored, so they came through an inbox accept), which is why
+    // the detector in `src/lib/memory/capture-reconciliation.ts` exists:
+    // the next miss should be countable rather than re-derived.
+    //
+    // One emit per sibling, not one per batch. The event's subject is the
+    // decision, and N decisions were resolved. Dedupe is
+    // `decision.recorded:<drId>:accepted:<tradeId>`, deterministic from
+    // rows that still exist, so a retry of the same Execute lands once.
+    //
+    // Loop rather than Promise.all: these are append-only inserts with no
+    // shared row, the batches are small (N sibling DRs for one idea in one
+    // portfolio), and a serial loop keeps the ordering of the events the
+    // same as the ordering of the rows. Still non-fatal — a memory write
+    // must not undo a committed trade.
+    const organizationId = await resolveOrganizationIdForPortfolio(portfolioId)
+    if (organizationId) {
+      for (const sibling of siblings) {
+        await recordDecisionRecorded({
+          organizationId,
+          actorId: ctx.actorId,
+          decisionRequestId: sibling.id,
+          status: 'accepted',
+          tradeQueueItemId,
+          proposalId: sibling.proposal_id ?? null,
+          portfolioId,
+          acceptedTradeId,
+          provenance: 'ui:trade-lab:sibling',
+        })
+      }
+    }
   } catch (e) {
     console.warn('[ExecuteSim] Resolve orphan DRs threw', e)
   }
