@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useOrganizationOptional } from '../../contexts/OrganizationContext'
-import { timeframeMonths } from '../../lib/signals/timeframe'
 import { statedAtOf } from '../../lib/signals/horizon-copy'
+/* The one rule for "has this view run out", shared with the Asset Page and
+   the Asset Workspace. See its header for why the stored outcome wins. */
+import { targetFreshness, type FreshnessOutcomeInput } from '../../lib/outcomes/target-freshness'
 import { isPriceable, targetIsPlausible } from '../../lib/signals/instruments'
 import { fetchLatestBenchmarkWeightsFor } from '../../lib/holdings/benchmark-latest-query'
 import { currentBook, type CurrentBook } from '../../lib/holdings/portfolio-context'
@@ -309,6 +311,15 @@ interface HoldingRow {
 }
 
 interface TargetInfo {
+  /**
+   * `analyst_price_targets.id`, carried so the stored horizon can be found.
+   *
+   * `price_target_outcomes.price_target_id` is the only association this
+   * join may use. Matching on price would collapse two analysts who happen
+   * to agree on $180; matching on scenario would collapse every revision of
+   * a Bull case into one verdict.
+   */
+  id: string
   price: number
   timeframe: string | null
   rolling: boolean
@@ -334,6 +345,80 @@ const WEAK_UPSIDE = 0.05
 const MIN_WEIGHT_PCT = 0.5
 /** A target this far past its own horizon has stopped being a view. */
 const OVERDUE_MONTHS = 2
+
+const AVG_MONTH_MS = 30.44 * 86_400_000
+
+/**
+ * Has this view run out, and is it far enough past to interrupt a reader?
+ *
+ * ── Why these are two questions ──────────────────────────────────────────
+ *
+ * They used to be one, answered here with arithmetic this lens owned:
+ * `created_at` plus the `timeframe` text as 30.44-day months. The Asset Page
+ * and the Asset Workspace ask `targetFreshness`, which reads the stored
+ * record. Measured against production on 2026-11-14, across all 33 targets,
+ * the two disagreed on 18 of the 26 `pending` rows -- and on 5 rows by up to
+ * 502 days, because `create_outcome_for_target` RESTARTS a fixed target's
+ * horizon from `NOW()` on UPDATE while the derived anchor never moved. The
+ * lens went on counting from a horizon the analyst had already replaced, so
+ * a reader who renewed a target was told again that it had lapsed.
+ *
+ * So EXPIRY is now `targetFreshness` -- one rule, three surfaces, agreeing by
+ * construction rather than by coincidence. The GRACE stays here, because
+ * "two months past is worth an interruption" is this lens's editorial policy
+ * about when to speak, not a fact about the target.
+ *
+ * ── Why this is a function and not inline ────────────────────────────────
+ *
+ * It was inline, and nothing tested it: `expiredAt` and `overdueMonths`
+ * appeared in no suite in the repository, so the branch that decides whether
+ * to tell somebody their thesis has lapsed was unverified. Pulled out to the
+ * smallest pure boundary that can be driven directly with the production row
+ * shapes. Returns null when there is nothing to say.
+ */
+export function overdueTarget(
+  t: Pick<TargetInfo, 'id' | 'timeframe' | 'rolling' | 'createdAt'>,
+  outcomes: readonly FreshnessOutcomeInput[],
+  nowMs: number,
+): { expiredAt: string; overdueMonths: number; ageMonths: number } | null {
+  const fresh = targetFreshness(
+    {
+      id: t.id,
+      /* Null on every live row -- these are `timeframe_type: 'preset'`
+         targets whose effective date lives on the outcome. Passed explicitly
+         so the fallback order is visible at the call site. */
+      target_date: null,
+      is_rolling: t.rolling,
+      created_at: t.createdAt,
+      timeframe: t.timeframe,
+    },
+    outcomes,
+    new Date(nowMs),
+  )
+
+  /* Only a lapsed horizon is a stale target.
+     `hit`, `missed` and `cancelled` are resolved -- somebody reached a
+     verdict, and nagging about those is asking for a decision already made.
+     `unknown` is not expiry either: a target nothing can date must not be
+     retired on a guess. A rolling target reports `current`, which is also
+     what the database says by deleting its outcome row outright. */
+  if (fresh.state !== 'expired' || !fresh.asOf) return null
+
+  const expiredAtMs = new Date(fresh.asOf).getTime()
+  if (!Number.isFinite(expiredAtMs)) return null
+
+  const overdue = (nowMs - expiredAtMs) / AVG_MONTH_MS
+  if (!Number.isFinite(overdue) || overdue < OVERDUE_MONTHS) return null
+
+  return {
+    /* The horizon the DATABASE recorded, not one recomputed here. */
+    expiredAt: new Date(expiredAtMs).toISOString(),
+    overdueMonths: Math.round(overdue),
+    /* Age still runs from when the view was STATED. Only the horizon moved
+       to the stored record. */
+    ageMonths: Math.round((nowMs - new Date(t.createdAt).getTime()) / AVG_MONTH_MS),
+  }
+}
 /**
  * Where "nobody has priced this yet" stops being a reasonable answer.
  *
@@ -617,7 +702,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
       // product actually writes to, and it carries the horizon — which is what
       // makes "this view has expired" answerable at all.
       const assetIds = Array.from(byAsset.keys()).slice(0, 500)
-      const [{ data: targets }, { data: ratings }] = await Promise.all([
+      const [{ data: targets }, { data: ratings }, { data: outcomeRows }] = await Promise.all([
         supabase
           .from('analyst_price_targets')
           /**
@@ -646,6 +731,51 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
           .select('asset_id, conviction, created_at')
           .in('asset_id', assetIds)
           .order('created_at', { ascending: false }),
+        /*
+         * The horizon, as the database recorded it.
+         *
+         * ── Why this read exists ──────────────────────────────────────────
+         *
+         * This lens used to derive its own expiry: `created_at` plus the
+         * `timeframe` text converted to 30.44-day months. The Asset Page and
+         * the Asset Workspace ask `targetFreshness`, which reads the stored
+         * record. Two definitions of "expired", and they disagree.
+         *
+         * Measured against production on 2026-11-14, over all 33 targets:
+         *   - 32 of 33 stored horizons are exactly
+         *     `target_set_date + N CALENDAR months`, not 30.44-day months.
+         *   - `target_set_date` differs from `created_at` on 5 rows, by up to
+         *     502 days -- because `create_outcome_for_target` RESTARTS a
+         *     fixed target's horizon from `NOW()` on UPDATE, which is a
+         *     republished target genuinely getting a fresh horizon. The
+         *     derived anchor never moved, so this lens went on counting from
+         *     a horizon the analyst had already replaced.
+         *   - 18 of the 26 `pending` rows had a stored horizon different from
+         *     the derived one.
+         *
+         * So the fix is not a better derivation. The database writes the
+         * resulting horizon into `target_date` on every insert AND every
+         * update, which makes it a stored fact rather than something to
+         * recompute -- and makes the whole created_at-versus-updated_at
+         * argument moot.
+         *
+         * ── RLS ───────────────────────────────────────────────────────────
+         *
+         * `price_target_outcomes_select` is `TO authenticated` and requires
+         * `organization_id IS NOT NULL AND is_active_member_of_current_org()
+         * AND organization_id = current_org_id()`. The org filter below
+         * matches that predicate rather than relying on it, for the reason
+         * the `user_id` note above gives: this policy also fails SILENTLY,
+         * returning success with zero rows. All 33 live rows carry an
+         * `organization_id`, so none is invisible for want of one.
+         *
+         * In the same wave as the other two reads, not after them.
+         */
+        supabase
+          .from('price_target_outcomes')
+          .select('price_target_id, status, target_date')
+          .eq('organization_id', currentOrgId!)
+          .in('asset_id', assetIds),
       ])
 
       /**
@@ -719,6 +849,19 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
 
       // Official first, then most recent. An older or unofficial target is a
       // superseded view, not a second opinion.
+      /*
+       * The stored horizons, in the shape the shared rule takes.
+       *
+       * Rolling targets have no row here at all -- the trigger deletes it --
+       * so an absence is meaningful and is handled by `targetFreshness`
+       * rather than by filtering here.
+       */
+      const outcomes: FreshnessOutcomeInput[] = ((outcomeRows ?? []) as any[]).map(r => ({
+        price_target_id: String(r.price_target_id),
+        status: String(r.status),
+        target_date: r.target_date ?? null,
+      }))
+
       const target = new Map<string, TargetInfo>()
       /**
        * Targets dropped for being nowhere near the tape, kept for the log.
@@ -766,6 +909,7 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
         }
 
         target.set(t.asset_id, {
+          id: String(t.id),
           price: p,
           timeframe: t.timeframe ?? null,
           rolling: !!t.is_rolling,
@@ -887,30 +1031,36 @@ export function usePortfolioLenses(options?: { enabled?: boolean }) {
           })
         }
 
-        // A rolling target re-bases continuously and by definition never
-        // expires, so flagging it as overdue would be wrong.
-        const months = timeframeMonths(t.timeframe)
-        if (!t.rolling && months) {
-          const ageMonths = (now - new Date(t.createdAt).getTime()) / (30.44 * 86400_000)
-          const overdue = ageMonths - months
-          if (Number.isFinite(overdue) && overdue >= OVERDUE_MONTHS) {
-            stale.push({
-              assetId, symbol, companyName,
-              target: t.price, price,
-              timeframe: t.timeframe,
-              ageMonths: Math.round(ageMonths),
-              overdueMonths: Math.round(overdue),
-              statedAt: t.createdAt,
-              // statedAt + the horizon it declared. Computed, not guessed.
-              expiredAt: new Date(
-                new Date(t.createdAt).getTime() + months * 30.44 * 86_400_000,
-              ).toISOString(),
-              heldIn: heldIn(assetId),
-              heldInIds: heldInIds(assetId),
-              asOf: snapshotAsOf,
-              authorId: t.authorId ?? null,
-            })
-          }
+        /*
+         * Has this view run out, and is it far enough past to ask about?
+         *
+         * Those are two questions and this used to answer them as one, with
+         * its own arithmetic. Now the first is `targetFreshness` -- the same
+         * rule the Asset Page and the Asset Workspace ask, so the three agree
+         * on the same row by construction rather than by coincidence -- and
+         * the second is the `OVERDUE_MONTHS` grace, which stays here because
+         * it is this lens's editorial policy about when to interrupt a
+         * reader, not a fact about the target.
+         *
+         * A rolling target re-bases continuously and never expires; the
+         * database says the same thing by deleting its outcome row outright,
+         * and `targetFreshness` reports `current` for it.
+         */
+        const overdueView = overdueTarget(t, outcomes, now)
+        if (overdueView) {
+          stale.push({
+            assetId, symbol, companyName,
+            target: t.price, price,
+            timeframe: t.timeframe,
+            ageMonths: overdueView.ageMonths,
+            overdueMonths: overdueView.overdueMonths,
+            statedAt: t.createdAt,
+            expiredAt: overdueView.expiredAt,
+            heldIn: heldIn(assetId),
+            heldInIds: heldInIds(assetId),
+            asOf: snapshotAsOf,
+            authorId: t.authorId ?? null,
+          })
         }
       }
       breaches.sort((a, b) => b.overshootPct - a.overshootPct)

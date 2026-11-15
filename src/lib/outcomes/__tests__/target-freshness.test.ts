@@ -41,6 +41,67 @@ describe('an evaluated outcome is authoritative', () => {
     expect(isStale(f.state)).toBe(false)
   })
 
+  /**
+   * The divergence that survived inside the one rule.
+   *
+   * `pending` was read as "still standing". It means "nothing evaluated this
+   * yet", and nothing flips the row when its horizon passes. Measured in
+   * production on 2026-11-14: five of the twenty-six `pending` outcome rows
+   * had a `target_date` in the past, the earliest 2026-04-12 — seven months
+   * before. The status column and the horizon column on the SAME ROW
+   * disagreed, and this function believed the status.
+   */
+  describe('a pending row whose horizon has already passed', () => {
+    it('is expired, not current', () => {
+      const f = targetFreshness(target(), [outcome({ status: 'pending', target_date: '2026-04-12' })], NOW)
+      expect(f.state).toBe('expired')
+      expect(isStale(f.state)).toBe(true)
+    })
+
+    it('still reports the outcome row as the basis, because the date is its own', () => {
+      /* Not a fallback to inference. The horizon came off the evaluated
+         record; only the status was stale. */
+      const f = targetFreshness(target(), [outcome({ status: 'pending', target_date: '2026-04-12' })], NOW)
+      expect(f.basis).toBe('outcome')
+      expect(f.asOf).toBe('2026-04-12')
+    })
+
+    it('does not reconsider a terminal verdict somebody reached', () => {
+      /* A target HIT in month three is still hit long after its horizon
+         passes. Overriding that would retire real history — the
+         over-correction this suite's header warns about. */
+      for (const status of ['hit', 'missed', 'cancelled'] as const) {
+        const f = targetFreshness(target(), [outcome({ status, target_date: '2026-04-12' })], NOW)
+        expect(f.state, status).toBe(status)
+      }
+    })
+
+    it('leaves a pending row with no horizon alone rather than guessing', () => {
+      const f = targetFreshness(target(), [outcome({ status: 'pending', target_date: null })], NOW)
+      expect(f.state).toBe('current')
+      expect(f.basis).toBe('outcome')
+    })
+
+    it('treats the horizon day itself as still standing', () => {
+      /* The boundary matches the `target-date` branch below, which is
+         `due >= now`. A target does not lapse on the morning it is due. */
+      const sameDay = targetFreshness(
+        target(), [outcome({ status: 'pending', target_date: '2026-10-22' })], NOW,
+      )
+      expect(sameDay.state).toBe('current')
+    })
+
+    it('agrees with what the raw outcome date would say on its own', () => {
+      /* The two definitions the release brief named must now give one answer
+         for the same row: the stored status path and the stored date path. */
+      const lapsed = '2026-04-12'
+      const viaStatus = targetFreshness(target(), [outcome({ status: 'pending', target_date: lapsed })], NOW)
+      const viaDate = targetFreshness(target({ target_date: lapsed }), [], NOW)
+      expect(viaStatus.state).toBe(viaDate.state)
+      expect(viaStatus.asOf).toBe(viaDate.asOf)
+    })
+  })
+
   it.each([
     ['hit', 'hit'],
     ['missed', 'missed'],
