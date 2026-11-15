@@ -191,7 +191,60 @@ async function createSelfProposedAcceptedDR(
   if (error || !data) {
     throw new Error(`Failed to create self-proposed DR: ${error?.message || 'unknown'}`)
   }
-  return (data as any).id
+  const decisionRequestId = (data as any).id as string
+
+  // ── The seventh decision path, and the cause of both production misses ──
+  //
+  // This is the only INSERT in the codebase that creates an ALREADY-RESOLVED
+  // decision request: `status: 'accepted'`, `reviewed_by`, `reviewed_at`, all
+  // in one statement. Every other decision writer resolves an existing row by
+  // UPDATE, and the memory emit was added to the update paths — so this one
+  // was never wired, and a PM proposing and executing their own trade in one
+  // action left no record of having decided anything.
+  //
+  // Proven against production on 2026-11-15, record by record. Of the four
+  // decision requests resolved since `memory_events` was created
+  // (2026-09-16), exactly two carry a `decision.recorded` event and two do
+  // not, and the split is total:
+  //
+  //   decision_note                           reviewed_at vs created_at  event
+  //   'Accepted via Trade Lab Execute'        61s later                    yes
+  //   'Accepted via Trade Lab Execute'        1 day later                  yes
+  //   'Self-proposed via Trade Lab Execute'   257ms EARLIER                no
+  //   'Self-proposed via Trade Lab Execute'    80ms EARLIER                no
+  //
+  // Both misses carry the note THIS function writes, and both have a
+  // `reviewed_at` that precedes their own `created_at` — the client-minted
+  // `now` above against the column default — which is only possible for a row
+  // inserted already resolved. Neither is an RLS refusal, a lost client
+  // write, or a status that should not emit: the same actor's
+  // `execution.recorded` landed moments later in both cases.
+  //
+  // So a trigger on `accepted_trades` would have been the wrong remedy for
+  // this as well. The gap is one unwired call site.
+  //
+  // `reviewed_at` is `now`, the exact value this INSERT wrote, which makes the
+  // event's identity reproducible from the row — see
+  // `dedupeKeys.decisionRecorded`. No rationale is carried: the
+  // `decision_note` above is boilerplate this code composed, not a reason the
+  // PM gave. Non-fatal, like every other emit here: a failed history write
+  // must not undo a committed trade.
+  const organizationId = await resolveOrganizationIdForPortfolio(v.portfolio_id)
+  if (organizationId) {
+    await recordDecisionRecorded({
+      organizationId,
+      actorId: ctx.actorId,
+      decisionRequestId,
+      status: 'accepted',
+      reviewedAt: now,
+      tradeQueueItemId,
+      proposalId: null,
+      portfolioId: v.portfolio_id ?? null,
+      provenance: 'ui:trade-lab:self-proposed',
+    })
+  }
+
+  return decisionRequestId
 }
 
 /**
