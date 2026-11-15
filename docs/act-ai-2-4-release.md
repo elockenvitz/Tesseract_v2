@@ -339,7 +339,7 @@ the two environments that have an active purpose. Full record:
 | | Before | Pass 1 | Pass 2 | Final |
 |---|---|---|---|---|
 | Worktrees | 64 | 38 | 9 | **2** |
-| Local branches | 226 | 120 | 120 | **116** |
+| Local branches | 226 | 120 | 120 | **117** |
 | Remote branches | 189 | 189 | 189 | 189, untouched |
 | Stashes | 1 | 1 | 1 | 1, untouched |
 
@@ -432,9 +432,11 @@ retiring further worktrees must do it in that order.
   worktree and the active session's own checkout.
 
 **The branch inventory is the history, and it is classified rather than
-pruned.** Of the 116 that remain: 1 protected (`main`), 2 active, 1 on an open
-PR (#247, `fix/pilot-progress-atomic-merge`), 1 content-equivalent to main
-(`ci/prove-deploy-gate`), 10 fully contained inside another live branch, and
+pruned.** Of the 117 that remain: 1 protected (`main`), 2 active, 2 on open
+PRs (#247 `fix/pilot-progress-atomic-merge`, and #292 carrying this document),
+1 fully merged into main but refused deletion (`qa/mobile-integration`), 1
+content-equivalent to main (`ci/prove-deploy-gate`), 10 fully contained inside
+another live branch, and
 **100 carrying unique work** — the largest `fix/lists-canonical-connections`
 (37 commits, +14,502 lines), then `perf/perceived-performance-pass` (16, the
 KeepAlive and real-browser bench prior art), `fix/holdings-dates-attention`
