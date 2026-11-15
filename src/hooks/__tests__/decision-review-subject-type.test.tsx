@@ -26,7 +26,8 @@
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
+import { supabase } from '../../lib/supabase'
 
 type Row = Record<string, unknown>
 
@@ -41,6 +42,8 @@ const db = vi.hoisted(() => ({
   upsertPayload: null as Row | null,
   /** The argument to `.select()` after the upsert, as sent. */
   selectArg: undefined as unknown,
+  /** What the list read (`.in()`, awaited directly) hands back. */
+  listRows: [] as Row[],
   /**
    * Behave like a database on which 20261115120000 has NOT been applied.
    *
@@ -99,21 +102,66 @@ vi.mock('../../lib/supabase', () => ({
         }
         return chain
       }
-      chain.single = async () => failure
-        ? { data: null, error: failure }
-        : { data: db.upserted, error: null }
+      // The READ paths. `useDecisionReview` ends in `.eq().maybeSingle()` and
+      // `useDecisionReviewsByIds` ends in a bare `await` on `.in()`, so
+      // without these the double throws on the first filter and the read
+      // hooks cannot be driven at all.
+      //
+      // They were missing, and that made this suite vacuous: an unguarded
+      // `select('id, decision_id, subject_type')` injected into
+      // `useDecisionReview` left all 16 tests passing, because only the
+      // upsert path was ever exercised. A gate that cannot observe its own
+      // failure mode is decoration.
+      for (const op of ['eq', 'in', 'order', 'limit', 'is', 'not']) {
+        chain[op] = () => chain
+      }
+      const settle = (row: unknown) =>
+        failure ? { data: null, error: failure } : { data: row, error: null }
+      chain.single = async () => settle(db.upserted)
+      chain.maybeSingle = async () => settle(db.upserted)
+      // The list read has no terminal method; awaiting the builder resolves it.
+      chain.then = (resolve: (v: unknown) => unknown) =>
+        Promise.resolve(settle(db.listRows)).then(resolve)
       return chain
     },
   },
 }))
 
-import { useUpsertDecisionReview } from '../useDecisionReview'
+import {
+  useUpsertDecisionReview,
+  // The two READ hooks. Imported because the suite previously drove only the
+  // write path, which left every read query unguarded — see the note on the
+  // double's read methods.
+  useDecisionReview,
+  useDecisionReviewsByIds,
+} from '../useDecisionReview'
 
 const wrapper = ({ children }: { children: React.ReactNode }) => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
+
+/**
+ * A copy of `useDecisionReview` that names a column the migration has not
+ * added yet. Nothing in the app does this; it exists so the suite can prove
+ * the double would catch it if something did.
+ */
+function useDecisionReviewWithUnguardedColumn() {
+  return useQuery({
+    queryKey: ['decision-review-unguarded'],
+    retry: false,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('decision_reviews')
+        .select('id, decision_id, subject_type')
+        .eq('decision_id', 'dr-7')
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
 }
 
 /** The row the database returns after the trigger has run. */
@@ -155,6 +203,7 @@ beforeEach(() => {
   db.upserted = serverRow()
   db.upsertPayload = null
   db.selectArg = undefined
+  db.listRows = []
   db.preMigration = false
 })
 
@@ -172,6 +221,73 @@ beforeEach(() => {
  * the typed columns appear by themselves once the migration lands and no
  * second deploy is needed. These cases hold that shape in place.
  */
+describe('the read paths survive the migration being unapplied', () => {
+  /**
+   * These cover the two queries the panel and the row badges issue. They are
+   * the half of the shipping constraint the suite used to assert nothing
+   * about: it imported only `useUpsertDecisionReview`, so an unguarded column
+   * in a read was invisible. Injecting
+   * `select('id, decision_id, subject_type')` into `useDecisionReview` left
+   * all 16 tests green.
+   *
+   * Each case drives the real hook against the 42703 double, so the
+   * assertion is "the query the hook actually sends is answerable by today's
+   * database", not "the source text looks like select('*')".
+   */
+  it('the single-review read returns a row on a pre-migration database', async () => {
+    db.preMigration = true
+    db.upserted = serverRow({
+      subject_type: undefined, decision_request_id: undefined,
+      trade_queue_item_id: undefined, portfolio_trade_event_id: undefined,
+    })
+
+    const { result } = renderHook(() => useDecisionReview('dr-7'), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess || result.current.isError).toBe(true))
+
+    expect(result.current.error, 'the read must not fail with 42703').toBeNull()
+    expect(result.current.data).toMatchObject({ id: 'rev-1', decision_id: 'dr-7' })
+  })
+
+  it('the bulk read returns rows on a pre-migration database', async () => {
+    db.preMigration = true
+    db.listRows = [serverRow({ id: 'rev-1', decision_id: 'dr-7' })]
+
+    const { result } = renderHook(
+      () => useDecisionReviewsByIds(['dr-7', 'dr-8']), { wrapper },
+    )
+    await waitFor(() => expect(result.current.isSuccess || result.current.isError).toBe(true))
+
+    expect(result.current.error).toBeNull()
+    expect(result.current.data?.get('dr-7')).toMatchObject({ id: 'rev-1' })
+  })
+
+  it('the typed columns appear by themselves once the migration lands', async () => {
+    // The point of a `select('*')` reader: no second frontend deploy. The
+    // same hook, same code, against a post-migration row.
+    db.preMigration = false
+    db.upserted = serverRow({ subject_type: 'trade_queue_item' })
+
+    const { result } = renderHook(() => useDecisionReview('dr-7'), { wrapper })
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect((result.current.data as Row).subject_type).toBe('trade_queue_item')
+  })
+
+  it('SELF-TEST: the double does reject an unguarded column in a read', async () => {
+    // Without this, the three cases above would pass against a double that
+    // inspects nothing — which is exactly how the suite was vacuous before.
+    db.preMigration = true
+    const { result } = renderHook(
+      () => useDecisionReviewWithUnguardedColumn(), { wrapper },
+    )
+    await waitFor(() => expect(result.current.isError).toBe(true))
+
+    expect((result.current.error as { code?: string })?.code).toBe('42703')
+    expect((result.current.error as { message?: string })?.message)
+      .toContain('decision_reviews.subject_type')
+  })
+})
+
 describe('the review panel is safe while the migration is unapplied', () => {
   it('saves and records the event against a pre-migration database', async () => {
     db.preMigration = true
