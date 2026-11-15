@@ -2,6 +2,10 @@ import React from 'react'
 import { clsx } from 'clsx'
 import { useAssetWorkspace, primaryPosition } from '../../hooks/useAssetWorkspace'
 import { useAnalystRatings } from '../../hooks/useAnalystRatings'
+/* The one place that owns the decision vocabulary. A request is only waiting
+   when its STATUS says so: a withdrawn request is never ruled on, so filtering
+   on `decidedAt == null` alone would leave it in the strip forever. */
+import { isAwaitingDecision } from '../../types/decision-timeline'
 import type { StripCell } from '../../lib/asset-workspace/strip-targets'
 
 /**
@@ -168,9 +172,29 @@ export function AssetContextStrip({ assetId, symbol, spot, onJump, variant = 'de
   const primary = primaryPosition(positions, null)
   const bookCount = positions.length
 
-  // ── Open work ─────────────────────────────────────────────────────────────
-  const openWork = ws?.liveIdeas?.length ?? 0
-  const topIdea = ws?.liveIdeas?.[0] ?? null
+  /*
+   * ── Open work ────────────────────────────────────────────────────────────
+   *
+   * This counted live IDEAS and nothing else, so a name with a buy request
+   * sitting unanswered read "None open · nothing waiting" in a strip that
+   * never scrolls away -- directly above an Overview leading with "A buy in
+   * Large Cap Growth is waiting on a decision". Two parts of one screen
+   * disagreeing, with the sticky one wrong.
+   *
+   * A ruling owed outranks an idea in play, so a waiting request is what the
+   * cell says when there is one. The idea/request pair is deduplicated
+   * exactly as the Overview's queue deduplicates it -- a request raised on an
+   * idea is ONE piece of work -- so the count here and the rows there cannot
+   * come to different totals.
+   */
+  const awaitingDecision = (ws?.decisions ?? []).filter(isAwaitingDecision)
+  const queuedIdeaIds = new Set(
+    awaitingDecision.map(d => d.ideaId).filter((v): v is string => !!v),
+  )
+  const unqueuedIdeas = (ws?.liveIdeas ?? []).filter(i => !queuedIdeaIds.has(i.id))
+  const openWork = awaitingDecision.length + unqueuedIdeas.length
+  const topRequest = awaitingDecision[0] ?? null
+  const topIdea = unqueuedIdeas[0] ?? null
 
   // ── Case freshness ────────────────────────────────────────────────────────
   const age = monthsSince(ws?.caseWrittenAt ?? null)
@@ -262,7 +286,21 @@ export function AssetContextStrip({ assetId, symbol, spot, onJump, variant = 'de
 
       {/* Open work */}
       <Cell label="Active work" onClick={jump('work')} title="Go to the open work" band={band} eyebrow={EYEBROW_C}>
-        {openWork > 0 ? (
+        {topRequest ? (
+          /* Amber, like the Overview's action rail and the case-staleness
+             value above: somebody is blocked on a human. */
+          <>
+            <div className={VALUE_C + ' text-amber-700 dark:text-amber-400'}>
+              {awaitingDecision.length === 1
+                ? 'Awaiting a decision'
+                : `${awaitingDecision.length} awaiting a decision`}
+            </div>
+            <div className={SUB_C}>
+              {[topRequest.action, topRequest.portfolioName].filter(Boolean).join(' · ')
+                || 'nobody has ruled'}
+            </div>
+          </>
+        ) : openWork > 0 ? (
           <>
             <div className={VALUE_C}>{openWork} open</div>
             <div className={SUB_C}>

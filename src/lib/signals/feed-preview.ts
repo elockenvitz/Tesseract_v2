@@ -71,7 +71,24 @@ export interface FeedPreviewPane {
   preview: FeedPreview
 }
 
-/** The structured row a machine-derived candidate came from. */
+/**
+ * The structured row a machine-derived candidate came from.
+ *
+ * ── Two readers now, and the second one is not the preview layer ─────────
+ *
+ * `previewFor` reads it to draw a pane, and every branch there is gated on
+ * the family, so a row carrying another family's fields is inert.
+ *
+ * The workspace ENTRY CONTEXT reads it too (`entryContextFor`), because this
+ * is the only place the finding's own numbers survive the trip from the
+ * producer to the pane beside the feed. A card is a claim and drops the
+ * numbers behind it: "has reached the target you set for it" cannot tell the
+ * workspace which target, measured against what, or when it was stated.
+ *
+ * Still presentation, and still never authority: nothing routes, ranks or
+ * authorises on these fields, and the workspace's own org-scoped queries
+ * remain the source of truth for everything it draws from the database.
+ */
 export interface PreviewSource {
   /** `CrowdedName.weightsByPortfolio` */
   weightsByPortfolio?: { id: string; name: string; weightPct: number; valueUsd: number }[]
@@ -81,6 +98,31 @@ export interface PreviewSource {
   portfolioName?: string
   conviction?: string | null
   direction?: 'underweight' | 'overweight'
+  /**
+   * `TargetBreach` — the row behind a target hit.
+   *
+   * `price` is the HOLDINGS MARK the lens compared, not a traded close, and
+   * `asOf` is the snapshot it came from. Both travel because a surface that
+   * states the comparison has to be able to say what it compared and when.
+   */
+  target?: number
+  price?: number
+  overshootPct?: number
+  caseName?: string | null
+  cases?: { id: string; name: string; price: number }[]
+  statedAt?: string
+  asOf?: string
+  heldIn?: string[]
+  heldInIds?: string[]
+  /** `RecommendationInput` — the row behind a pending recommendation. */
+  id?: string
+  action?: string | null
+  proposedWeightPct?: number | null
+  currentWeightPct?: number | null
+  currentWeightAsOf?: string | null
+  rationale?: string | null
+  recommendedBy?: string | null
+  createdAt?: string
 }
 
 const MAX_BOOKS = 5

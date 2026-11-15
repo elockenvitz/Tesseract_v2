@@ -111,6 +111,57 @@ function heldBackLength(text: string, marker: string): number {
   return 0
 }
 
+/**
+ * The envelope's own field names, as the model is told to emit them.
+ *
+ * Mirrors `ENVELOPE_KEYS` in `envelope.ts`. Deliberately a copy rather than
+ * an import of a shared constant: this one answers a different question --
+ * "could this fence be the envelope, from its first key alone" -- while the
+ * parser's answers "is this whole object the envelope". A drift test keeps
+ * them honest; see `stream.test.ts`.
+ */
+const ENVELOPE_FIRST_KEYS = ['evidence', 'actions', 'analysis', 'version', 'rejected']
+
+/** How much of a fence body is needed before its first key is readable. */
+const FENCE_LOOKAHEAD = 64
+
+/**
+ * Decide what an opening fence at `at` begins, from as little as possible.
+ *
+ * Returns `unknown` when too little has arrived to tell, which the caller
+ * treats as "hold back" rather than as "not the envelope". That distinction
+ * is the whole point: guessing "not the envelope" early is what let JSON
+ * stream into view.
+ */
+function classifyFence(text: string, at: number): 'envelope' | 'code' | 'unknown' {
+  const nl = text.indexOf('\n', at)
+  /* The language tag is still arriving. */
+  if (nl === -1) return text.length - at > FENCE_LOOKAHEAD ? 'code' : 'unknown'
+
+  const body = text.slice(nl + 1)
+  const head = body.replace(/^[\s]*/, '')
+  if (head === '') {
+    return body.length > FENCE_LOOKAHEAD ? 'code' : 'unknown'
+  }
+  /* The envelope is always a JSON object. Anything else is code. */
+  if (head[0] !== '{') return 'code'
+
+  const afterBrace = head.slice(1).replace(/^[\s]*/, '')
+  if (afterBrace === '') {
+    return head.length > FENCE_LOOKAHEAD ? 'code' : 'unknown'
+  }
+  if (afterBrace[0] === '}') return 'code'
+  if (afterBrace[0] !== '"') return 'code'
+
+  const closing = afterBrace.indexOf('"', 1)
+  if (closing === -1) {
+    /* The first key is still arriving. */
+    return afterBrace.length > FENCE_LOOKAHEAD ? 'code' : 'unknown'
+  }
+  const firstKey = afterBrace.slice(1, closing)
+  return ENVELOPE_FIRST_KEYS.includes(firstKey) ? 'envelope' : 'code'
+}
+
 export interface FenceFilter {
   /** Feed raw model text; returns the newly-displayable text, possibly ''. */
   push(text: string): string
@@ -136,14 +187,59 @@ export function createFenceFilter(marker: string = FENCE_MARKER): FenceFilter {
   let rawText = ''
   let emitted = 0
   let isSuppressed = false
+  /** How far we have already cleared as "not the envelope". */
+  let cleared = 0
 
   const displayableLength = (): number => {
     if (isSuppressed) return emitted
+
     const index = rawText.indexOf(marker)
     if (index !== -1) {
       isSuppressed = true
       return index
     }
+
+    /*
+     * ── The mislabelled block, mid-stream ────────────────────────────────
+     *
+     * The marker above is the exact `
+     * ```tesseract-actions` opening. A model that tags the block ```json
+     * instead sails straight past it, so the envelope's JSON streamed into
+     * view as ordinary prose and was only removed at completion, when
+     * `parseAiResponse` replaced the text. The reader saw a block of
+     * machine-readable arrays appear and then vanish.
+     *
+     * So: any opening fence is held back until its first key can be read.
+     * If the body opens as a JSON object whose first key belongs to the
+     * envelope, suppress from the fence. Otherwise clear past it and let it
+     * stream as the code block it is.
+     *
+     * Holding back is the safe direction. A fence held one chunk too long
+     * costs a few hundred milliseconds of a code block appearing, and the
+     * final answer restores it in full either way. A fence released too
+     * early cannot be taken back, because `emitted` has already advanced.
+     */
+    let scan = cleared
+    for (;;) {
+      const fence = rawText.indexOf('```', scan)
+      if (fence === -1) break
+
+      const verdict = classifyFence(rawText, fence)
+      if (verdict === 'envelope') {
+        isSuppressed = true
+        return fence
+      }
+      if (verdict === 'unknown') {
+        /* Not enough has arrived to tell. Show everything before it. */
+        return fence
+      }
+      /* Ordinary code. Never reconsidered, so a `
+       * ```json` body that happens to contain the word "actions" later
+       * cannot retroactively suppress what has already been shown. */
+      scan = fence + 3
+      cleared = scan
+    }
+
     return rawText.length - heldBackLength(rawText, marker)
   }
 

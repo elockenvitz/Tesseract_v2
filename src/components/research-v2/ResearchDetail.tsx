@@ -66,6 +66,7 @@ import {
 } from '../../lib/desktop-research'
 import type { ResearchDetail as Detail } from '../../hooks/useDesktopResearch'
 import { stripHtml } from '../../utils/stripHtml'
+import { SmartInputRenderer } from '../smart-input/SmartInputRenderer'
 import { anchoredWindow, PriceSinceReview } from './ResearchVisual'
 import type { FocusIntent } from '../../lib/dashboard/focus'
 import { CreateMenu } from '../dashboard/CreateMenu'
@@ -551,13 +552,31 @@ export function ResearchDetail({
                       {new Date(sec.updatedAt).toLocaleDateString()}
                     </span>
                   </div>
-                  <p className="mt-1.5 max-w-[80ch] whitespace-pre-line text-[15px] leading-[1.65] text-gray-800 dark:text-gray-200">
-                    {sec.content || <span className="italic text-gray-400">Empty.</span>}
-                  </p>
+                  {/*
+                    Rendered, not printed.
+
+                    This was a `<p>` with `whitespace-pre-line` holding the
+                    stored string, so a section written with bold runs and
+                    bullets -- which is how every one of them is written --
+                    read as `- **iPhone weakness** -> ...` on the firm's own
+                    research page. `whitespace-pre-line` went with the `<p>`:
+                    the renderer makes real list and paragraph elements, and
+                    preserving source newlines on top of that double-spaces
+                    everything.
+
+                    `density="reading"` and the measure match the Asset
+                    Workspace, so the same section reads identically in both
+                    places rather than in two typographic systems.
+                  */}
+                  <div className="mt-1.5 max-w-[80ch] text-[15px] leading-[1.65] text-gray-800 dark:text-gray-200">
+                    {sec.content
+                      ? <SmartInputRenderer content={sec.content} density="reading" />
+                      : <span className="italic text-gray-400">Empty.</span>}
+                  </div>
                   {sec.supportingDetail && (
-                    <p className="mt-2 max-w-[80ch] text-[13px] leading-relaxed text-gray-600 dark:text-gray-400">
-                      {sec.supportingDetail}
-                    </p>
+                    <div className="mt-2 max-w-[80ch] text-[13px] leading-relaxed text-gray-600 dark:text-gray-400">
+                      <SmartInputRenderer content={sec.supportingDetail} />
+                    </div>
                   )}
                 </div>
               ))}

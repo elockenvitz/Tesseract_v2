@@ -17,7 +17,11 @@ import { EstimateRevisionChart } from './EstimateRevisionChart'
 import { PriceTargetHistoryChart } from './PriceTargetHistoryChart'
 import { RatingHistoryChart } from './RatingHistoryChart'
 // AnalystPerformanceCard, PerformanceLeaderboard, OutcomesTimeline moved to UserTab
-import { ExpiredTargetsAlert } from './ExpiredTargetsAlert'
+/* The sweep that the removed banner used to carry. See `useExpirySweepOnce`:
+   nothing else in the product ever expires a target, and there is no cron
+   job for it, so dropping the banner without this would have stopped
+   horizons expiring at all. */
+import { useExpirySweepOnce } from '../../hooks/useExpiredTargets'
 import { supabase } from '../../lib/supabase'
 import { useQuery } from '@tanstack/react-query'
 
@@ -91,6 +95,10 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
    * Page that has already loaded it, and the two surfaces cannot drift.
    */
   const { outcomes: targetOutcomes } = useTargetOutcomes({ assetId })
+  /* Move any horizon that has run out from pending to expired, once per
+     session. This used to be a mount effect inside the banner that announced
+     the result; the banner is gone and the sweep is not. */
+  useExpirySweepOnce()
   const outcomeFor = useMemo(() => {
     const byTarget = new Map(targetOutcomes.map(o => [o.price_target_id, o]))
     return (targetId?: string) => (targetId ? byTarget.get(targetId) ?? null : null)
@@ -294,8 +302,28 @@ export function OutcomesContainer({ assetId, symbol: symbolProp, currentPrice, c
 
   return (
     <div className={clsx('space-y-4', className)}>
-      {/* Expired Targets Alert - show only targets for this specific asset */}
-      <ExpiredTargetsAlert className="mb-4" assetId={assetId} />
+      {/*
+        ── No expired-targets banner here ────────────────────────────────
+
+        A large amber "Price Targets Expired" panel used to open this
+        container, which is the price-target section of the canonical Asset
+        page. So a reader who followed a valuation alert from the Dashboard
+        arrived to find the same fact stated four times on one screen: the
+        carried-over arrival band, the warning control in the research
+        toolbar, this banner, and the ⚡ attention trigger that is supposed
+        to be the single entry point.
+
+        The fact is not lost. A lapsed valuation is now a reason inside that
+        one attention surface (`staleness-target-*` in
+        `resolveWorkspaceSignals`), read from `price_target_outcomes` -- the
+        same authoritative record this banner's RPC read, through the same
+        `targetFreshness` rule the rest of the page uses. It is the Dashboard
+        that carries full contextual attention cards; this page is for
+        research and editing.
+
+        Per-target state still belongs beside its own target, which is what
+        the rows below draw. What is gone is the page-wide alert.
+      */}
 
       {/* Tabs - hidden when externally controlled */}
       {!isExternallyControlled && (

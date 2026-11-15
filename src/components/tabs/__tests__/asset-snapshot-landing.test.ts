@@ -83,7 +83,13 @@ describe('an explicit arrival focus still wins', () => {
   it('keeps research and decisions landing where their senders meant', () => {
     // ResearchDetail, ResearchWorkspace, IdeaDetail and DecisionDetail all
     // send `focus: 'research'`; DecisionDetail also sends 'decisions'.
-    expect(effect).toMatch(/focus === 'research' \? 'research'/)
+    //
+    // Loosened from `focus === 'research' \? 'research'`, which pinned the
+    // ternary's exact shape and broke when `framework` joined that arm --
+    // a change with no behavioural content. What matters is that both values
+    // are read and both destinations are reachable.
+    expect(effect).toMatch(/focus === 'research'/)
+    expect(effect).toMatch(/\? 'research'/)
     expect(effect).toMatch(/focus === 'decisions' \? 'decisions'/)
   })
 
@@ -100,10 +106,28 @@ describe('an explicit arrival focus still wins', () => {
     expect(effect).toMatch(/setActiveSubPage\(target\)/)
   })
 
-  it('does not guess a home for framework', () => {
-    // The framework lives inside Research's outcomes and has no sub-page.
-    // Guessing one is worse than leaving the reader's saved page alone.
-    expect(effect).not.toMatch(/'framework'/)
+  /*
+   * ── This asserted the defect, and the assertion has flipped ────────────
+   *
+   * It said "does not guess a home for framework", on the reasoning that the
+   * framework lives inside Research's outcomes and has no sub-page of its
+   * own, so leaving the reader's saved page alone was the honest answer.
+   *
+   * That reasoning was wrong in one word: `framework` has no ANCHOR of its
+   * own, but it does have a page -- the research page, which is where the
+   * Forecasts section holding the ladder is rendered. Landing there is not a
+   * guess; it is the only sub-page the lens can mean. Leaving the saved page
+   * alone meant that every sender of `framework` navigated and changed
+   * nothing, which is the defect the 2.4 report found from the other side.
+   *
+   * The scroll is a separate concern and still is not guessed: an arrival
+   * that wants the ladder's anchor carries `section: 'targets'`.
+   */
+  it('lands framework on research, rather than changing nothing', () => {
+    expect(effect).toMatch(/focus === 'framework'/)
+    expect(effect).toMatch(/\? 'research'/)
+    // And it still does not invent an anchor; that is `section`'s job.
+    expect(effect).not.toMatch(/asset-warning-anchor/)
   })
 })
 

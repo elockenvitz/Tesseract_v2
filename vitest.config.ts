@@ -100,6 +100,30 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: true,
+    /*
+     * ── A worker cap, because the flake was memory and not the tests ──────
+     *
+     * `guard:unit` has been intermittently red on the same few files for a
+     * week, always "Test timed out in 5000ms", always files whose cases pass
+     * in about a second when run on their own.
+     *
+     * MEASURED on this machine: 16 cores, 14.9 GB of RAM, 3.9 GB of it free
+     * with nothing but the editor running. Unset, vitest starts one worker
+     * per core, so a full run opens about sixteen jsdom environments at once
+     * and the box goes to swap. The victims are always the heaviest mounts --
+     * `outcomes-detail-mobile` and `outcomes-mobile-home` render a whole page
+     * through a dozen providers -- and a one-second render under GC thrash
+     * crosses five seconds without anything being wrong with the test.
+     *
+     * Eight, not one: the suite is 642 files and serialising it would make
+     * the gate too slow to run, which is its own way of losing a check.
+     *
+     * This cannot mask a real failure. A timeout is reported, never
+     * swallowed, and no assertion, timeout value or subject is touched -- the
+     * only thing that changes is how many environments share the machine. It
+     * does not bind on CI, where the runner has fewer cores than this cap.
+     */
+    maxWorkers: 8,
     projects: [
       // Unit tests that need a DOM.
       {

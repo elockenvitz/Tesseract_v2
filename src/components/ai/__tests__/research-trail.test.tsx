@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ResearchTrail, SourceRef } from '../ResearchTrail'
-import { SOURCE_KIND_LABEL, toolCallOutcome, toolCallLabel } from '../../../lib/ai/trail-text'
+import { SOURCE_KIND_LABEL, referenceLabel, toolCallOutcome, toolCallLabel } from '../../../lib/ai/trail-text'
 import type { AiSourceRef, MessageToolCall } from '../../../lib/ai/presentation'
 
 const call = (over: Partial<MessageToolCall> = {}): MessageToolCall => ({
@@ -50,6 +50,27 @@ describe('the three statuses read differently', () => {
 
   it('invents no outcome for a message older than the status field', () => {
     expect(toolCallOutcome(call({})).text).toBe('')
+  })
+
+  /*
+   * The same sentences, now scoped.
+   *
+   * `emptySentence` and `foundSentence` are asserted exhaustively beside the
+   * server's declaration table in `retrieval-visibility.test.ts`, which is
+   * where a scope change belongs. These two check the wiring: that
+   * `toolCallOutcome` reads the field at all, and that a message carrying no
+   * scope still renders the old, weaker, true sentence.
+   */
+  it('says whose records it counted, when the lookup declared its reach', () => {
+    expect(toolCallOutcome(call({ status: 'ok', result_count: 8, scope: 'caller_visible' })).text)
+      .toBe('8 records you have access to.')
+    expect(toolCallOutcome(call({ status: 'empty', scope: 'caller_visible' })).text)
+      .toBe('Nothing that you have access to.')
+  })
+
+  it('falls back to a claim about matches for a message with no reach', () => {
+    expect(toolCallOutcome(call({ status: 'empty', searched: 'AAPL in team notes' })).text)
+      .toBe('No matches for AAPL in team notes.')
   })
 })
 
@@ -154,5 +175,83 @@ describe('SourceRef', () => {
     render(<SourceRef source={source({ asset_id: null })} onOpen={onOpen} />)
     await userEvent.click(screen.getByRole('button'))
     expect(onOpen).toHaveBeenCalled()
+  })
+
+  /*
+   * A title and a date identify a row. They do not let anybody judge it.
+   *
+   * The trail used to print the tool's raw JSON, which was replaced by a
+   * title, a kind and a date -- readable, but still not enough to tell
+   * "Channel checks" from the other four notes called "Channel checks". The
+   * excerpt is the record in its own words, and the state is what it is doing.
+   */
+  it('shows the record in its own words', () => {
+    render(<SourceRef source={source({
+      kind: 'note', title: 'Channel checks',
+      excerpt: 'Supplier lead times extended again in the March quarter.',
+    })} />)
+    expect(screen.getByTestId('ai-source-excerpt').textContent)
+      .toBe('Supplier lead times extended again in the March quarter.')
+    /* Inside the link, so pressing the words the reader just read opens the
+       record they read them from. */
+    expect(screen.getByTestId('ai-source-excerpt').closest('button')).toBeTruthy()
+  })
+
+  it('shows the record s own state, distinct from the lookup s', () => {
+    render(<SourceRef source={source({ kind: 'idea', state: 'ready_to_recommend' })} />)
+    expect(screen.getByTestId('ai-source-state').textContent).toBe('Ready to recommend')
+  })
+
+  it('renders neither line when the record carries neither', () => {
+    render(<SourceRef source={source()} />)
+    expect(screen.queryByTestId('ai-source-excerpt')).toBeNull()
+    expect(screen.queryByTestId('ai-source-state')).toBeNull()
+  })
+
+  it('opens an idea on the decisions focus, not a vaguely related page', () => {
+    /* The brief's requirement that a citation lands on the right object. An
+       Idea Pipeline entry is a decision-chain record, so it opens where the
+       decision chain is read. */
+    render(<SourceRef source={source({ kind: 'idea', id: 'i-1' })} />)
+    screen.getByRole('button').click()
+    expect(dispatched[0].detail).toMatchObject({ assetId: 'a-1', focus: 'decisions' })
+  })
+})
+
+/**
+ * The row leads with a short label, and still says which record it was.
+ *
+ * It used to lead with an uppercase kind chip and then the record's whole
+ * title. For a thesis contribution or a requirement that title is a sentence,
+ * so six cited sources read as six record headings competing with the answer
+ * above them -- and the two things a reader scans for, which company and what
+ * kind of document, were the smallest marks on the row.
+ */
+describe('a reference reads as a reference', () => {
+  it('names the company and the kind, in that order', () => {
+    expect(referenceLabel({ kind: 'contribution', symbol: 'aapl' })).toBe('AAPL · Thesis')
+    expect(referenceLabel({ kind: 'decision_request', symbol: 'CEG' })).toBe('CEG · PM ruling')
+  })
+
+  it('falls back to the kind alone where there is no ticker', () => {
+    /* A portfolio or a theme has none, and "· Portfolio" with an empty left
+       half reads as a bug rather than as a label. */
+    expect(referenceLabel({ kind: 'portfolio', symbol: null })).toBe('Portfolio')
+    expect(referenceLabel({ kind: 'theme' })).toBe('Theme')
+  })
+
+  it('does not invent a kind for one it has never seen', () => {
+    expect(referenceLabel({ kind: 'something_new', symbol: 'X' })).toBe('X · something_new')
+    expect(referenceLabel({})).toBe('Record')
+  })
+
+  it('renders the label and keeps the record title beside it', () => {
+    render(<SourceRef source={source({ kind: 'contribution', symbol: 'AAPL', title: 'Services mix supports a larger terminal multiple than the street carries' })} />)
+
+    expect(screen.getByTestId('ai-source-label').textContent).toBe('AAPL · Thesis')
+    /* Kept, because it is what says WHICH thesis. Clamped, not dropped. */
+    const title = screen.getByTestId('ai-source-title')
+    expect(title.textContent).toMatch(/Services mix supports/)
+    expect(title.className).toContain('truncate')
   })
 })

@@ -10,6 +10,9 @@ import { DataFunctionPicker } from './DataFunctionPicker'
 import { VisibilityPicker } from './VisibilityPicker'
 import { SmartInputMetadata, DataFunctionType, VisibilityType, AI_MODELS } from './types'
 import { useAuth } from '../../hooks/useAuth'
+/* The command trigger, from the module that owns it, so this menu cannot
+   advertise one character while the parser listens for another. */
+import { SLASH } from '../../lib/ai/slash-commands'
 
 // ---------------------------------------------------------------------------
 // HTML → plain text with formatting (for paste from rich sources)
@@ -614,8 +617,8 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
                 onClose={closeDropdown}
               />
             ) : (
-              /* Dot command menu — matches the TipTap notes editor dropdown exactly */
-              <DotCommandMenu query={dropdownQuery} selectedIndex={selectedIndex} />
+              /* Slash Command menu — matches the TipTap notes editor dropdown exactly */
+              <SlashCommandMenu query={dropdownQuery} selectedIndex={selectedIndex} />
             )}
           </SmartInputDropdown>
         )}
@@ -702,9 +705,9 @@ export const UniversalSmartInput = forwardRef<UniversalSmartInputRef, UniversalS
   }
 )
 
-// ─── Dot Command Menu (matches TipTap notes editor dropdown) ─────────────────
+// ─── Slash Command Menu (matches TipTap notes editor dropdown) ──────────────
 
-interface DotCmd {
+interface SlashCmd {
   id: string
   name: string
   description: string
@@ -713,33 +716,41 @@ interface DotCmd {
   category: 'ai' | 'data' | 'chart' | 'visibility'
 }
 
-const DOT_COMMANDS: DotCmd[] = [
-  { id: 'ai', name: '.AI', description: 'Generate content with AI', icon: Sparkles, color: 'text-purple-600', category: 'ai' },
+/*
+ * The subset this surface offers.
+ *
+ * `name` is built from `SLASH` rather than written out, so the labels here
+ * cannot advertise a trigger the parsers do not listen for. The editor's
+ * registry does the same. The dot INSIDE an id (`chart.price`) stays a dot:
+ * it is a namespace separator, and `/chart/price` would read as a URL path.
+ */
+const SLASH_COMMANDS: SlashCmd[] = [
+  { id: 'ai', name: `${SLASH}AI`, description: 'Generate content with AI', icon: Sparkles, color: 'text-purple-600', category: 'ai' },
 
-  { id: 'price', name: '.price', description: 'Current stock price', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'volume', name: '.volume', description: 'Trading volume', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'marketcap', name: '.marketcap', description: 'Market capitalization', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'change', name: '.change', description: 'Price change %', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'pe', name: '.pe', description: 'P/E ratio', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'dividend', name: '.dividend', description: 'Dividend yield', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'price', name: `${SLASH}price`, description: 'Current stock price', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'volume', name: `${SLASH}volume`, description: 'Trading volume', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'marketcap', name: `${SLASH}marketcap`, description: 'Market capitalization', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'change', name: `${SLASH}change`, description: 'Price change %', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'pe', name: `${SLASH}pe`, description: 'P/E ratio', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'dividend', name: `${SLASH}dividend`, description: 'Dividend yield', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
 
-  { id: 'chart', name: '.chart', description: 'Insert an embedded chart', icon: LineChart, color: 'text-cyan-600', category: 'chart' },
-  { id: 'chart.price', name: '.chart.price', description: 'Price chart', icon: TrendingUp, color: 'text-cyan-600', category: 'chart' },
-  { id: 'chart.volume', name: '.chart.volume', description: 'Volume chart', icon: BarChart3, color: 'text-cyan-600', category: 'chart' },
-  { id: 'chart.performance', name: '.chart.performance', description: 'Performance chart (%)', icon: Activity, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart', name: `${SLASH}chart`, description: 'Insert an embedded chart', icon: LineChart, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.price', name: `${SLASH}chart.price`, description: 'Price chart', icon: TrendingUp, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.volume', name: `${SLASH}chart.volume`, description: 'Volume chart', icon: BarChart3, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.performance', name: `${SLASH}chart.performance`, description: 'Performance chart (%)', icon: Activity, color: 'text-cyan-600', category: 'chart' },
 
-  { id: 'private', name: '.private', description: 'Mark as private (only you)', icon: Lock, color: 'text-amber-600', category: 'visibility' },
-  { id: 'team', name: '.team', description: 'Visible to team only', icon: Users, color: 'text-blue-600', category: 'visibility' },
-  { id: 'portfolio', name: '.portfolio', description: 'Visible to portfolio members', icon: Building2, color: 'text-purple-600', category: 'visibility' },
+  { id: 'private', name: `${SLASH}private`, description: 'Mark as private (only you)', icon: Lock, color: 'text-amber-600', category: 'visibility' },
+  { id: 'team', name: `${SLASH}team`, description: 'Visible to team only', icon: Users, color: 'text-blue-600', category: 'visibility' },
+  { id: 'portfolio', name: `${SLASH}portfolio`, description: 'Visible to portfolio members', icon: Building2, color: 'text-purple-600', category: 'visibility' },
 ]
 
 const CATEGORY_ORDER = ['ai', 'data', 'chart', 'visibility'] as const
 const CATEGORY_LABELS: Record<string, string> = { ai: 'AI', data: 'Data', chart: 'Charts', visibility: 'Visibility' }
 
-function DotCommandMenu({ query, selectedIndex }: { query: string; selectedIndex: number }) {
+function SlashCommandMenu({ query, selectedIndex }: { query: string; selectedIndex: number }) {
   const q = query.toLowerCase()
-  const filtered = DOT_COMMANDS.filter(cmd => {
-    const name = cmd.name.toLowerCase().slice(1) // remove leading dot
+  const filtered = SLASH_COMMANDS.filter(cmd => {
+    const name = cmd.name.toLowerCase().slice(SLASH.length) // drop the trigger
     return !q || name.startsWith(q) || name.includes(q) || cmd.description.toLowerCase().includes(q)
   })
 

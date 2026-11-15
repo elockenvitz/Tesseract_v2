@@ -9,8 +9,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   openAsset, assetTabFor, subscribeToOpenAsset, OPEN_ASSET_EVENT,
-  issueTitle, issueDetail,
+  issueTitle, issueDetail, isAssetSectionTarget, ASSET_SECTION_TARGETS,
 } from './navigate'
+/* The reader of this descriptor, so the stale-context cases below are
+   asserted as the workspace actually resolves them rather than as a set of
+   null properties. */
+import { resolveEntry } from '../asset-workspace/entry'
 
 const descriptors: any[] = []
 const typed: any[] = []
@@ -76,6 +80,43 @@ describe('context travels, and never lingers', () => {
     expect(d.data).toHaveProperty('issue', null)
     expect(d.data).toHaveProperty('origin', null)
     expect(d.data.focus).toBe('overview')
+    /* The reason keys, for the same reason. These decide which workspace the
+       Overview composes, so a stale one is not a cosmetic leak: a plain open
+       of AAPL would lead with somebody else's buy request. */
+    expect(d.data).toHaveProperty('decisionId', null)
+    expect(d.data).toHaveProperty('workflowId', null)
+    expect(d.data).toHaveProperty('stageId', null)
+    expect(d.data).toHaveProperty('requirementId', null)
+    expect(d.data).toHaveProperty('taskId', null)
+  })
+
+  it('clears the previous reason when the same name is opened plainly', () => {
+    /*
+     * The stale-context case end to end, through the resolver that reads it.
+     * A PM opens AAPL from the inbox to rule on a request, then opens AAPL
+     * again from search. The second page must be the general overview.
+     */
+    openAsset({
+      assetId: 'a-1', symbol: 'AAPL', decisionId: 'dr-7',
+      portfolioId: 'p1', origin: 'decision-inbox',
+    })
+    expect(resolveEntry(descriptors.at(-1)!.data).mode).toBe('decision')
+
+    openAsset({ assetId: 'a-1', symbol: 'AAPL' })
+    const after = resolveEntry(descriptors.at(-1)!.data)
+    expect(after.mode).toBe('general')
+    expect(after.decisionId).toBeNull()
+    expect(after.portfolioId).toBeNull()
+  })
+
+  it('carries a work destination without the sender knowing the field names', () => {
+    openAsset({
+      assetId: 'a-1', symbol: 'AAPL',
+      work: { workflowId: 'wf-1', stageId: 's-2', requirementId: 'ci-3' },
+    })
+    const entry = resolveEntry(descriptors.at(-1)!.data)
+    expect(entry.mode).toBe('work')
+    expect(entry.work).toEqual({ workflowId: 'wf-1', stageId: 's-2', requirementId: 'ci-3' })
   })
 
   it('targets the existing Asset page, not a parallel workspace', () => {
@@ -159,5 +200,98 @@ describe('no window, no crash', () => {
     } finally {
       globalThis.window = w
     }
+  })
+})
+
+/* ─── The section a control named ──────────────────────────────────────────
+ *
+ * `focus` picks the lens, `section` picks the paragraph. The defect this
+ * closes: "Edit in research" inside The case sent `focus: 'research'` and
+ * nothing else, so the reader arrived at Research and then at whatever
+ * scroll position Research had last been left at.
+ */
+describe('the section a control named', () => {
+  it('travels in the descriptor', () => {
+    const d = assetTabFor({ assetId: 'a-1', symbol: 'AAPL', focus: 'research', section: 'case' })
+    expect(d.data.section).toBe('case')
+  })
+
+  it('is written as null when absent, not omitted', () => {
+    /*
+     * THE case for this field. A descriptor MERGES into an already-open tab,
+     * so a key left out keeps the previous arrival's value: a generic open of
+     * AAPL after an "Edit in research" would inherit `section: 'case'` and
+     * scroll to a paragraph nobody asked about. Every other context key in
+     * this descriptor is written for the same reason.
+     */
+    const d = assetTabFor({ assetId: 'a-1', symbol: 'AAPL' })
+    expect(d.data).toHaveProperty('section')
+    expect(d.data.section).toBeNull()
+  })
+
+  it('pairs with a fresh request id, so it is acted on once per request', () => {
+    /* The receiver consumes a section once per `focusRequestId`. Two sends of
+       the same section must therefore carry different ids, or the second
+       would be mistaken for the first replayed and would not scroll. */
+    const a = assetTabFor({ assetId: 'a-1', section: 'case' })
+    const b = assetTabFor({ assetId: 'a-1', section: 'case' })
+    expect(a.data.focusRequestId).not.toBe(b.data.focusRequestId)
+  })
+
+  it('names only sections the Asset page can actually reach', () => {
+    /*
+     * The guard exists because `asset` is tab DATA, which outlives the build
+     * that wrote it. An unrecognised value would set an anchor whose target
+     * id is undefined, and the receiving effect would poll for three seconds
+     * and give up silently -- a scroll that never happened and never said so.
+     */
+    for (const s of ASSET_SECTION_TARGETS) expect(isAssetSectionTarget(s)).toBe(true)
+    expect(isAssetSectionTarget('outcomes')).toBe(false)
+    expect(isAssetSectionTarget('')).toBe(false)
+    expect(isAssetSectionTarget(null)).toBe(false)
+    expect(isAssetSectionTarget(undefined)).toBe(false)
+    expect(isAssetSectionTarget({ anchor: 'case' })).toBe(false)
+  })
+})
+
+/* ─── The ask for a way back ───────────────────────────────────────────────
+ *
+ * The descriptor carries the sender's INTENT, not a tab id: the pane that
+ * presses these controls cannot know which tab it is in. The shell resolves
+ * the ask -- `lib/desktop-asset/return-to` has the reasoning and its own
+ * tests for the resolution.
+ */
+describe('the ask for a way back', () => {
+  it('travels as a flag the shell can resolve', () => {
+    const d = assetTabFor({ assetId: 'a-1', symbol: 'AAPL', returnTo: true })
+    expect(d.data.returnRequested).toBe(true)
+  })
+
+  it('is false, not absent, when nobody asked', () => {
+    /*
+     * The merge trap again, and this one is worth being concrete about: a
+     * reader follows a target breach from the Dashboard into AAPL (asked
+     * for), then opens AAPL again from the global search box (did not ask).
+     * The second descriptor merges over the first. With the flag omitted
+     * rather than written false, the tab would still say `returnRequested:
+     * true` and the shell would hand them a Return to a surface the second
+     * navigation had nothing to do with.
+     */
+    const d = assetTabFor({ assetId: 'a-1', symbol: 'AAPL' })
+    expect(d.data).toHaveProperty('returnRequested')
+    expect(d.data.returnRequested).toBe(false)
+  })
+
+  it('clears the previous arrival\'s RESOLVED target as well as the ask', () => {
+    /*
+     * Two layers, both needed. The flag above stops the ask surviving; these
+     * three keys stop the shell's ANSWER surviving. The shell overwrites them
+     * on an arrival that asked, so writing them as nulls here is what makes
+     * an arrival that did not ask clear them.
+     */
+    const d = assetTabFor({ assetId: 'a-1', returnTo: true })
+    expect(d.data.returnTabId).toBeNull()
+    expect(d.data.returnTabLabel).toBeNull()
+    expect(d.data.returnOrgId).toBeNull()
   })
 })

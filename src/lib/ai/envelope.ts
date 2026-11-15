@@ -74,6 +74,109 @@ const FENCE_RE = new RegExp(
   'i',
 )
 
+/**
+ * Every fenced block, with its language tag, so the last one can be examined.
+ *
+ * The tag is optional in the capture because a model that forgets the tag is
+ * the exact case this exists to catch.
+ */
+const ANY_FENCE_RE = /```([A-Za-z0-9_-]*)[ \t]*\r?\n([\s\S]*?)```/g
+
+/**
+ * The only keys the envelope block is ever told to contain.
+ *
+ * `version` and `rejected` are in here because they are the envelope's own
+ * vocabulary; the model is not asked for them, but a block carrying one is
+ * still unambiguously an envelope rather than something a reader wanted to
+ * see.
+ */
+const ENVELOPE_KEYS = new Set(['evidence', 'actions', 'analysis', 'version', 'rejected'])
+
+/**
+ * Is this parsed block the action envelope wearing the wrong label?
+ *
+ * ── Why recognition by shape, and why this is not "stripping JSON" ───────
+ *
+ * The model is told to tag the block `tesseract-actions`. It does not always
+ * comply: it emits ```json, or no tag at all. When that happened the fence
+ * regex missed, the block stayed in the prose, and the reader got a wall of
+ * machine-readable `evidence` and `actions` arrays in a dark code box. That
+ * was a real, reported defect.
+ *
+ * The tempting fix is to strip any trailing JSON-looking fence. That is the
+ * fragile version: it would eat a code block a reader explicitly asked for,
+ * which is a worse failure than the one it fixes, because the reader loses
+ * content they requested and cannot tell why.
+ *
+ * So the test is structural and closed. A block qualifies only when it parses
+ * as a plain JSON object, EVERY key is one of the envelope's own, and at least
+ * one of `evidence` or `actions` is present. "Every key" is what makes it
+ * safe: a reader asking for a config sample, an API payload or a fixture gets
+ * an object with keys of their own, and one such key disqualifies the whole
+ * block. An object whose keys are exclusively this envelope's vocabulary is
+ * this envelope.
+ *
+ * Known limit: an UNFENCED trailing JSON object is not recognised. Finding one
+ * means brace-matching through prose that legitimately contains braces, which
+ * is the fragile approach again. The prompt asks for a fence and the observed
+ * failure was a mis-tagged fence, so that is what this handles.
+ */
+function looksLikeEnvelope(parsed: unknown): parsed is Record<string, unknown> {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false
+  const keys = Object.keys(parsed as Record<string, unknown>)
+  if (keys.length === 0) return false
+  if (!keys.every(k => ENVELOPE_KEYS.has(k))) return false
+  return keys.includes('evidence') || keys.includes('actions')
+}
+
+/** The envelope block and the prose around it, however the block was tagged. */
+function locateEnvelope(text: string): { body: string; answer: string } | null {
+  /* The correctly tagged block wins outright, wherever it sits. */
+  const tagged = FENCE_RE.exec(text)
+  if (tagged) {
+    return {
+      body: tagged[1],
+      answer: (text.slice(0, tagged.index) + text.slice(tagged.index + tagged[0].length)).trim(),
+    }
+  }
+
+  /*
+   * Otherwise a TERMINAL fenced block with the envelope's shape.
+   *
+   * Terminal, not merely last. The contract is "append one block after your
+   * answer", so the envelope has nothing but whitespace after it. A JSON
+   * sample in the middle of an explanation can easily be the last block in
+   * the text -- and it is part of the explanation, not an envelope. An early
+   * version of this used "last" and stripped exactly that, which a test
+   * caught.
+   *
+   * The cost is that a model which writes a sentence AFTER the block is not
+   * recognised by this fallback. That is the conservative side to err on:
+   * a correctly tagged block is still found anywhere in the text, so this
+   * only narrows the recovery path for a mislabelled one.
+   */
+  let last: RegExpExecArray | null = null
+  ANY_FENCE_RE.lastIndex = 0
+  for (let m = ANY_FENCE_RE.exec(text); m; m = ANY_FENCE_RE.exec(text)) last = m
+  if (!last) return null
+  if (text.slice(last.index + last[0].length).trim() !== '') return null
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(last[2])
+  } catch {
+    /* Not JSON, so not the envelope, so not ours to touch. A reader's code
+       block is left exactly where they asked for it. */
+    return null
+  }
+  if (!looksLikeEnvelope(parsed)) return null
+
+  return {
+    body: last[2],
+    answer: (text.slice(0, last.index) + text.slice(last.index + last[0].length)).trim(),
+  }
+}
+
 const MAX_EVIDENCE_LABEL = 160
 
 function cleanEvidence(raw: unknown, max: number): AiEvidence[] {
@@ -126,14 +229,14 @@ export function parseAiResponse(
     structured: false,
   })
 
-  const match = FENCE_RE.exec(text)
-  if (!match) return fallback()
+  const located = locateEnvelope(text)
+  if (!located) return fallback()
 
-  const answer = (text.slice(0, match.index) + text.slice(match.index + match[0].length)).trim()
+  const answer = located.answer
 
   let parsed: unknown
   try {
-    parsed = JSON.parse(match[1])
+    parsed = JSON.parse(located.body)
   } catch {
     // A malformed block costs the buttons, not the answer. The block itself
     // is stripped either way — showing the user raw JSON they did not ask

@@ -57,10 +57,39 @@ export function openIdeaDetail(tradeQueueItemId: string): void {
         },
       }),
     )
-    const pop = () =>
-      window.dispatchEvent(
-        new CustomEvent('openTradeIdeaModal', { detail: { tradeId: tradeQueueItemId } }),
-      )
+    /*
+     * The deferred half needs its own guard, and did not have one.
+     *
+     * The `try` below wraps only the SCHEDULING. `pop` runs 50ms later, by
+     * which time the surface that asked for it may be gone -- a navigated-away
+     * page in the browser, and a torn-down environment under test. Then
+     * `window` is undefined inside here, the throw has no caller to catch it,
+     * and it surfaces as an uncaught exception.
+     *
+     * In CI that cost a release: vitest reported `ReferenceError: window is
+     * not defined` at this line as an unhandled error and exited 1 with
+     * `343 passed, 0 failed`. A required check went red with every test
+     * passing, from a test file that does not import this module -- the timer
+     * simply outlived whichever file was running when it was set. A gate that
+     * reds on unrelated changes is worse than one that is merely absent,
+     * because the next person learns to re-run it.
+     *
+     * Same intent as the outer catch, applied where the work actually happens.
+     */
+    const pop = () => {
+      /* `typeof` and not `!window`, so a torn-down environment where the
+         binding is GONE gives a ReferenceError-free check rather than
+         another throw. The catch covers the case where it exists but is
+         undefined, which is what a stubbed global looks like. */
+      if (typeof window === 'undefined') return
+      try {
+        window.dispatchEvent(
+          new CustomEvent('openTradeIdeaModal', { detail: { tradeId: tradeQueueItemId } }),
+        )
+      } catch {
+        /* A navigation that cannot fire must not take the surface down. */
+      }
+    }
     if (typeof requestAnimationFrame === 'function') {
       requestAnimationFrame(() => setTimeout(pop, MOUNT_SETTLE_MS))
     } else {

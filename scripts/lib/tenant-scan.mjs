@@ -88,6 +88,17 @@ export const ORG_SCOPED_TABLES = new Set([
 
   // Trade / allocation
   'trade_ideas',
+
+  /*
+   * ACT AI
+   *
+   * `ai_artifacts` carries `organization_id`, stamped at write time. Listed
+   * here BEFORE its migration is applied, deliberately: without the entry
+   * this gate cannot see the table at all, so an unscoped read of it would
+   * pass silently -- which is what happened on the first run against the
+   * feature, and is why the entry is part of the same change.
+   */
+  'ai_artifacts',
 ])
 
 /**

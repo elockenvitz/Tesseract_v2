@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { INITIAL_STAGE } from '../lib/ideas/stage-model'
+import { invalidateAssetWorkspace } from './useAssetWorkspace'
 import { useAuth } from './useAuth'
 import { useToast } from '../components/common/Toast'
 
@@ -78,6 +79,19 @@ export function usePromoteToTradeIdea() {
       queryClient.invalidateQueries({ queryKey: ['quick-thoughts-feed'] })
       queryClient.invalidateQueries({ queryKey: ['trade-queue'] })
       queryClient.invalidateQueries({ queryKey: ['ideas-feed'] })
+      /*
+       * And the dashboard asset pane, which lists this row.
+       *
+       * The insert above carries an `asset_id`, and the pane's "Live ideas"
+       * section reads exactly that: `trade_queue_items` for the asset with a
+       * null outcome and a non-terminal status, which a freshly promoted idea
+       * is. The pane caches for 60 seconds and does not refetch on mount
+       * inside that window, so without this the reader promoted a thought and
+       * then found the asset listing no new idea -- and the 60 seconds is
+       * exactly the kind of short expiry the brief says not to lean on in
+       * place of invalidating.
+       */
+      invalidateAssetWorkspace(queryClient)
     },
     onError: (err: Error) => {
       showError('Failed to promote', err.message)

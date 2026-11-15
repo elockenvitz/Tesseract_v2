@@ -13,11 +13,41 @@ import { isNavigableNotificationTarget } from '../../lib/notifications/routing'
 import { useCommunication } from '../../hooks/useCommunication'
 import { useNotifications } from '../../hooks/useNotifications'
 import { useSidebarStore, type InspectableItemType } from '../../stores/sidebarStore'
+/* The capture channel's one parser. See its note for why the listener below
+   does not read `event.detail` directly. */
+import { readCaptureOpen } from '../../lib/capture/prefill'
 import { useOrganization } from '../../contexts/OrganizationContext'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 import { MobileNavDrawer } from '../mobile/MobileNavDrawer'
 import { OverflowAuditOverlay } from '../mobile/OverflowAuditOverlay'
 import { ownsMobileViewport } from '../../lib/mobile/mobile-surfaces'
+import { createScrollMemory, useRememberedScroll } from '../../lib/ui/scroll-memory'
+
+/**
+ * Where each tab had been scrolled to.
+ *
+ * ── Why the Asset Page loses its place, and why the fix is here ───────────
+ *
+ * Reported: "Both the canonical Asset Page and embedded Asset Workspace
+ * appear to reload when I navigate to another application tab and return."
+ *
+ * The Asset Page does not own a scroller. `asset` is not in
+ * `FULL_WIDTH_TAB_TYPES`, so it renders into the one `overflow-auto` div
+ * below, which every other non-full-width tab also renders into. That div is
+ * not keyed by tab and does not unmount, so the element SURVIVES the tab
+ * change -- and its `scrollTop` does not survive what happens next: the new
+ * tab's content is a different height, the browser clamps the offset to that
+ * height, and coming back the reader is at the top of a page they had read
+ * a long way down. Nothing had reloaded. They had been moved.
+ *
+ * That is why this is in `Layout` and not in `AssetTab`. A page cannot
+ * remember a position in a scroller it does not own, and fixing it here
+ * fixes it for every tab that shares the scroller rather than for one.
+ *
+ * Twelve, because a session's worth of open tabs is the thing being moved
+ * between, and it is cheap: one number per tab.
+ */
+const tabScroll = createScrollMemory(12)
 
 interface LayoutProps {
   children: React.ReactNode
@@ -90,6 +120,19 @@ export function Layout({
   const [isFocusMode, setIsFocusMode] = useState(false)
   const { hasUnreadNotifications } = useNotifications()
 
+  /*
+   * The shared scroller's offset, per tab. See `tabScroll` above for why the
+   * Asset Page cannot do this for itself.
+   *
+   * Keyed on the tab id and not on what the tab holds: two asset tabs are two
+   * places the reader has been, and one offset for both would move each of
+   * them to the other's position. A tab that is closed and reopened is a new
+   * id and starts at the top, which is right -- closing it was the reader
+   * saying they were done with it.
+   */
+  const { scroller: scrollport, onScroll: onScrollportScroll } =
+    useRememberedScroll<HTMLDivElement>(tabScroll, activeTabId ?? null)
+
   // On phones the tab strip is replaced by a nav drawer opened from the
   // Tesseract mark — the Chrome-tab metaphor assumes you are juggling several
   // surfaces at once, which does not survive a 390px viewport.
@@ -129,6 +172,41 @@ export function Layout({
       data: { initialView: 'active' }
     })
   }, [onSearchResult])
+
+  /**
+   * Uncover the page before taking the reader to it.
+   *
+   * ── The defect this closes ────────────────────────────────────────────────
+   *
+   * Expanded, the pane is `left-0 right-0 top-16 bottom-0`: it covers the tab
+   * strip and the entire page and leaves only the header reachable. So the
+   * header search bar, the one control still in reach, opened the asset tab
+   * BEHIND the conversation. The screen did not change. Searching an asset
+   * from inside ACT AI looked like it had navigated within ACT AI, because the
+   * only thing a reader could see afterwards was still ACT AI.
+   *
+   * Collapse, not close. On the desktop rail the pane drops back to its 384px
+   * width, so the asset page appears beside a conversation that is still
+   * open — the reader asked a question about a name and then went to look at
+   * it, and throwing the thread away would punish them for doing both. On a
+   * phone there is no narrow form (the pane is a full-height sheet), so there
+   * it is hidden instead, which is what the nav drawer already did for this
+   * same reason.
+   *
+   * It is a hide either way, never an unmount: `CommunicationPane` stays
+   * mounted and merely translated, so a half-typed question and an
+   * in-progress Quick Idea both survive the trip. See `capture-draft.test`.
+   */
+  const revealPageBehindPane = useCallback(() => {
+    if (isCommPaneFullscreen) toggleCommPaneFullscreen()
+    if (isMobile && isCommPaneOpen) toggleCommPane()
+  }, [isCommPaneFullscreen, toggleCommPaneFullscreen, isMobile, isCommPaneOpen, toggleCommPane])
+
+  /** Navigation that came from the app chrome, which the pane may be covering. */
+  const handleChromeNavigation = useCallback((result: any) => {
+    revealPageBehindPane()
+    onSearchResult?.(result)
+  }, [revealPageBehindPane, onSearchResult])
 
   // Each toolbar button toggles its own view: clicking when its view is
   // already open closes the right pane; clicking otherwise opens it on
@@ -357,7 +435,18 @@ export function Layout({
   // Listen for custom event to open thoughts capture (from Attention Dashboard)
   useEffect(() => {
     const handleOpenThoughtsCapture = (event: CustomEvent) => {
-      const { contextType, contextId, contextTitle, captureType } = event.detail || {}
+      /*
+       * Parsed, not destructured.
+       *
+       * This listener used to pull four fields off `event.detail` and drop the
+       * rest, which is why `prefillText` -- dispatched by the AI action
+       * catalogue since it was written -- never reached a form. `readCaptureOpen`
+       * validates the whole request in one place and says which prefills the
+       * forms can actually honour.
+       */
+      const request = readCaptureOpen(event.detail)
+      if (!request) return
+      const { contextType, contextId, contextTitle, captureType, prefill } = request
 
       // Set context if provided
       if (contextType && contextId) {
@@ -365,7 +454,7 @@ export function Layout({
       }
 
       // Use store to open in capture mode (with optional auto-select type)
-      openCaptureSidebar(captureType || null)
+      openCaptureSidebar(captureType, prefill ?? null)
 
       // Switch to thoughts view
       setCommPaneView('thoughts')
@@ -564,7 +653,10 @@ export function Layout({
   return (
     <div className="h-viewport flex flex-col bg-white dark:bg-gray-900 overflow-hidden">
       <Header
-        onSearchResult={onSearchResult}
+        /* Every destination the header reaches — search, the nav menus, the
+           recents lists — goes out through this one prop, and all of them
+           were landing behind an expanded pane. */
+        onSearchResult={handleChromeNavigation}
         onShowDirectMessages={handleShowDirectMessages}
         onShowNotifications={handleShowNotifications}
         onShowCoverageManager={handleShowCoverageManager}
@@ -626,7 +718,11 @@ export function Layout({
           const ownsViewport = !!activeTab && isMobile && ownsMobileViewport(activeTab.type)
           const isBare = isFullWidth || ownsViewport
           return (
-            <div className={clsx(
+            <div
+              ref={scrollport}
+              onScroll={onScrollportScroll}
+              data-slot="tab-scrollport"
+              className={clsx(
               "relative h-full flex flex-col",
               isBare || isMobileNote ? "overflow-hidden" : isCompactPad ? "overflow-hidden p-2" : "overflow-auto",
               !isBare && !isCompactPad && (isMobileNote ? "px-3" : "px-3 py-4 sm:px-6 sm:py-6 lg:px-8"),
@@ -729,16 +825,17 @@ export function Layout({
             translated off-screen, so an in-progress capture keeps its type and
             everything typed into it. Closing the pane preserves the draft;
             tearing it down would not. See `capture-draft.test`.
+
+            Both callbacks now use the shared `revealPageBehindPane`, so the
+            drawer and the header search bar cannot drift apart on what
+            "get out of the way" means.
           */
-          onSearchResult={result => {
-            if (isCommPaneOpen) toggleCommPane()
-            onSearchResult?.(result)
-          }}
+          onSearchResult={handleChromeNavigation}
           onOpenSearch={onFocusSearch}
           tabs={tabs}
           activeTabId={activeTabId}
           onTabChange={tabId => {
-            if (isCommPaneOpen) toggleCommPane()
+            revealPageBehindPane()
             onTabChange(tabId)
           }}
           onTabClose={onTabClose}

@@ -4,7 +4,7 @@ export type { UniversalSmartInputProps, UniversalSmartInputRef } from './Univers
 
 // Renderer for displaying saved content
 export { SmartInputRenderer } from './SmartInputRenderer'
-export type { SmartInputRendererProps } from './SmartInputRenderer'
+export type { SmartInputRendererProps, SmartInputDensity } from './SmartInputRenderer'
 
 // Dropdown components (for custom implementations)
 export { SmartInputDropdown, SuggestionItem, SuggestionGroup, EmptyState, LoadingState } from './SmartInputDropdown'

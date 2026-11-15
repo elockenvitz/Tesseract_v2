@@ -31,6 +31,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { ASSET_SURFACE_GC_TIME } from '../lib/ui/asset-surface-retention'
 import {
   buildBook, unrealised,
   type HoldingRow, type Position,
@@ -38,12 +39,65 @@ import {
 import {
   selectCurrentLadders, type TargetRow, type CurrentLadder,
 } from '../lib/signals/current-ladder'
+/* The one rule for "does this price target still stand". Imported, never
+   restated: the pane and the canonical page reporting different answers for
+   the same row is the defect this closes. */
+import {
+  targetFreshness, scenarioFreshness,
+  type TargetFreshness, type FreshnessTargetInput, type FreshnessOutcomeInput,
+} from '../lib/outcomes/target-freshness'
 import {
   CORE_SECTIONS, type ThesisSection, type EvidenceItem,
 } from '../lib/desktop-research/model'
 import type { AssetFocus } from '../lib/desktop-asset'
 
 const DAY = 86_400_000
+
+/**
+ * The cache prefix this read lives under.
+ *
+ * ── Why it is exported, and what went wrong without it ───────────────────
+ *
+ * This hook is the dashboard asset pane's ONLY read, and it reads tables the
+ * full Asset page owns the editors for: `asset_contributions` for the case and
+ * `analyst_price_targets` for the targets. Those editors invalidate their own
+ * keys -- `contributions`, `analyst-price-targets`, `desktop-research`,
+ * `scenario-cards` -- and this one is not among them.
+ *
+ * So: edit the case on the Asset page, come back to the dashboard pane, and
+ * the pane states the OLD case. Not briefly, either. `staleTime` here is 60
+ * seconds, so for the first minute the pane does not even refetch on mount:
+ * it serves the cached rows and says "written 30d ago" over a paragraph the
+ * reader has just rewritten, or shows "No core investment case has been
+ * written" over one they have just written.
+ *
+ * It became easier to reach, not harder, when "Edit in research" stopped
+ * opening an editor in the pane and started sending the reader to the Asset
+ * page -- which made leaving and returning the NORMAL way to edit the case
+ * rather than an unusual one.
+ *
+ * `invalidateAssetWorkspace` is what the writers call. A prefix, so it covers
+ * every symbol, history depth and organisation variant of the same asset
+ * without each writer having to know the key's shape.
+ */
+export const ASSET_WORKSPACE_KEY = 'asset-workspace' as const
+
+/**
+ * Mark the dashboard pane's read stale after writing something it shows.
+ *
+ * Call it from any mutation touching the case, the evidence, the targets, the
+ * ideas or the decisions on an asset. It is deliberately NOT scoped to the
+ * asset id: the key carries the symbol, the history depth and the
+ * organisation as well, so an id-scoped invalidation would have to reproduce
+ * all four and would miss the variant the reader was actually looking at.
+ * Invalidating the prefix costs one refetch of one pane that is usually not
+ * even mounted.
+ */
+export function invalidateAssetWorkspace(queryClient: {
+  invalidateQueries: (filters: { queryKey: unknown[] }) => unknown
+}): void {
+  queryClient.invalidateQueries({ queryKey: [ASSET_WORKSPACE_KEY] })
+}
 
 /** Deep enough to anchor a chart at a case written a year ago. */
 const DEEP_HISTORY_DAYS = 400
@@ -101,6 +155,14 @@ export interface AssetWorkspaceData {
   /** The whole ladder, so FrameworkScale can be reused rather than reshaped. */
   ladder: CurrentLadder | null
   target: number | null
+  /**
+   * Whether the number in `target` still stands, and as of when.
+   *
+   * From `price_target_outcomes` through the shared `targetFreshness` rule,
+   * never from a countdown off `updated_at`. Null when there is no target to
+   * judge; `unknown` is a real verdict and is not the same as null.
+   */
+  targetStanding: TargetFreshness | null
   positions: AssetPosition[]
   liveIdeas: AssetLiveIdea[]
   decisions: AssetDecisionRow[]
@@ -108,7 +170,7 @@ export interface AssetWorkspaceData {
 
 const EMPTY: AssetWorkspaceData = {
   sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
-  history: [], spot: null, ladder: null, target: null,
+  history: [], spot: null, ladder: null, target: null, targetStanding: null,
   positions: [], liveIdeas: [], decisions: [],
 }
 
@@ -126,6 +188,11 @@ const personName = (u: any): string | null =>
  * closes to render nothing.
  */
 function historyDaysFor(focus: AssetFocus): number {
+  /* `framework` stays in this list. It is the focus a scenario-gap finding
+     arrives with, and that finding is the ladder measured against price --
+     the one reading on this surface that cannot be drawn without the deep
+     history. Dropping it would have made the chart the finding is ABOUT
+     render from four closes. */
   return focus === 'research' || focus === 'framework' || focus === 'position'
     ? DEEP_HISTORY_DAYS
     : SHALLOW_HISTORY_DAYS
@@ -166,13 +233,27 @@ export function useAssetWorkspace(
   const { currentOrgId } = useOrganization()
 
   const { data, isLoading, error } = useQuery<AssetWorkspaceData>({
-    queryKey: ['asset-workspace', assetId, symbol, days, currentOrgId],
+    queryKey: [ASSET_WORKSPACE_KEY, assetId, symbol, days, currentOrgId],
     enabled: !!assetId && !!currentOrgId,
     staleTime: 60_000,
+    /*
+     * Kept well past the unmount, which is a different question from the
+     * 60 seconds above.
+     *
+     * The Dashboard renders the active tab only, so this hook unmounts
+     * whenever the reader looks at anything else, and with the app's
+     * five-minute `gcTime` default the entry was collected on any trip
+     * longer than that. Coming back then hit `if (isLoading) return
+     * <Skeleton />` and refired all eight reads, which is the "appeared to
+     * reload" the pane was reported for. Freshness is unchanged: 60 seconds
+     * still decides when to refetch, and every writer still invalidates.
+     * See `lib/ui/asset-surface-retention`.
+     */
+    gcTime: ASSET_SURFACE_GC_TIME,
     queryFn: async () => {
       const floor = new Date(Date.now() - days * DAY).toISOString().slice(0, 10)
 
-      const [contribs, notes, history, mine, targets, ideas, decisions] = await Promise.all([
+      const [contribs, notes, history, mine, targets, outcomes, ideas, decisions] = await Promise.all([
         supabase.from('asset_contributions')
           .select('section, content, supporting_detail, updated_at, users:created_by(first_name, last_name, email)')
           .eq('organization_id', currentOrgId!)
@@ -192,8 +273,42 @@ export function useAssetWorkspace(
         supabase.from('portfolio_holdings')
           .select('portfolio_id').eq('asset_id', assetId!),
         supabase.from('analyst_price_targets')
-          .select('id, asset_id, price, is_official, created_at, updated_at, scenarios(name), assets(id, symbol, company_name)')
+          /* `target_date`, `is_rolling`, `timeframe` and `timeframe_type` are
+             here for `targetFreshness`. Without them this pane could report a
+             price and not whether it still stood, which is how the pane and
+             the canonical page came to disagree about the same number. */
+          .select('id, asset_id, price, is_official, created_at, updated_at, target_date, is_rolling, timeframe, timeframe_type, scenarios(name), assets(id, symbol, company_name)')
           .eq('organization_id', currentOrgId!)
+          .eq('asset_id', assetId!),
+        /*
+         * The EVALUATED standing of those targets.
+         *
+         * `price_target_outcomes` is authoritative for "does this number still
+         * stand" -- see `target-freshness` for why a client-side countdown
+         * from `updated_at` is not. Read in parallel with the targets, so it
+         * adds a request and no waterfall.
+         *
+         * ── RLS posture, and why there is no client-side org filter ──────
+         *
+         * Unlike the four tables above, this one's RLS IS organisation-aware.
+         * Verified against production: RLS enabled, no anon SELECT, and the
+         * SELECT policy is
+         *
+         *   organization_id IS NOT NULL
+         *   AND is_active_member_of_current_org()
+         *   AND organization_id = current_org_id()
+         *
+         * so the server already restricts these rows to the reader's active
+         * organisation. Adding `.eq('organization_id', currentOrgId)` on top
+         * would intersect the SERVER's org id with the CLIENT provider's,
+         * and those two disagree while membership is loading or just after a
+         * self-heal. That intersection returning zero rows is the documented
+         * defect that made the Case-vs-Price card vanish (see the header of
+         * `current-ladder.ts`), and zero rows here would read as "no target
+         * has ever been evaluated", which is a claim about the firm's work.
+         */
+        supabase.from('price_target_outcomes')
+          .select('price_target_id, status, target_date')
           .eq('asset_id', assetId!),
         supabase.from('trade_queue_items')
           .select('id, action, stage, status, outcome, rationale, portfolios(name)')
@@ -249,6 +364,32 @@ export function useAssetWorkspace(
       if (ladder) out.ladder = ladder
       const official = targetRows.find((t: any) => t.is_official && Number((t as any).price) > 0)
       if (official) out.target = Number((official as any).price)
+
+      /*
+       * Does the number above still stand?
+       *
+       * The pane used to report `target` as a bare price with no horizon and
+       * no status, which is the same defect `target-freshness` was written to
+       * fix on the Research surface one table over: a target whose horizon
+       * ran out in August read as the firm's current valuation. The rule is
+       * imported rather than restated, so this pane and the canonical page
+       * cannot drift apart.
+       *
+       * The verdict is for the OFFICIAL target when there is one, because
+       * that is the number this pane publishes. With no official target the
+       * whole framework is judged, and `scenarioFreshness` reports `mixed`
+       * rather than picking a winner when its rungs disagree.
+       */
+      const outcomeRows = ((outcomes.data ?? []) as any[]).map((r): FreshnessOutcomeInput => ({
+        price_target_id: r.price_target_id,
+        status: r.status,
+        target_date: r.target_date ?? null,
+      }))
+      out.targetStanding = official
+        ? targetFreshness(official as FreshnessTargetInput, outcomeRows)
+        : targetRows.length > 0
+          ? scenarioFreshness(targetRows as FreshnessTargetInput[], outcomeRows)
+          : null
 
       /* ------------------------------------------------------- positions */
       const books = [...new Set(((mine.data ?? []) as any[]).map(r => r.portfolio_id))]

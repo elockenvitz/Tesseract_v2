@@ -158,15 +158,23 @@ describe('hiding is a hide, so the draft survives', () => {
 })
 
 describe('the wiring is Layout own, not a drawer behaviour', () => {
-  it('closes the pane from Layout, where the pane state lives', () => {
+  it('clears the pane from Layout, where the pane state lives', () => {
     const flat = layout.replace(/\s+/g, ' ')
 
-    // The close happens FIRST in both handlers, so the surface never opens
-    // behind a sheet that is still up.
+    // Getting out of the way happens FIRST in both handlers, so the surface
+    // never opens behind a sheet that is still up.
+    //
+    // Both now call the shared `revealPageBehindPane`, which the header
+    // search bar uses too: expanded over the whole page, the pane was
+    // swallowing header navigation the same way the sheet swallowed the
+    // drawer's. It closes the sheet on a phone and collapses the desktop rail
+    // back to its 384px width. The behaviour is asserted against a rendered
+    // Layout in `navigate-out-of-pane.test`; what this file keeps is the
+    // ordering claim.
     for (const call of ['onSearchResult?.(result)', 'onTabChange(tabId)']) {
       const at = flat.indexOf(call)
       expect(at).toBeGreaterThan(0)
-      expect(flat.slice(at - 90, at)).toContain('if (isCommPaneOpen) toggleCommPane()')
+      expect(flat.slice(at - 90, at)).toContain('revealPageBehindPane()')
     }
   })
 

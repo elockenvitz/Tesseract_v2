@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { format, formatDistanceToNow, startOfWeek, startOfMonth, startOfQuarter } from 'date-fns'
 import type { HistoryEvent, EvolutionAnalysis } from '../../hooks/useContributions'
+import { richTextToPlain } from '../../lib/text/rich-text-plain'
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -337,7 +338,10 @@ function TimelineEventItem({ event, isLast, isMilestone, milestone }: TimelineEv
                     ) : (
                       <span className="text-green-600 italic">New: </span>
                     )}
-                    {event.content}
+                    {/* Contribution prose is Markdown. This printed the
+                        markers, so an edit to a bolded risk line read as
+                        `Updated: **Regulation** ...` in the timeline. */}
+                    {richTextToPlain(event.content)}
                   </p>
                 )}
               </div>
@@ -361,11 +365,11 @@ function TimelineEventItem({ event, isLast, isMilestone, milestone }: TimelineEv
               <div className="mt-3 pt-3 border-t border-gray-200 space-y-2 dark:border-gray-700">
                 <div>
                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Previous:</span>
-                  <p className="text-xs text-gray-400 line-through mt-1">{event.previousContent}</p>
+                  <p className="text-xs text-gray-400 line-through mt-1">{richTextToPlain(event.previousContent)}</p>
                 </div>
                 <div>
                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Current:</span>
-                  <p className="text-xs text-gray-700 mt-1 dark:text-gray-300">{event.content}</p>
+                  <p className="text-xs text-gray-700 mt-1 dark:text-gray-300">{richTextToPlain(event.content)}</p>
                 </div>
               </div>
             )}

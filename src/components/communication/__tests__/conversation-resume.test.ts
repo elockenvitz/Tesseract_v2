@@ -186,7 +186,24 @@ describe('the pane cannot claim a subject the open conversation does not have', 
      *  - no thread at all: the state is `empty`, not foreign, and it STILL
      *    announced AAPL on an MSFT page, because the target is frozen.
      */
-    expect(AI).toMatch(/engagementTarget && contextState !== 'foreign' && headerDescribesHere && \(/)
+    /*
+     * The band itself is gone. `EngagementContextHeader` drew a second
+     * context list from the engagement target, which the request does not
+     * read, and `AiEntryOrientation` replaced it — so the condition is now
+     * keyed on `context.event`, which carries the same two suppressions
+     * inside `lib/ai/active-context` plus a third the old band had none of
+     * (the reader can dismiss it).
+     *
+     * Both falsehoods are now pinned BEHAVIOURALLY, by mounting the pane, in
+     * `active-context-pane.test.tsx` — "goes quiet once the reader has walked
+     * to another object" there, and in `active-context.test.ts` for the rule
+     * on its own. This file pins wiring against source because the pane
+     * needed a live Supabase client to mount; that is no longer true for
+     * this particular claim, so the stronger test is the one that renders.
+     * What is left here is the guard that the suppression is still WIRED,
+     * which source text is the right tool for.
+     */
+    expect(AI).toMatch(/context\.event && contextState !== 'foreign' && headerDescribesHere && \(/)
     expect(AI).toMatch(/const headerDescribesHere = subjectsAgree\(targetSubject, currentSubject\)/)
   })
 

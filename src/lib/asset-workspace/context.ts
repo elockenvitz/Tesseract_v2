@@ -39,6 +39,10 @@
  * chip around it. `evidence` is what the UI links to.
  */
 
+/* The one rule for whether a price target still stands. Imported so that the
+   attention surface and the Research surface cannot answer it differently. */
+import { isStale, type FreshnessState } from '../outcomes/target-freshness'
+
 /** The five destinations the Asset page already has. */
 export type WorkspaceDestination = 'snapshot' | 'research' | 'workflow' | 'decisions' | 'lists'
 
@@ -127,6 +131,16 @@ export interface WorkspaceFacts {
   /** Dominant rating and the n behind it, from `useAnalystRatings`. */
   rating: { value: string; count: number; total: number } | null
   target: number | null
+  /**
+   * Whether the number in `target` still stands, and as of when.
+   *
+   * The EVALUATED verdict, from `price_target_outcomes` through
+   * `targetFreshness`. Required rather than optional on purpose: a surface
+   * that forgets to pass it would quietly stop reporting a lapsed valuation,
+   * and an omission that typechecks is the defect class this project keeps
+   * finding. `null` is the honest value for a surface with no target to judge.
+   */
+  targetStanding: { state: FreshnessState; asOf: string | null } | null
   spot: number | null
   /** Research items dated after the case was last written. */
   newEvidenceCount: number
@@ -145,6 +159,29 @@ export interface WorkspaceFacts {
 }
 
 /* ──────────────────────────────────────────────────────────── state ─── */
+
+/**
+ * One line for a lapsed valuation, naming the state rather than generalising.
+ *
+ * `mixed` is deliberately not called expired: a framework whose rungs
+ * disagree has not run out, it has stopped agreeing, and telling a reader the
+ * wrong one of those sends them to fix the wrong thing. The date is stated
+ * only when one is on record, because a reason that invents a date is worse
+ * than one that omits it.
+ */
+function targetStandingHeadline(state: FreshnessState, asOf: string | null): string {
+  const on = asOf ? ` on ${asOf}` : ''
+  switch (state) {
+    case 'expired': return `The price target on record ran out${on}`
+    case 'missed': return `The price target on record resolved against the case${on}`
+    case 'cancelled': return `The price target on record was withdrawn${on}`
+    case 'mixed': return 'The scenario targets do not agree on whether the valuation still stands'
+    /* `isStale` admits no other state, so this is unreachable rather than a
+       fallback. Stated as the state's own name so a new stale state surfaces
+       as itself instead of being absorbed into one of the four above. */
+    default: return `The price target on record is ${state}${on}`
+  }
+}
 
 const DAY = 86_400_000
 
@@ -390,6 +427,46 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
   }
 
   /*
+   * The valuation on record has lapsed.
+   *
+   * ── Why this signal exists ──────────────────────────────────────────────
+   *
+   * The canonical Asset page used to state this as a banner of its own, in
+   * amber, above the price-target section, from a separate query on a
+   * separate five-minute cache. So one page carried a valuation-review band,
+   * a warning control, this reason as a banner, and the attention trigger
+   * that was supposed to be the single entry point. Four surfaces, one fact.
+   *
+   * It is an outstanding reason, so it belongs here with the others. The
+   * banner is gone and nothing is lost, because this reads the same
+   * authoritative record the banner's RPC read.
+   *
+   * ── Where the verdict comes from ────────────────────────────────────────
+   *
+   * `targetStanding` is `targetFreshness` over `price_target_outcomes`:
+   * evaluated, dated, and not a countdown from `updated_at` that any
+   * unrelated save would push forward. `isStale` is that module's own
+   * definition of "this number no longer stands", so expired, resolved
+   * against, withdrawn and internally-disagreeing all qualify and `unknown`
+   * does not. Absence of a horizon is not expiry.
+   */
+  if (f.targetStanding && isStale(f.targetStanding.state)) {
+    const asOf = f.targetStanding.asOf
+    out.push({
+      id: `staleness-target-${f.targetStanding.state}`,
+      kind: 'staleness',
+      headline: targetStandingHeadline(f.targetStanding.state, asOf),
+      destination: 'research',
+      focus: { kind: 'research-section', anchor: 'targets' },
+      evidence: [{ label: 'Price target outcome', table: 'price_target_outcomes' }],
+      /* Above a thin case and below spot having left the framework: a target
+         that has run out is a fact about the valuation, and the reader whose
+         price has passed a live target has the more urgent one. */
+      weight: 75,
+    })
+  }
+
+  /*
    * Executions that are not evidenced by an observed fill.
    *
    * A provenance signal, not a contradiction: the trades may well have
@@ -426,40 +503,90 @@ export function resolveWorkspaceSignals(f: WorkspaceFacts, now = Date.now()): Wo
 /* ───────────────────────────────────────────────────────── emphasis ─── */
 
 /**
- * What the Snapshot leads with, per state.
+ * What sits beside the case at the top of the Snapshot, per state.
  *
- * The same panels in a different order — not different panels. Reordering is
- * reversible, explainable and cannot hide anything; conditional panels would
- * mean a reader cannot find a thing because of a rule they cannot see.
+ * ── What this replaced, and why ──────────────────────────────────────────
+ *
+ * This used to be a six-panel `order` array per state, documented as "the
+ * same panels in a different order". Nothing ever read it. The Snapshot
+ * composes a fixed layout and used `workspaceState` for a `data-` attribute
+ * and nothing else, so for six situations the page looked identical. The
+ * array's own vocabulary had also drifted past the surface it described:
+ * `conclusion` names a card that was deleted, and `work` names a panel the
+ * Snapshot does not have at all.
+ *
+ * A test iterated it and asserted every state covered every panel, with a
+ * comment about a panel being "silently dropped off the page" -- a
+ * consequence that could not occur, because no page read the value. That is
+ * the documented local defect class: a check asserting a property of a
+ * constant rather than of the thing the constant is supposed to govern.
+ *
+ * ── Why a lead companion and not an ordering ─────────────────────────────
+ *
+ * The layout has exactly one emphasis slot: the top row, which is page-wide
+ * and can hold the case alone or the case beside one compact block. Every
+ * other position is already decided by whether its data exists. So the
+ * honest shape is "what earns the top row with the case", which the page can
+ * actually act on, rather than a total order over panels it cannot.
+ *
+ * Reordering remains reversible and hides nothing: a panel that loses the
+ * lead is still on the page, lower down.
  */
+/**
+ * What earns the top row when nothing is OWED on the name.
+ *
+ * Work owed outranks every emphasis and is not in this union on purpose.
+ * Whether a queue leads the page is a question about data, not about
+ * situation: an idea at ready-to-recommend is work owed without being a
+ * pending ruling, so a state-gated queue would hide it on exactly the names
+ * where it is the only thing to do. The queue leads whenever it exists; this
+ * decides what happens on the names where it does not.
+ */
+export type LeadCompanion =
+  /** Exposure and valuation. The reader is holding something unexplained. */
+  | 'position'
+  /** The case takes the row by itself. */
+  | 'none'
+
 export const STATE_EMPHASIS: Record<WorkspaceState, {
   /** One line naming the situation, shown to the reader. */
   label: string
-  /** Panel order, most relevant first. */
-  order: ('conclusion' | 'decision' | 'case' | 'position' | 'work' | 'memory')[]
+  /** What earns the top row beside the case, where nothing is owed. */
+  lead: LeadCompanion
 }> = {
   'decision-pending': {
+    /* The waiting decision leads by virtue of existing, so there is nothing
+       for the emphasis to choose here. */
     label: 'A decision is waiting',
-    order: ['conclusion', 'decision', 'position', 'case', 'memory', 'work'],
+    lead: 'none',
   },
   'position-monitored': {
     label: 'Held, with a written case',
-    order: ['conclusion', 'case', 'position', 'memory', 'work', 'decision'],
+    lead: 'none',
   },
   'position-unexplained': {
+    /*
+     * The state that was costing a reader something. Held with nothing
+     * written means the case panel at the top of the page is empty or nearly
+     * so, and the exposure -- the only concrete fact about the name -- sat
+     * below two other blocks. The reader's question on this name is "what are
+     * we holding, and why has nobody written it down", and half of that was
+     * at the bottom.
+     */
     label: 'Held, with no case on record',
-    order: ['conclusion', 'position', 'case', 'work', 'memory', 'decision'],
+    lead: 'position',
   },
   'research-active': {
     label: 'Research in progress',
-    order: ['conclusion', 'case', 'work', 'memory', 'position', 'decision'],
+    lead: 'none',
   },
   'research-unstarted': {
     label: 'Covered, nothing written yet',
-    order: ['conclusion', 'case', 'work', 'position', 'memory', 'decision'],
+    lead: 'none',
   },
   unowned: {
+    /* Not held: there is no exposure to lead with. */
     label: 'Not held, not covered',
-    order: ['conclusion', 'case', 'work', 'position', 'memory', 'decision'],
+    lead: 'none',
   },
 }

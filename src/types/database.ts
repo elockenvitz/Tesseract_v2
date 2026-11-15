@@ -10,6 +10,48 @@ export interface Database {
   public: {
     Tables: {
       /**
+       * ACT AI project folders: a named shelf for conversations, owned by one
+       * reader inside one organization.
+       *
+       * `user_id` and `organization_id` are required on Insert and absent
+       * from Update: the policies check both on every verb, and the stamp is
+       * set at write time rather than derived from a mutable current-org at
+       * read time, so the type refuses the change before the database has to.
+       *
+       * Declared here because this file is the hand-maintained contract, not
+       * a generated one. A table missing from it resolves to `never`, which
+       * is why `.insert({...})` against one reads as "not assignable to
+       * parameter of type never" rather than as an obvious missing type.
+       */
+      ai_project_folders: {
+        Row: {
+          id: string
+          user_id: string
+          organization_id: string
+          name: string
+          is_archived: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          organization_id: string
+          name: string
+          is_archived?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          name?: string
+          is_archived?: boolean
+        }
+        /* Required, not decorative: without it supabase-js v2's generic
+           collapses and every write on the table resolves to `never`. See
+           the longer note on `files` below. */
+        Relationships: []
+      }
+      /**
        * The Files V1 repository. Bytes live in the private `assets` bucket
        * under `<organization_id>/files/<file_id>/<name>`; this row is the
        * metadata, and the thing RLS actually guards.

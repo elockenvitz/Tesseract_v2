@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
+/* Stored research is Markdown; see the note in ThesisUnifiedSummary. */
+import { SmartInputRenderer } from '../smart-input'
 import { clsx } from 'clsx'
 import {
   User,
@@ -457,8 +459,12 @@ export function ContributionCard({
             </div>
           </div>
         ) : (
-          <div className="text-sm text-gray-700 whitespace-pre-wrap dark:text-gray-300">
-            {contribution.content}
+          <div className="text-sm text-gray-700 dark:text-gray-300">
+            {/* `whitespace-pre-wrap` was doing the job of a renderer: it kept
+                the line breaks and showed every other marker literally. The
+                renderer handles the breaks AND the formatting, and emits no
+                HTML. */}
+            <SmartInputRenderer content={contribution.content} />
           </div>
         )}
       </div>

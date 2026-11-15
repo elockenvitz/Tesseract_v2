@@ -1,10 +1,13 @@
 /**
- * The PARKED asset workspace.
+ * The asset workspace: parked as a page, live as the Dashboard's work pane.
  *
- * The component is experimental and nothing routes to it -- the existing Asset
- * page is canonical. The suite is kept because the modules it covers are the
- * ones intended to move into that page later, and a covered module is far
- * cheaper to move than an uncovered one.
+ * No asset TAB routes to it -- the existing Asset page is canonical, and a
+ * convergence test holds that line. `AssetWorkspacePane`, which is what every
+ * case here renders, is a different matter: the Dashboard mounts it as its
+ * right-hand work pane through `DashboardNext` and `IdeasWorkPane`, so this
+ * suite covers a surface users read today, not only modules intended to move
+ * into the Asset page later. The file header on the component itself has the
+ * longer version, and what it cost to get wrong.
  *
  * This is where the behaviour that used to be asserted against Research detail
  * and Portfolio position detail now lives, because that is where it moved: one
@@ -28,7 +31,7 @@ const dateAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString().slic
 
 const BASE: AssetWorkspaceData = {
   sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
-  history: [], spot: null, ladder: null, target: null,
+  history: [], spot: null, ladder: null, target: null, targetStanding: null,
   positions: [], liveIdeas: [], decisions: [],
 }
 
@@ -79,8 +82,11 @@ vi.mock('../contributions', () => ({
  * whole point of putting the verdict on this surface.
  */
 const recordVerdict = vi.fn()
+/** Newest `holds` per asset, as the hook returns it. Set by the cases that
+ *  care whether a review has been recorded; emptied in `beforeEach`. */
+let reviewedAt = new Map<string, string>()
 vi.mock('../../hooks/useThesisReview', () => ({
-  useThesisReviews: () => new Map<string, string>(),
+  useThesisReviews: () => reviewedAt,
   useRecordThesisReview: () => ({
     record: recordVerdict, isPending: false, pendingOutcome: null,
   }),
@@ -116,6 +122,7 @@ vi.mock('../../lib/engagement', async importOriginal => {
 })
 
 import { AssetWorkspacePane } from './AssetWorkspace'
+import { forgetPaneViews } from '../ideas-app/pane-place'
 
 const asset = { id: 'a-1', symbol: 'AAPL', company_name: 'Apple Inc.' }
 
@@ -162,6 +169,152 @@ beforeEach(() => {
   opened.length = 0
   openEngagement.mockClear()
   recordVerdict.mockClear()
+  reviewedAt = new Map<string, string>()
+  /* The pane's own UI memory is module scope, so a case that opens a
+     disclosure would otherwise leave it open for the next one. See
+     `pane-place`. */
+  forgetPaneViews()
+})
+
+/* ------------------------------------------------- one answer about review */
+
+/**
+ * Research status does not deny the record it is reading.
+ *
+ * The panel's own paragraph said "There is no separate 'reviewed, no change'
+ * record". That was true when it was written and stopped being true when
+ * thesis reviews shipped: `memory_events` carries `thesis.reviewed`, a
+ * `holds` outcome is exactly that record, and this pane reads it through
+ * `useThesisReviews` to decide the state pill directly above the sentence.
+ *
+ * So a reader could record a review, watch the pill say the case is current
+ * BECAUSE of it, and read underneath that no such record exists. Two answers
+ * to one question, on one panel, four lines apart.
+ */
+describe('research status, on whether the case has been reviewed', () => {
+  /* The whole pane. The panel's heading sits in its own element, so
+     `closest()` from it returns a wrapper holding the heading alone. */
+  const panel = (r: ReturnType<typeof render>) => r.container
+
+  it('names the date the case was confirmed to hold', () => {
+    reviewedAt = new Map([[asset.id, '2026-11-02T09:00:00Z']])
+    const r = render(<AssetWorkspacePane asset={asset} />)
+
+    expect(panel(r).textContent).toMatch(/Confirmed still to hold on/)
+    expect(panel(r).textContent).toContain(
+      new Date('2026-11-02T09:00:00Z').toLocaleDateString(),
+    )
+  })
+
+  it('never claims the record cannot exist', () => {
+    /* The exact sentence that was wrong, in both branches. */
+    reviewedAt = new Map([[asset.id, '2026-11-02T09:00:00Z']])
+    const withReview = render(<AssetWorkspacePane asset={asset} />)
+    expect(withReview.container.textContent).not.toMatch(/no separate/i)
+    withReview.unmount()
+
+    const without = render(<AssetWorkspacePane asset={asset} />)
+    expect(without.container.textContent).not.toMatch(/no separate/i)
+  })
+
+  it('says no one has reviewed it, rather than nothing, when none is recorded', () => {
+    /* The other branch. "Absent" and "impossible" are different facts and
+       the reader acts on them differently: one of them they can fix. */
+    const r = render(<AssetWorkspacePane asset={asset} />)
+
+    expect(panel(r).textContent).toMatch(/No one has recorded a review/)
+    expect(panel(r).textContent).not.toMatch(/Confirmed still to hold/)
+  })
+
+  it('still explains why the case date did not move', () => {
+    /* The part of the old paragraph that was right and has to survive: the
+       displayed case date tracks saves, not reviews, so a reader seeing an
+       old date beside a recent review is not looking at a bug. */
+    reviewedAt = new Map([[asset.id, '2026-11-02T09:00:00Z']])
+    const r = render(<AssetWorkspacePane asset={asset} />)
+
+    expect(panel(r).textContent).toMatch(/moves only when a core section is saved/)
+  })
+})
+
+/* ------------------------------------------------- the trip back */
+
+describe('what the reader had open survives leaving the tab', () => {
+  /*
+   * This application renders the active tab only, so leaving the Dashboard
+   * unmounts this pane entirely. Reported as the pane appearing "to reload
+   * and rebuild its content" on the way back from editing the case.
+   *
+   * `place.ts` already returns the lens and the selected name. These are the
+   * two things the reader had done BY HAND inside the pane, which is why
+   * losing them reads as a rebuild rather than as a refresh.
+   */
+  const withSupporting = () => ({
+    ...BASE,
+    sections: [
+      section(),
+      section({ section: 'catalysts', content: 'Services pricing in the spring.' }),
+    ],
+  })
+
+  it('reopens the supporting sections the reader had opened', async () => {
+    data = withSupporting()
+    const first = render(<AssetWorkspacePane asset={asset} />)
+    await userEvent.click(first.getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]') as HTMLElement)
+    expect(first.getByText(/Services pricing in the spring/)).toBeTruthy()
+
+    /* The real unmount, not a simulation of one. */
+    first.unmount()
+
+    const second = render(<AssetWorkspacePane asset={asset} />)
+    expect(second.getByText(/Services pricing in the spring/)).toBeTruthy()
+    expect(second.getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]')
+      ?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('leaves them closed for a reader who never opened them', () => {
+    /* The other branch. Without it the case above would pass against a
+       disclosure that was simply open by default, which is the presentation
+       the disclosure exists to replace. */
+    data = withSupporting()
+    const { getByTestId, queryByText } = render(<AssetWorkspacePane asset={asset} />)
+    expect(queryByText(/Services pricing in the spring/)).toBeNull()
+    expect(getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]')
+      ?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('does not carry a disclosure from one name onto another', async () => {
+    /* The choice is about the NAME. A reader who opened AAPL's supporting
+       detail has said nothing about MSFT's. */
+    data = withSupporting()
+    const first = render(<AssetWorkspacePane asset={asset} />)
+    await userEvent.click(first.getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]') as HTMLElement)
+    first.unmount()
+
+    const other = render(
+      <AssetWorkspacePane asset={{ id: 'a-2', symbol: 'MSFT', company_name: 'Microsoft' }} />,
+    )
+    expect(other.getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]')
+      ?.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('forgets one the reader closed again before leaving', async () => {
+    data = withSupporting()
+    const first = render(<AssetWorkspacePane asset={asset} />)
+    const toggle = () => first.getByTestId('case-supporting-sections')
+      .querySelector('[data-slot="case-supporting-toggle"]') as HTMLElement
+    await userEvent.click(toggle())
+    await userEvent.click(toggle())
+    first.unmount()
+
+    const second = render(<AssetWorkspacePane asset={asset} />)
+    expect(second.queryByText(/Services pricing in the spring/)).toBeNull()
+  })
 })
 
 /* ------------------------------------------------------------- identity */
@@ -274,14 +427,58 @@ describe('the case is the object, and its absence is a finding', () => {
     expect(screen.getByText(/2 research items exist against it/)).toBeInTheDocument()
   })
 
-  it('mounts the canonical editor rather than growing its own', async () => {
+  /*
+   * This used to assert the opposite: that pressing Edit mounted
+   * `ThesisContainer` -- the canonical editor -- inside this section, and
+   * that it was handed the right asset id. It was the right data model in
+   * the wrong room. The editor expects the Asset page's width and the
+   * research furniture around it, and in a dashboard pane it rendered as a
+   * cramped copy of a page that already exists.
+   *
+   * The claim now is that the pane does NOT grow an editor and the reader
+   * lands on the one that belongs to the case, at the research focus rather
+   * than on a generic asset overview.
+   */
+  it('sends the reader to the canonical research editor, and mounts none here', async () => {
     const user = userEvent.setup()
     data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(30) }
     render(<AssetWorkspacePane asset={asset} />)
-    await user.click(screen.getByRole('button', { name: /Edit/ }))
+    await user.click(screen.getByTestId('workspace-open-case-editor'))
 
-    expect(screen.getAllByTestId('real-thesis-editor')).toHaveLength(1)
-    expect(editorFor).toEqual(['a-1'])
+    expect(screen.queryByTestId('real-thesis-editor')).toBeNull()
+    expect(editorFor).toEqual([])
+    expect(opened).toHaveLength(1)
+    expect(opened[0].assetId).toBe('a-1')
+    expect(opened[0].focus).toBe('research')
+  })
+
+  it('names the section, so the reader lands on the case and not on Research', async () => {
+    /*
+     * `focus: 'research'` alone is the right LENS and the wrong place. The
+     * Research page is long, and a reader arriving with no section named
+     * lands at whatever scroll position that page was last left at -- which
+     * is usually not the paragraph whose Edit control they just pressed.
+     *
+     * 'case' rather than 'thesis' because that is what the control is
+     * labelled; the receiver resolves both to the thesis anchor, since the
+     * case begins there.
+     */
+    const user = userEvent.setup()
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(30) }
+    render(<AssetWorkspacePane asset={asset} />)
+    await user.click(screen.getByTestId('workspace-open-case-editor'))
+
+    expect(opened[0].section).toBe('case')
+  })
+
+  it('says where the control goes, since it goes somewhere', () => {
+    /* "Edit" was honest about an editor that opened in place. On a control
+       that navigates it is not: a press leaves the pane. */
+    data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(30) }
+    render(<AssetWorkspacePane asset={asset} />)
+
+    expect(screen.getByTestId('workspace-open-case-editor').textContent)
+      .toMatch(/Edit in research/)
   })
 
   it('offers to write the case when there is none', () => {
@@ -327,11 +524,25 @@ describe('research focus: what changed since we wrote it', () => {
     expect(screen.queryByText(/since review/i)).not.toBeInTheDocument()
   })
 
-  it('says plainly that no reviewed-unchanged record exists', () => {
+  /*
+   * This case used to assert the opposite, and was right to at the time.
+   *
+   * It read `expect(screen.getByText(/no separate/i))` -- pinning the
+   * panel's claim that no "reviewed, unchanged" record existed anywhere in
+   * the schema. Thesis reviews shipped after it: `memory_events` carries
+   * `thesis.reviewed`, a `holds` outcome IS that record, and this pane reads
+   * it to decide the state pill printed directly above that sentence.
+   *
+   * So the assertion was holding a false sentence in place. What survives is
+   * the half that is still true and still worth pinning: the panel explains
+   * why the displayed case date did not move, and it still offers no control
+   * here that would fake a review. Recording one is the header's verb, which
+   * has its own cases.
+   */
+  it('explains why the case date did not move, without offering a fake review', () => {
     data = { ...BASE, sections: [section()], coreSections: ['thesis'], caseWrittenAt: daysAgo(200) }
     render(<AssetWorkspacePane asset={asset} focus="research" />)
-    expect(screen.getByText(/no separate/i)).toBeInTheDocument()
-    // And therefore no button pretending one can be written.
+    expect(screen.getByText(/moves only when a core section is saved/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /mark.*reviewed|confirm review/i }))
       .not.toBeInTheDocument()
   })
@@ -569,12 +780,151 @@ describe('the decision band turns understanding into a decision', () => {
 
   it('hands off to the decision workflow rather than deciding inline', async () => {
     const spy = vi.spyOn(window, 'dispatchEvent')
-    data = { ...BASE, decisions: [pendingDecision()],
+    data = { ...BASE, decisions: [pendingDecision({ ideaId: 'i1' })],
       liveIdeas: [{ id: 'i1', action: 'add', stage: 'deciding', rationale: null, portfolioName: 'Large Cap Core' }] }
     render(<AssetWorkspacePane asset={asset} />)
     await userEvent.click(screen.getByTestId('decision-cta'))
     const fired = spy.mock.calls.some(([e]: any) => e?.type === 'decision-engine-action')
     expect(fired).toBe(true)
+    spy.mockRestore()
+  })
+
+  /*
+   * ── Which object the Decide button opens ──────────────────────────────
+   *
+   * The band's one button used to open `liveIdeas[0]`, which is the asset's
+   * first live idea and not necessarily the idea the request was raised on.
+   * The destination looks identical either way -- an Ideas tab with an idea
+   * selected -- so a reader has no way to notice they were sent to the wrong
+   * piece of work. These three tests are about the id in the payload, which
+   * is the only place the difference is visible.
+   */
+  const ideaEvents = (spy: any) => spy.mock.calls
+    .map(([e]: any) => e)
+    .filter((e: any) => e?.type === 'decision-engine-action' && e?.detail?.type === 'ideas-v2')
+    .map((e: any) => e.detail.data.selectedIdeaId)
+
+  /*
+   * Render, THEN start recording.
+   *
+   * This suite does not unmount between tests -- several cases render twice
+   * and reach for `getAllByTestId(...)[1]` -- so a spy installed before
+   * `render` picks up whatever a previously mounted tree dispatches while
+   * React settles. That cost me a false positive: an injected regression
+   * failed a test whose own assertion still held, which is the same class of
+   * mistake as a test that passes for the wrong reason. Recording from the
+   * press means every event in `spy.mock.calls` is one the press caused.
+   */
+  const recordFromThePress = () => {
+    const spy = vi.spyOn(window, 'dispatchEvent')
+    spy.mockClear()
+    opened.length = 0
+    return spy
+  }
+
+  /*
+   * ── One request, one place on the page ────────────────────────────────
+   *
+   * The band is the hero for what is waiting. "Recent decisions" is the
+   * record of what was settled. The pending row was appearing in both: once
+   * with the view it is weighed against and a Decide button, once as a grey
+   * line whose status read "pending" and whose date read nothing. Two
+   * renderings of one object, the second looking like history.
+   */
+  it('shows a pending request as the hero only, never also as history', () => {
+    data = { ...BASE, decisions: [
+      pendingDecision({ id: 'd-wait', action: 'Add in Large Cap Core' }),
+      pendingDecision({ id: 'd-done', status: 'approved', action: 'Trim in Concentrated', decidedAt: daysAgo(3) }),
+    ] }
+    render(<AssetWorkspacePane asset={asset} />)
+
+    const band = screen.getByTestId('decision-band')
+    expect(within(band).getByText(/Add in Large Cap Core/)).toBeInTheDocument()
+
+    /* The settled one is history and belongs in the list. The waiting one
+       is the hero and must not be in it. */
+    const history = screen.getByText('Recent decisions').closest('section')!
+    expect(within(history).getByText(/Trim in Concentrated/)).toBeInTheDocument()
+    expect(within(history).queryByText(/Add in Large Cap Core/)).not.toBeInTheDocument()
+    /* The heading counts what it renders, not what the query returned. */
+    expect(history).toHaveTextContent(/Recent decisions\s*1/)
+  })
+
+  it('drops the Recent decisions section when the only decision is the waiting one', () => {
+    data = { ...BASE, decisions: [pendingDecision()] }
+    render(<AssetWorkspacePane asset={asset} />)
+    expect(screen.getByTestId('decision-band')).toBeInTheDocument()
+    /* There is no recent decision, so there is no section. An empty box
+       titled "Recent decisions" beside a request that is still open reads
+       as a system that lost something. */
+    expect(screen.queryByText('Recent decisions')).not.toBeInTheDocument()
+  })
+
+  it('opens the idea the request was raised on, not the first live idea', async () => {
+    /* Two live ideas. The request names the SECOND one. Ordering is by
+       `updated_at`, so which idea is first is a fact about recency and has
+       nothing to do with which request is waiting. */
+    data = { ...BASE, decisions: [pendingDecision({ ideaId: 'i2' })], liveIdeas: [
+      { id: 'i1', action: 'trim', stage: 'deciding', rationale: null, portfolioName: 'Large Cap Core' },
+      { id: 'i2', action: 'add', stage: 'deciding', rationale: null, portfolioName: 'Concentrated' },
+    ] }
+    render(<AssetWorkspacePane asset={asset} />)
+    const spy = recordFromThePress()
+    await userEvent.click(screen.getByTestId('decision-cta'))
+    expect(ideaEvents(spy)).toEqual(['i2'])
+    spy.mockRestore()
+  })
+
+  it('opens the asset decisions lens when the request names no reachable idea', async () => {
+    /*
+     * Reachable in production, not a contrived branch: `liveIdeas` is
+     * filtered to a null outcome and a non-terminal status and capped at 8,
+     * while `decisions` applies neither filter. A pending request on a
+     * closed idea arrives here with nothing to open.
+     *
+     * This used to call an optional `onOpenLegacy` that neither host passes,
+     * so the press did nothing whatsoever.
+     */
+    data = { ...BASE, decisions: [pendingDecision({ ideaId: null })], liveIdeas: [] }
+    render(<AssetWorkspacePane asset={asset} />)
+    const spy = recordFromThePress()
+    await userEvent.click(screen.getByTestId('decision-cta'))
+
+    expect(opened).toHaveLength(1)
+    expect(opened[0]).toMatchObject({ assetId: 'a-1', focus: 'decisions' })
+    /* And a way back, because this is a redirect the reader did not ask for:
+       they pressed Decide and got a list. */
+    expect(opened[0].returnTo).toBe(true)
+    expect(ideaEvents(spy)).toEqual([])
+    spy.mockRestore()
+  })
+
+  it('refuses to guess between two ideas when the request names neither', async () => {
+    /* A row selected before `ideaId` existed. With one candidate there is
+       nothing to get wrong, so that case still routes; with two, guessing
+       would be the original defect reintroduced as a convenience. */
+    data = { ...BASE, decisions: [pendingDecision({ ideaId: null })], liveIdeas: [
+      { id: 'i1', action: 'trim', stage: 'deciding', rationale: null, portfolioName: 'Large Cap Core' },
+      { id: 'i2', action: 'add', stage: 'deciding', rationale: null, portfolioName: 'Concentrated' },
+    ] }
+    render(<AssetWorkspacePane asset={asset} />)
+    const spy = recordFromThePress()
+    await userEvent.click(screen.getByTestId('decision-cta'))
+    expect(ideaEvents(spy)).toEqual([])
+    /* Not nowhere: the lens that lists every decision on the asset, so the
+       reader picks the right one instead of the product picking wrong. */
+    expect(opened).toHaveLength(1)
+    expect(opened[0]).toMatchObject({ focus: 'decisions' })
+
+    /* One candidate: routed, because there is no ambiguity to resolve. */
+    data = { ...BASE, decisions: [pendingDecision({ ideaId: null })],
+      liveIdeas: [{ id: 'i9', action: 'add', stage: 'deciding', rationale: null, portfolioName: 'Concentrated' }] }
+    render(<AssetWorkspacePane asset={{ ...asset, id: 'a-solo' }} />)
+    spy.mockClear()
+    opened.length = 0
+    await userEvent.click(screen.getAllByTestId('decision-cta')[1])
+    expect(ideaEvents(spy)).toEqual(['i9'])
+    expect(opened).toEqual([])
     spy.mockRestore()
   })
 })
@@ -665,6 +1015,33 @@ describe('the workspace is one column, not a mosaic', () => {
     expect(stack.className).toMatch(/flex-col/)
     // The grid it replaced must not come back on this surface.
     expect(stack.className).not.toMatch(/\bgrid\b/)
+  })
+
+  /**
+   * ── The column is the ONLY measure ──────────────────────────────────────
+   *
+   * The case above caps the stack, and for a while the written case was
+   * capped a SECOND time inside it: the stack at `max-w-[140ch]` and the
+   * prose at `max-w-[90ch]`. Those numbers do not compare, because `ch`
+   * resolves against each element's own font size -- 140ch at the stack's
+   * size is about 1,100px and 90ch at the case's 15px about 700px -- so the
+   * case ran to roughly 64% of its column and stopped, with the right third
+   * of every section blank. Reported from the running page as the text
+   * wrapping two thirds of the way across.
+   *
+   * jsdom performs no layout, so this asserts the fact that produced it: no
+   * element inside the case carries a `ch` cap of its own. A cap belongs to
+   * the column, where one number governs the whole surface.
+   */
+  it('does not cap the written case a second time inside the column', () => {
+    data = populated()
+    render(<AssetWorkspacePane asset={asset} />)
+    const theCase = screen.getByTestId('asset-workspace').querySelector('#the-case')
+    expect(theCase, 'the case section did not render').not.toBeNull()
+    const capped = [...theCase!.querySelectorAll<HTMLElement>('[class*="max-w-"]')]
+      .filter(el => /max-w-\[\d+ch\]/.test(el.className))
+      .map(el => el.className.match(/max-w-\[\d+ch\]/)![0])
+    expect(capped, `a ch measure cap is back inside the case: ${capped.join(', ')}`).toEqual([])
   })
 
   /**
@@ -829,24 +1206,47 @@ describe('the action row names the one thing to do, and goes there', () => {
    *
    * The header's verb now leaves, consistently, whatever the verb is -- a
    * button that sometimes navigates and sometimes opens an editor is worse
-   * than either. What this case protects is that leaving did not take the
-   * in-place editor with it: the case section keeps its own control, so a
-   * reader who wants to stay still writes here in one press.
+   * than either.
+   *
+   * This case used to protect the opposite of what it protects now. It
+   * asserted that leaving had not taken the in-place editor with it: the
+   * section's own control still mounted the editor, so "writing here means
+   * staying here". Both halves of that are gone. The embedded editor was a
+   * research surface in a pane too narrow to use it, so the section's control
+   * leaves too -- and the claim worth keeping is that the pane has ONE
+   * destination for the case, reached the same way from either control,
+   * rather than two behaviours behind two similar-looking buttons.
    */
-  it('still writes in place from the case itself, not only away', async () => {
+  it('takes the same door from the case section as from the header', async () => {
     data = { ...BASE, evidence: [{ id: 'e1', title: 'A note', createdAt: daysAgo(10), authorName: 'A', isShared: true }] } as AssetWorkspaceData
     render(<AssetWorkspacePane asset={asset} />)
     expect(screen.queryByTestId('real-thesis-editor')).toBeNull()
 
-    // The header's verb reads the same words in this state, so the section's
-    // own control has to be reached past it rather than by label alone.
-    const inCase = [...document.querySelectorAll<HTMLButtonElement>('button')]
-      .filter(b => b.dataset.slot !== 'asset-primary' && /Write the case/.test(b.textContent ?? ''))
-    expect(inCase).toHaveLength(1)
-    await userEvent.click(inCase[0])
-    expect(screen.getByTestId('real-thesis-editor')).toBeInTheDocument()
-    // And pressing it did NOT navigate. Writing here means staying here.
-    expect(opened).toEqual([])
+    await userEvent.click(screen.getByTestId('workspace-open-case-editor'))
+
+    /* No editor appeared, and the hop names the research focus rather than
+       dropping the reader on a generic asset overview. */
+    expect(screen.queryByTestId('real-thesis-editor')).toBeNull()
+    expect(opened).toHaveLength(1)
+    expect(opened[0].focus).toBe('research')
+    expect(opened[0].assetId).toBe('a-1')
+  })
+
+  /*
+   * ── And it asks for a way back ────────────────────────────────────────
+   *
+   * The 2.4 report's leading unfixed finding was that leaving had no Return.
+   * The ask lives on the sender, because only the sender knows that this is a
+   * trip rather than a link; the shell resolves it against whatever tab was
+   * active, because this pane genuinely cannot know which tab it is in.
+   *
+   * Asserted as `true` and not merely truthy: the shell reads `=== true`, so
+   * a sender that passed the string "yes" would be silently ignored.
+   */
+  it('asks for a way back, because this is a trip and not a link', async () => {
+    render(<AssetWorkspacePane asset={asset} />)
+    await userEvent.click(screen.getByTestId('workspace-open-case-editor'))
+    expect(opened[0].returnTo).toBe(true)
   })
 })
 

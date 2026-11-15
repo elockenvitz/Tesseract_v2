@@ -37,8 +37,10 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Check, Copy } from 'lucide-react'
 import { clsx } from 'clsx'
-import { isFigure, figureTone, numericColumns } from '../../lib/ai/figures'
+import { figureTone, cellKind, valueColumns } from '../../lib/ai/figures'
+import type { ColumnKind } from '../../lib/ai/figures'
 import { preprocessTickers, extractText, tableBodyRows } from '../../lib/ai/markdown'
+import { repairAnswerProse } from '../../lib/ai/prose-repair'
 
 interface AiProseProps {
   content: string
@@ -53,19 +55,40 @@ interface AiProseProps {
   className?: string
 }
 
-/** Which columns of the table currently being rendered are numeric. */
-const NumericCols = createContext<Set<number>>(new Set())
+/** Which columns of the table currently being rendered hold values, and how. */
+const ValueCols = createContext<Map<number, ColumnKind>>(new Map())
 
 const PROSE_CLASSES = [
   'prose prose-sm dark:prose-invert max-w-none',
   /* Headings carry the hierarchy, so they get the space. Body copy stays
      tight: a chat reply is read in a column, not a document. */
   'prose-headings:font-semibold prose-headings:tracking-tight',
-  'prose-h1:text-[15px] prose-h1:mt-4 prose-h1:mb-1.5',
-  'prose-h2:text-[14px] prose-h2:mt-4 prose-h2:mb-1.5',
-  'prose-h3:text-[13px] prose-h3:mt-3 prose-h3:mb-1',
+  /*
+   * Three levels a reader can actually tell apart.
+   *
+   * These used to run 15px / 14px / 13px against a 14px body, so a heading
+   * was within a pixel of the text under it and the answer had no visible
+   * structure -- the reported "weak hierarchy". A heading has to be a
+   * different KIND of thing, not a slightly bolder line, so the top two get
+   * real size and the third becomes a small label.
+   */
+  'prose-h1:text-[17px] prose-h1:mt-5 prose-h1:mb-2 prose-h1:leading-tight',
+  'prose-h2:text-[15px] prose-h2:mt-5 prose-h2:mb-1.5 prose-h2:leading-snug',
+  'prose-h3:text-[11px] prose-h3:mt-4 prose-h3:mb-1.5 prose-h3:uppercase',
+  'prose-h3:tracking-[0.07em] prose-h3:text-gray-500 dark:prose-h3:text-gray-400',
   'prose-h4:text-[13px] prose-h4:mt-3 prose-h4:mb-1',
   'prose-p:my-2 prose-p:leading-[1.6]',
+  /*
+   * The judgment gets the weight.
+   *
+   * The length contract asks the model to lead with its judgment in one
+   * sentence. That sentence then rendered at exactly the size of everything
+   * after it, so the answer arrived with no top. This gives the opening
+   * paragraph -- and only an opening PARAGRAPH, so an answer that starts with
+   * a heading is untouched -- a step up in size and contrast.
+   */
+  '[&>p:first-child]:text-[15px] [&>p:first-child]:leading-[1.55]',
+  '[&>p:first-child]:text-gray-900 dark:[&>p:first-child]:text-gray-50',
   'prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-li:leading-[1.55]',
   'prose-strong:text-gray-900 dark:prose-strong:text-white',
   'prose-hr:my-4 prose-hr:border-gray-200 dark:prose-hr:border-gray-700',
@@ -77,7 +100,15 @@ const PROSE_CLASSES = [
 ].join(' ')
 
 export function AiProse({ content, onTickerClick, className }: AiProseProps) {
-  const processed = useMemo(() => preprocessTickers(content), [content])
+  /*
+   * Repaired, then linked.
+   *
+   * In that order because `repairAnswerProse` promotes a standalone bold
+   * line to a heading, and a heading's text still has tickers in it. The
+   * repairs are what the reader sees rather than what was stored: the stored
+   * answer remains the record of what the model said.
+   */
+  const processed = useMemo(() => preprocessTickers(repairAnswerProse(content)), [content])
   const components = useMemo<Components>(
     () => ({ ...STABLE_COMPONENTS, a: linkRenderer(onTickerClick) }),
     [onTickerClick],
@@ -94,9 +125,9 @@ export function AiProse({ content, onTickerClick, className }: AiProseProps) {
 
 /* ── cells ───────────────────────────────────────────────────────────────── */
 
-function useNumeric(col: number): boolean {
-  const cols = useContext(NumericCols)
-  return col >= 0 && cols.has(col)
+function useColumn(col: number): ColumnKind | null {
+  const cols = useContext(ValueCols)
+  return col >= 0 ? cols.get(col) ?? null : null
 }
 
 function colOf(props: unknown): number {
@@ -104,7 +135,7 @@ function colOf(props: unknown): number {
 }
 
 function Th({ children, ...props }: { children?: ReactNode }) {
-  const right = useNumeric(colOf(props))
+  const right = useColumn(colOf(props)) !== null
   return (
     <th
       className={clsx(
@@ -119,19 +150,38 @@ function Th({ children, ...props }: { children?: ReactNode }) {
 }
 
 function Td({ children, ...props }: { children?: ReactNode }) {
-  const right = useNumeric(colOf(props))
+  const column = useColumn(colOf(props))
   const text = extractText(children)
   const tone = figureTone(text)
+  const kind = cellKind(text)
+  /*
+   * A word in a column of values is not one of the values.
+   *
+   * This is the `3.2% / unknown / reduced` case. The number stays a number:
+   * tabular figures, full contrast, so a reader can run an eye down the
+   * column. The word is right-aligned with it, because it belongs to that
+   * column, but it is rendered as a LABEL -- smaller, quieter, proportional
+   * figures -- so nothing invites comparing it to 3.2%.
+   *
+   * No tone, ever. "reduced" is the kind of word that would read as a
+   * negative change, and colouring it would assert a direction the model did
+   * not put a sign on, which is the same discipline `figureTone` applies to
+   * numbers.
+   */
+  const asLabel = column !== null && kind === 'token'
   return (
     <td
       className={clsx(
         'px-2.5 py-1.5 align-top',
-        right && 'text-right tabular-nums whitespace-nowrap',
+        column !== null && 'text-right whitespace-nowrap',
+        column !== null && kind === 'figure' && 'tabular-nums',
+        asLabel && 'text-[11px] text-gray-500 dark:text-gray-400',
         /* Only a figure the model signed gets a direction. */
         tone === 'up' && 'text-emerald-700 dark:text-emerald-400',
         tone === 'down' && 'text-red-700 dark:text-red-400',
-        !tone && isFigure(text) && 'text-gray-900 dark:text-gray-100',
+        !tone && kind === 'figure' && 'text-gray-900 dark:text-gray-100',
       )}
+      data-cell={column !== null ? kind : undefined}
     >
       {children}
     </td>
@@ -204,8 +254,8 @@ const STABLE_COMPONENTS: Components = {
 }
 
 function NumericColsProvider({ node, children }: { node: unknown; children: ReactNode }) {
-  const cols = useMemo(() => numericColumns(tableBodyRows(node)), [node])
-  return <NumericCols.Provider value={cols}>{children}</NumericCols.Provider>
+  const cols = useMemo(() => valueColumns(tableBodyRows(node)), [node])
+  return <ValueCols.Provider value={cols}>{children}</ValueCols.Provider>
 }
 
 function linkRenderer(onTickerClick?: (symbol: string) => void): Components['a'] {
@@ -279,7 +329,10 @@ function CodeBlock({ text }: { text: string }) {
                    opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
         title="Copy code"
       >
-        {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+        {/* Decorative, as in the message footer: the word is the name. */}
+        {copied
+          ? <Check className="w-3 h-3" aria-hidden="true" />
+          : <Copy className="w-3 h-3" aria-hidden="true" />}
         {copied ? 'Copied' : 'Copy'}
       </button>
     </div>

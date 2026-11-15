@@ -10,6 +10,28 @@ import {
   TrendingUp, Activity, LineChart, Lock, Users, Building2, Search
 } from 'lucide-react'
 
+/**
+ * The character that starts a command, in one place.
+ *
+ * It was a literal `.`, written out in every regex, every display name and
+ * every parse branch in this file -- around twenty copies. Changing it meant
+ * finding all of them, and the ones in the DISPLAY names were a separate
+ * list from the ones in the PARSER, so the menu could have advertised one
+ * trigger while the editor listened for another.
+ *
+ * Imported from `lib/ai/slash-commands` so the editor and the chat composer
+ * cannot disagree about what the reader types. That module is pure -- no
+ * TipTap, no React -- so importing it here costs nothing.
+ *
+ * The dots INSIDE an id (`chart.price`) are untouched. They are namespace
+ * separators, and `/chart/price` would read as a URL path, which is one of
+ * the things the trigger must never fire on.
+ */
+import { SLASH } from '../../../lib/ai/slash-commands'
+
+/* The plugin key is internal state, not a user-facing name, so it keeps its
+   old value: renaming it would invalidate nothing and risk nothing being
+   found by name at runtime. */
 const DotCommandPluginKey = new PluginKey('dotCommand')
 
 export interface DotCommandItem {
@@ -23,51 +45,53 @@ export interface DotCommandItem {
 
 const DOT_COMMANDS: DotCommandItem[] = [
   // AI commands
-  { id: 'ai', name: '.AI', description: 'Generate content with AI', icon: Sparkles, color: 'text-purple-600', category: 'ai' },
-  { id: 'ai.claude', name: '.AI.claude', description: 'Generate with Claude', icon: Sparkles, color: 'text-purple-600', category: 'ai' },
-  { id: 'ai.gpt', name: '.AI.gpt', description: 'Generate with GPT', icon: Sparkles, color: 'text-purple-600', category: 'ai' },
+  { id: 'ai', name: `${SLASH}AI`, description: 'Generate content with AI', icon: Sparkles, color: 'text-purple-600', category: 'ai' },
+  { id: 'ai.claude', name: `${SLASH}AI.claude`, description: 'Generate with Claude', icon: Sparkles, color: 'text-purple-600', category: 'ai' },
+  { id: 'ai.gpt', name: `${SLASH}AI.gpt`, description: 'Generate with GPT', icon: Sparkles, color: 'text-purple-600', category: 'ai' },
 
   // Capture commands
-  { id: 'capture', name: '.capture', description: 'Capture a platform element', icon: Camera, color: 'text-violet-600', category: 'capture' },
-  { id: 'screenshot', name: '.screenshot', description: 'Take a screenshot', icon: ImageIcon, color: 'text-amber-600', category: 'capture' },
-  { id: 'embed', name: '.embed', description: 'Embed a URL', icon: Link, color: 'text-blue-600', category: 'capture' },
+  { id: 'capture', name: `${SLASH}capture`, description: 'Capture a platform element', icon: Camera, color: 'text-violet-600', category: 'capture' },
+  { id: 'screenshot', name: `${SLASH}screenshot`, description: 'Take a screenshot', icon: ImageIcon, color: 'text-amber-600', category: 'capture' },
+  { id: 'embed', name: `${SLASH}embed`, description: 'Embed a URL', icon: Link, color: 'text-blue-600', category: 'capture' },
 
   // Data commands
-  { id: 'price', name: '.price', description: 'Current stock price', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'volume', name: '.volume', description: 'Trading volume', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'marketcap', name: '.marketcap', description: 'Market capitalization', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'change', name: '.change', description: 'Price change %', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'pe', name: '.pe', description: 'P/E ratio', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'dividend', name: '.dividend', description: 'Dividend yield', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'data', name: '.data', description: 'Insert live data', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
-  { id: 'table', name: '.table', description: 'Insert a data table', icon: Table2, color: 'text-emerald-600', category: 'data' },
-  { id: 'metric', name: '.metric', description: 'Insert a metric', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'price', name: `${SLASH}price`, description: 'Current stock price', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'volume', name: `${SLASH}volume`, description: 'Trading volume', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'marketcap', name: `${SLASH}marketcap`, description: 'Market capitalization', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'change', name: `${SLASH}change`, description: 'Price change %', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'pe', name: `${SLASH}pe`, description: 'P/E ratio', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'dividend', name: `${SLASH}dividend`, description: 'Dividend yield', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'data', name: `${SLASH}data`, description: 'Insert live data', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
+  { id: 'table', name: `${SLASH}table`, description: 'Insert a data table', icon: Table2, color: 'text-emerald-600', category: 'data' },
+  { id: 'metric', name: `${SLASH}metric`, description: 'Insert a metric', icon: BarChart3, color: 'text-emerald-600', category: 'data' },
 
-  // Chart commands
-  { id: 'chart', name: '.chart', description: 'Insert an embedded chart', icon: LineChart, color: 'text-cyan-600', category: 'chart' },
-  { id: 'chart.price', name: '.chart.price', description: 'Price chart', icon: TrendingUp, color: 'text-cyan-600', category: 'chart' },
-  { id: 'chart.volume', name: '.chart.volume', description: 'Volume chart', icon: BarChart3, color: 'text-cyan-600', category: 'chart' },
-  { id: 'chart.performance', name: '.chart.performance', description: 'Performance chart (%)', icon: Activity, color: 'text-cyan-600', category: 'chart' },
-  { id: 'chart.comparison', name: '.chart.comparison', description: 'Multi-asset comparison', icon: LineChart, color: 'text-cyan-600', category: 'chart' },
-  { id: 'chart.technicals', name: '.chart.technicals', description: 'Chart with indicators', icon: Activity, color: 'text-cyan-600', category: 'chart' },
+  // Chart commands. The dot INSIDE an id is a namespace separator, not a
+  // trigger: `/chart/price` would read as a URL path, which is one of the
+  // things the trigger must never fire on.
+  { id: 'chart', name: `${SLASH}chart`, description: 'Insert an embedded chart', icon: LineChart, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.price', name: `${SLASH}chart.price`, description: 'Price chart', icon: TrendingUp, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.volume', name: `${SLASH}chart.volume`, description: 'Volume chart', icon: BarChart3, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.performance', name: `${SLASH}chart.performance`, description: 'Performance chart (%)', icon: Activity, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.comparison', name: `${SLASH}chart.comparison`, description: 'Multi-asset comparison', icon: LineChart, color: 'text-cyan-600', category: 'chart' },
+  { id: 'chart.technicals', name: `${SLASH}chart.technicals`, description: 'Chart with indicators', icon: Activity, color: 'text-cyan-600', category: 'chart' },
 
   // Content commands
-  { id: 'task', name: '.task', description: 'Add a task', icon: ListChecks, color: 'text-cyan-600', category: 'content' },
-  { id: 'event', name: '.event', description: 'Add an event', icon: Calendar, color: 'text-pink-600', category: 'content' },
-  { id: 'note', name: '.note', description: 'Link to a note', icon: FileText, color: 'text-orange-600', category: 'content' },
-  { id: 'link', name: '.link', description: 'Insert a link', icon: Link, color: 'text-blue-600', category: 'content' },
+  { id: 'task', name: `${SLASH}task`, description: 'Add a task', icon: ListChecks, color: 'text-cyan-600', category: 'content' },
+  { id: 'event', name: `${SLASH}event`, description: 'Add an event', icon: Calendar, color: 'text-pink-600', category: 'content' },
+  { id: 'note', name: `${SLASH}note`, description: 'Link to a note', icon: FileText, color: 'text-orange-600', category: 'content' },
+  { id: 'link', name: `${SLASH}link`, description: 'Insert a link', icon: Link, color: 'text-blue-600', category: 'content' },
 
   // Visibility commands
-  { id: 'private', name: '.private', description: 'Mark as private (only you)', icon: Lock, color: 'text-amber-600', category: 'visibility' },
-  { id: 'team', name: '.team', description: 'Visible to team only', icon: Users, color: 'text-blue-600', category: 'visibility' },
-  { id: 'portfolio', name: '.portfolio', description: 'Visible to portfolio members', icon: Building2, color: 'text-purple-600', category: 'visibility' },
+  { id: 'private', name: `${SLASH}private`, description: 'Mark as private (only you)', icon: Lock, color: 'text-amber-600', category: 'visibility' },
+  { id: 'team', name: `${SLASH}team`, description: 'Visible to team only', icon: Users, color: 'text-blue-600', category: 'visibility' },
+  { id: 'portfolio', name: `${SLASH}portfolio`, description: 'Visible to portfolio members', icon: Building2, color: 'text-purple-600', category: 'visibility' },
 
   // Template commands are dynamically loaded from database (see getFilteredItems)
 
   // Other
-  { id: 'toc', name: '.toc', description: 'Table of contents', icon: Hash, color: 'text-indigo-600', category: 'other' },
-  { id: 'divider', name: '.divider', description: 'Insert a divider', icon: Minus, color: 'text-gray-500', category: 'other' },
-  { id: 'help', name: '.help', description: 'Show all commands', icon: HelpCircle, color: 'text-gray-600', category: 'other' },
+  { id: 'toc', name: `${SLASH}toc`, description: 'Table of contents', icon: Hash, color: 'text-indigo-600', category: 'other' },
+  { id: 'divider', name: `${SLASH}divider`, description: 'Insert a divider', icon: Minus, color: 'text-gray-500', category: 'other' },
+  { id: 'help', name: `${SLASH}help`, description: 'Show all commands', icon: HelpCircle, color: 'text-gray-600', category: 'other' },
 ]
 
 export interface TemplateWithShortcut {
@@ -168,7 +192,7 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       // Create dynamic template commands from provided templates
       const templateCommands: DotCommandItem[] = (options.templates || []).map(template => ({
         id: `template.${template.shortcut}`,
-        name: `.template.${template.shortcut}`,
+        name: `${SLASH}template.${template.shortcut}`,
         description: template.name,
         icon: FileText,
         color: 'text-orange-600',
@@ -378,18 +402,34 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       const $pos = state.doc.resolve(pos)
       const textBefore = $pos.parent.textBetween(0, $pos.parentOffset, '')
 
-      // Find dot command pattern at end of text — require at least one letter after the dot
-      // so a bare "." (punctuation) doesn't trigger the popup
-      const match = textBefore.match(/\.([a-zA-Z][a-zA-Z0-9.]*)$/)
+      /*
+       * A slash command at the caret, and nothing else.
+       *
+       * Two rules, and between them they keep out everything a reader
+       * writes that merely contains a slash. Each has a case in
+       * `slash-commands.test.ts`.
+       *
+       * A LETTER must follow the slash. That excludes a date fragment
+       * (`/2026`), arithmetic (`10/2`, `/ 50`) and a doubled slash.
+       *
+       * The slash must be at the start of the block or after whitespace.
+       * That excludes a ratio (`P/E`, `debt/equity`), a URL
+       * (`https://example.com/path` -- every slash in it is mid-token) and
+       * any word a reader has already written a slash into.
+       *
+       * Both are necessary. Dropping the first fires on `12/2026`; dropping
+       * the second fires on the `/path` in every link.
+       */
+      const match = textBefore.match(/\/([a-zA-Z][a-zA-Z0-9.]*)$/)
       if (!match) {
         return null
       }
 
-      // Check that the dot is at start or after whitespace
-      const dotIndex = textBefore.length - match[0].length
-      if (dotIndex > 0 && !/\s/.test(textBefore[dotIndex - 1])) {
+      const triggerIndex = textBefore.length - match[0].length
+      if (triggerIndex > 0 && !/\s/.test(textBefore[triggerIndex - 1])) {
         return null
       }
+      const dotIndex = triggerIndex
 
       const nodeStart = pos - $pos.parentOffset
       return {
@@ -398,53 +438,61 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
       }
     }
 
-    // Parse complete command from text
+    /*
+     * Parse a complete command from text.
+     *
+     * `T` is the trigger, escaped for a regex, and every pattern below
+     * anchors on it. The dots that remain are separators INSIDE an id --
+     * `/chart.price.AAPL` is trigger, id, symbol -- which is why only the
+     * leading one changed.
+     */
+    const T = `\\${SLASH}`
     const parseCommand = (text: string): { commandId: string; symbol?: string } | null => {
       const dataCommands = ['price', 'volume', 'marketcap', 'change', 'pe', 'dividend', 'data', 'table', 'chart', 'metric']
       for (const cmd of dataCommands) {
-        const symbolMatch = text.match(new RegExp(`\\.${cmd}\\.([A-Z0-9]+)$`, 'i'))
+        const symbolMatch = text.match(new RegExp(`${T}${cmd}\\.([A-Z0-9]+)$`, 'i'))
         if (symbolMatch) {
           return { commandId: cmd, symbol: symbolMatch[1].toUpperCase() }
         }
-        const plainMatch = text.match(new RegExp(`\\.${cmd}$`, 'i'))
+        const plainMatch = text.match(new RegExp(`${T}${cmd}$`, 'i'))
         if (plainMatch) {
           return { commandId: cmd }
         }
       }
 
-      if (/\.ai\.claude$/i.test(text)) return { commandId: 'ai.claude' }
-      if (/\.ai\.gpt$/i.test(text)) return { commandId: 'ai.gpt' }
-      if (/\.ai$/i.test(text)) return { commandId: 'ai' }
+      if (new RegExp(`${T}ai\\.claude$`, 'i').test(text)) return { commandId: 'ai.claude' }
+      if (new RegExp(`${T}ai\\.gpt$`, 'i').test(text)) return { commandId: 'ai.gpt' }
+      if (new RegExp(`${T}ai$`, 'i').test(text)) return { commandId: 'ai' }
 
-      // Chart commands with optional symbol (e.g., .chart.price.AAPL)
+      // Chart commands with optional symbol (e.g., /chart.price.AAPL)
       const chartTypes = ['price', 'volume', 'performance', 'comparison', 'technicals']
       for (const ctype of chartTypes) {
-        const chartSymbolMatch = text.match(new RegExp(`\\.chart\\.${ctype}\\.([A-Z0-9]+)$`, 'i'))
+        const chartSymbolMatch = text.match(new RegExp(`${T}chart\\.${ctype}\\.([A-Z0-9]+)$`, 'i'))
         if (chartSymbolMatch) {
           return { commandId: `chart.${ctype}`, symbol: chartSymbolMatch[1].toUpperCase() }
         }
-        if (new RegExp(`\\.chart\\.${ctype}$`, 'i').test(text)) {
+        if (new RegExp(`${T}chart\\.${ctype}$`, 'i').test(text)) {
           return { commandId: `chart.${ctype}` }
         }
       }
-      // Plain .chart command
-      const chartPlainMatch = text.match(/\.chart\.([A-Z0-9]+)$/i)
+      // Plain /chart command
+      const chartPlainMatch = text.match(new RegExp(`${T}chart\\.([A-Z0-9]+)$`, 'i'))
       if (chartPlainMatch) {
         return { commandId: 'chart', symbol: chartPlainMatch[1].toUpperCase() }
       }
-      if (/\.chart$/i.test(text)) return { commandId: 'chart' }
+      if (new RegExp(`${T}chart$`, 'i').test(text)) return { commandId: 'chart' }
 
       // Dynamic template commands from provided templates
       const templateShortcuts = (options.templates || []).map(t => t.shortcut)
       for (const shortcut of templateShortcuts) {
-        if (new RegExp(`\\.template\\.${shortcut}$`, 'i').test(text)) {
+        if (new RegExp(`${T}template\\.${shortcut}$`, 'i').test(text)) {
           return { commandId: `template.${shortcut}` }
         }
       }
 
       const otherCommands = ['capture', 'screenshot', 'embed', 'task', 'event', 'note', 'link', 'toc', 'divider', 'help', 'private', 'team', 'portfolio']
       for (const cmd of otherCommands) {
-        if (new RegExp(`\\.${cmd}$`, 'i').test(text)) {
+        if (new RegExp(`${T}${cmd}$`, 'i').test(text)) {
           return { commandId: cmd }
         }
       }
@@ -536,7 +584,9 @@ export const DotCommandSuggestionExtension = Extension.create<DotCommandSuggesti
                 }
 
                 // Check for data command with symbol (e.g., price.AAPL)
-                const parsed = parseCommand('.' + cmdInfo.query)
+                /* `cmdInfo.query` is what follows the trigger, so the
+                   trigger is put back before parsing. */
+                const parsed = parseCommand(SLASH + cmdInfo.query)
                 if (parsed) {
                   closePopup()
                   currentSymbolMode = null

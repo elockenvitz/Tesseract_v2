@@ -224,14 +224,42 @@ describe('summarizeToolResult: the browser is told the truth', () => {
     expect((s.sources ?? []).map((x) => x.id)).toEqual(['n1'])
   })
 
-  it('never carries note bodies, excerpts or reasoning into the client summary', () => {
-    const SECRET = 'EXCERPT-BODY-TEXT-THAT-MUST-NOT-TRAVEL'
+  /*
+   * This test used to forbid record text in the summary outright.
+   *
+   * It was guarding two different things at once, and only one of them was
+   * the real boundary. The trail now shows a short quotation from each record
+   * -- a title and a date identify a row without letting anybody judge it --
+   * and that text is safe to SHOW, because it came back through the reader's
+   * own RLS-scoped query and is content they can already open.
+   *
+   * The boundary that matters is STORAGE, and it is now asserted where it
+   * happens: `stripStoredExcerpts` in `history.test.ts`. What is still
+   * forbidden here is the FULL body, which never travels at all: the server
+   * sends `content_excerpt`, a computed column, and the summarizer trims it
+   * again. A note's whole content reaching the client would be both a leak of
+   * volume and the two-million-character read that column exists to prevent.
+   */
+  it('carries a trimmed excerpt, never a record s full body', () => {
+    const BODY = 'FULL-NOTE-BODY-THAT-MUST-NOT-TRAVEL'
     const s = summarizeToolResult('search_team_notes', toolOk('search_team_notes', {
       query: 'moat',
-      results: [{ id: 'n1', title: 'Q2 teardown', excerpt: SECRET, content: SECRET }],
+      results: [{ id: 'n1', title: 'Q2 teardown', excerpt: 'margins compressed', content: BODY }],
     }), capture().log)
-    expect(JSON.stringify(s)).not.toContain(SECRET)
+    expect(JSON.stringify(s)).not.toContain(BODY)
     expect(s.sources?.[0]?.title).toBe('Q2 teardown')
+    expect(s.sources?.[0]?.excerpt).toBe('margins compressed')
+  })
+
+  it('trims an over-long excerpt rather than passing it through', () => {
+    /* The server's computed column already truncates. This is the second
+       bound, for a payload that arrives longer than a trail row can hold. */
+    const s = summarizeToolResult('search_team_notes', toolOk('search_team_notes', {
+      results: [{ id: 'n1', title: 'T', excerpt: 'word '.repeat(200) }],
+    }), capture().log)
+    const e = s.sources?.[0]?.excerpt ?? ''
+    expect(e.length).toBeLessThanOrEqual(181)
+    expect(e.endsWith('…')).toBe(true)
   })
 
   it('counts theme constituents and portfolio holdings from their own fields', () => {
@@ -345,10 +373,13 @@ describe('non-vacuity: the old implementations are caught', () => {
     expect(legacySummary(raw).result_summary).toContain('{"tool"')
 
     const s: ToolResultSummary = summarizeToolResult('search_team_notes', raw, capture().log)
-    const serialized = JSON.stringify(s)
-    expect(serialized).not.toContain('margins compressed')
     // The summary is structured fields, not a JSON string pasted into one.
-    expect(Object.keys(s).sort()).toEqual(['result_count', 'searched', 'sources', 'status'])
+    // `scope` joined them so the trail can say how far the lookup saw; the
+    // point of the assertion is the SHAPE, so it is still exhaustive.
+    expect(Object.keys(s).sort()).toEqual(['result_count', 'scope', 'searched', 'sources', 'status'])
+    // And no raw JSON anywhere in it, which was the actual defect.
+    expect(JSON.stringify(s)).not.toContain('{"tool"')
+    expect(s.sources?.[0]?.excerpt).toBe('margins compressed')
   })
 
   it('the old get_theme table name is still wrong, and would now surface as an error', async () => {

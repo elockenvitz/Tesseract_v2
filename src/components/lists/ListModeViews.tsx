@@ -48,6 +48,7 @@ import { RatingPill, CoverageChip } from './ListRowAtoms'
 import { SECTION_LABEL } from '../../lib/desktop-research/model'
 import { stageLabel } from '../../lib/lists/work-state'
 import type { ListRowMode } from './listRowModes'
+import { richTextToPlain, richTextToPlainBlock } from '../../lib/text/rich-text-plain'
 
 // ── Shared vocabulary ──────────────────────────────────────────────────
 
@@ -734,7 +735,7 @@ export function EvidenceItemView({
         </div>
         {prominent && item.content && (
           <p className="mt-0.5 text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed line-clamp-2">
-            {item.content}
+            {richTextToPlain(item.content)}
           </p>
         )}
         <div className="mt-0.5 text-[10px] text-gray-400 dark:text-gray-500 truncate">
@@ -857,7 +858,7 @@ export function OverviewMode(p: {
             {lead ? (
               <>
                 <p className="mt-2 text-[12.5px] leading-[1.5] text-gray-700 line-clamp-[6] dark:text-gray-300">
-                  {lead.row?.content}
+                  {richTextToPlainBlock(lead.row?.content)}
                 </p>
                 {lead.row?.authorName && (
                   <div className="mt-2 truncate text-[10.5px] text-gray-400 dark:text-gray-500">
@@ -1312,7 +1313,7 @@ export function CaseSectionEditor({
                 ? 'text-[13.5px] text-gray-800 dark:text-gray-200'
                 : 'text-[12.5px] text-gray-600 dark:text-gray-400',
             )}>
-              {content}
+              {richTextToPlainBlock(content)}
             </p>
           ) : (
             <span className="inline-flex items-center gap-1 text-[12px] text-gray-400 dark:text-gray-500 italic group-hover/sec:text-gray-700 dark:group-hover/sec:text-gray-200">
@@ -1763,8 +1764,10 @@ export function WorkMode(p: {
           in the main column, not a second copy of Case mode. */}
       {p.leadCase && (
         <RailBlock label={SECTION_LABEL[p.leadCase.key] ?? 'The case'}>
+          {/* Flattened, not rendered. The stored case is Markdown, and four
+              clamped lines printed `**iPhone weakness**` verbatim. */}
           <p className="text-[11.5px] text-gray-500 dark:text-gray-400 leading-relaxed line-clamp-4">
-            {p.leadCase.content}
+            {richTextToPlain(p.leadCase.content)}
           </p>
         </RailBlock>
       )}
@@ -1931,7 +1934,7 @@ export function WorkMode(p: {
                     away in the idea workspace; a scrollbar here would hide
                     the rest behind a bar nobody looks for. */}
                 <p className="mt-1.5 text-[13.5px] text-gray-700 dark:text-gray-300 leading-[1.55] whitespace-pre-wrap line-clamp-4">
-                  {p.idea.rationale}
+                  {richTextToPlainBlock(p.idea.rationale)}
                 </p>
               </div>
             )}
@@ -1966,9 +1969,12 @@ export function WorkMode(p: {
             </div>
             {/* `line-clamp-[14]`: see the Overview columns — the frame is
                 fixed and taller than it was, so the clamp grew with it. */}
+            {/* `richTextToPlainBlock`, not the collapsing variant: fourteen
+                lines of pre-wrap is a reading surface, and a three-bullet
+                risk list run together stops being three risks. */}
             {p.leadCase ? (
               <p className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap line-clamp-[14]">
-                {p.leadCase.content}
+                {richTextToPlainBlock(p.leadCase.content)}
               </p>
             ) : (
               <Quiet>Nothing records when this case was last confirmed.</Quiet>

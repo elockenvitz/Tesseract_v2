@@ -1,5 +1,5 @@
 import React from 'react'
-import { X, ChevronLeft, Minimize2, Maximize2, Mail, Bell, User, Lightbulb, MessageSquare } from 'lucide-react'
+import { X, ChevronLeft, Minimize2, Maximize2, Mail, Bell, User, Lightbulb, MessageSquare, Sparkles } from 'lucide-react'
 import { AISection } from './AISection'
 import { DirectMessaging } from './DirectMessaging'
 import { NotificationPane } from '../notifications/NotificationPane'
@@ -9,7 +9,7 @@ import { clsx } from 'clsx'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
 import { useDismissOnBack } from '../../hooks/useDismissOnBack'
 import type { EngagementTarget } from '../../lib/engagement'
-import { selectContext } from '../../lib/ai'
+import { selectContext, chatModeFor, actAiTitle } from '../../lib/ai'
 
 interface CommunicationPaneProps {
   /** Presents the pane as a bottom sheet instead of a fixed right rail. */
@@ -137,7 +137,10 @@ export function CommunicationPane({
   const getViewTitle = () => {
     switch (view) {
       case 'ai':
-        return 'Co-Analyst'
+        /* The pane's width IS the mode, so the title says which one you are
+           in. "ACT AI" on the rail, "ACT AI Research" once it is a reading
+           surface — the same words the in-pane control uses. */
+        return actAiTitle(chatModeFor({ isFullscreen, isMobile }))
       case 'discuss':
         return 'Discussion'
       case 'direct-messages':
@@ -156,11 +159,15 @@ export function CommunicationPane({
   const getViewIcon = () => {
     switch (view) {
       case 'ai':
-        return (
-          <div className="w-5 h-5 bg-gradient-to-r from-blue-500 to-purple-500 rounded flex items-center justify-center">
-            <span className="text-white text-xs font-bold">AI</span>
-          </div>
-        )
+        /*
+          The same mark the header bar uses, in the same weight as the other
+          five views. This was a blue-to-purple gradient tile with the letters
+          "AI" in it, sitting beside five flat grey glyphs: the one piece of
+          chrome in the product that advertised itself. The header already
+          dropped its gradient chip for `Sparkles` in `currentColor`; this is
+          the other half of that change.
+        */
+        return <Sparkles className="h-5 w-5 text-primary-500" />
       case 'discuss':
         return <MessageSquare className="h-5 w-5 text-gray-600 dark:text-gray-400" />
       case 'direct-messages':
@@ -211,6 +218,19 @@ export function CommunicationPane({
             */
             currentSubject={tabSubject}
             onOpenSettings={onOpenSettings}
+            /*
+              Compact rail or full-width research pane.
+
+              Derived from the pane's own width state, so the two can never
+              disagree: `chatModeFor` returns compact on a phone whatever the
+              rail state says, because the sheet is already edge to edge and
+              has no room for the inline conversation list.
+            */
+            mode={chatModeFor({ isFullscreen, isMobile })}
+            /* The switch, only where there is something to switch to. The
+               same callback that drives the pane's width — not a second
+               piece of state. */
+            onToggleMode={isMobile ? undefined : onToggleFullscreen}
           />
         )
       case 'discuss':
@@ -318,7 +338,21 @@ export function CommunicationPane({
                 is already edge-to-edge, so the control rendered but had nothing
                 to toggle — every view (thoughts, AI, messages, notifications)
                 showed a button that did nothing. */}
-            {!isMobile && (
+            {/*
+              One expand control, not two.
+
+              This unlabelled icon used to be the only way to widen the pane,
+              which is why nobody found the research layout: it describes the
+              window, not what the pane becomes. The AI view now carries a
+              labelled control inside its own header ("Expand" / "Research
+              mode"), driving this very same callback — so on that view this
+              one is a second button for one piece of state, and the reader
+              has to guess whether they do the same thing.
+
+              Every other view still needs it: they have no header of their
+              own to put it in.
+            */}
+            {!isMobile && view !== 'ai' && (
               <button
                 onClick={onToggleFullscreen}
                 className="p-1 text-gray-400 hover:text-gray-600 transition-colors dark:hover:text-gray-300"

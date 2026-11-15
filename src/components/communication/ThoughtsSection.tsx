@@ -26,11 +26,17 @@ import { useToast } from '../common/Toast'
 import { buildQuickThoughtsFilters } from '../../hooks/useIdeasRouting'
 import type { CapturedContext } from '../thoughts/ContextSelector'
 import { useOrganization } from '../../contexts/OrganizationContext'
+/* The one contract for opening an asset, so this inbox does not invent a
+   second tab descriptor. See `lib/desktop-asset/navigate`. */
+import { openAsset } from '../../lib/desktop-asset'
 import { useSidebarStore } from '../../stores/sidebarStore'
 import { usePendingResearchLinksStore } from '../../stores/pendingResearchLinksStore'
 import type { SidebarMode, SelectedItem, InspectableItemType } from '../../stores/sidebarStore'
 import { type RequestType, REQUEST_TYPE_META } from '../ui/checklist/types'
 import { captureTypeForMode, type LegacyCaptureMode } from '../../lib/capture/capture-types'
+/* The draft a caller asked this form to open with, and its one mapping onto
+   the form's props. See `lib/capture/prefill`. */
+import { capturePrefillProps, type CapturePrefill } from '../../lib/capture/prefill'
 import { useIsMobile } from '../../hooks/useMediaQuery'
 
 interface ThoughtsSectionProps {
@@ -221,17 +227,38 @@ export function ThoughtsSection({
 
   // Auto-select capture mode from pending store value (one-shot)
   const pendingCaptureType = useSidebarStore(s => s.pendingCaptureType)
+  const pendingCapturePrefill = useSidebarStore(s => s.pendingCapturePrefill)
   const clearPendingCaptureType = useSidebarStore(s => s.clearPendingCaptureType)
+
+  /*
+   * The words the form opens with, held here rather than read from the store
+   * at render time.
+   *
+   * The store's copy is a one-shot and is cleared in the same tick the form
+   * opens, so rendering straight from it would hand the form an empty string
+   * on the very next render and wipe what had just been placed there. Kept in
+   * component state, the draft belongs to the open form, and `key` below
+   * remounts the form when a new promotion arrives while one is already open.
+   */
+  const [prefill, setPrefill] = useState<CapturePrefill | null>(null)
+  const [prefillSeq, setPrefillSeq] = useState(0)
 
   useEffect(() => {
     if (pendingCaptureType && sidebarMode === 'capture') {
       handleOpenCapture(pendingCaptureType)
+      if (pendingCapturePrefill) {
+        setPrefill(pendingCapturePrefill)
+        setPrefillSeq(n => n + 1)
+      }
       clearPendingCaptureType()
     }
-  }, [pendingCaptureType, sidebarMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pendingCaptureType, pendingCapturePrefill, sidebarMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // When opening capture mode, capture the current context
   const handleOpenCapture = (mode: 'idea' | 'trade_idea' | 'prompt' | 'proposal') => {
+    /* A form opened by hand starts empty. The effect above sets the draft
+       AFTER calling this, so a promotion is not cleared by its own open. */
+    setPrefill(null)
     // Capture context at the moment of opening
     if (initialContextType && initialContextId) {
       setCapturedContext({
@@ -264,6 +291,7 @@ export function ThoughtsSection({
 
     setCaptureMode('collapsed')
     setCapturedContext(null)
+    setPrefill(null)
 
     // Refresh recent ideas list
     invalidateRecentIdeas()
@@ -338,6 +366,7 @@ export function ThoughtsSection({
   const handleCaptureCancel = useCallback(() => {
     setCaptureMode('collapsed')
     setCapturedContext(null)
+    setPrefill(null)
     usePendingResearchLinksStore.getState().clear()
   }, [])
 
@@ -664,9 +693,14 @@ export function ThoughtsSection({
             <CaptureGuidance mode="idea" />
 
             <QuickThoughtCapture
+              /* A second promotion arriving while a draft is open replaces
+                 it, and the form holds its text in its own state, so the
+                 only way the new words appear is a remount. */
+              key={`capture-${prefillSeq}`}
               compact={true}
               autoFocus={!isMobileViewport}
               placeholder="Capture a quick thought..."
+              {...capturePrefillProps(prefill)}
               onSuccess={handleCaptureSuccess}
               onCancel={handleCaptureCancel}
               capturedContext={capturedContext}
@@ -1110,6 +1144,8 @@ function PendingReviewList() {
     <div className="space-y-1.5">
       {requests.map((req: any) => {
         const asset = req.trade_queue_item?.assets
+        /* The join selects the id on the ITEM, not on the embedded asset. */
+        const assetId: string | null = req.trade_queue_item?.asset_id ?? null
         const symbol = asset?.symbol || '?'
         const companyName = asset?.company_name
         const action = req.trade_queue_item?.action
@@ -1152,7 +1188,48 @@ function PendingReviewList() {
                   {action.toUpperCase()}
                 </span>
               )}
-              <span className="font-semibold text-gray-900 dark:text-white">{symbol}</span>
+              {/*
+                The ticker opens the asset's workspace, carrying THIS request.
+
+                The row's own click opens the Idea Pipeline with the trade
+                selected, which is the right destination for working the
+                trade. It is the wrong one for the question a PM actually has
+                in this inbox -- "what do we think of this name, and does the
+                evidence support what is being proposed" -- and there was no
+                path to that at all: the asset workspace was reachable only
+                by searching for the ticker, which arrives with no idea why
+                the reader came.
+
+                `decisionId` is what makes the difference: the workspace
+                leads with this request rather than with a general overview.
+                See `lib/asset-workspace/entry`.
+              */}
+              {assetId ? (
+                <button
+                  type="button"
+                  data-testid="inbox-open-asset"
+                  onClick={e => {
+                    e.stopPropagation()
+                    openAsset({
+                      assetId,
+                      symbol: asset?.symbol ?? null,
+                      companyName: companyName ?? null,
+                      focus: 'overview',
+                      decisionId: req.id,
+                      portfolioId: req.portfolio_id ?? null,
+                      portfolioName: portfolioName ?? null,
+                      issue: req.context_note ?? `${action ?? 'Request'} waiting on a decision`,
+                      origin: 'decision-inbox',
+                    })
+                  }}
+                  title={`Open the ${asset?.symbol ?? 'asset'} workspace for this decision`}
+                  className="font-semibold text-gray-900 hover:text-primary-600 hover:underline dark:text-white dark:hover:text-primary-400"
+                >
+                  {symbol}
+                </button>
+              ) : (
+                <span className="font-semibold text-gray-900 dark:text-white">{symbol}</span>
+              )}
               {companyName && (
                 <span className="text-gray-500 dark:text-gray-400 truncate text-xs">{companyName}</span>
               )}

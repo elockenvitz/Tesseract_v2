@@ -60,6 +60,10 @@ export function useAssetAttentionSignals(input: AssetAttentionInput): AssetAtten
       writtenSections: core.map(c => ({ section: c.section, updatedAt: c.updatedAt ?? null })),
       rating: dominant ? { value: dominant.value, count: dominant.count, total: ratings.length } : null,
       target: data.target,
+      /* The evaluated standing of that number, from the same cached read.
+         This is what lets the ⚡ surface state a lapsed valuation, which the
+         canonical page used to say in a banner of its own. */
+      targetStanding: data.targetStanding,
       spot: spot ?? data.spot,
       newEvidenceCount: newEvidence.length,
       openDecisions: openDecisions.map(d => ({

@@ -51,6 +51,7 @@ import { clsx } from 'clsx'
 import { useMemo } from 'react'
 import { ChevronRight, Users, Clock, Info } from 'lucide-react'
 import type { Contribution } from '../../hooks/useContributions'
+import { richTextToPlain } from '../../lib/text/rich-text-plain'
 
 /** One template field, with the contribution sections its prose can live under. */
 export interface OurViewField {
@@ -95,51 +96,16 @@ export function contributorName(c: Pick<Contribution, 'user'>): string {
  * `content` is rich text, so tags are stripped for the excerpt only — the full
  * markup still renders in the analyst's own view.
  */
-export function ourViewPlainText(content: string | null | undefined): string {
-  /*
-   * HTML *and* Markdown.
-   *
-   * This stripped tags only, and contributions are MARKDOWN — every other
-   * surface renders them through `ReactMarkdown` / `SmartInputRenderer`. So a
-   * thesis written as "**Services** mix is mispriced" reached the Snapshot,
-   * the conclusion band and the phone as the literal characters `**Services**`,
-   * and a `## Heading` or a `[link](url)` leaked whole. Reported from the
-   * authenticated app as raw Markdown in the excerpts.
-   *
-   * Order matters: images before links (both start `[`), and emphasis after
-   * code so a backtick span is not half-unwrapped.
-   */
-  return (content ?? '')
-    // HTML first — some contributions carry both.
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    // Fenced and inline code: keep the code, drop the fence.
-    .replace(/```[a-z]*\n?/gi, ' ')
-    .replace(/`([^`]*)`/g, '$1')
-    // Images drop entirely; links keep their text, not their URL.
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    // Block syntax at the start of a line: headings, quotes, list bullets,
-    // ordered markers and horizontal rules.
-    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
-    .replace(/^\s{0,3}>\s?/gm, '')
-    .replace(/^\s{0,3}[-*+]\s+/gm, '')
-    .replace(/^\s{0,3}\d+[.)]\s+/gm, '')
-    .replace(/^\s{0,3}([-*_]\s*){3,}$/gm, ' ')
-    // Emphasis. Longest marker first so `**` is not left as a stray `*`.
-    .replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*\n]+)\*/g, '$1')
-    .replace(/___([^_]+)___/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/(^|\s)_([^_\n]+)_(?=\s|$)/g, '$1$2')
-    .replace(/~~([^~]+)~~/g, '$1')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+/*
+ * The implementation moved to `src/lib/text/rich-text-plain.ts`.
+ *
+ * It was correct here and wrong everywhere else, for a structural reason:
+ * the list rails, the requirement workspace and the contribution timeline
+ * could not import a string function out of a component module, so each of
+ * them printed the stored Markdown raw. Same function, now importable. This
+ * alias stays because this component and its tests are its oldest callers.
+ */
+export const ourViewPlainText = richTextToPlain
 
 export function ourViewExcerpt(content: string | null | undefined, max = 190): string {
   const flat = ourViewPlainText(content)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { clsx } from 'clsx'
 import { Lightbulb } from 'lucide-react'
 import { QuickThoughtDetailPanel } from '../ideas/QuickThoughtDetailPanel'
@@ -11,6 +11,50 @@ import { useTradeIdeaWorkspace } from '../../hooks/useTradeIdeaWorkspace'
 import { assetFocusFor, type IdeasSelection } from '../../lib/desktop-ideas/selection'
 import type { Progression } from '../../lib/desktop-ideas/progression'
 import type { AttentionEntry } from '../../hooks/useDesktopAttentionFeed'
+import { entryContextFor } from '../../lib/asset-workspace/entry-context'
+import { useOrganizationOptional } from '../../contexts/OrganizationContext'
+import { paneScroll } from './pane-place'
+import { useRememberedScroll } from '../../lib/ui/scroll-memory'
+
+/*
+ * The scroller's offset, kept across a tab switch.
+ *
+ * This hook used to be declared here. It moved to `lib/ui/scroll-memory`
+ * when the canonical Asset Page turned out to need the same thing for a
+ * different reason -- `Layout` owns one scroller that every non-full-width
+ * tab renders into, so its offset survives the tab change and gets clamped
+ * by the next tab's height instead. The reasoning that was written here,
+ * including why the restore is two attempts and not a loop, went with it.
+ *
+ * What was here, for anyone looking for it:
+ *
+ * ── Why the restore is not a single assignment ────────────────────────────
+ *
+ * Setting `scrollTop` on an element whose content is shorter than the offset
+ * silently clamps to whatever height exists at that instant. On the way back
+ * into the Dashboard the pane's data is usually already in the React Query
+ * cache and the surface is at full height on the first paint, so a layout
+ * effect is enough. Usually is not always: a cold cache, a slow image, or a
+ * section that measures itself all make the first paint shorter than the
+ * final one, and a clamped offset is indistinguishable from "it forgot".
+ *
+ * So the offset is applied in a layout effect, and once more on the next
+ * frame if the first attempt was clamped short.
+ *
+ * ── Why two attempts and not a window that keeps trying ───────────────────
+ *
+ * A loop that re-applies the offset for as long as the surface is growing
+ * cannot tell its own scroll events from the reader's, so a reader who
+ * starts scrolling into a still-settling surface gets pulled back by it.
+ * That is worse than landing near the top: being moved while reading is a
+ * fault the reader cannot work around, and a short restore is one they do
+ * not have to. Two attempts covers the case this exists for -- a warm React
+ * Query cache, where the surface is at full height on the first paint -- and
+ * degrades to the top of the page rather than to a fight.
+ *
+ * `ResizeObserver` would be the precise tool and is not available in this
+ * project's test environment, which would make the mechanism unobservable.
+ */
 
 /**
  * The contextual workspace.
@@ -78,6 +122,9 @@ export function IdeasWorkPane({
   const [whyOpen, setWhyOpen] = useState(false)
   const selectionKey = selection?.key ?? null
   useEffect(() => { setWhyOpen(false) }, [selectionKey])
+  /* Also before the guard, same reason. Unlike `whyOpen` this one IS
+     remembered: see `pane-place`. */
+  const { scroller, onScroll } = useRememberedScroll<HTMLDivElement>(paneScroll, selectionKey)
 
   if (!selection) {
     return (
@@ -161,13 +208,28 @@ export function IdeasWorkPane({
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/*
+        The scroller, and the one thing it remembers.
+
+        This application renders the active tab only, so leaving the Dashboard
+        unmounts this pane and coming back rebuilds it at the top of a surface
+        the reader had scrolled through. `place.ts` gives the shell back its
+        lens and its selected name; `useRememberedScroll` gives this scroller
+        back its offset for the object that is open. Both are memory that
+        lasts exactly as long as a tab switch, and a reload starts at the top.
+      */}
+      <div
+        ref={scroller}
+        onScroll={onScroll}
+        className="min-h-0 flex-1 overflow-y-auto"
+      >
         {/* Keyed on the selection, so the leg a pair is open at is dropped
             when a different candidate arrives. Remounting also resets the
             surfaces below, which is what opening another object means. */}
         <WorkSurface
           key={selection.key}
           selection={selection}
+          entry={entry}
           onClose={onClose}
           mode={mode}
         />
@@ -176,11 +238,50 @@ export function IdeasWorkPane({
   )
 }
 
-function WorkSurface({ selection, onClose, mode }: {
+function WorkSurface({ selection, entry, onClose, mode }: {
   selection: IdeasSelection
+  /**
+   * The selected item, for the entry context only.
+   *
+   * ── Why reading it here does not break the rule above ────────────────
+   *
+   * `entry` is documented as presentation, never routed on, and that is
+   * exactly how it is used: `entryContextFor` copies the producer's own row
+   * off it so the workspace can STATE what the reader pressed. Routing is
+   * still `selection.assetId` and `selection.family`, and every figure the
+   * workspace draws from the database still comes from its own org-scoped
+   * reads.
+   *
+   * The entry is captured when the card is pressed and held by the host, so
+   * it is the item the reader actually selected rather than whatever has
+   * since reranked into its place.
+   */
+  entry: AttentionEntry | null
   onClose: () => void
   mode: Progression['mode'] | null
 }) {
+  /*
+   * The organisation the reader is in NOW, for the staleness check the
+   * workspace applies to the context. Never used to widen a read.
+   *
+   * The OPTIONAL accessor, deliberately. `useOrganization` throws outside a
+   * provider, and this pane is mounted by surfaces and suites that stand up
+   * no organisation context -- a routing pane that crashes for want of a
+   * value it only uses to INVALIDATE something is a fragility, not a check.
+   * No organisation resolves to no context applying, which is the safe
+   * direction: the general workspace.
+   */
+  const org = useOrganizationOptional()
+  const currentOrgId = org?.currentOrgId ?? null
+  const entryContext = useMemo(
+    () => entryContextFor({
+      selection,
+      row: entry?.source ?? null,
+      organizationId: currentOrgId ?? null,
+    }),
+    [selection, entry, currentOrgId],
+  )
+
   /**
    * Which name the reader is working, where the candidate names more than one.
    *
@@ -228,6 +329,11 @@ function WorkSurface({ selection, onClose, mode }: {
               issue={selection.why.headline}
               origin="ideas"
               why={{ headline: selection.why.headline, reason: selection.why.reason }}
+              /* A story carries no producer row, so this resolves to a
+                 general context and the workspace is unchanged. Passed for
+                 the staleness check, which applies either way. */
+              entryContext={entryContext}
+              organizationId={currentOrgId ?? null}
             />
           </div>
         )}
@@ -333,6 +439,8 @@ function WorkSurface({ selection, onClose, mode }: {
            * sentence appeared twice within eighty pixels.
            */
           why={{ headline: selection.why.headline, reason: selection.why.reason }}
+          entryContext={entryContext}
+          organizationId={currentOrgId ?? null}
         />
       </div>
     )

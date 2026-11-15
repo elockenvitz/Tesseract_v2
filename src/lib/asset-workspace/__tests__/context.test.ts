@@ -26,6 +26,7 @@ const facts = (over: Partial<WorkspaceFacts> = {}): WorkspaceFacts => ({
   writtenSections: [],
   rating: null,
   target: null,
+  targetStanding: null,
   spot: null,
   newEvidenceCount: 0,
   openDecisions: [],
@@ -68,18 +69,50 @@ describe('the situation is a closed set, resolved by precedence', () => {
     expect(resolveWorkspaceState(facts())).toBe('unowned')
   })
 
-  it('every state has an emphasis, and every emphasis covers every panel', () => {
+  it('every state names a situation and what leads the page', () => {
     /*
-     * A missing entry would silently drop a panel off the page for one
-     * situation only — the kind of defect nobody finds because it needs the
-     * exact record shape to reproduce.
+     * This used to assert that each state's `order` array covered all six
+     * panels, with a comment about a panel being "silently dropped off the
+     * page". It could not be: nothing read `order`. The Snapshot composed a
+     * fixed layout and used the state for a `data-` attribute only, so the
+     * test described a consequence that did not exist -- a check on a
+     * property of a constant rather than on the thing it was meant to
+     * govern.
+     *
+     * `lead` is read by the Snapshot, and `snapshot-emphasis.test.tsx`
+     * asserts the page actually follows it.
      */
-    const panels = ['conclusion', 'decision', 'case', 'position', 'work', 'memory']
     for (const state of Object.keys(STATE_EMPHASIS)) {
       const e = STATE_EMPHASIS[state as keyof typeof STATE_EMPHASIS]
       expect(e.label.length, state).toBeGreaterThan(0)
-      expect([...e.order].sort(), state).toEqual([...panels].sort())
+      expect(['position', 'none'], state).toContain(e.lead)
     }
+  })
+
+  it('never makes the waiting-work queue a matter of state', () => {
+    /*
+     * The regression this pins, found by four existing Snapshot tests. The
+     * queue was briefly gated on `decision-pending`, which hid it on the
+     * names where an idea sits at ready-to-recommend: that is work owed
+     * without being a pending ruling, so the state is something else and the
+     * only actionable thing on the page vanished.
+     *
+     * Whether the queue leads is a question about data. `lead` answers a
+     * different question -- what leads when nothing is owed -- so no state
+     * may name the queue at all.
+     */
+    for (const state of Object.keys(STATE_EMPHASIS)) {
+      expect(STATE_EMPHASIS[state as keyof typeof STATE_EMPHASIS].lead, state)
+        .not.toBe('decision')
+    }
+  })
+
+  it('leads with the exposure only where there is exposure and no case', () => {
+    /* `unowned` is the trap: nothing is held, so there is no position to put
+       at the top of the page. */
+    expect(STATE_EMPHASIS['position-unexplained'].lead).toBe('position')
+    expect(STATE_EMPHASIS['unowned'].lead).toBe('none')
+    expect(STATE_EMPHASIS['position-monitored'].lead).toBe('none')
   })
 })
 
@@ -246,6 +279,81 @@ describe('signals state relationships the data supports, and no others', () => {
     for (const sig of s) {
       expect(sig.headline, sig.id).not.toMatch(/\byou should\b|\bconsider\b|\brecommend(ed)?\b|\bmust\b|\bneed to\b/i)
     }
+  })
+})
+
+describe('a lapsed valuation is a reason, not a banner', () => {
+  /*
+   * The canonical Asset page used to open its price-target section with a
+   * large amber "Price Targets Expired" panel, from its own RPC on its own
+   * five-minute cache. A reader who followed a valuation alert in met the
+   * same fact four times on one screen. The banner is gone and the reason
+   * lives here, read from the evaluated record through `targetFreshness`.
+   */
+  const signal = (over: Partial<WorkspaceFacts>) =>
+    resolveWorkspaceSignals(facts(over), NOW).find(s => s.id.startsWith('staleness-target-'))
+
+  it('states an expired target with the date on record', () => {
+    const s = signal({ target: 240, targetStanding: { state: 'expired', asOf: '2026-08-30' } })
+    expect(s?.headline).toBe('The price target on record ran out on 2026-08-30')
+    expect(s?.kind).toBe('staleness')
+    /* The reader has to be able to see WHICH record said so. */
+    expect(s?.evidence).toEqual([{ label: 'Price target outcome', table: 'price_target_outcomes' }])
+  })
+
+  it('lands the reader on the targets, not just the page', () => {
+    const s = signal({ target: 240, targetStanding: { state: 'expired', asOf: '2026-08-30' } })
+    expect(s?.destination).toBe('research')
+    expect(s?.focus).toEqual({ kind: 'research-section', anchor: 'targets' })
+  })
+
+  it('omits the date rather than inventing one', () => {
+    const s = signal({ target: 240, targetStanding: { state: 'expired', asOf: null } })
+    expect(s?.headline).toBe('The price target on record ran out')
+  })
+
+  it('says nothing at all for a target that still stands', () => {
+    expect(signal({ target: 240, targetStanding: { state: 'current', asOf: '2027-08-30' } }))
+      .toBeUndefined()
+  })
+
+  it('does not read an absent horizon as expiry', () => {
+    /* `unknown` is a real verdict and it is not a synonym for expired.
+       Retiring live work on the strength of a missing field is the failure
+       this whole freshness rule was written to avoid. */
+    expect(signal({ target: 240, targetStanding: { state: 'unknown', asOf: null } }))
+      .toBeUndefined()
+  })
+
+  it('says nothing when there is no target to judge', () => {
+    expect(signal({ target: null, targetStanding: null })).toBeUndefined()
+  })
+
+  it('does not call a disagreeing framework expired', () => {
+    /* A framework whose rungs disagree has not run out, it has stopped
+       agreeing. Telling the reader the wrong one of those sends them to fix
+       the wrong thing. */
+    const s = signal({ target: 240, targetStanding: { state: 'mixed', asOf: '2026-08-30' } })
+    expect(s?.headline).toBe('The scenario targets do not agree on whether the valuation still stands')
+    expect(s?.headline).not.toMatch(/ran out/)
+  })
+
+  it('reports a target resolved against the case as itself', () => {
+    const s = signal({ target: 240, targetStanding: { state: 'missed', asOf: '2026-08-30' } })
+    expect(s?.headline).toBe('The price target on record resolved against the case on 2026-08-30')
+  })
+
+  it('ranks below a price that has left a live framework', () => {
+    /* Both are facts about the valuation. The reader whose price has passed a
+       target that still stands has the more urgent one. */
+    const all = resolveWorkspaceSignals(facts({
+      target: 240, spot: 266,
+      targetStanding: { state: 'expired', asOf: '2026-08-30' },
+    }), NOW)
+    const expired = all.findIndex(s => s.id.startsWith('staleness-target-'))
+    const past = all.findIndex(s => s.id === 'contradiction-spot-past-target')
+    expect(past).toBeGreaterThanOrEqual(0)
+    expect(expired).toBeGreaterThan(past)
   })
 })
 

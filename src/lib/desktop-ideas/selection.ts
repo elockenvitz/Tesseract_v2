@@ -139,6 +139,14 @@ export interface IdeasSelection {
  * about the POSITION. A scenario gap is the case measured against price, which
  * is the framework. None of these is a guess about what the reader wants next;
  * each is where the object the finding is about actually lives.
+ *
+ * `scenario_gap: 'framework'` is the one live sender of that focus value, and
+ * worth knowing about: the 2.4 audit reported `framework` as dead code
+ * because nothing on the Asset PAGE mapped it to a sub-page. It was dead
+ * there and live here -- in the dashboard pane it is the only ordering that
+ * puts the ladder above the case, which is the right order for a finding
+ * whose subject IS the ladder. The page-side hole is closed (`framework`
+ * lands on research); this row is why the value was not simply deleted.
  */
 const FOCUS_FOR_FAMILY: Record<string, AssetFocus> = {
   stale_target: 'research',

@@ -7,9 +7,23 @@ name: deploy-edge-function
 #     Fork/PR code can never trigger this, so untrusted code never sees the prod token (req 7).
 #  2. Reuses the EXISTING secrets.SUPABASE_ACCESS_TOKEN; passed only as a masked job env var, never
 #     echoed, and `supabase functions deploy` does not print it (req 2, 9).
-#  3. `function` is a fixed choice allowlist (calendar-sync / market-events / market-news /
-#     yahoo-chart-proxy), re-checked at runtime; auto-archive and holdings-sftp-sync are
-#     deliberately absent (req 3).
+#  3. `function` is a fixed choice allowlist (ai-chat / calendar-sync / market-events /
+#     market-news / yahoo-chart-proxy), re-checked at runtime; auto-archive and
+#     holdings-sftp-sync are deliberately absent (req 3).
+#
+#     ai-chat was added 2026-11-14, for the ACT AI 2.4 release. It had never been on this
+#     allowlist, which meant the only way to ship it was `supabase functions deploy` from a
+#     laptop — exactly the ungated path this workflow exists to replace. Production sat on
+#     version 29 (deployed 2026-11-11T03:01Z) while five later commits to it, including the
+#     fix for an attached-portfolio lookup that queried a column that does not exist, stayed
+#     unreleased.
+#
+#     It is a user-facing function: `verify_jwt: true`, and it derives the caller from a
+#     verified `getUser(token)` and the organisation from server-side membership rather than
+#     from a JWT claim. It resolves a BYOK key through Vault under service_role. That makes
+#     laptop deployment of it the worst case of all — an unreviewed build with access to
+#     every organisation's key material — and is the reason it belongs behind the same
+#     required-reviewer gate as the rest. See supabase/functions/authz-registry.json.
 #
 #     yahoo-chart-proxy was added 2026-11-07. It stopped being a stateless proxy: it now persists
 #     the daily closes it fetches into price_history_cache under service_role, replacing two browser
@@ -36,6 +50,7 @@ on:
         required: true
         type: choice
         options:
+          - ai-chat
           - calendar-sync
           - market-events
           - market-news
@@ -58,7 +73,7 @@ jobs:
     environment: production
     env:
       PROD_REF: wfcebeagznzgeuyysbnt
-      ALLOWLIST: "calendar-sync market-events market-news yahoo-chart-proxy"
+      ALLOWLIST: "ai-chat calendar-sync market-events market-news yahoo-chart-proxy"
       # Inputs consumed as env vars (never ${{ }} inside run) to prevent script injection.
       IN_FUNCTION: ${{ inputs.function }}
       IN_SHA: ${{ inputs.sha }}

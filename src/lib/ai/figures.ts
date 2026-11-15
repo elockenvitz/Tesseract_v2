@@ -95,30 +95,104 @@ export function figureTone(raw: string): 'up' | 'down' | null {
 }
 
 /**
- * Which columns of a markdown table are numeric, from the parsed rows.
+ * What a single table cell is, for rendering purposes.
  *
- * A column counts as numeric when at least one cell is a figure and no cell
- * is a non-empty non-figure. One stray word in a column of numbers makes the
- * whole column text, which is the conservative direction: a left-aligned
- * number column is untidy, a right-aligned sentence is unreadable.
+ * ── Why a `token` kind exists ─────────────────────────────────────────────
+ *
+ * A reported defect: a weight column came back as `3.2%`, `unknown`,
+ * `reduced`. Those are not comparable weights, and rendering all three the
+ * same way invited a reader to compare them as though they were. The words
+ * are not wrong — "unknown" is often the only true answer — but they are a
+ * different kind of statement from a number, and the table has to say so.
+ *
+ * `token` is a short non-figure: a status word, a placeholder, an absence.
+ * `text` is everything longer, which is prose and stays left-aligned.
+ */
+export type CellKind = 'blank' | 'figure' | 'token' | 'text'
+
+/* Short enough to sit in a column of numbers without becoming a paragraph.
+   Three words covers "not held", "no position", "awaiting PM ruling". */
+const TOKEN_MAX_CHARS = 24
+const TOKEN_MAX_WORDS = 3
+
+export function cellKind(raw: string): CellKind {
+  const text = raw.trim()
+  if (!text) return 'blank'
+  if (isFigure(text)) return 'figure'
+  /* A full stop means a sentence, whatever its length. */
+  if (text.endsWith('.')) return 'text'
+  if (text.length > TOKEN_MAX_CHARS) return 'text'
+  return text.split(/\s+/).length <= TOKEN_MAX_WORDS ? 'token' : 'text'
+}
+
+/** A cell that carries no value at all, and never counts against a column. */
+const PLACEHOLDERS = new Set(['-', '–', '—', 'n/a', 'n.a.', 'na', '?'])
+
+function isPlaceholder(cell: string): boolean {
+  return PLACEHOLDERS.has(cell.toLowerCase())
+}
+
+/**
+ * How a column behaves, where it behaves like a column of values.
+ *
+ * `figures` — every cell that says anything is a figure.
+ * `mixed`   — some are figures and the rest are short tokens.
+ *
+ * Both are right-aligned, so a reader can compare down the column. The
+ * difference is what happens to the non-figures: see `CellKind`.
+ */
+export type ColumnKind = 'figures' | 'mixed'
+
+/**
+ * Which columns of a markdown table hold values, and of which kind.
+ *
+ * ── What changed here, and why it is not a loosening ──────────────────────
+ *
+ * This used to answer one question — is the column numeric — and a single
+ * stray word made the whole column text. The stated reason was that a
+ * left-aligned number column is untidy while a right-aligned sentence is
+ * unreadable, and that reason still holds: a column containing a SENTENCE is
+ * still not a value column.
+ *
+ * What it conflated is a sentence with a status word. "reduced" sitting in a
+ * weight column is the case the reader complained about, and treating the
+ * column as prose was the worst of the options: the numbers stopped lining up
+ * AND the word still sat in the same place a number would. So that case is
+ * now `mixed`, and the renderer marks the word as not-a-number instead.
  *
  * Header cells are deliberately excluded by the caller — a column of returns
  * is still numeric when its header says "Change".
  */
-export function numericColumns(bodyRows: string[][]): Set<number> {
+export function valueColumns(bodyRows: string[][]): Map<number, ColumnKind> {
   const width = bodyRows.reduce((w, r) => Math.max(w, r.length), 0)
-  const numeric = new Set<number>()
+  const shapes = new Map<number, ColumnKind>()
 
   for (let col = 0; col < width; col++) {
-    let sawFigure = false
-    let sawOther = false
+    let figures = 0
+    let tokens = 0
+    let prose = 0
     for (const row of bodyRows) {
       const cell = (row[col] ?? '').trim()
-      if (!cell || cell === '-' || cell === '—' || cell === 'n/a') continue
-      if (isFigure(cell)) sawFigure = true
-      else sawOther = true
+      if (!cell || isPlaceholder(cell)) continue
+      const kind = cellKind(cell)
+      if (kind === 'figure') figures += 1
+      else if (kind === 'token') tokens += 1
+      else prose += 1
     }
-    if (sawFigure && !sawOther) numeric.add(col)
+    /* A single sentence still disqualifies the column outright. */
+    if (prose > 0 || figures === 0) continue
+    shapes.set(col, tokens === 0 ? 'figures' : 'mixed')
   }
-  return numeric
+  return shapes
+}
+
+/**
+ * Which columns are right-aligned.
+ *
+ * Both column kinds are: lining the values up is the whole point, and a short
+ * token aligned with them reads as the column's own vocabulary rather than as
+ * a stray piece of prose.
+ */
+export function numericColumns(bodyRows: string[][]): Set<number> {
+  return new Set(valueColumns(bodyRows).keys())
 }

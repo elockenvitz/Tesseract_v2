@@ -4,6 +4,10 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import { useAIConfig } from './useAIConfig'
+/* The dashboard asset pane reads these same rows under its own key and caches
+   them for a minute, so a write here has to mark it stale. See the function's
+   own note for the defect that caused. */
+import { invalidateAssetWorkspace } from './useAssetWorkspace'
 import {
   findOrCreateRevision,
   addRevisionEvents,
@@ -411,6 +415,14 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       // and the selected subject -- Research reads the same table through the
       // same mutation path rather than owning a second one.
       queryClient.invalidateQueries({ queryKey: ['desktop-research'] })
+      /*
+       * And the dashboard asset pane, which reads the same rows under its own
+       * key and caches them for a minute. Without this, editing the case here
+       * and going back to the pane showed the OLD case -- and since "Edit in
+       * research" sends the reader here precisely so the case is edited on
+       * this page, leaving and returning is the normal path, not an edge one.
+       */
+      invalidateAssetWorkspace(queryClient)
       // Tick "Fill out a research field" + "Explore an asset page" in
       // the PilotWelcomeBanner checklist.
       queryClient.invalidateQueries({ queryKey: ['pilot-tutorial-progress'] })
@@ -432,6 +444,9 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
+      /* A DELETED section is the case the pane is most wrong about: it would
+         keep rendering the paragraph and its "written Nd ago". */
+      invalidateAssetWorkspace(queryClient)
     }
   })
 
@@ -490,6 +505,7 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
+      invalidateAssetWorkspace(queryClient)
     }
   })
 
@@ -587,6 +603,7 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
       // and the selected subject -- Research reads the same table through the
       // same mutation path rather than owning a second one.
       queryClient.invalidateQueries({ queryKey: ['desktop-research'] })
+      invalidateAssetWorkspace(queryClient)
     }
   })
 
@@ -637,6 +654,7 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
+      invalidateAssetWorkspace(queryClient)
     }
   })
 
@@ -667,6 +685,10 @@ export function useContributions({ assetId, section }: UseContributionsOptions) 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['contributions', assetId] })
+      /* An audience change can change whether the pane's reader is entitled
+         to the row at all, so it is a visibility change AND a content change
+         from the pane's point of view. */
+      invalidateAssetWorkspace(queryClient)
     }
     /*
      * No onError handler. It previously logged and swallowed, which is how a

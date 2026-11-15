@@ -96,11 +96,29 @@ export interface FreshnessTargetInput {
    * expiry a full timeframe into the future, and a target the outcome had
    * already evaluated as expired read as current in the editor.
    *
-   * `created_at` is when the horizon began and does not move. The database
-   * agrees: `create_outcome_for_target` anchors `target_set_date` on
-   * `NEW.created_at` at INSERT, and the live AMZN rows show
-   * `target_set_date = 2025-08-30 = created_at` while `updated_at` has since
-   * moved to 2026-08-23.
+   * `created_at` is when the horizon began and does not move.
+   *
+   * ── A correction to what this comment used to claim ──────────────────────
+   *
+   * It said the database agrees, anchoring on `NEW.created_at`. That is only
+   * half true, and the half it omits is the one that matters. Read from the
+   * live `create_outcome_for_target` on 2026-11-14:
+   *
+   *   IF TG_OP = 'UPDATE' AND COALESCE(NEW.is_rolling,false) = false
+   *     THEN v_base_date := NOW();        -- the analyst is RENEWING
+   *     ELSE v_base_date := NEW.created_at;
+   *
+   * So on INSERT the horizon runs from `created_at`, and on UPDATE it
+   * RESTARTS from now -- and the row's `status` is reset to `pending` and its
+   * evaluation cleared at the same time. A republished target genuinely gets
+   * a fresh horizon.
+   *
+   * This branch is therefore a fallback for a target with no outcome row, and
+   * `created_at` is the right anchor for exactly that case: no outcome row
+   * means no UPDATE has been recorded against it. It is NOT a client-side
+   * reimplementation of the database's rule, and must not be used as one --
+   * where an outcome row exists its `target_date` already carries whichever
+   * anchor the database used, which is why that branch wins above.
    */
   created_at?: string | null
   timeframe?: string | null
@@ -141,6 +159,37 @@ export function targetFreshness(
     /* An unrecognised status is reported as unknown rather than guessed into
        one of the five. A new status value should surface, not be absorbed. */
     if (!state) return { state: 'unknown', asOf: outcome.target_date ?? null, basis: 'outcome' }
+
+    /*
+     * `pending` means "nothing has evaluated this yet", NOT "still standing".
+     *
+     * The two are the same thing only if something flips the row on the day
+     * its horizon passes, and nothing does. Measured against production on
+     * 2026-11-14: of 26 outcome rows holding `pending`, FIVE had a
+     * `target_date` already in the past -- the earliest 2026-04-12, seven
+     * months before. So the status column and the horizon column on the SAME
+     * ROW disagreed, and this function took the stale one.
+     *
+     * That is the divergence this module was written to end, surviving inside
+     * it: Research and the Asset Workspace read `status` here and reported a
+     * lapsed target as the firm's current view.
+     *
+     * The horizon decides, because it is a fact about the target the day it
+     * was written, while the status is a record of work that may not have
+     * happened. `basis` stays `outcome` -- the date IS the outcome row's,
+     * this is not a fallback to inference.
+     *
+     * Only `pending` is reconsidered. A terminal state is a verdict somebody
+     * reached: a target HIT in month three is still `hit` long after its
+     * horizon passes, and overriding that would retire real history.
+     */
+    if (state === 'current' && outcome.target_date) {
+      const due = new Date(outcome.target_date)
+      if (!Number.isNaN(due.getTime()) && due.getTime() < now.getTime()) {
+        return { state: 'expired', asOf: outcome.target_date, basis: 'outcome' }
+      }
+    }
+
     return { state, asOf: outcome.target_date ?? null, basis: 'outcome' }
   }
 

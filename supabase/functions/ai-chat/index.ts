@@ -55,7 +55,33 @@ import {
   personLabel,
   resolveStageLabel,
   bucketChecklist,
+  /* The cross-asset tools: canonical idea stages, liveness, and the rulings
+     that count as answered. All mirrored from `src/lib`, all drift-tested. */
+  IDEA_STAGES,
+  IDEA_STAGE_LABEL,
+  toIdeaStage,
+  isLiveIdeaRow,
+  DECIDED_DECISION_STATUSES,
 } from "../_shared/research-results.ts";
+/* Holdings arithmetic and a portfolio's ideas. Pure, so vitest imports the
+   same module these tools do -- see its header for the three defects behind
+   the reported Large Cap Growth failure. */
+import {
+  type HoldingRow,
+  weightHoldings,
+  sectorBreakdown,
+  categorizeIdeas,
+  degradedNote,
+} from "../_shared/portfolio-ideas.ts";
+import {
+  type ContextEntry,
+  CONTEXT_TABLE,
+  classifyContext,
+  contextGapPrompt,
+  describeLoaded,
+  isRetrievableType,
+  manifestLogLine,
+} from "../_shared/context-manifest.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -379,29 +405,89 @@ Deno.serve(async (req) => {
     // strings into the system prompt.
     let contextPrompt = "";
     let documents: SourceDocument[] = [];
+    /* One entry per attached tag, returned to the client so a chip can show
+       what the SERVER resolved rather than what the client wrote. */
+    const contextManifest: ContextEntry[] = [];
     const isAnthropic = aiConfig.provider === "anthropic";
 
     // Tags are independent of one another, so a two-tag conversation used to
     // pay for eight serial round-trips where four would do. Fan out.
     await phase("context", async () => {
       const parts = await Promise.all(tags.map(async (tag) => {
-        if (isAnthropic) {
-          const docs = await buildContextDocuments(supabase, tag, user.id, aiConfig);
-          if (docs.length > 0) return { docs, text: "" };
-          // For tag types without document support (theme/portfolio so
-          // far), fall back to the embedded-string context — still gives
-          // the model something to work with, just no inline citations.
-          const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
-          return { docs: [] as SourceDocument[], text: part ? part + "\n" : "" };
+        /*
+         * Each tag now reports an OUTCOME, not just whatever it managed to
+         * load.
+         *
+         * A tag that resolved to nothing used to return an empty string and
+         * disappear here. The chip in the interface stayed, so the reader
+         * believed the object was in play, and the model -- given neither
+         * the object nor any statement that it was missing -- answered as
+         * though the question had been general. That is how an answer about
+         * a portfolio got built from no portfolio.
+         */
+        const nothing = { docs: [] as SourceDocument[], text: "" };
+
+        if (!isRetrievableType(tag.type)) {
+          return { ...nothing, entry: classifyContext({ type: tag.type, id: tag.id, found: false }) };
         }
-        const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
-        return { docs: [] as SourceDocument[], text: part ? part + "\n" : "" };
+
+        try {
+          let docs: SourceDocument[] = [];
+          let text = "";
+
+          if (isAnthropic) {
+            docs = await buildContextDocuments(supabase, tag, user.id, aiConfig);
+            if (docs.length === 0) {
+              // For tag types without document support (theme/portfolio so
+              // far), fall back to the embedded-string context — still gives
+              // the model something to work with, just no inline citations.
+              const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
+              text = part ? part + "\n" : "";
+            }
+          } else {
+            const part = await buildContextPrompt(supabase, tag, user.id, aiConfig);
+            text = part ? part + "\n" : "";
+          }
+
+          const loaded = describeLoaded(docs.map(d => d.kind ?? "document"), text.trim().length);
+          if (loaded.length > 0) {
+            return { docs, text, entry: classifyContext({ type: tag.type, id: tag.id, found: true, loaded }) };
+          }
+
+          /* Nothing came back, and "the object is gone" and "the object is
+             bare" are different answers to the reader. One existence read,
+             under the caller's own RLS, decides which — and only on this
+             branch, so the normal path pays nothing for it. */
+          const table = CONTEXT_TABLE[tag.type];
+          let found = false;
+          if (table) {
+            const probe = await supabase.from(table).select("id").eq("id", tag.id).limit(1);
+            if (probe.error) throw probe.error;
+            found = (probe.data?.length ?? 0) > 0;
+          }
+          return { docs, text, entry: classifyContext({ type: tag.type, id: tag.id, found }) };
+        } catch (err) {
+          /* Swallowed deliberately, and RECORDED. A context read that throws
+             used to take the whole request down with it; reporting it as a
+             failed object lets the answer name the gap instead. */
+          console.error("ai-chat context read failed", tag.type, tag.id, err);
+          return { ...nothing, entry: classifyContext({ type: tag.type, id: tag.id, found: false, errored: true }) };
+        }
       }));
       for (const p of parts) {
         documents.push(...p.docs);
         contextPrompt += p.text;
+        contextManifest.push(p.entry);
       }
     });
+
+    /* The model is told what it is missing, in the variable half of the
+       prompt so it does not poison the cached stable prefix. */
+    const gapPrompt = contextGapPrompt(contextManifest);
+    if (gapPrompt) contextPrompt += `\n${gapPrompt}\n`;
+    if (contextManifest.length > 0) {
+      console.log("ai-chat context_gaps", manifestLogLine(contextManifest));
+    }
 
     // The document path never had a total ceiling — MAX_CONTEXT_CHARS is
     // applied inside buildContextPrompt only, which is the branch Anthropic
@@ -535,6 +621,10 @@ Deno.serve(async (req) => {
               tool_calls: result.tool_calls || [],
               usage: result.usageRaw ?? {},
               timings: { ...timings },
+              /* Same manifest as the JSON path. Omitting it here would make
+                 the chip's honesty depend on whether the reader's request
+                 happened to stream. */
+              context: contextManifest,
             });
           } catch (e) {
             const errMsg = (e as Error).message || "";
@@ -634,6 +724,10 @@ Deno.serve(async (req) => {
         // show what it was given and how long each phase took.
         verbosity,
         timings,
+        /* What the server resolved, per attached object. The pane draws its
+           chips from THIS, not from its own tag write, so a chip can no
+           longer claim an object the answer was built without. */
+        context: contextManifest,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -899,6 +993,79 @@ const VERBOSITY_MAX_TOKENS: Record<Verbosity, number> = {
 };
 
 /**
+ * How an answer is presented.
+ *
+ * MIRRORED from `src/lib/ai/answer-format.ts`, which builds this exact string
+ * from its own parts. That file is the source of truth and is where the
+ * reasoning lives; `src/lib/ai/__tests__/answer-format.test.ts` compares the
+ * two and fails on any divergence.
+ *
+ * It is mirrored rather than imported because an Edge Function cannot import
+ * from `src`. It is a separate constant rather than inline prose because the
+ * client has to be able to assert that it can RENDER what this asks for: the
+ * ticker spelling here is the one `preprocessTickers` turns into a link, and
+ * the signed-figure rule is the one `figures` uses to decide what gets a
+ * direction colour. A quiet disagreement there produces answers that read
+ * perfectly and navigate nowhere.
+ *
+ * It sits in the stable half of the prompt, so it is cached: it is identical
+ * for every request from every user.
+ */
+const PRESENTATION_CONTRACT = `HOW TO WRITE THE ANSWER
+
+Three kinds of claim, and a reader must be able to tell them apart:
+- A fact from a record names the record it came from, inline: "the thesis (updated 4 Nov) says".
+- Your own inference is marked as yours: "my read is", "this suggests". Never phrased as something the records state.
+- What you looked for and did not find goes in a blockquote, last, one line each. Say what was searched. Never pad it, and never include it when there is nothing missing.
+
+Words. The reader is an investor, not a database administrator:
+- Name a record the way the product names it. Never a table, column or enum value: "the PM ruling", not "the decision_requests row"; "no requirement is overdue", not "checklist_items returned 0 rows".
+- An absent value is absent. Never null, undefined, empty or 0 rows: "no price target has been set", "the thesis has no owner yet".
+- Do not describe your own retrieval. The reader wants what you found, not which lookup you ran or how many results it had.
+- Technical names are correct when the reader asks for one. If they ask which field or table something lives in, answer precisely and name it.
+
+Call each record what the product calls it:
+- asset is "Asset"
+- note is "Note"
+- contribution is "Thesis"
+- price_target is "Target"
+- portfolio is "Portfolio"
+- theme is "Theme"
+- recommendation is "Recommendation"
+- decision_request is "PM ruling"
+- accepted_trade is "Committed trade"
+- decision_review is "Review"
+- outcome is "Outcome"
+- workflow is "Process"
+- checklist_item is "Requirement"
+- idea is "Idea"
+
+Figures:
+- Write a change with its sign: +4.2%, -180bps. Write a level without one: 4.2%, 18.5x.
+- Keep the unit you were given. Do not convert, round further or rescale a figure from a record.
+- Never write a number that is not in a record or derivable from one in a stated step.
+- Write a company as its ticker in the form $AAPL so the reader can open it.
+
+Tables:
+- Use a table only to compare three or more objects on the same attributes. Two objects are a sentence.
+- A column must hold figures or short labels, never sentences. A table of prose is a list with extra lines.
+- Keep figures in their own columns so they align for comparison down the column.
+
+Headings and emphasis:
+- A section label is a heading: "### Bear case". A bold line on its own is not a heading and will not read as one.
+- Bold marks a word or two inside a sentence. Never a whole sentence: a bolded claim reads as shouting, not as structure.
+- Leave a blank line between a heading and the prose under it, and between paragraphs. Two sentences must never run together without a space.
+
+Shape. These are the forms available, not a template to fill in:
+- plain prose: the default, and correct for almost every question
+- a short list: three or more parallel items that are genuinely parallel
+- headings: the answer has more than one subject; never on a single-subject answer
+- a table: three or more objects compared on the same attributes
+- a leading summary: only when the answer runs long enough that the judgment would otherwise arrive late
+
+Do not apply a fixed skeleton to every question. An answer whose shape is the same whatever was asked carries no information in its shape.`;
+
+/**
  * The directive text for each verbosity.
  *
  * Keyed by the same union the client resolves. `src/lib/ai/response-policy.ts`
@@ -928,7 +1095,12 @@ further help. Use a heading only when the answer has more than one subject.`,
 Still lead with the judgment in one sentence, so the answer is useful before
 it is finished. Then develop it properly: the evidence, the counter-case, what
 would change your mind. Headings and structure are welcome here. Do not pad —
-depth means more substance, not more words around the same substance.`,
+depth means more substance, not more words around the same substance.
+
+This is the one length where a leading summary earns its place: at this
+length the judgment would otherwise arrive after the reader has already
+scrolled. Two or three lines, the judgment and what rests on it, then the
+body. Not a list of the sections below it: a contents page is not a summary.`,
 };
 
 /**
@@ -1024,6 +1196,7 @@ What you are not for:
 
 Research tools:
 - You have tools that look up additional data — assets by ticker, portfolios by name, themes, team notes, asset search, the decision record for an asset (get_decisions), and the research processes running on an asset (get_workflows).
+- You also have five tools that read ACROSS assets rather than about one: get_watchlists (the reader's own lists and what is on them), get_coverage (who covers what), get_idea_pipeline (live ideas and how mature each is), get_pending_decisions (recommendations awaiting a ruling), get_outstanding_work (research processes with open requirements). Use these for "what is in my pipeline", "what is on my watchlist", "what needs a decision", "what is overdue", "what should I look at" — questions about the reader's work rather than about a company. Do not answer those from a single-asset tool, and do not say you cannot see those parts of the product.
 - Use them when the user references a company / portfolio / theme you don't already have full context on, or when comparing multiple objects would benefit the answer.
 - Don't call tools for objects you already have rich context on (the user's currently-tagged objects are already provided as documents).
 - Prefer specific lookups (get_asset, get_portfolio) over broad searches when you know the name. Cap yourself to the minimum set of tool calls needed.
@@ -1035,6 +1208,17 @@ Every tool result carries a "status". Honour it exactly:
 - status "empty" — the search RAN and matched nothing. Say that no MATCHING records were found, and say what was searched (the result's "searched" field tells you). Never widen this into "the firm has no research on X" or "nothing has been written" — you only know that this query matched nothing.
 - status "error" — the search DID NOT RUN. You do not know whether records exist. Say the lookup failed and that the answer is therefore incomplete. NEVER report an error as an absence of records, and never silently omit it.
 
+Every "ok" and "empty" result also carries a "visibility" object, and it governs what you are allowed to conclude. Every query runs AS THE READER, so records they may not read are not returned and not counted: at the data layer "there are none" and "there are none you may see" are the same observation. The result tells you which one you have.
+- visibility.scope "organization" — the lookup spans the reader's active organization. Only here may an empty result be reported as a fact about the firm, and even then say "in your organization", because another organization is out of scope.
+- visibility.scope "caller_visible" — organization-wide EXCEPT for records a sharing or membership rule withholds. Say "none visible to you". Never "none exist", never "the firm has none", never "there are no X".
+- visibility.scope "caller" — only what the reader owns or was given. Says almost nothing about the organization. Say "none of yours".
+In both of the latter two cases "visibility.excludes" names what the lookup could not see. When the reader might reasonably think the answer is complete, say what was outside it in one short clause — for example "none awaiting your ruling, though this only covers portfolios you are on the team of". An "empty" result also carries "absence_rule" spelling this out for that specific lookup; follow it. A partial "ok" result is the same trap: if visibility is not "organization", do not present the records you got as the complete set.
+Never describe this as a permissions error or suggest the reader lacks access to something they asked about. It is a statement about the lookup's reach, not an accusation.
+
+get_idea_pipeline reports MATURITY. Its four stages (exploring, researching, developing, ready_to_recommend) say how well understood an idea is and nothing else. They do NOT say whether a recommendation was submitted, whether a PM ruled, or whether anything traded — that is get_pending_decisions and get_decisions. Never report a pipeline stage as a decision or as an outcome. "stored_stage" is the raw column and may hold an older vocabulary; quote "stage_label", not "stored_stage". Honour "finished_ideas_excluded" if the reader asks about completed work: those ideas exist, they are just not live.
+
+get_pending_decisions is the narrowest-reaching tool you have: it sees only requests the reader raised or that sit on portfolios they are on the team of. An empty result there must be reported as "nothing awaiting a ruling that is visible to you". When "idea_visible" is false the recommendation is readable but the idea behind it is not, so describe the request and say its underlying idea is not visible rather than inventing its contents.
+
 get_decisions returns FOUR separate kinds of record and they must never be merged:
 - A "recommendation" is what an analyst proposed. It is not a decision.
 - A "pm_ruling" is the PM's answer to a recommendation. Its "status" is the decision: pending, under_review, needs_discussion, accepted, accepted_with_modification, rejected, deferred or withdrawn. An accepted ruling does NOT mean a trade happened.
@@ -1044,7 +1228,9 @@ Use the explicit id fields (recommendation_id, pm_ruling_id, committed_trade_id)
 
 get_workflows reports process state. When "current_stage_unresolved" or "stage_unresolved" is true, the stored stage does not match any stage in that workflow: say the stage is unrecorded rather than naming one. Honour "open_requirements_truncated" by saying more remain than are listed.
 
-Never state or imply that you have reviewed everything available. You have seen only what these results contain. If a question needs a record type you have no tool for (meeting notes, emails), say so plainly rather than answering from the records you do have.`;
+Never state or imply that you have reviewed everything available. You have seen only what these results contain. If a question needs a record type you have no tool for (meeting notes, emails), say so plainly rather than answering from the records you do have.
+
+${PRESENTATION_CONTRACT}`;
 
   if (!opts.structured) return base;
   return `${base}\n\n${buildActionDirective(opts.maxActions, opts.maxEvidence, opts.allowDeep)}`;
@@ -1399,21 +1585,39 @@ async function buildContextPrompt(
 
     if (portfolio) {
       prompt += `PORTFOLIO: ${portfolio.name}\n`;
+      /*
+       * The id, which this prompt used to omit.
+       *
+       * Without it the model knew only a NAME for an object the server had
+       * already resolved, so any follow-up lookup went back through a
+       * case-insensitive name match -- an attached canonical reference
+       * degraded into a natural-language label on its way to the model. It
+       * is handed the id and told to use it.
+       */
+      prompt += `Portfolio id: ${context.id}\n`;
+      prompt += `When you look this portfolio up, or ask for its ideas, pass this id — not the name.\n`;
       if (portfolio.description) prompt += `Description: ${truncate(portfolio.description, 500)}\n`;
     }
 
+    /* Same columns and same snapshot rule as `get_portfolio`. `weight` is
+       not a column here either, and ordering by it is what made this query
+       return nothing useful. */
     const { data: holdings } = await supabase
       .from("portfolio_holdings")
-      .select("*, asset:assets(symbol, company_name)")
+      .select("asset_id, portfolio_id, date, shares, price, " +
+              "asset:assets(id, symbol, company_name, sector)")
       .eq("portfolio_id", context.id)
-      .order("weight", { ascending: false })
-      .limit(10);
+      .order("date", { ascending: false, nullsFirst: false })
+      .limit(500);
 
-    if (holdings?.length) {
-      prompt += `\nTOP HOLDINGS:\n`;
-      holdings.forEach((h: any) => {
-        if (h.asset) prompt += `• ${h.asset.symbol}: ${h.weight ? h.weight.toFixed(1) + "%" : "N/A"}\n`;
+    const snapshot = weightHoldings(holdings as HoldingRow[] | null, 10);
+    if (snapshot.holdings.length) {
+      prompt += `\nTOP HOLDINGS${snapshot.as_of ? ` (as of ${snapshot.as_of})` : ""}:\n`;
+      snapshot.holdings.forEach((h) => {
+        const w = h.weight_pct === null ? "weight unknown" : `${h.weight_pct.toFixed(1)}%`;
+        prompt += `• ${h.symbol ?? "unknown"}: ${w}\n`;
       });
+      if (snapshot.weight_basis) prompt += `${snapshot.weight_basis}\n`;
     }
 
     return truncate(prompt, MAX_CONTEXT_CHARS);
@@ -1587,6 +1791,145 @@ const RESEARCH_TOOLS = [
       required: ["symbol"],
     },
   },
+
+  /* ── Cross-asset: the questions the assistant could not answer ─────────
+   *
+   * Everything above takes a ticker. So "what is in my pipeline", "what is on
+   * my watchlists" and "what needs my decision" had no tool at all, and the
+   * assistant answered them by saying it could not see those parts of the
+   * product. It could not: there was nothing to call.
+   *
+   * Each of these runs on the same caller-scoped client as the rest, and each
+   * declares its reach in `TOOL_VISIBILITY` so an empty answer is reported as
+   * "none visible to you" rather than as a fact about the firm.
+   */
+  {
+    name: "get_watchlists",
+    description:
+      "List the reader's own watchlists and coverage lists, and the assets on them. Returns each " +
+      "list with its name, what kind of list it is, how many assets it holds, and the tickers, " +
+      "plus any flagged items, assignees and due dates on those entries. Use this when the user " +
+      "asks what is on their watchlist or lists, what they are tracking, or what they put on a " +
+      "list. IMPORTANT: this sees only lists the reader created or that were shared with them " +
+      "directly, never the organization's other lists, so an empty result means none of THEIRS, " +
+      "not that the firm keeps no lists.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description:
+            "Optional. Only lists whose name contains this text. Omit to get all of the reader's lists.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_coverage",
+    description:
+      "Look up who covers which assets. With no argument, returns the reader's own coverage " +
+      "assignments; with `scope` set to 'organization', the whole desk's. Each row carries the " +
+      "asset, the analyst, their role, whether they are the lead, and since when. Use this when " +
+      "the user asks what they cover, who covers a name, or what is on their plate. This path is " +
+      "genuinely organization-wide, so an empty result does mean there are no coverage " +
+      "assignments in the reader's active organization.",
+    input_schema: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["mine", "organization"],
+          description: "'mine' (default) for the reader's own assignments, 'organization' for the desk's.",
+        },
+        symbol: {
+          type: "string",
+          description: "Optional ticker, to ask who covers one name.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_idea_pipeline",
+    description:
+      "The Idea Pipeline: live investment ideas and how mature each one is. Returns ideas grouped " +
+      "by their canonical stage (exploring, researching, developing, ready to recommend) with the " +
+      "ticker, the action proposed, conviction, who owns it, how long it has sat in its stage, " +
+      "and its rationale. Use this when the user asks what is in their pipeline, what they are " +
+      "working on, what ideas are in flight, or what is ready to recommend. The pipeline measures " +
+      "MATURITY and stops at ready-to-recommend: whether a recommendation was submitted, ruled on " +
+      "or traded is a separate record, so use get_pending_decisions or get_decisions for that and " +
+      "never report a pipeline stage as a decision. " +
+      "Pass `portfolio` when the reader asks about the ideas on a particular book — including " +
+      "when a portfolio is attached to the conversation. The result then splits ideas by their " +
+      "ACTUAL relationship to it: ideas associated with that portfolio, ideas about assets it " +
+      "holds that are not associated with it, and unrelated ideas. Report those groups " +
+      "separately; only the first group is an idea for that portfolio.",
+    input_schema: {
+      type: "object",
+      properties: {
+        scope: {
+          type: "string",
+          enum: ["mine", "organization"],
+          description:
+            "'mine' (default) for ideas the reader created or is assigned, 'organization' for every idea visible to them. " +
+            "When `portfolio` is given, prefer 'organization': a colleague's idea on the reader's book is still an idea on that book.",
+        },
+        stage: {
+          type: "string",
+          enum: ["exploring", "researching", "developing", "ready_to_recommend"],
+          description: "Optional. Only ideas at this canonical stage.",
+        },
+        portfolio: {
+          type: "string",
+          description:
+            "Optional. A portfolio name or id. Groups the result by each idea's real relationship to it.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_pending_decisions",
+    description:
+      "Recommendations awaiting a ruling: the Decision Inbox. Returns each open request with the " +
+      "asset, the portfolio, who raised it, what they proposed, how long it has been waiting, and " +
+      "its current status. Use this when the user asks what needs a decision, what is awaiting " +
+      "their ruling, what is in their inbox, or what is pending. IMPORTANT: this sees only " +
+      "requests the reader raised or that sit on portfolios they are on the team of. An empty " +
+      "result means none are visible to them, NOT that the desk has none pending.",
+    input_schema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "Optional ticker, to narrow to one name." },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "get_outstanding_work",
+    description:
+      "Open research work across assets, rather than on one name. Returns the research processes " +
+      "that are running with open requirements, the stage each sits at, what is still open, who " +
+      "is assigned and anything past its deadline. Use this when the user asks what is " +
+      "outstanding, overdue or incomplete across their coverage or the desk, or what they should " +
+      "pick up. For one asset, prefer get_workflows. This path is organization-wide.",
+    input_schema: {
+      type: "object",
+      properties: {
+        overdue_only: {
+          type: "boolean",
+          description: "Optional. Only work whose stage deadline has passed.",
+        },
+        limit: {
+          type: "number",
+          description: "Optional. How many processes to return, default 15.",
+        },
+      },
+      required: [],
+    },
+  },
 ] as const;
 
 /*
@@ -1709,33 +2052,54 @@ async function executeResearchTool(
       const pf = found.data;
       if (!pf) return toolEmpty("get_portfolio", { name_or_id: ref, looked_in: "portfolios" });
 
+      /*
+       * `weight` is not a column. `portfolio_holdings` holds shares, price,
+       * cost and date, and weight is derived -- which is what the frontend
+       * has always done. Asking for `weight` made Postgres reject the query,
+       * and because a holdings failure used to return a flat error, the
+       * portfolio this tool had ALREADY RESOLVED was thrown away with it.
+       * That is the whole of the reported Large Cap Growth failure: the
+       * model was told the lookup failed and would not answer a question
+       * about ideas that never needed holdings.
+       *
+       * So: real columns, every dated row (collapsed in `weightHoldings`,
+       * because the table holds one row per asset per date and summing them
+       * double-counts), and a holdings failure that degrades instead of
+       * discarding.
+       */
       const held = await runQuery<any[]>("get_portfolio", "holdings",
         supabase
           .from("portfolio_holdings")
-          .select("id, weight, asset:assets(id, symbol, company_name, sector)")
+          .select("asset_id, portfolio_id, date, shares, price, cost, " +
+                  "asset:assets(id, symbol, company_name, sector)")
           .eq("portfolio_id", pf.id)
-          .order("weight", { ascending: false }).limit(15));
-      if (held.failed) return toolError("get_portfolio", "holdings");
-      const holdings = held.data || [];
+          .order("date", { ascending: false, nullsFirst: false })
+          .limit(500));
 
-      const sectorMap: Record<string, number> = {};
-      for (const h of holdings as any[]) {
-        const sec = h.asset?.sector || "Unknown";
-        sectorMap[sec] = (sectorMap[sec] || 0) + (Number(h.weight) || 0);
-      }
+      const snapshot = held.failed
+        ? null
+        : weightHoldings(held.data as HoldingRow[] | null, 15);
+      const holdings = snapshot?.holdings ?? [];
+
       return toolOk("get_portfolio", {
         portfolio_id: pf.id,
         name: pf.name,
         description: pf.description,
         updated_at: pf.updated_at ?? pf.created_at ?? null,
         holdings_returned: holdings.length,
-        top_holdings: holdings.map((h: any) => ({
-          asset_id: h.asset?.id, symbol: h.asset?.symbol, company: h.asset?.company_name,
-          sector: h.asset?.sector, weight_pct: h.weight,
-        })),
-        sector_breakdown: Object.entries(sectorMap)
-          .sort((a, b) => b[1] - a[1])
-          .map(([sec, w]) => ({ sector: sec, weight_pct: Number(w.toFixed(2)) })),
+        ...(held.failed
+          ? { holdings_unavailable: true, degraded: degradedNote(["the portfolio's holdings"]) }
+          : {}),
+        ...(snapshot?.as_of ? { holdings_as_of: snapshot.as_of } : {}),
+        ...(snapshot?.weight_basis ? { weight_basis: snapshot.weight_basis } : {}),
+        ...(snapshot && snapshot.rows_without_price > 0
+          ? { unpriced_holdings: snapshot.rows_without_price }
+          : {}),
+        ...(snapshot && snapshot.superseded_rows > 0
+          ? { superseded_snapshot_rows: snapshot.superseded_rows }
+          : {}),
+        top_holdings: holdings,
+        sector_breakdown: sectorBreakdown(holdings),
       });
     }
 
@@ -2356,6 +2720,663 @@ async function executeResearchTool(
         // are counted and not silently folded into one.
         unassigned_requirements: checklistRows.filter((c: any) => !c.workflow_id).length,
         workflows,
+      });
+    }
+
+    /* ── get_watchlists ──────────────────────────────────────────────────
+     *
+     * The reader's own lists. `asset_lists` is readable only when
+     * `created_by = auth.uid()` or a collaboration row exists, so this path
+     * cannot see the desk's lists and must never say the firm keeps none.
+     */
+    if (name === "get_watchlists") {
+      const nameFilter = String(input.name || "").trim();
+
+      let listQuery = supabase.from("asset_lists")
+        .select("id, name, description, list_type, lifecycle, deadline, brief, " +
+                "content_mode, is_default, created_at, updated_at, created_by, portfolio_id")
+        .order("updated_at", { ascending: false })
+        .limit(40);
+      if (nameFilter) listQuery = listQuery.ilike("name", `%${escapeLike(nameFilter)}%`);
+
+      const lists = await runQuery<any[]>("get_watchlists", "lists", listQuery);
+      if (lists.failed) return toolError("get_watchlists", "lists");
+      const listRows = (lists.data || []) as any[];
+
+      const searched = {
+        scope: "lists you created or that were shared with you",
+        ...(nameFilter ? { query: nameFilter } : {}),
+      };
+      if (listRows.length === 0) return toolEmpty("get_watchlists", searched);
+
+      const listIds = listRows.map((l: any) => l.id);
+      const items = await runQuery<any[]>("get_watchlists", "items",
+        supabase.from("asset_list_items")
+          .select("id, list_id, asset_id, added_at, notes, is_flagged, due_date, " +
+                  "assignee_id, list_category, assets:asset_id(id, symbol, company_name)")
+          .in("list_id", listIds)
+          .order("added_at", { ascending: false })
+          .limit(400));
+      if (items.failed) return toolError("get_watchlists", "items");
+      const itemRows = (items.data || []) as any[];
+
+      const personIds = [...new Set(itemRows.map((i: any) => i.assignee_id).filter(Boolean))];
+      const people = personIds.length
+        ? await runQuery<any[]>("get_watchlists", "people",
+            supabase.from("users").select("id, first_name, last_name, email").in("id", personIds))
+        : { data: [] as any[], failed: false };
+      if (people.failed) return toolError("get_watchlists", "people");
+      const who = peopleMap(people.data);
+
+      /* A cap on the ENTRIES, reported per list, so "12 of 40 shown" is a
+         fact the model can state rather than a silent truncation. */
+      const PER_LIST = 40;
+      const listsOut = listRows.map((l: any) => {
+        const mine = itemRows.filter((i: any) => i.list_id === l.id);
+        const shown = mine.slice(0, PER_LIST);
+        return {
+          list_id: l.id,
+          name: l.name ?? null,
+          description: truncate(l.description || "", 240) || null,
+          list_type: l.list_type ?? null,
+          lifecycle: l.lifecycle ?? null,
+          deadline: l.deadline ?? null,
+          is_default: l.is_default === true,
+          updated_at: l.updated_at ?? null,
+          assets_on_list: mine.length,
+          assets_shown: shown.length,
+          assets_truncated: mine.length > shown.length,
+          flagged_count: mine.filter((i: any) => i.is_flagged === true).length,
+          assets: shown.map((i: any) => ({
+            entry_id: i.id,
+            asset_id: i.asset_id ?? null,
+            symbol: i.assets?.symbol ?? null,
+            company: i.assets?.company_name ?? null,
+            added_at: i.added_at ?? null,
+            is_flagged: i.is_flagged === true,
+            due_date: i.due_date ?? null,
+            assigned_to: personLabel(i.assignee_id, who),
+            category: i.list_category ?? null,
+            note: truncate(i.notes || "", 200) || null,
+          })),
+        };
+      });
+
+      return toolOk("get_watchlists", {
+        ...searched,
+        records_returned: listsOut.length,
+        lists_returned: listsOut.length,
+        assets_across_lists: itemRows.length,
+        /* Distinct names, since the same ticker sits on several lists. */
+        distinct_assets: new Set(itemRows.map((i: any) => i.asset_id).filter(Boolean)).size,
+        lists: listsOut,
+      });
+    }
+
+    /* ── get_coverage ────────────────────────────────────────────────────
+     *
+     * `coverage` SELECT is `organization_id = current_org_id()`, so this one
+     * genuinely spans the active organization and an empty result IS a fact
+     * about it. The 'mine' default still narrows to the caller, which is a
+     * filter, not a visibility limit -- so the scope sentence has to say which
+     * of the two produced the emptiness.
+     */
+    if (name === "get_coverage") {
+      const scope = input.scope === "organization" ? "organization" : "mine";
+      const sym = String(input.symbol || "").trim().toUpperCase();
+
+      let assetId: string | null = null;
+      let assetLabel: string | null = null;
+      if (sym) {
+        const found = await runQuery<any>("get_coverage", "asset",
+          supabase.from("assets").select("id, symbol, company_name")
+            .ilike("symbol", sym).maybeSingle());
+        if (found.failed) return toolError("get_coverage", "asset");
+        if (!found.data) {
+          return toolEmpty("get_coverage", { symbol: sym, looked_in: "assets" });
+        }
+        assetId = found.data.id;
+        assetLabel = found.data.company_name ?? null;
+      }
+
+      let q = supabase.from("coverage")
+        .select("id, asset_id, user_id, analyst_name, role, is_lead, coverage_scope, " +
+                "start_date, end_date, is_active, notes, portfolio_id, updated_at, " +
+                "assets:asset_id(id, symbol, company_name)")
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(200);
+      if (scope === "mine") q = q.eq("user_id", userId);
+      if (assetId) q = q.eq("asset_id", assetId);
+
+      const cov = await runQuery<any[]>("get_coverage", "coverage", q);
+      if (cov.failed) return toolError("get_coverage", "coverage");
+      const rows = (cov.data || []) as any[];
+
+      const searched = {
+        scope: scope === "mine"
+          ? "your own active coverage assignments in your active organization"
+          : "all active coverage assignments in your active organization",
+        ...(sym ? { symbol: sym } : {}),
+      };
+      if (rows.length === 0) return toolEmpty("get_coverage", searched);
+
+      const personIds = [...new Set(rows.map((r: any) => r.user_id).filter(Boolean))];
+      const people = personIds.length
+        ? await runQuery<any[]>("get_coverage", "people",
+            supabase.from("users").select("id, first_name, last_name, email").in("id", personIds))
+        : { data: [] as any[], failed: false };
+      if (people.failed) return toolError("get_coverage", "people");
+      const who = peopleMap(people.data);
+
+      return toolOk("get_coverage", {
+        ...searched,
+        ...(assetLabel ? { company: assetLabel } : {}),
+        records_returned: rows.length,
+        distinct_assets: new Set(rows.map((r: any) => r.asset_id).filter(Boolean)).size,
+        distinct_analysts: personIds.length,
+        assignments: rows.map((r: any) => ({
+          coverage_id: r.id,
+          asset_id: r.asset_id ?? null,
+          symbol: r.assets?.symbol ?? null,
+          company: r.assets?.company_name ?? null,
+          /* `analyst_name` is a free-text fallback some rows carry instead of
+             a user id. Preferred only when the id resolves to nothing, so a
+             real account always wins over a typed name. */
+          analyst: personLabel(r.user_id, who) ?? (r.analyst_name || null),
+          is_you: r.user_id === userId,
+          role: r.role ?? null,
+          is_lead: r.is_lead === true,
+          coverage_scope: r.coverage_scope ?? null,
+          since: r.start_date ?? null,
+          notes: truncate(r.notes || "", 200) || null,
+        })),
+      });
+    }
+
+    /* ── get_idea_pipeline ───────────────────────────────────────────────
+     *
+     * Live ideas only, and liveness is answered by outcome-then-status, never
+     * by stage: the stage column records where a process got to and nothing
+     * moves it back, so an executed idea can still read `ready_for_decision`.
+     */
+    if (name === "get_idea_pipeline") {
+      const wantPortfolio = String(input.portfolio || "").trim();
+      /*
+       * A portfolio question widens the default. `mine` filters to ideas the
+       * reader created or is assigned, and a colleague's idea on the
+       * reader's own book is still an idea on that book -- answering "your
+       * ideas for this portfolio" from the `mine` slice would under-report
+       * it. RLS still decides what is visible; this only stops the tool
+       * narrowing further than the reader asked.
+       */
+      const scope = input.scope === "organization" || wantPortfolio
+        ? "organization"
+        : "mine";
+      const wantStage = typeof input.stage === "string" ? toIdeaStage(input.stage) : null;
+
+      let q = supabase.from("trade_queue_items")
+        .select("id, asset_id, portfolio_id, action, status, outcome, stage, " +
+                "stage_changed_at, conviction, time_horizon, target_price, urgency, " +
+                "rationale, thesis_text, created_at, updated_at, created_by, assigned_to, " +
+                "research_depth, catalyst_clarity, " +
+                "assets:asset_id(id, symbol, company_name), portfolios:portfolio_id(id, name)")
+        .is("deleted_at", null)
+        .eq("visibility_tier", "active")
+        .order("stage_changed_at", { ascending: true, nullsFirst: false })
+        .limit(250);
+      if (scope === "mine") q = q.or(`created_by.eq.${userId},assigned_to.eq.${userId}`);
+
+      const got = await runQuery<any[]>("get_idea_pipeline", "ideas", q);
+      if (got.failed) return toolError("get_idea_pipeline", "ideas");
+
+      const all = (got.data || []) as any[];
+      /* Terminal ideas are history, not pipeline. Counted, so the drop is a
+         reportable fact rather than a silent filter. */
+      const live = all.filter((r: any) => isLiveIdeaRow(r));
+      const staged = live.map((r: any) => ({ row: r, stage: toIdeaStage(r.stage) }));
+      const inScope = wantStage ? staged.filter((s) => s.stage === wantStage) : staged;
+
+      const searched = {
+        scope: scope === "mine"
+          ? "live ideas you created or are assigned"
+          : "every live idea visible to you in your organization",
+        ...(wantStage ? { stage: IDEA_STAGE_LABEL[wantStage] } : {}),
+      };
+      if (inScope.length === 0) {
+        return toolEmpty("get_idea_pipeline", {
+          ...searched,
+          ...(all.length > live.length ? { finished_ideas_excluded: all.length - live.length } : {}),
+        });
+      }
+
+      const personIds = [...new Set(inScope.flatMap((s) => [s.row.created_by, s.row.assigned_to]).filter(Boolean))];
+      const people = personIds.length
+        ? await runQuery<any[]>("get_idea_pipeline", "people",
+            supabase.from("users").select("id, first_name, last_name, email").in("id", personIds))
+        : { data: [] as any[], failed: false };
+      if (people.failed) return toolError("get_idea_pipeline", "people");
+      const who = peopleMap(people.data);
+
+      const now = Date.now();
+      const daysSince = (iso: string | null): number | null => {
+        if (!iso) return null;
+        const t = Date.parse(iso);
+        return Number.isFinite(t) ? Math.floor((now - t) / 86_400_000) : null;
+      };
+
+      /* Grouping, over any subset. It used to close over `inScope`; it takes
+         a subset now so the portfolio split below can group its own group
+         without a second copy of the row shape. */
+      const groupByStage = (subset: typeof inScope) => IDEA_STAGES.map((st) => {
+        const mine = subset.filter((s) => s.stage === st);
+        return {
+          stage: st,
+          stage_label: IDEA_STAGE_LABEL[st],
+          count: mine.length,
+          ideas: mine.slice(0, 25).map((s) => ({
+            idea_id: s.row.id,
+            asset_id: s.row.asset_id ?? null,
+            symbol: s.row.assets?.symbol ?? null,
+            company: s.row.assets?.company_name ?? null,
+            portfolio: s.row.portfolios?.name ?? null,
+            action: s.row.action ?? null,
+            conviction: s.row.conviction ?? null,
+            time_horizon: s.row.time_horizon ?? null,
+            target_price: s.row.target_price ?? null,
+            urgency: s.row.urgency ?? null,
+            owner: personLabel(s.row.created_by, who),
+            assigned_to: personLabel(s.row.assigned_to, who),
+            is_yours: s.row.created_by === userId || s.row.assigned_to === userId,
+            days_in_stage: daysSince(s.row.stage_changed_at ?? s.row.created_at ?? null),
+            /* The stored value, alongside the canonical one, because fifteen
+               enum values across three vocabularies map into four and a
+               reader comparing with a screen deserves to see both. */
+            stored_stage: s.row.stage ?? null,
+            rationale: truncate(s.row.rationale || s.row.thesis_text || "", 300) || null,
+            created_at: s.row.created_at ?? null,
+          })),
+          ideas_truncated: mine.length > 25,
+        };
+      }).filter((g) => g.count > 0);
+
+      const maturityNote =
+        "These stages describe how well understood each idea is. They do not say whether a recommendation was submitted, ruled on or traded; that is a decision_requests fact.";
+
+      /*
+       * ── The portfolio split ────────────────────────────────────────────
+       *
+       * Asked for by name or id, resolved here rather than taken on trust,
+       * and the three relationships are kept APART. Merging them would tell
+       * a reader their book has fourteen ideas against it when it has
+       * three: an idea about an asset the portfolio happens to hold is a
+       * reason to care, not an association, and this codebase does not
+       * invent a relationship the data has not recorded.
+       *
+       * Every sub-lookup here degrades rather than failing the tool. The
+       * reported defect was a tool that threw away a good answer because an
+       * unrelated part of it broke, and the ideas above are already in hand
+       * by this point.
+       */
+      if (wantPortfolio) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          .test(wantPortfolio);
+        const pq = supabase.from("portfolios").select("id, name");
+        const pfFound = await runQuery<any>("get_idea_pipeline", "portfolio",
+          isUuid
+            ? pq.eq("id", wantPortfolio).maybeSingle()
+            : pq.ilike("name", wantPortfolio).limit(1).maybeSingle());
+
+        const pf = pfFound.failed ? null : pfFound.data;
+        const failures: string[] = [];
+        if (pfFound.failed) failures.push(`the lookup of portfolio "${wantPortfolio}"`);
+
+        let heldAssetIds: string[] = [];
+        if (pf?.id) {
+          const heldRows = await runQuery<any[]>("get_idea_pipeline", "holdings",
+            supabase.from("portfolio_holdings")
+              .select("asset_id, portfolio_id, date")
+              .eq("portfolio_id", pf.id)
+              .order("date", { ascending: false, nullsFirst: false })
+              .limit(500));
+          if (heldRows.failed) {
+            failures.push(`the holdings of ${pf.name}`);
+          } else {
+            heldAssetIds = weightHoldings(heldRows.data as HoldingRow[] | null, 1000)
+              .holdings.map((h) => h.asset_id)
+              .filter((id): id is string => Boolean(id));
+          }
+        }
+
+        const split = categorizeIdeas(
+          inScope.map((s) => ({ ...s, portfolio_id: s.row.portfolio_id, asset_id: s.row.asset_id })),
+          pf?.id ?? null,
+          heldAssetIds,
+        );
+
+        return toolOk("get_idea_pipeline", {
+          ...searched,
+          portfolio_requested: wantPortfolio,
+          portfolio_resolved: pf ? { id: pf.id, name: pf.name } : null,
+          /* Not found is not the same as not looked for, and neither is the
+             same as a failed lookup. The model is told which it was. */
+          ...(pf || pfFound.failed
+            ? {}
+            : { portfolio_not_found: `No portfolio matching "${wantPortfolio}" is visible to you.` }),
+          ...(failures.length ? { degraded: degradedNote(failures) } : {}),
+          records_returned: inScope.length,
+          ideas_returned: inScope.length,
+          ...(all.length > live.length ? { finished_ideas_excluded: all.length - live.length } : {}),
+          note_pipeline_is_maturity: maturityNote,
+          note_relationships:
+            "These three groups are different relationships and must be reported separately. " +
+            "`associated_with_portfolio` are the ideas recorded against this portfolio. " +
+            "`on_assets_it_holds` are ideas about names the portfolio holds that are recorded " +
+            "against another portfolio or none -- they are NOT ideas for this portfolio. " +
+            "`unrelated_to_portfolio` are the rest. Never present them as one list.",
+          associated_with_portfolio: {
+            count: split.associated.length,
+            by_stage: groupByStage(split.associated),
+          },
+          on_assets_it_holds: {
+            count: split.held.length,
+            holdings_considered: heldAssetIds.length,
+            by_stage: groupByStage(split.held),
+          },
+          unrelated_to_portfolio: { count: split.elsewhere.length },
+        });
+      }
+
+      return toolOk("get_idea_pipeline", {
+        ...searched,
+        records_returned: inScope.length,
+        ideas_returned: inScope.length,
+        ...(all.length > live.length ? { finished_ideas_excluded: all.length - live.length } : {}),
+        /* Stated because the pipeline is the maturity axis only. */
+        note_pipeline_is_maturity: maturityNote,
+        by_stage: groupByStage(inScope),
+      });
+    }
+
+    /* ── get_pending_decisions ───────────────────────────────────────────
+     *
+     * `decision_requests` SELECT requires the caller to have raised the
+     * request or to be in `portfolio_team` for its portfolio. This product
+     * has two portfolio-membership tables that disagree, so a PM added
+     * through the other one reads zero here while the desk holds several.
+     * That is exactly why the visibility declaration is not optional.
+     */
+    if (name === "get_pending_decisions") {
+      const sym = String(input.symbol || "").trim().toUpperCase();
+
+      let assetId: string | null = null;
+      if (sym) {
+        const found = await runQuery<any>("get_pending_decisions", "asset",
+          supabase.from("assets").select("id, symbol").ilike("symbol", sym).maybeSingle());
+        if (found.failed) return toolError("get_pending_decisions", "asset");
+        if (!found.data) return toolEmpty("get_pending_decisions", { symbol: sym, looked_in: "assets" });
+        assetId = found.data.id;
+      }
+
+      /*
+         Open means NOT YET ANSWERED, expressed as the complement of the
+         answered statuses rather than as a list of open ones.
+         `DECIDED_DECISION_STATUSES` owns which rulings count as answered, and
+         `withdrawn` is retracted rather than open. Written this way round on
+         purpose: an inbox defined by a positive list silently loses any status
+         added later, where this way a new status shows up as open and someone
+         notices.
+      */
+      const ANSWERED = [...DECIDED_DECISION_STATUSES, "withdrawn"];
+
+      let q = supabase.from("decision_requests")
+        .select("id, portfolio_id, requested_by, reviewed_by, status, created_at, " +
+                "updated_at, urgency, context_note, decision_note, requested_action, " +
+                "sizing_weight, sizing_shares, deferred_until, trade_queue_item_id, " +
+                "portfolios:portfolio_id(id, name), " +
+                "trade_queue_items:trade_queue_item_id(id, asset_id, action, proposed_shares, " +
+                "proposed_weight, target_price, conviction, rationale, " +
+                "assets:asset_id(id, symbol, company_name))")
+        .not("status", "in", `(${ANSWERED.join(",")})`)
+        .order("created_at", { ascending: true })
+        .limit(100);
+
+      const got = await runQuery<any[]>("get_pending_decisions", "requests", q);
+      if (got.failed) return toolError("get_pending_decisions", "requests");
+
+      let rows = (got.data || []) as any[];
+      /* Filtered here rather than in the query: the asset lives on the
+         embedded idea row, which PostgREST cannot filter on in this shape
+         without changing the embed into an inner join and silently dropping
+         requests whose idea row the caller cannot read. */
+      if (assetId) rows = rows.filter((r: any) => r.trade_queue_items?.asset_id === assetId);
+
+      const searched = {
+        scope: "open recommendations on portfolios you raised or are on the team of",
+        ...(sym ? { symbol: sym } : {}),
+      };
+      if (rows.length === 0) return toolEmpty("get_pending_decisions", searched);
+
+      const personIds = [...new Set(rows.flatMap((r: any) => [r.requested_by, r.reviewed_by]).filter(Boolean))];
+      const people = personIds.length
+        ? await runQuery<any[]>("get_pending_decisions", "people",
+            supabase.from("users").select("id, first_name, last_name, email").in("id", personIds))
+        : { data: [] as any[], failed: false };
+      if (people.failed) return toolError("get_pending_decisions", "people");
+      const who = peopleMap(people.data);
+
+      const now = Date.now();
+      const waitingDays = (iso: string | null): number | null => {
+        if (!iso) return null;
+        const t = Date.parse(iso);
+        return Number.isFinite(t) ? Math.floor((now - t) / 86_400_000) : null;
+      };
+
+      return toolOk("get_pending_decisions", {
+        ...searched,
+        records_returned: rows.length,
+        requests_returned: rows.length,
+        yours_to_answer: rows.filter((r: any) => r.reviewed_by === userId).length,
+        raised_by_you: rows.filter((r: any) => r.requested_by === userId).length,
+        requests: rows.map((r: any) => {
+          const idea = r.trade_queue_items;
+          return {
+            decision_request_id: r.id,
+            status: r.status ?? null,
+            asset_id: idea?.asset_id ?? null,
+            symbol: idea?.assets?.symbol ?? null,
+            company: idea?.assets?.company_name ?? null,
+            portfolio: r.portfolios?.name ?? null,
+            raised_by: personLabel(r.requested_by, who),
+            raised_at: r.created_at ?? null,
+            waiting_days: waitingDays(r.created_at ?? null),
+            reviewer: personLabel(r.reviewed_by, who),
+            urgency: r.urgency ?? null,
+            /* The request's own figures outrank the idea's: the submission is
+               what the PM is being asked to rule on, and an analyst may have
+               edited the idea since. */
+            proposed_action: r.requested_action ?? idea?.action ?? null,
+            proposed_shares: r.sizing_shares ?? idea?.proposed_shares ?? null,
+            proposed_weight: r.sizing_weight ?? idea?.proposed_weight ?? null,
+            target_price: idea?.target_price ?? null,
+            conviction: idea?.conviction ?? null,
+            deferred_until: r.deferred_until ?? null,
+            /* The idea row may be unreadable even when the request is: the
+               two tables have different policies. Say so rather than
+               rendering a request about nothing. */
+            idea_visible: Boolean(idea),
+            context_note: truncate(r.context_note || "", 300) || null,
+            decision_note: truncate(r.decision_note || "", 300) || null,
+            rationale: truncate(idea?.rationale || "", 300) || null,
+          };
+        }),
+      });
+    }
+
+    /* ── get_outstanding_work ────────────────────────────────────────────
+     *
+     * The cross-asset counterpart to get_workflows. `asset_workflow_progress`
+     * SELECT is scoped to workflows whose organization_id is the active org,
+     * so this path is genuinely organization-wide.
+     */
+    if (name === "get_outstanding_work") {
+      const overdueOnly = input.overdue_only === true;
+      const limit = Math.max(1, Math.min(40, Number(input.limit) || 15));
+
+      const progress = await runQuery<any[]>("get_outstanding_work", "progress",
+        supabase.from("asset_workflow_progress")
+          .select("id, asset_id, workflow_id, current_stage_key, is_started, is_completed, " +
+                  "started_at, updated_at, " +
+                  "workflow:workflows(id, name, status, archived, deleted), " +
+                  "assets:asset_id(id, symbol, company_name)")
+          .eq("is_completed", false)
+          .eq("is_started", true)
+          .order("updated_at", { ascending: false })
+          .limit(120));
+      if (progress.failed) return toolError("get_outstanding_work", "progress");
+
+      const allProgress = (progress.data || []) as any[];
+      const rows = allProgress.filter(
+        (p: any) => p.workflow && p.workflow.deleted !== true && p.workflow.archived !== true,
+      );
+
+      const searched = {
+        scope: "research processes in progress across your active organization, with their open requirements",
+        ...(overdueOnly ? { filter: "only work past a stage deadline" } : {}),
+      };
+      if (rows.length === 0) {
+        return toolEmpty("get_outstanding_work", {
+          ...searched,
+          ...(allProgress.length > rows.length
+            ? { archived_or_deleted_excluded: allProgress.length - rows.length }
+            : {}),
+        });
+      }
+
+      const assetIds = [...new Set(rows.map((p: any) => p.asset_id).filter(Boolean))];
+      const workflowIds = [...new Set(rows.map((p: any) => p.workflow_id).filter(Boolean))];
+
+      const [stages, checklist, deadlines] = await Promise.all([
+        workflowIds.length
+          ? runQuery<any[]>("get_outstanding_work", "stages",
+              supabase.from("workflow_stages")
+                .select("id, workflow_id, stage_key, stage_label, sort_order")
+                .in("workflow_id", workflowIds)
+                .order("sort_order", { ascending: true }))
+          : Promise.resolve({ data: [] as any[], failed: false }),
+        assetIds.length
+          ? runQuery<any[]>("get_outstanding_work", "requirements",
+              supabase.from("asset_checklist_items")
+                .select("id, asset_id, workflow_id, stage_id, item_text, status, " +
+                        "item_type, assignee_id, due_date")
+                .in("asset_id", assetIds)
+                .limit(600))
+          : Promise.resolve({ data: [] as any[], failed: false }),
+        assetIds.length
+          ? runQuery<any[]>("get_outstanding_work", "deadlines",
+              supabase.from("asset_stage_deadlines")
+                .select("id, asset_id, workflow_id, stage_id, deadline_date")
+                .in("asset_id", assetIds)
+                .limit(300))
+          : Promise.resolve({ data: [] as any[], failed: false }),
+      ]);
+
+      const badStage = stages.failed ? "stages"
+        : checklist.failed ? "requirements"
+        : deadlines.failed ? "deadlines"
+        : null;
+      if (badStage) return toolError("get_outstanding_work", badStage);
+
+      const stageRows = (stages.data || []) as any[];
+      const checklistRows = (checklist.data || []) as any[];
+      const deadlineRows = (deadlines.data || []) as any[];
+
+      const personIds = [...new Set(checklistRows.map((c: any) => c.assignee_id).filter(Boolean))];
+      const people = personIds.length
+        ? await runQuery<any[]>("get_outstanding_work", "people",
+            supabase.from("users").select("id, first_name, last_name, email").in("id", personIds))
+        : { data: [] as any[], failed: false };
+      if (people.failed) return toolError("get_outstanding_work", "people");
+      const who = peopleMap(people.data);
+
+      const today = new Date().toISOString().slice(0, 10);
+
+      const built = rows.map((p: any) => {
+        const mine = checklistRows.filter(
+          (c: any) => c.asset_id === p.asset_id && c.workflow_id === p.workflow_id,
+        );
+        const buckets = bucketChecklist(mine, 8);
+        const cur = resolveStageLabel(p.current_stage_key, p.workflow_id, stageRows);
+        const myDeadlines = deadlineRows.filter(
+          (d: any) => d.asset_id === p.asset_id && d.workflow_id === p.workflow_id,
+        );
+        const overdue = myDeadlines.filter(
+          (d: any) => d.deadline_date && String(d.deadline_date) < today,
+        );
+        return {
+          progress_id: p.id,
+          workflow_id: p.workflow_id,
+          workflow: p.workflow?.name ?? null,
+          asset_id: p.asset_id ?? null,
+          symbol: p.assets?.symbol ?? null,
+          company: p.assets?.company_name ?? null,
+          current_stage_label: cur.label,
+          current_stage_unresolved: Boolean(p.current_stage_key) && !cur.resolved,
+          updated_at: p.updated_at ?? null,
+          open_requirements_count: buckets.open,
+          completed_requirements_count: buckets.completed,
+          open_requirements_truncated: buckets.open_items_truncated,
+          open_requirements: buckets.open_items.map((c: any) => ({
+            id: c.id,
+            requirement: truncate(c.item_text || "", 240) || null,
+            requirement_type: c.item_type ?? null,
+            stage_label: resolveStageLabel(c.stage_id, c.workflow_id, stageRows).label,
+            assigned_to: personLabel(c.assignee_id, who),
+            due_date: c.due_date ?? null,
+            is_overdue: Boolean(c.due_date) && String(c.due_date) < today,
+          })),
+          overdue_stage_deadlines: overdue.map((d: any) => ({
+            id: d.id,
+            stage_label: resolveStageLabel(d.stage_id, d.workflow_id, stageRows).label,
+            deadline_date: d.deadline_date,
+          })),
+          is_overdue: overdue.length > 0
+            || buckets.open_items.some((c: any) => c.due_date && String(c.due_date) < today),
+        };
+      });
+
+      /* Work with nothing open is in progress but not outstanding. */
+      const withOpen = built.filter((w) => w.open_requirements_count > 0 || w.is_overdue);
+      const filtered = overdueOnly ? withOpen.filter((w) => w.is_overdue) : withOpen;
+
+      if (filtered.length === 0) {
+        return toolEmpty("get_outstanding_work", {
+          ...searched,
+          processes_in_progress_with_nothing_open: built.length,
+        });
+      }
+
+      /* Overdue first, then most open requirements: the order a reader asking
+         "what is outstanding" is actually asking for. */
+      const ordered = filtered
+        .sort((a, b) =>
+          (Number(b.is_overdue) - Number(a.is_overdue)) ||
+          (b.open_requirements_count - a.open_requirements_count))
+        .slice(0, limit);
+
+      return toolOk("get_outstanding_work", {
+        ...searched,
+        records_returned: ordered.length,
+        processes_returned: ordered.length,
+        processes_with_open_work: filtered.length,
+        processes_truncated: filtered.length > ordered.length,
+        overdue_count: filtered.filter((w) => w.is_overdue).length,
+        open_requirements_total: filtered.reduce((n, w) => n + w.open_requirements_count, 0),
+        distinct_assets: new Set(filtered.map((w) => w.asset_id).filter(Boolean)).size,
+        ...(allProgress.length > rows.length
+          ? { archived_or_deleted_excluded: allProgress.length - rows.length }
+          : {}),
+        work: ordered,
       });
     }
 

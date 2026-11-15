@@ -740,22 +740,58 @@ async function collectNotifications(userId: string, _windowStart: Date, orgId: s
 async function collectQuickThoughts(userId: string, windowStart: Date, orgId: string): Promise<AttentionItem[]> {
   const items: AttentionItem[] = []
 
-  // First, get user's own Thesis and time-hooked thoughts
-  const { data: ownThoughts, error: ownError } = await supabase
-    .from('quick_thoughts')
-    .select(`
-      *,
-      assets (id, symbol, company_name),
-      portfolios (id, name),
-      projects (id, title)
-    `)
-    .eq('organization_id', orgId)
-    .eq('created_by', userId)
-    .eq('is_archived', false)
-    .or('idea_type.eq.thesis,date_type.neq.null')
-    .gte('created_at', windowStart.toISOString())
-    .order('created_at', { ascending: false })
-    .limit(20)
+  /*
+   * Four reads this collector needs, and none of them needs another.
+   *
+   * They were four separate `await`s: the reader's own thoughts, then the
+   * assets they hold, then the projects they are assigned, then the
+   * portfolios they own -- one round trip each, in a row, where the only
+   * real dependency is that the three context reads must finish before the
+   * TEAMMATE query below can be built from their ids.
+   *
+   * This collector runs inside `computeAttention`'s fan-out, so its own
+   * depth is the fan-out's depth whenever it is the slowest member. Four
+   * trips become one.
+   *
+   * `error` is kept per read rather than letting one rejection take the set
+   * down, which is the behaviour each `await` had on its own: a failed
+   * context read left its id list empty and the collector carried on.
+   */
+  const [own, heldAssets, assignedProjects, ownedPortfolios] = await Promise.all([
+    supabase
+      .from('quick_thoughts')
+      .select(`
+        *,
+        assets (id, symbol, company_name),
+        portfolios (id, name),
+        projects (id, title)
+      `)
+      .eq('organization_id', orgId)
+      .eq('created_by', userId)
+      .eq('is_archived', false)
+      .or('idea_type.eq.thesis,date_type.neq.null')
+      .gte('created_at', windowStart.toISOString())
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabase
+      .from('portfolio_holdings')
+      .select('asset_id, portfolios!inner(created_by)')
+      .eq('portfolios.created_by', userId),
+    supabase
+      .from('project_assignments')
+      // project_assignments has no organization_id, so it is scoped through the
+      // project it points at. `!inner` makes the embedded filter a join
+      // condition rather than an optional expansion.
+      .select('project_id, projects!inner(organization_id)')
+      .eq('projects.organization_id', orgId)
+      .eq('assigned_to', userId),
+    supabase
+      .from('portfolios')
+      .select('id')
+      .eq('created_by', userId),
+  ])
+
+  const { data: ownThoughts, error: ownError } = own
 
   if (!ownError && ownThoughts) {
     for (const t of ownThoughts) {
@@ -846,26 +882,11 @@ async function collectQuickThoughts(userId: string, windowStart: Date, orgId: st
     }
   }
 
-  // Second, get shared thoughts from teammates that relate to user's context
-  // First, find assets/projects/portfolios the user works with
-  const { data: userAssets } = await supabase
-    .from('portfolio_holdings')
-    .select('asset_id, portfolios!inner(created_by)')
-    .eq('portfolios.created_by', userId)
-
-  const { data: userProjects } = await supabase
-    .from('project_assignments')
-    // project_assignments has no organization_id, so it is scoped through the
-    // project it points at. `!inner` makes the embedded filter a join
-    // condition rather than an optional expansion.
-    .select('project_id, projects!inner(organization_id)')
-    .eq('projects.organization_id', orgId)
-    .eq('assigned_to', userId)
-
-  const { data: userPortfolios } = await supabase
-    .from('portfolios')
-    .select('id')
-    .eq('created_by', userId)
+  // Second, the shared thoughts from teammates that relate to the reader's
+  // context, built from the three reads above.
+  const userAssets = heldAssets.data
+  const userProjects = assignedProjects.data
+  const userPortfolios = ownedPortfolios.data
 
   const assetIds = [...new Set(userAssets?.map(h => h.asset_id).filter(Boolean) || [])]
   const projectIds = [...new Set(userProjects?.map(p => p.project_id).filter(Boolean) || [])]
@@ -1458,24 +1479,32 @@ async function collectStaleProjects(userId: string, orgId: string): Promise<Atte
 async function computeAttention(userId: string, windowHours: number, orgId: string): Promise<AttentionResponse> {
   const windowStart = new Date(Date.now() - windowHours * 60 * 60 * 1000)
 
-  // Fetch user's attention state
-  const { data: userStates } = await supabase
-    .from('attention_user_state')
-    .select('attention_id, read_state, last_viewed_at, snoozed_until, dismissed_at')
-    .eq('user_id', userId)
-
-  const stateMap = new Map<string, any>()
-  for (const s of userStates || []) {
-    stateMap.set(s.attention_id, s)
-  }
-
-  // Collect items from all sources
+  /*
+   * What the reader has already read, dismissed or snoozed -- fetched
+   * ALONGSIDE the collectors rather than ahead of them.
+   *
+   * It used to be its own `await` above this, so the whole fan-out below
+   * waited for it before it started. Nothing in any collector reads it: it
+   * is used further down, after every collector has returned, to filter the
+   * dismissed and snoozed items out and to merge read state into what is
+   * left. So the dependency the serialization implied did not exist, and it
+   * cost one full round trip on the critical path of every Dashboard load
+   * and every refetch.
+   *
+   * The result is identical. This is a reordering, not a different query.
+   */
   const [
+    userStates,
     deliverables, projects, tradeItems, suggestions, notifications,
     alignmentProjects, quickThoughts,
     decisionRequests, staleIdeas, neglectedCoverage,
     upcomingEarnings, overduePersonalTasks, staleProjects,
   ] = await Promise.all([
+    supabase
+      .from('attention_user_state')
+      .select('attention_id, read_state, last_viewed_at, snoozed_until, dismissed_at')
+      .eq('user_id', userId)
+      .then(r => r.data),
     collectProjectDeliverables(userId, orgId),
     collectProjects(userId, orgId),
     collectTradeQueueItems(userId, orgId),
@@ -1490,6 +1519,11 @@ async function computeAttention(userId: string, windowHours: number, orgId: stri
     collectOverduePersonalTasks(userId, orgId),
     collectStaleProjects(userId, orgId),
   ])
+
+  const stateMap = new Map<string, any>()
+  for (const s of userStates || []) {
+    stateMap.set(s.attention_id, s)
+  }
 
   let allItems: AttentionItem[] = [
     ...deliverables,

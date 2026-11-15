@@ -211,6 +211,14 @@ export const GATED_DIRS = [
   // unsigned. Getting that wrong shows a sale as money coming in, so it
   // arrives gated.
   'src/lib/trade-book/__tests__',
+  // What a surface keeps while the reader is somewhere else: the per-scroller
+  // offset memory, and how long an asset surface's query data is retained
+  // after it unmounts. Both exist because leaving a tab and returning drew a
+  // skeleton over content that was already fetched and put the reader back at
+  // the top of a page they had read down. Gated on arrival, and gated rather
+  // than deferred because the whole point is a value that LOOKS safe to
+  // lower: `gcTime: 0` reads like caution and is what caused the reload.
+  'src/lib/ui/__tests__',
   // Where a Projects row menu opens. The status, priority and tag menus are
   // `position: fixed` and were placed straight from the anchor's rect, so on a
   // phone a menu opened from a card low in the list ran off the bottom edge —
@@ -250,6 +258,20 @@ export const GATED_DIRS = [
    */
   'src/components/asset/__tests__',
   /*
+   * The entry orientation: the band the Dashboard's work pane opens with when
+   * the reader pressed an event rather than a name.
+   *
+   * Gated, although its sibling `src/components/asset-v2` is deferred. That
+   * entry covers the co-located suite for a surface that was parked as a
+   * PAGE; this directory covers the composition that ships in the pane
+   * beside the Dashboard feed, and its failure modes are claims about the
+   * firm's record of the same kind as the directory above: a target event
+   * stated without the mark it was measured against, a reading implied to be
+   * today when it is a week old, a target reported as current after the
+   * ladder was edited, or one organisation's event drawn over another's data.
+   */
+  'src/components/asset-v2/__tests__',
+  /*
    * The AI presentation layer: the prose renderer, the research trail, the
    * message shell and the three non-answer states.
    *
@@ -275,7 +297,25 @@ export const GATED_DIRS = [
    */
   'src/components/research/__tests__',
   'src/components/layout',  'src/hooks/__tests__',
+  /* `src/hooks/ai/__tests__` is its own entry because `src/hooks/__tests__`
+     does not contain it: these are substring filters over paths, not a
+     recursive walk. */
+  'src/hooks/ai/__tests__',
   'src/components/communication',
+  /*
+   * How stored research is RENDERED, and the promoted draft that reaches the
+   * capture form.
+   *
+   * Both gated because both fail by being plausible. The prose renderer's
+   * safety property is that no element is ever created from markup in a
+   * stored note, which is a property a reader cannot see holding; its
+   * absence looks like ordinary text until the day a note contains a tag.
+   * The capture form's is that a promotion arrives with its words AND its
+   * provenance, and a draft that lands with neither is an empty form the
+   * reader can still type into -- indistinguishable from working.
+   */
+  'src/components/smart-input/__tests__',
+  'src/components/thoughts/__tests__',
 
   /*
    * Gated on the lanes that introduced them.
@@ -307,6 +347,19 @@ export const GATED_DIRS = [
    */
   'src/lib/ai',
   'src/lib/onboarding',
+
+  /*
+   * `src/lib/text` is the rich-text flattener, and it is gated because its
+   * suite is half behaviour and half a source-wiring check over nine other
+   * components. Those two halves only mean something together: the flattener
+   * can be correct while a surface still interpolates a stored field raw,
+   * which is the defect that put `**Bear case**` in front of readers.
+   *
+   * It arrived with that fix and was caught by this guard's own
+   * unclassified-scope check, not by anyone remembering to add it -- which
+   * is the third time that check has earned its place.
+   */
+  'src/lib/text',
 
   /*
    * `src/lib/messaging` is the read seam the direct-messaging panel uses.

@@ -126,3 +126,63 @@ export function boundHistory(
     chars,
   }
 }
+
+/**
+ * The transcript as it goes into the database, with record text removed.
+ *
+ * ── Why an excerpt may be shown but not stored ───────────────────────────
+ *
+ * The research trail shows a short quotation from each record it consulted,
+ * because a title and a date identify a row without letting anybody judge it.
+ * That text is safe to SHOW: it came back through the reader's own
+ * RLS-scoped query, so it is content they can already open.
+ *
+ * Storing it is a different act. `ai_conversations.messages` is one jsonb
+ * column under the conversation owner's policy, so a note's words written in
+ * there become a second copy living outside that note's own policy. If the
+ * note is later restricted to a narrower audience, or deleted, the copy stays
+ * and stays readable. Nothing re-checks it, because nothing knows it is there.
+ *
+ * It is also the honest choice on provenance: an excerpt is a snapshot of a
+ * record at one moment, and showing a months-old snapshot beside a live link
+ * to a record that has since changed is worse than showing no snapshot.
+ *
+ * So the excerpt lives for the life of the answer and is dropped on the way
+ * to disk. The id, kind, title, date and state remain, which is what the
+ * trail needs to stay navigable when the thread is reopened.
+ */
+export function stripStoredExcerpts<T extends object>(
+  messages: readonly T[],
+): T[] {
+  /*
+   * `T extends object`, not `T extends { tool_calls?: unknown }`.
+   *
+   * The latter is a WEAK TYPE -- every property optional -- so TypeScript
+   * rejects any argument with no overlapping property at all, which includes
+   * a perfectly ordinary message that simply made no lookups. The constraint
+   * would have forced every caller to declare a field it does not have.
+   */
+  return messages.map(m => {
+    const calls = (m as { tool_calls?: unknown }).tool_calls
+    if (!Array.isArray(calls) || calls.length === 0) return m
+    let changed = false
+    const next = calls.map((c: unknown) => {
+      const call = c as { sources?: unknown }
+      if (!Array.isArray(call?.sources)) return c
+      let callChanged = false
+      const sources = call.sources.map((s: unknown) => {
+        const src = s as { excerpt?: unknown }
+        if (src == null || typeof src !== 'object' || !('excerpt' in src)) return s
+        callChanged = true
+        /* Deleted, not emptied: an `excerpt: null` in storage is a claim that
+           the record had nothing to say, which is not what happened. */
+        const { excerpt: _dropped, ...rest } = src as Record<string, unknown>
+        return rest
+      })
+      if (!callChanged) return c
+      changed = true
+      return { ...call, sources }
+    })
+    return changed ? { ...m, tool_calls: next } : m
+  })
+}

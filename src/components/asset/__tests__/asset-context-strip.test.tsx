@@ -144,3 +144,81 @@ describe('AssetContextStrip — target, upside, exposure attribution, freshness'
     expect(screen.queryByText(/up to date/i)).toBeNull()
   })
 })
+
+describe('AssetContextStrip — a ruling owed is not "nothing waiting"', () => {
+  /*
+   * The strip counted live IDEAS only, so a name with a buy request sitting
+   * unanswered read "None open · nothing waiting" in a header that never
+   * scrolls away -- directly above an Overview leading with the request. Two
+   * parts of one screen disagreeing, with the sticky one wrong.
+   */
+  const request = (over: Row = {}): Row => ({
+    id: 'dr-7', status: 'pending', action: 'buy', decidedAt: null,
+    portfolioId: 'p1', portfolioName: 'Large Cap Growth', decisionNote: null,
+    ideaId: null, ...over,
+  })
+
+  it('says a decision is waiting, and which book it is in', () => {
+    ws.data = { ...EMPTY_WS, decisions: [request()] }
+    renderStrip()
+    expect(screen.getByText('Awaiting a decision')).toBeTruthy()
+    expect(screen.getByText(/buy · Large Cap Growth/)).toBeTruthy()
+    expect(screen.queryByText('None open')).toBeNull()
+  })
+
+  it('counts them when more than one is waiting', () => {
+    ws.data = {
+      ...EMPTY_WS,
+      decisions: [request(), request({ id: 'dr-8', portfolioName: 'Equity Income', action: 'trim' })],
+    }
+    renderStrip()
+    expect(screen.getByText('2 awaiting a decision')).toBeTruthy()
+  })
+
+  it('outranks an idea in play, because somebody is blocked on a human', () => {
+    ws.data = {
+      ...EMPTY_WS,
+      decisions: [request()],
+      liveIdeas: [{ id: 'idea-9', action: 'add', stage: 'exploring', portfolioName: 'Equity Income' }],
+    }
+    renderStrip()
+    expect(screen.getByText('Awaiting a decision')).toBeTruthy()
+  })
+
+  it('counts a request raised on an idea once, as the Overview does', () => {
+    /* One piece of work, not two. The strip's total and the Overview's rows
+       are derived the same way so they cannot disagree. */
+    ws.data = {
+      ...EMPTY_WS,
+      decisions: [],
+      liveIdeas: [
+        { id: 'idea-9', action: 'add', stage: 'deciding', portfolioName: 'Equity Income' },
+        { id: 'idea-10', action: 'buy', stage: 'exploring', portfolioName: 'Equity Income' },
+      ],
+    }
+    renderStrip()
+    expect(screen.getByText('2 open')).toBeTruthy()
+
+    cleanup()
+    ws.data = {
+      ...EMPTY_WS,
+      decisions: [request({ ideaId: 'idea-9' })],
+      liveIdeas: [
+        { id: 'idea-9', action: 'add', stage: 'deciding', portfolioName: 'Equity Income' },
+        { id: 'idea-10', action: 'buy', stage: 'exploring', portfolioName: 'Equity Income' },
+      ],
+    }
+    renderStrip()
+    /* The pair plus the loose idea is two, not three. */
+    expect(screen.getByText('Awaiting a decision')).toBeTruthy()
+  })
+
+  it('ignores a request nobody is waiting on', () => {
+    /* A withdrawn request is never ruled on, so its `reviewed_at` stays
+       null. Filtering on that alone would leave it in the strip forever. */
+    ws.data = { ...EMPTY_WS, decisions: [request({ status: 'withdrawn' })] }
+    renderStrip()
+    expect(screen.getByText('None open')).toBeTruthy()
+    expect(screen.queryByText(/awaiting a decision/i)).toBeNull()
+  })
+})
