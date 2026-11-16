@@ -420,12 +420,19 @@ export class BrowserFinancialService {
     /**
      * Netlify first, Supabase edge second.
      *
-     * `yahoo-chart-proxy` is deployed and ACTIVE and returns 502 on every call:
-     * Yahoo refuses Supabase's datacenter egress at the connection level, the
-     * same refusal that moved the article reader to Netlify. The effect was not
-     * a degraded feed but an empty one — every quote came back null, so every
-     * scenario card suppressed with `quote_unavailable` and no signal content
-     * rendered at all.
+     * CORRECTED 2026-11-16 from production edge logs.
+     *
+     * This comment used to say `yahoo-chart-proxy` "returns 502 on every call"
+     * and that every quote therefore came back null. That is not what the
+     * deployment does. Measured over 24 hours: 26,368 proxy requests, 2,725 of
+     * them 502 — a 10.3% failure rate, steady every hour, not a total outage.
+     * Yahoo throttles Supabase's datacenter egress; it does not refuse it at
+     * the connection level.
+     *
+     * The ordering below is unchanged and still right, because Netlify is the
+     * more reliable of the two paths. But the reason is reliability, not the
+     * edge path being dead, and anything written on the assumption that the
+     * Supabase path always fails is wrong: it succeeds about nine times in ten.
      *
      * The edge function is kept as a fallback rather than deleted: if Netlify
      * is the one being blocked on some future day, having two independent

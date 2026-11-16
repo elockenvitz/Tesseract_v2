@@ -354,7 +354,8 @@ function SparkCell({ market }: { market?: RowMarket }) {
    * The cached series wins over `signal.closes`.
    *
    * `signal.closes` comes from `useSparklines` → the `yahoo-chart-proxy` edge
-   * function, which answers 502 in this deployment; `market.path` comes from
+   * function, which fails on about 10% of calls rather than all of them
+   * (measured 2026-11-16); `market.path` comes from
    * `price_history_cache`, the same table the inspector's chart draws. Where
    * both exist they are the same instrument and the cached one is the one the
    * panel below will show, so the row and the panel cannot disagree.
@@ -1112,11 +1113,15 @@ export function renderSignalCell(
    *   • `assets.change_percent` does not exist as a column at all (the REST
    *     API answers `42703 column assets.change_percent does not exist`), so
    *     the stored fallback is permanently undefined;
-   *   • the live quote path is dead. The console shows `finnhub.io/...
-   *     token=demo` refused by the page's own CSP, and the chart proxy
-   *     answering 502. The provider hands back a zero-FILLED quote object
-   *     rather than nothing, so `changePercent === 0` is a failure mode
-   *     wearing the shape of a measurement.
+   *   • the live quote path was UNRELIABLE, not dead, and the zero-fill it
+   *     describes is now FIXED. Corrected 2026-11-16: the console showed
+   *     `finnhub.io/... token=demo` refused by the page's own CSP, and the
+   *     chart proxy failing about 10% of calls (2,725 of 26,368 in 24h), not
+   *     every one. The zero-FILLED quote object was real and was the actual
+   *     defect — `changePercent === 0` as a failure mode wearing the shape of
+   *     a measurement — but `createPlaceholderQuote` has since been deleted
+   *     and `getQuote` now returns null on total failure. Verified by
+   *     `src/lib/market-data/__tests__/price-safety.test.ts`.
    *
    * Two earlier attempts at this rule were too generous and both still
    * painted the zeros. Trusting a live zero failed because the live zero is

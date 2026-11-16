@@ -1123,7 +1123,8 @@ export function MarketMode(p: {
             * the second only became visible once this panel grew.
             *
             * `signal.closes` comes from the `yahoo-chart-proxy` edge
-            * function, which answers 502 in this deployment and which the
+            * function, which fails on about 10% of calls rather than on
+            * every call as this comment used to say, and which the
             * COLLAPSED ROW already refuses to draw — deliberately, so that
             * one column is never drawn under two different rules. The panel
             * kept using it, so a row could show no 1M, no 6M and a quiet

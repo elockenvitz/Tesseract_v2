@@ -233,8 +233,11 @@ export function ListTableView({
    * Cached closes for the whole list in one batched read.
    *
    * `useListRowSignals` carries `closes` too, but those come from the
-   * `yahoo-chart-proxy` edge function, which answers 502 in this deployment —
-   * so the Market column had no series and no change at all. This reads
+   * `yahoo-chart-proxy` edge function, which fails INTERMITTENTLY — 2,725 of
+   * 26,368 calls over 24 hours, measured 2026-11-16, so about 10% and not the
+   * "every call" an earlier version of this comment claimed. The Market
+   * column was therefore unreliable rather than uniformly blank, which is
+   * harder to notice and no better to read. This reads
    * `price_history_cache`, the same table the opened inspector charts, so the
    * row and the panel below it cannot show different history.
    */

@@ -26,6 +26,19 @@ const HISTORY = codeOf(
   readFileSync(resolve(SRC, 'components/contributions/ThesisHistoryView.tsx'), 'utf8'),
 )
 
+/*
+ * The quote query's ANCHOR changed on 2026-11-16, not its invariant.
+ *
+ * The key was `['stock-quote', asset.symbol]` and is now
+ * `quoteQueryKey(asset.symbol)`, because three components were fetching the
+ * same quote under three private keys and so could not share one cache entry.
+ * The two assertions below are unchanged: the quote must still be gated on a
+ * symbol and must still NOT be gated on holdings.
+ *
+ * If the key moves again, these tests go silent rather than red — the regex
+ * would match nothing and `quoteQuery` would be `''`. The empty-anchor check
+ * at the end of this block is what makes that fail loudly.
+ */
 describe('a price is fetched for every security, held or not', () => {
   /** THE regression. */
   it('does not gate the quote on owning the asset', () => {
@@ -35,7 +48,7 @@ describe('a price is fetched for every security, held or not', () => {
      * and its rating-vs-EV divergence warning was suppressed — on precisely
      * the assets nobody holds yet.
      */
-    const quoteQuery = /queryKey: \['stock-quote'[\s\S]{0,600}?\}\)/.exec(ASSET_TAB)?.[0] ?? ''
+    const quoteQuery = /queryKey: quoteQueryKey\(asset\.symbol\)[\s\S]{0,600}?\}\)/.exec(ASSET_TAB)?.[0] ?? ''
     expect(quoteQuery, 'the stock-quote query should still exist').toContain('enabled')
     expect(quoteQuery).not.toMatch(/portfolioHoldings/)
     expect(quoteQuery).toMatch(/enabled:\s*!!asset\.symbol\s*,/)
@@ -43,8 +56,22 @@ describe('a price is fetched for every security, held or not', () => {
 
   it('still declines to fetch without a symbol', () => {
     // The one real precondition: there is nothing to ask a provider for.
-    const quoteQuery = /queryKey: \['stock-quote'[\s\S]{0,600}?\}\)/.exec(ASSET_TAB)?.[0] ?? ''
+    const quoteQuery = /queryKey: quoteQueryKey\(asset\.symbol\)[\s\S]{0,600}?\}\)/.exec(ASSET_TAB)?.[0] ?? ''
     expect(quoteQuery).toMatch(/!!asset\.symbol/)
+  })
+
+  it('finds the query at all, so the two assertions above cannot go vacuous', () => {
+    /*
+     * The failure mode this closes: `.exec(...)?.[0] ?? ''` yields an empty
+     * string when the anchor stops matching, and `expect('')` satisfies both
+     * `.not.toMatch(/portfolioHoldings/)` and `.toContain` never runs — so a
+     * renamed query key would turn the guard off silently instead of failing.
+     * That already happened once, when the key moved to `quoteQueryKey`.
+     */
+    const quoteQuery = /queryKey: quoteQueryKey\(asset\.symbol\)[\s\S]{0,600}?\}\)/.exec(ASSET_TAB)?.[0] ?? ''
+    expect(quoteQuery, 'the quote query anchor no longer matches AssetTab').not.toBe('')
+    expect(quoteQuery.length).toBeGreaterThan(40)
+    expect(quoteQuery).toContain('financialDataService.getQuote')
   })
 })
 

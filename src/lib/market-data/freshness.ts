@@ -67,6 +67,43 @@ export interface ValueSource {
    * the pipeline stopped, `live` means it is running.
    */
   via: 'live' | 'cache' | 'derived' | 'manual'
+  /**
+   * What the PROVIDER undertook to deliver, which is not the same question as
+   * how old the value turned out to be.
+   *
+   * `effectiveAt` tells you the instant a number describes. It cannot tell you
+   * whether the feed is contractually real-time, fifteen minutes behind, or
+   * end-of-day only — and that is a licensing fact, not an arithmetic one. A
+   * 15-minute-delayed quote that arrived 20 seconds ago is `fresh` by every
+   * freshness policy here and is still not a real-time price, and a surface
+   * that labels it "live" is making a claim the subscription does not support.
+   *
+   * Carried because provider plans differ on exactly this axis, so a second
+   * provider cannot be added without somewhere to record it. Optional, because
+   * the existing Yahoo path has never established which it is.
+   */
+  delivery?: Delivery
+}
+
+/**
+ * What a feed is contractually, independent of how stale a given value is.
+ *
+ * `unavailable` is included so an adapter can report "I am entitled to ask but
+ * got nothing" distinctly from returning no value at all, which is the
+ * difference between a dead provider and an unknown symbol.
+ */
+export type Delivery = 'realtime' | 'delayed' | 'eod' | 'unavailable'
+
+/**
+ * Minutes behind real time, when `delivery` is `'delayed'`.
+ *
+ * Separate from `Delivery` rather than encoded into it (`delayed_15`,
+ * `delayed_20`) so that adding a provider with a different delay is data, not
+ * a new union member and a new switch arm at every call site.
+ */
+export interface DeliveryTerms {
+  delivery: Delivery
+  delayMinutes?: number
 }
 
 /**
