@@ -376,107 +376,12 @@ describe('createEodhdAdapter', () => {
 
 /* ──────────────────── the duplicated types must not drift ──────────────── */
 
-/**
- * The order of operations in the edge function IS the security property.
- *
- * Identity, then entitlement, then — only then — a provider request. If a
- * fetch could precede the decision, an unauthorized caller would spend the
- * single-seat subscription's metered quota, and the licence boundary would be
- * advisory rather than enforced.
- *
- * Asserted against the source because `Deno.serve` cannot be invoked under
- * vitest, and the property is positional.
+/*
+ * The edge function's authorization ordering and data isolation are asserted
+ * in `src/lib/security/__tests__/eodhd-market-data-auth.test.ts`, which is
+ * the file `supabase/functions/authz-registry.json` names as this function's
+ * review artifact. They lived here first; they belong where a reviewer looks.
  */
-describe('the edge function authorizes before it spends a provider request', () => {
-  const FN = resolve(
-    __dirname,
-    '../../../../supabase/functions/eodhd-market-data/index.ts',
-  )
-  const code = readFileSync(FN, 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/[^\n]*/g, '')
-
-  /*
-   * Always the CALL site, never the import.
-   *
-   * `at('decideMarketDataAccess')` matched the import statement at the top of
-   * the file, which made every later call trivially "after the decision" and
-   * let an injected pre-authorization fetch pass. The import spells each name
-   * without a parenthesis, so requiring `(` anchors on the invocation.
-   */
-  const at = (needle: string) => {
-    const i = code.indexOf(needle)
-    expect(i, `${needle} not found in the function source`).toBeGreaterThan(-1)
-    return i
-  }
-
-  const DECISION = 'decideMarketDataAccess('
-
-  it('verifies identity before deciding entitlement', () => {
-    expect(at(DECISION)).toBeGreaterThan(at('authorizeVerifiedUser('))
-  })
-
-  it('reads the API key only AFTER the entitlement decision', () => {
-    // The key is not even materialised for a caller who is refused.
-    expect(at("Deno.env.get('EODHD_API_KEY')")).toBeGreaterThan(at(DECISION))
-  })
-
-  it('places EVERY EODHD call after the decision, not merely the last one', () => {
-    /*
-     * This asserted `lastIndexOf` first, and that was wrong in a way worth
-     * recording: injecting a `searchSymbols(...)` call BEFORE the entitlement
-     * check did not fail it, because the legitimate call in the `resolve`
-     * branch is later and `lastIndexOf` found that one instead. The gate
-     * proved that SOME call follows authorization while the vulnerability it
-     * existed to catch sat above it.
-     *
-     * Every occurrence must follow the decision. The import list spells these
-     * names without a parenthesis, so `name(` matches only call sites.
-     */
-    const decision = at(DECISION)
-
-    for (const call of [
-      'searchSymbols(',
-      'fetchLatestQuote(',
-      'fetchDailyBars(',
-      'fetchIntradayBars(',
-    ]) {
-      const sites: number[] = []
-      for (let i = code.indexOf(call); i !== -1; i = code.indexOf(call, i + 1)) sites.push(i)
-      expect(sites.length, `${call} is never called`).toBeGreaterThan(0)
-      const early = sites.filter(i => i < decision)
-      expect(
-        early,
-        `${call} is invoked BEFORE the entitlement decision at ${early.join(', ')}`,
-      ).toEqual([])
-    }
-  })
-
-  it('refuses the request when the allowlist secret is missing', () => {
-    expect(code).toContain('entitlementConfigFromEnv')
-    expect(code).toMatch(/503/)
-  })
-
-  it('never writes to a shared cache or reads the service-role key', () => {
-    // price_history_cache has no organization_id and is readable by every
-    // authenticated user in all 28 organizations.
-    expect(code).not.toMatch(/price_history_cache/)
-    expect(code).not.toMatch(/SERVICE_ROLE/)
-    expect(code).not.toMatch(/\.from\(/)
-    expect(code).not.toMatch(/upsert|insert\(/)
-  })
-
-  it('has no Yahoo fallback', () => {
-    expect(code).not.toMatch(/yahoo/i)
-  })
-
-  it('only ever asks for interactive_read', () => {
-    expect(code).toContain("use: 'interactive_read'")
-    for (const forbidden of ['persisted_cache', 'shared_surface', 'ai_retrieval', 'fallback']) {
-      expect(code, `${forbidden} must not be reachable here`).not.toContain(`'${forbidden}'`)
-    }
-  })
-})
 
 /*
  * `_shared/eodhd.ts` re-declares `Delivery`, `BarInterval`, `PriceBar`,
