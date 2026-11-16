@@ -386,16 +386,34 @@ BEGIN
   --     which needs a unique constraint on exactly that column. If a later
   --     edit swaps it for a composite, the only writer breaks at runtime with
   --     no typecheck or unit test catching it.
+  --
+  --     `attname` is of type `name` and `ARRAY['decision_id']` is `text[]`.
+  --     Postgres has no `name[] = text[]` operator, so the uncast comparison
+  --     this assertion used to carry raised `42883 operator does not exist`
+  --     instead of answering the question. Both sides are now cast to text.
+  --
+  --     Wrapped, like every other assertion in this file, so that an
+  --     expression which cannot execute is reported as one FAIL line. This
+  --     was the only unwrapped assertion, so its error aborted the enclosing
+  --     DO block, and because a DO block is a single statement that rolled
+  --     back assertions 1-11 along with it and left `_sec_results` empty.
+  --     Twelve answers were lost to one bad cast, and the runner surfaced a
+  --     bare SQL error rather than a result. A gate that cannot report is
+  --     not a gate.
   -- ===========================================================================
-  SELECT count(*) INTO v_count
-    FROM pg_constraint c
-   WHERE c.conrelid = 'public.decision_reviews'::regclass
-     AND c.contype = 'u'
-     AND (SELECT array_agg(a.attname ORDER BY a.attname)
-            FROM unnest(c.conkey) k JOIN pg_attribute a
-              ON a.attrelid = c.conrelid AND a.attnum = k) = ARRAY['decision_id'];
-  IF v_count = 1 THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (12, 'PASS', 'UNIQUE(decision_id) intact — the client upsert key still resolves');
-  ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (12, 'FAIL', format('found %s single-column UNIQUE(decision_id); the client upsert will fail', v_count)); END IF;
+  BEGIN
+    SELECT count(*) INTO v_count
+      FROM pg_constraint c
+     WHERE c.conrelid = 'public.decision_reviews'::regclass
+       AND c.contype = 'u'
+       AND (SELECT array_agg(a.attname::text ORDER BY a.attname::text)
+              FROM unnest(c.conkey) k JOIN pg_attribute a
+                ON a.attrelid = c.conrelid AND a.attnum = k) = ARRAY['decision_id']::text[];
+    IF v_count = 1 THEN v_pass := v_pass + 1; INSERT INTO _sec_results VALUES (12, 'PASS', 'UNIQUE(decision_id) intact — the client upsert key still resolves');
+    ELSE v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (12, 'FAIL', format('found %s single-column UNIQUE(decision_id); the client upsert will fail', v_count)); END IF;
+  EXCEPTION WHEN OTHERS THEN
+    v_fail := v_fail + 1; INSERT INTO _sec_results VALUES (12, 'FAIL', format('could not evaluate the upsert conflict key (%s): the expression itself failed', SQLSTATE));
+  END;
 
   -- ===========================================================================
   -- CLEANUP
