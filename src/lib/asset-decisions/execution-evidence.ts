@@ -49,21 +49,39 @@ type EvidenceRow = {
 const CHUNK = 100
 
 /**
- * Grade the execution evidence for a set of trades.
+ * The grades, plus whether the read actually succeeded.
  *
- * A trade absent from the returned map has no evidence this reader can see.
- * That is deliberately distinguishable from a trade mapped to
- * `'unattributed'`, which HAS a row that does not say where it came from —
- * see `gradeTradeExecution`.
+ * `failed` is the distinction a surface needs to tell "this trade has no
+ * evidence" from "I could not find out". Both arrive as an absent entry in
+ * `proofs`, and they must not be rendered the same way: the first is a fact
+ * about the trade, the second is a fact about this request. A Trade Book that
+ * showed "no evidence" after an RLS denial would be asserting something it
+ * never learned.
  */
-export async function fetchExecutionProofsForTrades(
+export interface ExecutionProofRead {
+  proofs: Map<string, ExecutionProof>
+  /** True when ANY chunk of the read failed, so the map may be incomplete. */
+  failed: boolean
+}
+
+/**
+ * Grade the execution evidence for a set of trades, reporting read failures.
+ *
+ * A trade absent from `proofs` after a successful read has no evidence this
+ * reader can see. That is deliberately distinguishable from a trade mapped to
+ * `'unattributed'`, which HAS a row that does not say where it came from —
+ * see `gradeTradeExecution` — and, via `failed`, from a read that never got
+ * an answer.
+ */
+export async function readExecutionProofs(
   tradeIds: string[],
-): Promise<Map<string, ExecutionProof>> {
+): Promise<ExecutionProofRead> {
   const proofs = new Map<string, ExecutionProof>()
   const ids = Array.from(new Set(tradeIds.filter(Boolean)))
-  if (ids.length === 0) return proofs
+  if (ids.length === 0) return { proofs, failed: false }
 
   const byTrade = new Map<string, EvidenceRow[]>()
+  let failed = false
 
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK)
@@ -74,6 +92,7 @@ export async function fetchExecutionProofsForTrades(
         .in('metadata->>accepted_trade_id', chunk)
       if (error) {
         console.warn('[ExecutionEvidence] Could not read execution evidence', error)
+        failed = true
         continue
       }
       for (const row of (data ?? []) as EvidenceRow[]) {
@@ -87,6 +106,7 @@ export async function fetchExecutionProofsForTrades(
       }
     } catch (e) {
       console.warn('[ExecutionEvidence] Execution evidence read threw', e)
+      failed = true
     }
   }
 
@@ -94,5 +114,20 @@ export async function fetchExecutionProofsForTrades(
     const grade = gradeTradeExecution(rows)
     if (grade) proofs.set(tradeId, grade)
   }
-  return proofs
+  return { proofs, failed }
+}
+
+/**
+ * The grades alone, for callers that render an absence and a failure the same
+ * way — both as "no qualifier on the status we already show".
+ *
+ * Outcomes, decisions-v2 and the EOD reconciler all take this shape: their
+ * fallback is the rendering that existed before any of this, so collapsing
+ * the two cases costs them nothing. The Trade Book is the surface where the
+ * difference is worth showing, and it uses `readExecutionProofs`.
+ */
+export async function fetchExecutionProofsForTrades(
+  tradeIds: string[],
+): Promise<Map<string, ExecutionProof>> {
+  return (await readExecutionProofs(tradeIds)).proofs
 }

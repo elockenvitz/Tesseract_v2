@@ -46,7 +46,10 @@ vi.mock('../../supabase', () => ({
   },
 }))
 
-import { fetchExecutionProofsForTrades } from '../../asset-decisions/execution-evidence'
+import {
+  fetchExecutionProofsForTrades,
+  readExecutionProofs,
+} from '../../asset-decisions/execution-evidence'
 
 const ev = (tradeId: string, origin: string) => ({
   metadata: { origin, accepted_trade_id: tradeId },
@@ -134,5 +137,65 @@ describe('it grades each trade from its own rows', () => {
     db.rows = [ev('at-1', 'pm_assumed_execution'), ev('at-1', 'trader_attested')]
     const proofs = await fetchExecutionProofsForTrades(['at-1'])
     expect(proofs.get('at-1')).toBe('attested')
+  })
+})
+
+describe('it reports whether the read actually happened', () => {
+  /*
+   * The Trade Book renders "no evidence" and "could not find out" as
+   * different badges, so the reader has to tell them apart. Both arrive as
+   * an absent entry in the map, which is why `failed` exists: without it a
+   * surface would have to assert "this trade has no evidence" on the
+   * strength of a request that was denied.
+   */
+  it('reports no failure when the read succeeds and finds nothing', async () => {
+    db.rows = []
+    const { proofs, failed } = await readExecutionProofs(['at-1'])
+    expect(proofs.size).toBe(0)
+    expect(failed).toBe(false)
+  })
+
+  it('reports a failure when the read is denied', async () => {
+    db.error = { message: 'permission denied for table portfolio_trade_events' }
+    const { proofs, failed } = await readExecutionProofs(['at-1'])
+    expect(proofs.size).toBe(0)
+    expect(failed).toBe(true)
+  })
+
+  it('reports a failure when the query throws', async () => {
+    db.throws = true
+    const { failed } = await readExecutionProofs(['at-1'])
+    expect(failed).toBe(true)
+  })
+
+  it('still does not throw, so the caller keeps rendering its trades', async () => {
+    db.throws = true
+    await expect(readExecutionProofs(['at-1'])).resolves.toBeTruthy()
+  })
+
+  it('reports no failure for an empty id list, because nothing was asked', async () => {
+    const { failed } = await readExecutionProofs([])
+    expect(failed).toBe(false)
+    expect(db.calls).toHaveLength(0)
+  })
+
+  it('still grades what it did get back on a successful read', async () => {
+    // `verified` is the conjunction of both stamps, not an origin string.
+    db.rows = [{
+      metadata: { accepted_trade_id: 'at-1' },
+      detected_by_system: true,
+      source_type: 'holdings_diff',
+    }]
+    const { proofs, failed } = await readExecutionProofs(['at-1'])
+    expect(proofs.get('at-1')).toBe('verified')
+    expect(failed).toBe(false)
+  })
+
+  it('is the same grading the map-only wrapper returns', async () => {
+    db.rows = [ev('at-1', 'pm_assumed_execution')]
+    const rich = await readExecutionProofs(['at-1'])
+    db.calls = []
+    const plain = await fetchExecutionProofsForTrades(['at-1'])
+    expect([...plain]).toEqual([...rich.proofs])
   })
 })
