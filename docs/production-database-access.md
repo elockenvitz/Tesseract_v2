@@ -77,6 +77,71 @@ tool layer, where no tool configuration can reach.
 
 Both layers are genuine enforcement.
 
+### It is tool-level and transaction-level. It is NOT role-level.
+
+This decides what `--read-only` does and does not protect, so it is stated
+from measurement, not inference. Measured against production 2026-11-15,
+read-only, on the connection the MCP server uses:
+
+```
+current_user                                       postgres
+transaction_read_only                              off     (this session, pre-restart)
+has_table_privilege(…, memory_events,     INSERT)  true
+has_table_privilege(…, accepted_trades,   UPDATE)  true
+has_table_privilege(…, decision_requests, DELETE)  true
+has_schema_privilege(…, public, CREATE)            true
+is_superuser                                       off
+role memberships   anon, authenticated, authenticator, pg_create_subscription,
+                   pg_monitor, pg_read_all_data, pg_signal_backend,
+                   service_role, supabase_privileged_role,
+                   tesseract_audience_writer
+```
+
+The role keeps **every** write privilege, can create objects in `public`, and
+is a member of `service_role`, `supabase_privileged_role` and
+`pg_read_all_data` — so it can `SET ROLE` to any of them, and its reads bypass
+RLS entirely.
+
+`--read-only` is therefore a **refusal to write inside that transaction**, not
+a reduction of authority:
+
+| Layer | Mechanism | What it stops |
+|---|---|---|
+| Tool | write tools are never registered | `apply_migration`, `deploy_edge_function`, branch tools |
+| Transaction | Postgres `READ ONLY` transaction, SQLSTATE 25006 | writes issued through `execute_sql` |
+| **Role** | **nothing** | **nothing — full privileges retained** |
+
+Two consequences worth being explicit about:
+
+1. **Any other path using the same token has full write authority.** The flag
+   constrains this server's SQL calls; it does not constrain the token. The
+   token is account-wide, so it also carries Management API authority for
+   everything that is not SQL — project settings, secrets, function deploys.
+2. **A read-only transaction is not a sandbox.** `pg_terminate_backend` and
+   `pg_cancel_backend` both succeed inside one, because the role holds
+   `pg_signal_backend`. Availability is not protected by it. Those stay on a
+   keyword denylist.
+
+A genuinely least-privilege setup needs a project-scoped token mapped to a
+restricted role, which this Supabase plan does not issue (§7).
+
+### Verifying it took effect after a restart
+
+The flag is read when the MCP server **launches**, so the session that edits
+`.mcp.json` keeps its old connection. Confirm after restarting the agent
+session, with no write attempted:
+
+1. `npm run guard:mcp-readonly` — the config on disk carries the flag.
+2. `select current_setting('transaction_read_only')` — must read `on`. A
+   session started before the fix reads `off`, which is how you tell the
+   restart has not happened yet.
+3. The write tools are absent from the toolset. `apply_migration` and
+   `deploy_edge_function` should not be callable at all.
+
+All three, together: 1 proves intent, 2 proves the transaction, 3 proves the
+tool layer. Step 2 alone would not distinguish a stale session from a fixed
+one.
+
 ---
 
 ## 4. What is NOT enforcement
