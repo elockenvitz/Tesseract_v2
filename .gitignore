@@ -15,7 +15,13 @@ dist/
 Thumbs.db
 
 # MCP configuration (contains sensitive tokens)
+#
+# The bare name is not enough: a `.mcp.json.bak` written by any editor or
+# script is a copy of the same account-wide token under a filename git would
+# happily commit. Ignore every variant, then re-admit the committed template.
 .mcp.json
+.mcp.json.*
+!.mcp.json.example
 
 *storybook.log
 storybook-static

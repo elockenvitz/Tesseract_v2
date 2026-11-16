@@ -4,4 +4,10 @@
 # Keeps the committed policy inventory fresh so the required `static` gate never
 # turns red on an unrelated PR. See scripts/hooks/pre-push-inventory.mjs for why
 # this is a local hook rather than a scheduled workflow holding a prod token.
+# A read-write MCP connection to production is a local misconfiguration in a
+# gitignored file, so no CI job can see it. The pre-push hook is the only
+# place that runs on the machine holding the file. See
+# scripts/guard-mcp-readonly.mjs for the 2026-11-15 incident it exists for.
+node scripts/guard-mcp-readonly.mjs || exit 1
+
 exec node scripts/hooks/pre-push-inventory.mjs
