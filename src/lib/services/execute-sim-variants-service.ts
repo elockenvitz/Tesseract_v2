@@ -42,6 +42,7 @@ import { nearlyEqual } from '../mobile/exploration'
 import { assertBookablePrice } from '../market-data/sizing-price'
 import {
   recordDecisionRecorded,
+  recordRecommendationSubmitted,
   resolveOrganizationIdForPortfolio,
 } from '../memory/lifecycle-events'
 import { createAcceptedTrade, type CreateAcceptedTradeInput } from './accepted-trade-service'
@@ -169,22 +170,30 @@ async function createSelfProposedAcceptedDR(
   ctx: ActionContext,
 ): Promise<string> {
   const now = new Date().toISOString()
+
+  // Built as a value rather than inline so the memory event below can be
+  // derived from the SAME object that was written. Reading the variant twice
+  // would let the row and the event drift apart silently — the event would
+  // then describe a recommendation slightly different from the one that
+  // exists, which is worse than no event at all.
+  const row = {
+    trade_queue_item_id: tradeQueueItemId,
+    portfolio_id: v.portfolio_id,
+    requested_by: ctx.actorId,
+    requested_action: v.action,
+    sizing_weight: v.computed?.target_weight ?? null,
+    sizing_shares: v.computed?.target_shares ?? null,
+    sizing_mode: v.sizing_spec?.kind ?? null,
+    status: 'accepted',
+    reviewed_by: ctx.actorId,
+    reviewed_at: now,
+    decision_note: 'Self-proposed via Trade Lab Execute',
+    context_note: v.notes ?? null,
+  }
+
   const { data, error } = await supabase
     .from('decision_requests')
-    .insert({
-      trade_queue_item_id: tradeQueueItemId,
-      portfolio_id: v.portfolio_id,
-      requested_by: ctx.actorId,
-      requested_action: v.action,
-      sizing_weight: v.computed?.target_weight ?? null,
-      sizing_shares: v.computed?.target_shares ?? null,
-      sizing_mode: v.sizing_spec?.kind ?? null,
-      status: 'accepted',
-      reviewed_by: ctx.actorId,
-      reviewed_at: now,
-      decision_note: 'Self-proposed via Trade Lab Execute',
-      context_note: v.notes ?? null,
-    })
+    .insert(row)
     .select('id')
     .single()
 
@@ -231,6 +240,55 @@ async function createSelfProposedAcceptedDR(
   // must not undo a committed trade.
   const organizationId = await resolveOrganizationIdForPortfolio(v.portfolio_id)
   if (organizationId) {
+    // ── The recommendation, before the decision on it ────────────────────
+    //
+    // This INSERT writes BOTH halves of the chain in one statement:
+    // `requested_by` is the recommendation, `reviewed_by` is the ruling on
+    // it. Only the second half was recorded, which left a `decision.recorded`
+    // pointing at a recommendation the Spine had no event for — the PM
+    // decided, and nothing says what they decided ON.
+    //
+    // That is not a cosmetic gap. The chain the product reconstructs is
+    // Research -> Idea -> Recommendation -> Decision -> Trade, and a reader
+    // walking it backwards from the trade stops here.
+    //
+    // Nothing is invented to fill it. Every field is read from the row this
+    // function just wrote or the variant it was built from:
+    //
+    //   actor      ctx.actorId, the same id written to `requested_by`
+    //   identity   the decision request, plus the idea as the subject
+    //   timestamp  implicit in the event; the row's own `now`
+    //   evidence   the variant's action and sizing, as inserted above
+    //
+    // `proposalId` and `proposalVersionId` are genuinely null here: this
+    // path creates no `trade_proposals` row and freezes no version, so there
+    // is no immutable snapshot to point at. A reader must be able to tell
+    // "self-proposed, no frozen version" from "submitted with a version" —
+    // writing a placeholder would destroy exactly that distinction. The
+    // `ui:trade-lab:self-proposed` provenance carries the rest.
+    //
+    // ORDER MATTERS, and it is recommendation-then-decision. Both emits are
+    // non-fatal, so either can be lost independently; losing the decision
+    // leaves a recommendation awaiting a ruling, which is a true statement
+    // about an incomplete record. The reverse leaves a ruling on nothing,
+    // which is the defect being fixed. Awaited, not fire-and-forget, for the
+    // same reason the submission path awaits: the user navigates on execute.
+    await recordRecommendationSubmitted({
+      organizationId,
+      actorId: ctx.actorId,
+      tradeQueueItemId,
+      decisionRequestId,
+      proposalId: null,
+      proposalVersionId: null,
+      portfolioId: row.portfolio_id ?? null,
+      assetId: v.asset_id ?? null,
+      action: row.requested_action ?? null,
+      sizingMode: row.sizing_mode ?? null,
+      weight: row.sizing_weight,
+      shares: row.sizing_shares,
+      provenance: 'ui:trade-lab:self-proposed',
+    })
+
     await recordDecisionRecorded({
       organizationId,
       actorId: ctx.actorId,
