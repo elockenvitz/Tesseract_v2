@@ -78,7 +78,32 @@ const MAX_KNOWN_UNSCOPED = 97
  * stopped reading the following query's filter as this one's, and it is
  * annotated rather than "fixed" because there is nothing there to fix.
  */
-const MAX_EXEMPTIONS = 5
+/*
+ * Raised 5 -> 6 on 2026-11-15 for `pages/AuditExplorerPage.tsx`, deliberately
+ * and with the reason here rather than only at the call site.
+ *
+ * It is the second case of the `useObjectSearch` kind, not the trigger kind: a
+ * READ where RLS is trusted to be equivalent to a client filter. `coverage`
+ * has exactly one SELECT policy, read from production that day —
+ *
+ *   coverage_select_org_members  USING (organization_id = current_org_id())
+ *
+ * — so the database narrows the read to the caller's active organisation
+ * before the client sees a row.
+ *
+ * Why it is an exemption and not a fix: the page has no organisation context
+ * of any kind. Adding one so that it can restate a filter the policy already
+ * applies would create a second source of truth for the active org, which is
+ * the failure this directory exists to catch.
+ *
+ * Why it appeared at all: the line used to read `coverage_assignments`, a
+ * table that does not exist and therefore is not in ORG_SCOPED_TABLES. The
+ * query was never scoped; it was unscoped AND returning nothing, so the
+ * scanner had nothing to say. Fixing the table name is what made the real
+ * posture visible — which is the argument for keeping this number small
+ * rather than for treating a rise in it as automatically bad.
+ */
+const MAX_EXEMPTIONS = 6
 
 /** Every .ts/.tsx under src, excluding the org-scope module itself. */
 function sourceFiles(dir: string, acc: string[] = []): string[] {

@@ -76,7 +76,8 @@ interface AttentionSectionProps {
   onMarkDone?: (sourceId: string) => Promise<void>
   onApprove?: (sourceId: string) => Promise<void>
   onReject?: (sourceId: string) => Promise<void>
-  onDefer?: (sourceId: string, hours: number) => Promise<void>
+  /** Shared, desk-wide reschedule. See `AttentionCard`'s note on the name. */
+  onRescheduleShared?: (sourceId: string, hours: number) => Promise<void>
   onQuickCapture?: (item: AttentionItem, mode: QuickCaptureMode) => void
   initialExpanded?: boolean
   maxItems?: number
@@ -106,7 +107,7 @@ export function AttentionSection({
   onMarkDone,
   onApprove,
   onReject,
-  onDefer,
+  onRescheduleShared,
   onQuickCapture,
   initialExpanded = true,
   maxItems = 5,
@@ -189,7 +190,7 @@ export function AttentionSection({
                   onMarkDone={onMarkDone}
                   onApprove={onApprove}
                   onReject={onReject}
-                  onDefer={onDefer}
+                  onRescheduleShared={onRescheduleShared}
                   onQuickCapture={onQuickCapture}
                   showScore={showScore}
                   compact
@@ -211,7 +212,7 @@ export function AttentionSection({
                   onMarkDone={onMarkDone}
                   onApprove={onApprove}
                   onReject={onReject}
-                  onDefer={onDefer}
+                  onRescheduleShared={onRescheduleShared}
                   onQuickCapture={onQuickCapture}
                   showScore={showScore}
                 />

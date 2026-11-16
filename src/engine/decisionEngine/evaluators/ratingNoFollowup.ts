@@ -53,7 +53,15 @@ export function evaluateRatingNoFollowup(data: {
     const ticker = change.asset_symbol || change.assets?.symbol || ''
 
     items.push({
-      id: `i1-rating-${change.id || change.rating_id}-${daysSince}`,
+      // The id names the CONDITION — this rating change has no follow-up —
+      // not how long the condition has been true. `daysSince` used to be
+      // part of it, which gave the same unresolved item a new identity every
+      // midnight. Nothing keyed on it today suppresses an action item, so no
+      // live dismissal was being lost; the drift is still wrong, because any
+      // durable per-user state (`attention_user_state` is keyed on exactly
+      // this kind of string) would silently stop matching overnight. The day
+      // count stays in the chips below, where changing wording is correct.
+      id: `i1-rating-${change.id || change.rating_id}`,
       surface: 'action',
       severity: isSignificant ? 'orange' : 'blue',
       category: 'risk',

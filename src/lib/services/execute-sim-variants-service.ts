@@ -45,7 +45,7 @@ import {
   resolveOrganizationIdForPortfolio,
 } from '../memory/lifecycle-events'
 import { createAcceptedTrade, type CreateAcceptedTradeInput } from './accepted-trade-service'
-import { deleteVariant } from './intent-variant-service'
+import { archiveCommittedVariant } from './intent-variant-service'
 import { resolveIdeaAfterDecision, type FanInResult } from '../decisions/decision-fan-in'
 import type {
   IntentVariantWithDetails,
@@ -191,7 +191,60 @@ async function createSelfProposedAcceptedDR(
   if (error || !data) {
     throw new Error(`Failed to create self-proposed DR: ${error?.message || 'unknown'}`)
   }
-  return (data as any).id
+  const decisionRequestId = (data as any).id as string
+
+  // ── The seventh decision path, and the cause of both production misses ──
+  //
+  // This is the only INSERT in the codebase that creates an ALREADY-RESOLVED
+  // decision request: `status: 'accepted'`, `reviewed_by`, `reviewed_at`, all
+  // in one statement. Every other decision writer resolves an existing row by
+  // UPDATE, and the memory emit was added to the update paths — so this one
+  // was never wired, and a PM proposing and executing their own trade in one
+  // action left no record of having decided anything.
+  //
+  // Proven against production on 2026-11-15, record by record. Of the four
+  // decision requests resolved since `memory_events` was created
+  // (2026-09-16), exactly two carry a `decision.recorded` event and two do
+  // not, and the split is total:
+  //
+  //   decision_note                           reviewed_at vs created_at  event
+  //   'Accepted via Trade Lab Execute'        61s later                    yes
+  //   'Accepted via Trade Lab Execute'        1 day later                  yes
+  //   'Self-proposed via Trade Lab Execute'   257ms EARLIER                no
+  //   'Self-proposed via Trade Lab Execute'    80ms EARLIER                no
+  //
+  // Both misses carry the note THIS function writes, and both have a
+  // `reviewed_at` that precedes their own `created_at` — the client-minted
+  // `now` above against the column default — which is only possible for a row
+  // inserted already resolved. Neither is an RLS refusal, a lost client
+  // write, or a status that should not emit: the same actor's
+  // `execution.recorded` landed moments later in both cases.
+  //
+  // So a trigger on `accepted_trades` would have been the wrong remedy for
+  // this as well. The gap is one unwired call site.
+  //
+  // `reviewed_at` is `now`, the exact value this INSERT wrote, which makes the
+  // event's identity reproducible from the row — see
+  // `dedupeKeys.decisionRecorded`. No rationale is carried: the
+  // `decision_note` above is boilerplate this code composed, not a reason the
+  // PM gave. Non-fatal, like every other emit here: a failed history write
+  // must not undo a committed trade.
+  const organizationId = await resolveOrganizationIdForPortfolio(v.portfolio_id)
+  if (organizationId) {
+    await recordDecisionRecorded({
+      organizationId,
+      actorId: ctx.actorId,
+      decisionRequestId,
+      status: 'accepted',
+      reviewedAt: now,
+      tradeQueueItemId,
+      proposalId: null,
+      portfolioId: v.portfolio_id ?? null,
+      provenance: 'ui:trade-lab:self-proposed',
+    })
+  }
+
+  return decisionRequestId
 }
 
 /**
@@ -779,7 +832,7 @@ async function resolveOrphanedIdeaArtifacts(params: {
   try {
     let query = supabase
       .from('decision_requests')
-      .select('id')
+      .select('id, proposal_id')
       .eq('trade_queue_item_id', tradeQueueItemId)
       .eq('portfolio_id', portfolioId)
       .in('status', ['pending', 'under_review', 'needs_discussion'])
@@ -792,7 +845,8 @@ async function resolveOrphanedIdeaArtifacts(params: {
     }
     if (!staleDRs || staleDRs.length === 0) return
 
-    const ids = (staleDRs as any[]).map(r => r.id)
+    const siblings = staleDRs as { id: string; proposal_id?: string | null }[]
+    const ids = siblings.map(r => r.id)
     const { error: updErr } = await supabase
       .from('decision_requests')
       .update({
@@ -804,7 +858,57 @@ async function resolveOrphanedIdeaArtifacts(params: {
         updated_at: now,
       })
       .in('id', ids)
-    if (updErr) console.warn('[ExecuteSim] Failed to resolve orphan DRs', updErr)
+    if (updErr) {
+      console.warn('[ExecuteSim] Failed to resolve orphan DRs', updErr)
+      return
+    }
+
+    // ── The sixth decision path, and the one that recorded nothing ───────
+    //
+    // This bulk update moves every sibling decision request to `accepted`
+    // and links it to the committed trade. That is a resolution of a real
+    // recommendation by a real actor, identical in kind to the one
+    // `markDRAccepted` emits for 30 lines above — and it emitted nothing,
+    // so the Spine showed one decision where N were made.
+    //
+    // Measured in production on 2026-11-15: of the 4 decision requests
+    // resolved since the Spine shipped, 2 carry a `decision.recorded`
+    // event and 2 do not. This path is a proven structural gap. It is not
+    // the proven cause of those particular two (their `decision_note` is
+    // user-authored, so they came through an inbox accept), which is why
+    // the detector in `src/lib/memory/capture-reconciliation.ts` exists:
+    // the next miss should be countable rather than re-derived.
+    //
+    // One emit per sibling, not one per batch. The event's subject is the
+    // decision, and N decisions were resolved. Dedupe is
+    // `decision.recorded:<drId>:accepted:<tradeId>`, deterministic from
+    // rows that still exist, so a retry of the same Execute lands once.
+    //
+    // Loop rather than Promise.all: these are append-only inserts with no
+    // shared row, the batches are small (N sibling DRs for one idea in one
+    // portfolio), and a serial loop keeps the ordering of the events the
+    // same as the ordering of the rows. Still non-fatal — a memory write
+    // must not undo a committed trade.
+    const organizationId = await resolveOrganizationIdForPortfolio(portfolioId)
+    if (organizationId) {
+      for (const sibling of siblings) {
+        await recordDecisionRecorded({
+          organizationId,
+          actorId: ctx.actorId,
+          decisionRequestId: sibling.id,
+          status: 'accepted',
+          // `now` is the exact value this function's bulk UPDATE wrote to
+          // `reviewed_at` for every sibling, so the key is reproducible from
+          // the row afterwards. See `dedupeKeys.decisionRecorded`.
+          reviewedAt: now,
+          tradeQueueItemId,
+          proposalId: sibling.proposal_id ?? null,
+          portfolioId,
+          acceptedTradeId,
+          provenance: 'ui:trade-lab:sibling',
+        })
+      }
+    }
   } catch (e) {
     console.warn('[ExecuteSim] Resolve orphan DRs threw', e)
   }
@@ -855,6 +959,12 @@ async function markDRAccepted(decisionRequestId: string, ctx: ActionContext): Pr
       actorId: ctx.actorId,
       decisionRequestId,
       status: 'accepted',
+      // THIS is the path whose key was unreproducible. The trade does not
+      // exist yet — `linkDecisionRequestToTrade` writes `accepted_trade_id`
+      // after `createAcceptedTrade` returns — so the old key froze a field
+      // that the canonical row would contradict minutes later. `now` is what
+      // this UPDATE wrote to `reviewed_at` and it does not move again.
+      reviewedAt: now,
       tradeQueueItemId: row?.trade_queue_item_id ?? null,
       proposalId: row?.proposal_id ?? null,
       portfolioId: row?.portfolio_id ?? null,
@@ -1080,9 +1190,22 @@ export async function executeSimVariants(
       await Promise.all([
         bulkDeleteSimulationTradesForAssets(portfolioId, committedAssetIds),
         Promise.all(
+          /*
+           * ARCHIVED, not deleted.
+           *
+           * `createAcceptedTrade` above wrote `lab_variant_id = v.id`, the
+           * only record of which simulated line produced this trade. The FK
+           * is ON DELETE SET NULL, so hard-deleting the variant here erased
+           * that link seconds after writing it. Measured on production
+           * 2026-11-15: 0 of 53 accepted trades carry a variant id, including
+           * all 10 whose `source` is 'simulation'.
+           *
+           * `getVariantsForLab` filters `visibility_tier = 'active'`, so the
+           * variant still leaves the working set and the Lab is unchanged.
+           */
           committedVariantIds.map(vid =>
-            deleteVariant(vid, context).catch(e => {
-              console.warn('[ExecuteSim] deleteVariant failed (non-fatal, trade already committed)', vid, e)
+            archiveCommittedVariant(vid, context).catch(e => {
+              console.warn('[ExecuteSim] archiveCommittedVariant failed (non-fatal, trade already committed)', vid, e)
             }),
           ),
         ),

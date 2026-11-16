@@ -562,6 +562,113 @@ export async function deleteVariant(
 }
 
 /**
+ * Retire a variant that was COMMITTED, without destroying the trade's
+ * provenance.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ *
+ * `executeSimVariants` writes `accepted_trades.lab_variant_id = v.id` — the
+ * only record of which simulated line produced a committed trade — and then,
+ * in its background cleanup, called `deleteVariant` on that same id. The FK is
+ * `ON DELETE SET NULL`, so the link was erased seconds after it was written.
+ *
+ * Measured on production 2026-11-15: `lab_variant_id` is populated on 0 of 53
+ * accepted trades, INCLUDING the 10 whose `source` is 'simulation'. The column
+ * is written on every Trade Lab execute and has never survived one. So a trade
+ * asserts in an enum that it came from a simulation while the typed edge that
+ * would make that traceable is empty — which is the provenance rule in
+ * CLAUDE.md failing in the one place it is most load-bearing.
+ *
+ * ── Why archive rather than keep the row active ─────────────────────────
+ *
+ * `lab_variants` already carries `visibility_tier` and `deleted_at`; the
+ * soft-delete infrastructure was there and unused. `getVariantsForLab` filters
+ * `visibility_tier = 'active'` unless asked otherwise, so an archived variant
+ * leaves the working set exactly as a deleted one did. The Lab looks the same.
+ *
+ * 'archive', not 'trash': the variant was executed. It is finished, not
+ * discarded, and `trash` is what the user's own "remove from lab" means.
+ * `deleteVariant` and `deleteVariantsByAsset` stay hard deletes for that case —
+ * nothing points at a variant the user threw away.
+ *
+ * ── Authorization ───────────────────────────────────────────────────────
+ *
+ * No policy change. `lab_variants_update` carries the identical predicate to
+ * `lab_variants_delete` — `user_is_portfolio_member(portfolio_id) OR
+ * user_has_collaborate_share(portfolio_id) OR (portfolio_in_current_org(...)
+ * AND is_active_org_admin_of_current_org())` — so a caller who could delete the
+ * variant can archive it, and one who could not still cannot.
+ */
+export async function archiveCommittedVariant(
+  variantId: string,
+  context: ActionContext
+): Promise<void> {
+  const existing = await getVariant(variantId)
+  if (!existing) {
+    // Already gone. Nothing to archive, and nothing to repair: the trade's
+    // link was nulled by whatever removed the row.
+    return
+  }
+  if (existing.visibility_tier !== 'active') {
+    // Idempotent. The background cleanup can run twice for one execute.
+    return
+  }
+
+  const { data, error } = await supabase
+    .from('lab_variants')
+    /* `as never` is this repo's idiom for a write payload against the
+     * ungenerated Supabase types: the client types every table row as
+     * `never`, so a concretely-typed object is rejected where an `any`-ish
+     * one slips through. Cast at the payload, not the table, so the column
+     * names stay checked against nothing rather than the whole call going
+     * untyped. */
+    .update({ visibility_tier: 'archive', deleted_at: new Date().toISOString() } as never)
+    .eq('id', variantId)
+    .select('id')
+    .maybeSingle()
+
+  if (error) {
+    const isRLS = error.message?.includes('row-level security')
+    throw new Error(
+      isRLS
+        ? `Permission denied: you don't have access to this portfolio's trade lab. Try refreshing or re-logging in.`
+        : `Failed to archive variant: ${error.message}`
+    )
+  }
+  /*
+   * A no-row update is RLS declining without an error, which would leave the
+   * variant in the working set after its trade committed. Raised rather than
+   * swallowed: the caller treats this as non-fatal and logs it, so the trade
+   * still stands, but the failure has to be visible to be fixable.
+   */
+  if (!data) {
+    throw new Error(`Archive of variant ${variantId} affected no rows`)
+  }
+
+  await emitAuditEvent({
+    actor: { id: context.actorId, type: 'user', role: context.actorRole },
+    entity: { type: 'lab_variant', id: variantId },
+    /* 'archive' is a real ActionType in the lifecycle category and is what
+     * actually happened. 'update' is not one, and labelling this as a field
+     * edit would hide a lifecycle transition inside the noise of ordinary
+     * sizing edits. */
+    action: { type: 'archive', category: 'lifecycle' },
+    state: {
+      from: { visibility_tier: existing.visibility_tier ?? null, asset_id: existing.asset_id },
+      to: { visibility_tier: 'archive', reason: 'committed' },
+    },
+    metadata: {
+      request_id: context.requestId,
+      ui_source: context.uiSource,
+      lab_id: existing.lab_id,
+    },
+    orgId: undefined,
+    actorName: context.actorName,
+    actorEmail: context.actorEmail,
+  })
+}
+
+/**
  * Hard-delete ALL variants for a given asset in a lab.
  * Used by handleRemoveAsset to clean up all duplicates at once.
  */

@@ -1232,6 +1232,12 @@ function ReflectionsSection({ row, intel }: { row: AccountabilityRow; intel: Dec
           : row.category === 'passed' ? 'decision'
           : 'idea',
         organizationId: currentOrgId,
+        /* So the conclusion is reachable from the asset and the portfolio.
+         * Both `decision.reviewed` rows in production carry an empty
+         * `related`, which is why "what have we learned about this name"
+         * could not be asked of the event log. */
+        assetId: row.asset_id,
+        portfolioId: row.portfolio_id,
       },
     )
   }

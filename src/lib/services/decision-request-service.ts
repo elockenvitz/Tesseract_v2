@@ -275,6 +275,11 @@ export async function updateDecisionRequest(
         actorId: user.id,
         decisionRequestId: requestId,
         status: input.status,
+        // The server's own value for the column this same UPDATE just wrote,
+        // not a fresh clock reading. It is the event's identity: see
+        // `dedupeKeys.decisionRecorded`. Falls back to the string that was
+        // sent, which is what was stored, if the select-back omits it.
+        reviewedAt: updated.reviewed_at ?? (updates.reviewed_at as string | null) ?? null,
         tradeQueueItemId: updated.trade_queue_item_id ?? null,
         proposalId: updated.proposal_id ?? null,
         portfolioId: updated.portfolio_id ?? null,

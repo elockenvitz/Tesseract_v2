@@ -144,7 +144,10 @@ vi.mock('../decision-request-service', () => ({
     drUpdates.calls.push([id, input])
   }),
 }))
-vi.mock('../intent-variant-service', () => ({ deleteVariant: vi.fn(async () => {}) }))
+vi.mock('../intent-variant-service', () => ({
+  deleteVariant: vi.fn(async () => {}),
+  archiveCommittedVariant: vi.fn(async () => {}),
+}))
 vi.mock('../trade-idea-service', () => ({
   moveTradeIdea: vi.fn(async () => {}),
   reconcileOutcomeAfterRevert: vi.fn(async () => {}),

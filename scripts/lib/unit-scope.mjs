@@ -140,6 +140,14 @@ export const GATED_DIRS = [
   'src/components/ui',
   'src/components/charts',
   'src/components/feed',
+  // Whether a control acts on one person or on the whole desk. The Defer
+  // button used to do a personal snooze for most items and a SHARED
+  // `revisit_at` write for trade ideas, under one label and with a silent
+  // third outcome when the write was refused. Gated rather than deferred
+  // because that is not a rendering bug: every failure mode here either
+  // moves somebody else's queue without telling them or reports success for
+  // a write the database declined, and neither throws.
+  'src/components/attention',
   // Arrived on main after this lane's baseline, ungated. Two of the three
   // lanes queued behind main were adding it to the filter list by hand.
   'src/pages',

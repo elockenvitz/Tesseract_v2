@@ -197,7 +197,10 @@ vi.mock('../decision-request-service', () => ({
     drUpdates.calls.push(input)
   }),
 }))
-vi.mock('../intent-variant-service', () => ({ deleteVariant: vi.fn(async () => {}) }))
+vi.mock('../intent-variant-service', () => ({
+  deleteVariant: vi.fn(async () => {}),
+  archiveCommittedVariant: vi.fn(async () => {}),
+}))
 /**
  * `moveTradeIdea` is mocked, but it WRITES — so the fan-in's read-back
  * verification runs for real against the result. Setting `moveWrites`

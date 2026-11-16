@@ -298,7 +298,7 @@ const MAX_ERRORS = 0
 // `AssetTab.tsx` / `InvestmentSnapshot.tsx` class files that already hold
 // hundreds, surfaced by a commit between the two measurements that I did not
 // bisect. Recorded here rather than quietly absorbed.
-const MAX_REPO_ERRORS = 8579
+const MAX_REPO_ERRORS = 8573
 
 /**
  * A floor on real source files, now that they are counted as source files.

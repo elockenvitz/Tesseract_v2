@@ -24,6 +24,13 @@ export type EntityType =
   | 'attachment'
   | 'audit_explorer'
   | 'layout_template'
+  /* A Trade Lab line. `intent-variant-service` has emitted audit events
+   * under this label since it was written -- `deleteVariant` does so at
+   * line 547 -- but the union never listed it, so every one of those call
+   * sites was a type error. Added rather than relabelled: writing a
+   * different entity type to make the checker happy would mislabel rows in
+   * the audit log, which is the one table that has to be literal. */
+  | 'lab_variant'
 
 // ============================================================
 // Action Types

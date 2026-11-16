@@ -40,7 +40,7 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
     markDeliverableDone,
     approveTradeIdea,
     rejectTradeIdea,
-    deferTradeIdea,
+    rescheduleTradeIdeaForDesk,
     dismissWithReason,
   } = useAttention({ windowHours: 168 }) // 7 days for full view
 
@@ -294,7 +294,7 @@ export function AttentionPage({ initialFilter, onNavigate }: AttentionPageProps)
             onMarkDone={markDeliverableDone}
             onApprove={approveTradeIdea}
             onReject={rejectTradeIdea}
-            onDefer={deferTradeIdea}
+            onRescheduleShared={rescheduleTradeIdeaForDesk}
             onQuickCapture={handleQuickCapture}
             maxItems={100} // Show all items
             showScore={import.meta.env.DEV}

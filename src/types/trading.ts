@@ -1077,6 +1077,19 @@ export interface IntentVariant {
   created_at: string
   updated_at: string
   created_by: string | null
+
+  /* Soft-delete state. The columns have been on `lab_variants` since it was
+   * created and `getVariantsForLab` filters `visibility_tier = 'active'`, but
+   * this type never carried them, so no caller could read the tier it was
+   * being filtered on. `archiveCommittedVariant` needs it: a variant whose
+   * trade has committed is set to 'archive' rather than deleted, because the
+   * FK from `accepted_trades.lab_variant_id` is ON DELETE SET NULL and a
+   * delete erases the trade's only link to the line that produced it.
+   *
+   * 'archive' = executed or otherwise concluded. 'trash' = the user removed
+   * it. The distinction is the only thing that tells those apart later. */
+  visibility_tier?: 'active' | 'trash' | 'archive'
+  deleted_at?: string | null
 }
 
 // Intent Variant with related data

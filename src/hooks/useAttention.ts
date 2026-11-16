@@ -1802,8 +1802,26 @@ export function useAttention(options: UseAttentionOptions = {}) {
     },
   })
 
-  // Defer trade idea (snooze via revisit_at)
-  const deferTradeIdeaMutation = useMutation({
+  /**
+   * Move a trade idea's SHARED revisit date. Not a snooze.
+   *
+   * Renamed from `deferTradeIdeaMutation`. The old name sat next to the
+   * personal `snoozeMutation` and read like its sibling, and `AttentionCard`
+   * wired a single "Defer" button to both — one label, two ownership models.
+   * `revisit_at` is desk-wide: it is read by the idea pipeline, by
+   * suppression, and by every other member of the portfolio.
+   *
+   * Authorization note, so nobody has to re-derive it. RLS on
+   * `trade_queue_items` UPDATE is
+   *   (auth.uid() = created_by) OR (auth.uid() = assigned_to)
+   *   OR is_portfolio_pm(portfolio_id, auth.uid())
+   * declared TO PUBLIC, but every branch requires `auth.uid()`, so `anon`
+   * matches nothing. For a caller outside those three roles the UPDATE
+   * matches no row and `.maybeSingle()` returns null WITHOUT an error — the
+   * silent third outcome the old Defer button had. Callers get that
+   * truthfully now: see the `applied` flag below.
+   */
+  const rescheduleTradeIdeaForDeskMutation = useMutation({
     mutationFn: async ({ tradeId, hours }: { tradeId: string; hours: number }) => {
       const revisitAt = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString()
 
@@ -1817,6 +1835,19 @@ export function useAttention(options: UseAttentionOptions = {}) {
         .maybeSingle()
 
       if (error) throw new Error(error.message)
+
+      // No row matched means RLS declined: the caller is not the author,
+      // the assignee, or a PM on the portfolio. Previously this returned
+      // null with no error and the card reported "Deferred" anyway, which
+      // is the worst of the three old outcomes — the user believes the
+      // desk's date moved and it did not. Fail loudly instead.
+      if (!row) {
+        throw new Error(
+          'You can only reschedule this for everyone if you raised it, it is ' +
+          'assigned to you, or you are a PM on the portfolio. Use Defer to ' +
+          'hide it for yourself.',
+        )
+      }
 
       // The second writer of `revisit_at`.
       //
@@ -1883,8 +1914,8 @@ export function useAttention(options: UseAttentionOptions = {}) {
     return rejectTradeIdeaMutation.mutateAsync(tradeId)
   }
 
-  const deferTradeIdea = (tradeId: string, hours: number) => {
-    return deferTradeIdeaMutation.mutateAsync({ tradeId, hours })
+  const rescheduleTradeIdeaForDesk = (tradeId: string, hours: number) => {
+    return rescheduleTradeIdeaForDeskMutation.mutateAsync({ tradeId, hours })
   }
 
   const sections = data?.sections || {
@@ -1940,11 +1971,12 @@ export function useAttention(options: UseAttentionOptions = {}) {
     markDeliverableDone,
     approveTradeIdea,
     rejectTradeIdea,
-    deferTradeIdea,
+    /** SHARED. Moves `trade_queue_items.revisit_at` for the whole desk. */
+    rescheduleTradeIdeaForDesk,
     isMarkingDone: markDeliverableDoneMutation.isPending,
     isApprovingTrade: approveTradeIdeaMutation.isPending,
     isRejectingTrade: rejectTradeIdeaMutation.isPending,
-    isDeferringTrade: deferTradeIdeaMutation.isPending,
+    isReschedulingForDesk: rescheduleTradeIdeaForDeskMutation.isPending,
     getSection,
     getTopItems,
     hasItems,

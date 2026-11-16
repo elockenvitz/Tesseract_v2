@@ -77,7 +77,7 @@ export function AttentionDashboard({
     markDeliverableDone,
     approveTradeIdea,
     rejectTradeIdea,
-    deferTradeIdea,
+    rescheduleTradeIdeaForDesk,
     dismissWithReason,
   } = useAttention({ windowHours: 24 })
 
@@ -229,7 +229,7 @@ export function AttentionDashboard({
             onMarkDone={markDeliverableDone}
             onApprove={approveTradeIdea}
             onReject={rejectTradeIdea}
-            onDefer={deferTradeIdea}
+            onRescheduleShared={rescheduleTradeIdeaForDesk}
             onQuickCapture={onQuickCapture}
             onViewAll={onViewAll ? () => onViewAll(type) : undefined}
             maxItems={maxItemsPerSection}

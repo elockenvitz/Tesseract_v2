@@ -36,4 +36,9 @@ export {
   SNOOZE_RESURFACE_NOTE,
 } from './suppression'
 
-export { sharedDeferCapability, supportsSharedDefer } from './shared-defer'
+export {
+  sharedDeferCapability,
+  supportsSharedDefer,
+  attentionSourceSupportsSharedDefer,
+  SHARED_DEFER_ATTENTION_SOURCE_TYPES,
+} from './shared-defer'

@@ -62,8 +62,11 @@ export function UserTab({ user, onNavigate, onBack }: UserTabProps) {
   const { data: userProfile } = useQuery({
     queryKey: ['user-profile', user.id],
     queryFn: async () => {
+      // `users`, not `profiles`. There is no `profiles` table in this
+      // database, so this query 404'd on every render of a mounted tab and
+      // the header silently fell back to the caller's partial `user` object.
       const { data, error } = await supabase
-        .from('profiles')
+        .from('users')
         .select('*')
         .eq('id', user.id)
         .single()
@@ -98,8 +101,11 @@ export function UserTab({ user, onNavigate, onBack }: UserTabProps) {
   const { data: recentNotes } = useQuery({
     queryKey: ['user-recent-notes', user.id],
     queryFn: async () => {
+      // `asset_notes`, not `notes`, and the author column is `created_by`,
+      // not `user_id`. Neither the table nor the column exists as written,
+      // so "Recent Notes" has always rendered its empty state.
       const { data, error } = await supabase
-        .from('notes')
+        .from('asset_notes')
         .select(`
           id,
           title,
@@ -108,7 +114,7 @@ export function UserTab({ user, onNavigate, onBack }: UserTabProps) {
           asset_id,
           assets (symbol, company_name)
         `)
-        .eq('user_id', user.id)
+        .eq('created_by', user.id)
         .neq('is_deleted', true)
         .order('updated_at', { ascending: false })
         .limit(10)
