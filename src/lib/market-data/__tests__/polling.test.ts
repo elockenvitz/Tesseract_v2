@@ -71,7 +71,7 @@ describe('decidePolling', () => {
     expect(returned.reason).toBe('polling')
   })
 
-  it('does not poll an intraday quote while the market is closed', () => {
+  it('does not poll when the CALLER states the exchange is closed', () => {
     const d = decidePolling(live({ marketOpen: false }))
     expect(d.refetchInterval).toBe(false)
     expect(d.reason).toBe('market_closed')
@@ -115,6 +115,72 @@ describe('decidePolling', () => {
     // An inactive view must not depend on a calendar to stay quiet.
     const d = decidePolling(live({ active: false, marketOpen: null }))
     expect(d.reason).toBe('view_inactive')
+  })
+})
+
+/**
+ * Global coverage.
+ *
+ * Tesseract holds global equities and the catalogue cannot say where a symbol
+ * trades: measured 2026-11-16 over 912 assets, `mic` is 0% populated,
+ * `exchange` is `'Unknown'` for 506 (55%), and `country` is the issuer's
+ * domicile — there are Japanese, Brazilian, UK and Chinese names carrying
+ * `exchange = 'NYSE'` because they are ADRs.
+ *
+ * An earlier version of this gate called `isUsEquitySessionOpen()` for every
+ * symbol. These tests pin that it does not, because a London listing must
+ * keep refreshing at 10:00 London time — which is 05:00 in New York, when the
+ * US gate would have said "closed".
+ */
+describe('international symbols are not held to US market hours', () => {
+  /** 10:00 in London, 05:00 in New York: LSE open, NYSE shut. */
+  const LONDON_MORNING = Date.parse('2026-11-16T10:00:00.000Z')
+
+  const atLondonMorning = (over: Partial<PollingInput> = {}): PollingInput => ({
+    ...live(),
+    now: LONDON_MORNING,
+    lastInteractionAt: LONDON_MORNING - 1_000,
+    marketOpen: null, // what every caller passes today
+    ...over,
+  })
+
+  it('polls a London listing during its own session', () => {
+    const d = decidePolling(atLondonMorning())
+    expect(d.refetchInterval).toBe(QUOTE_POLL_MS)
+    expect(d.reason).toBe('polling')
+  })
+
+  it('and the US clock would have refused it, which is the bug being fixed', () => {
+    // Proof the case above is not trivially true: the old wiring consulted
+    // this, and this says closed.
+    expect(isUsEquitySessionOpen(new Date(LONDON_MORNING))).toBe(false)
+  })
+
+  it('polls a US listing in US hours too, so nothing regressed', () => {
+    expect(decidePolling(live()).refetchInterval).toBe(QUOTE_POLL_MS)
+  })
+
+  it('still stops an idle international session, which is what saved the traffic', () => {
+    // Visibility, activity and idle do the work for every venue on earth.
+    const d = decidePolling(
+      atLondonMorning({ lastInteractionAt: LONDON_MORNING - IDLE_AFTER_MS - 1 }),
+    )
+    expect(d.refetchInterval).toBe(false)
+    expect(d.reason).toBe('session_idle')
+  })
+
+  it('still stops a hidden international tab', () => {
+    const d = decidePolling(atLondonMorning({ hidden: true }))
+    expect(d.refetchInterval).toBe(false)
+    expect(d.reason).toBe('tab_hidden')
+  })
+
+  it('never reports market_closed unless a caller said so', () => {
+    // `marketOpen: null` is what the hook passes; no venue is ever guessed.
+    for (const at of [LONDON_MORNING, NOW, Date.parse('2026-11-16T03:00:00Z')]) {
+      const d = decidePolling(atLondonMorning({ now: at, lastInteractionAt: at }))
+      expect(d.reason).not.toBe('market_closed')
+    }
   })
 })
 
@@ -223,6 +289,21 @@ describe('the gate is not decoration', () => {
     for (const file of GATED_CALL_SITES) {
       expect(stripComments(read(file))).toMatch(/useQuery\(/)
     }
+  })
+
+  it('the US session clock is not wired into the gate', () => {
+    /*
+     * The regression this stops: calling `isUsEquitySessionOpen()` inside the
+     * hook applies NYSE hours to every symbol in a product that covers global
+     * equities. After stripping comments, the only occurrence in polling.ts
+     * should be its own declaration — if the hook calls it again, this fails.
+     */
+    const code = stripComments(
+      readFileSync(resolve(SRC, 'lib/market-data/polling.ts'), 'utf8'),
+    )
+    const uses = code.match(/isUsEquitySessionOpen/g) ?? []
+    expect(uses.length, 'polling.ts should only DECLARE the US clock').toBe(1)
+    expect(code).toMatch(/export function isUsEquitySessionOpen/)
   })
 
   it('every gated call site routes through this module', () => {

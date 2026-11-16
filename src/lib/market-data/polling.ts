@@ -63,7 +63,11 @@ export type PollingReason =
   | 'session_idle'
   /** The browser tab is hidden. */
   | 'tab_hidden'
-  /** US equities are closed, so an intraday quote cannot change. */
+  /**
+   * The caller stated this symbol's exchange is closed, so an intraday quote
+   * cannot change. Never produced today: no caller can identify a venue, so
+   * `marketOpen` is always `null`. See `PollingInput.marketOpen`.
+   */
   | 'market_closed'
   /** Daily bars do not need a timer at all. */
   | 'settled_daily_data'
@@ -89,6 +93,23 @@ export interface PollingInput {
    * `null` is treated as open: an unknown session must not silently freeze a
    * price a trader is reading. Failing toward one extra request is the right
    * direction for this particular unknown.
+   *
+   * IN PRACTICE THIS IS ALWAYS `null` TODAY, deliberately. Tesseract covers
+   * global equities, and the catalogue cannot say where a symbol trades:
+   * measured 2026-11-16 across 912 assets, `mic` is 0% populated, `exchange`
+   * reads `'Unknown'` for 506 of them (55%), and `country` is the issuer's
+   * DOMICILE rather than the listing venue — there are Japanese, Brazilian,
+   * UK and Chinese names carrying `exchange = 'NYSE'` because they are ADRs.
+   *
+   * An earlier version of this gate called `isUsEquitySessionOpen()`
+   * unconditionally, which would have frozen a London or Tokyo listing
+   * through its own trading day. Guessing a venue from unreliable data is
+   * worse than not gating on it: visibility, activity and idle-time already
+   * remove the traffic that mattered, because the overnight requests came
+   * from unattended tabs and nobody interacts at 03:00 in any time zone.
+   *
+   * A caller that genuinely knows the venue may pass `true`/`false`. None
+   * does yet. When MIC data is populated, that is the seam to use.
    */
   marketOpen: boolean | null
 }
@@ -185,6 +206,13 @@ export function decidePolling(input: PollingInput): PollingDecision {
 
 /**
  * Whether US equities are in the regular session, by wall clock.
+ *
+ * NOT WIRED INTO THE GATE, deliberately. It is correct for US listings and
+ * wrong for everything else, and the catalogue cannot say which a symbol is
+ * (`mic` 0% populated, `exchange` 55% `'Unknown'`, `country` is domicile not
+ * venue). Calling it for every symbol would freeze a London or Tokyo listing
+ * through its own trading day. It stays exported, and tested, as the seam for
+ * a caller that one day knows the venue.
  *
  * Calendar-only and deliberately so: 09:30 to 16:00 America/New_York,
  * Monday to Friday. It does NOT know holidays, half days or early closes, so
@@ -323,6 +351,16 @@ export interface UseMarketDataPollingOptions {
   kind: MarketDataKind
   /** Whether this view is presenting the data right now. */
   active?: boolean
+  /**
+   * Whether this symbol's exchange is open, when the caller actually knows.
+   *
+   * Defaults to `null`, meaning unknown, which polls. Tesseract covers global
+   * equities and the catalogue cannot identify a listing venue (see
+   * `PollingInput.marketOpen`), so no caller passes this today and the gate
+   * must never assume US hours. Left here as the seam for when MIC data
+   * exists.
+   */
+  marketOpen?: boolean | null
 }
 
 /**
@@ -337,7 +375,7 @@ export interface UseMarketDataPollingOptions {
 export function useMarketDataPolling(
   options: UseMarketDataPollingOptions,
 ): PollingDecision {
-  const { kind, active = true } = options
+  const { kind, active = true, marketOpen = null } = options
 
   /*
    * Both pieces of state are declared before any effect that writes them.
@@ -388,10 +426,18 @@ export function useMarketDataPolling(
         hidden: activity.hidden,
         lastInteractionAt: activity.lastInteractionAt,
         now,
-        marketOpen:
-          kind === 'intraday_quote' ? isUsEquitySessionOpen(new Date(now)) : null,
+        /*
+         * Whatever the caller knows, which today is always `null`.
+         *
+         * This previously called `isUsEquitySessionOpen()` here, which
+         * applied NYSE hours to every symbol in a product that covers global
+         * equities — a London listing would have stopped refreshing during
+         * its own session. The catalogue cannot tell us the venue, so the
+         * gate does not guess one.
+         */
+        marketOpen,
       }),
-    [kind, active, activity.hidden, activity.lastInteractionAt, now],
+    [kind, active, activity.hidden, activity.lastInteractionAt, now, marketOpen],
   )
 }
 
