@@ -30,13 +30,34 @@
  *      delete_notebook. In read-only mode they are never registered, so
  *      they cannot be called at all.
  *
- *   2. Transaction mode. execute_sql survives (readOnlyBehavior "adapt") but
+ *   2. A different ROLE. execute_sql survives (readOnlyBehavior "adapt") but
  *      its executor is `e.executeSql(id, { query, read_only: o })` with `o`
- *      the same flag. The Management API then runs the statement in a
- *      Postgres READ ONLY transaction, which rejects writes with SQLSTATE
- *      25006 at the database, not at the tool layer.
+ *      the same flag, and the Management API then connects as
+ *      `supabase_read_only_user` instead of `postgres`. Measured 2026-11-16
+ *      against a separately launched read-only server:
  *
- * Both layers are real enforcement. Neither is a label.
+ *        has_table_privilege(…, memory_events,     INSERT)  false
+ *        has_table_privilege(…, accepted_trades,   UPDATE)  false
+ *        has_table_privilege(…, decision_requests, DELETE)  false
+ *        has_schema_privilege(…, public, CREATE)            false
+ *        memberships                   pg_monitor, pg_read_all_data
+ *
+ *      On the read-write connection every one of those is true and the
+ *      memberships include service_role and supabase_privileged_role.
+ *
+ *   3. Transaction mode. `default_transaction_read_only = on`, so writes also
+ *      fail with SQLSTATE 25006 in the engine, below the tool layer.
+ *
+ * All three are real enforcement. None is a label.
+ *
+ * NOTE: an earlier version of this header said enforcement is not role-level.
+ * That was measured on the read-WRITE connection and generalised without
+ * measuring read-only mode. Corrected.
+ *
+ * What read-only does NOT give you: `rolbypassrls` is TRUE on
+ * `supabase_read_only_user`, so it reads every row in every organization and
+ * is NOT tenant-scoped. It is a privilege reduction for writes and none at
+ * all for reads.
  *
  * ── What is NOT enforcement, and is the trap this incident fell into ─────
  *

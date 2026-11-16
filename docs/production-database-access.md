@@ -77,53 +77,70 @@ tool layer, where no tool configuration can reach.
 
 Both layers are genuine enforcement.
 
-### It is tool-level and transaction-level. It is NOT role-level.
+### Three layers: tool, role, and transaction
 
-This decides what `--read-only` does and does not protect, so it is stated
-from measurement, not inference. Measured against production 2026-11-15,
-read-only, on the connection the MCP server uses:
+> **Corrected 2026-11-16.** This section previously said enforcement is "NOT
+> role-level" and that the role "keeps every write privilege". **That was
+> wrong.** It was measured on the read-WRITE connection, where `current_user`
+> is `postgres`, and generalised to read-only mode without measuring read-only
+> mode. Read-only mode connects as a **different role**. The original text is
+> replaced rather than annotated in place, because it would have told a reader
+> the opposite of the truth about their own protection.
+
+Measured by launching a **separate** `--read-only` server and asking it, since
+a session started before the flag was restored keeps its old connection and
+cannot verify the fix:
 
 ```
-current_user                                       postgres
-transaction_read_only                              off     (this session, pre-restart)
-has_table_privilege(…, memory_events,     INSERT)  true
-has_table_privilege(…, accepted_trades,   UPDATE)  true
-has_table_privilege(…, decision_requests, DELETE)  true
-has_schema_privilege(…, public, CREATE)            true
-is_superuser                                       off
-role memberships   anon, authenticated, authenticator, pg_create_subscription,
-                   pg_monitor, pg_read_all_data, pg_signal_backend,
-                   service_role, supabase_privileged_role,
-                   tesseract_audience_writer
+current_user                                       supabase_read_only_user
+session_user                                       supabase_read_only_user
+transaction_read_only                              on
+default_transaction_read_only                      on
+has_table_privilege(…, memory_events,     SELECT)  true
+has_table_privilege(…, memory_events,     INSERT)  false
+has_table_privilege(…, accepted_trades,   UPDATE)  false
+has_table_privilege(…, decision_requests, DELETE)  false
+has_schema_privilege(…, public, CREATE)            false
+rolsuper / is_superuser                            false
+rolbypassrls                                       TRUE
+role memberships                                   pg_monitor, pg_read_all_data
 ```
 
-The role keeps **every** write privilege, can create objects in `public`, and
-is a member of `service_role`, `supabase_privileged_role` and
-`pg_read_all_data` — so it can `SET ROLE` to any of them, and its reads bypass
-RLS entirely.
-
-`--read-only` is therefore a **refusal to write inside that transaction**, not
-a reduction of authority:
+Compare the read-WRITE connection, same project, same token: `current_user` is
+`postgres`, every privilege above is `true`, and memberships include
+`service_role`, `supabase_privileged_role`, `authenticator` and
+`pg_signal_backend`. The flag changes which role you are.
 
 | Layer | Mechanism | What it stops |
 |---|---|---|
-| Tool | write tools are never registered | `apply_migration`, `deploy_edge_function`, branch tools |
-| Transaction | Postgres `READ ONLY` transaction, SQLSTATE 25006 | writes issued through `execute_sql` |
-| **Role** | **nothing** | **nothing — full privileges retained** |
+| Tool | write tools are never registered | `apply_migration`, `deploy_edge_function`, branch tools — verified: 16 tools registered, 0 write tools |
+| **Role** | **`supabase_read_only_user`** — no INSERT, UPDATE, DELETE or CREATE | **any write, by any statement, including one that escaped the transaction setting** |
+| Transaction | `default_transaction_read_only = on`; writes fail SQLSTATE 25006 | writes issued through `execute_sql` |
 
-Two consequences worth being explicit about:
+All three are genuine. The role layer is the strongest of them, because it
+holds even if the transaction setting were somehow cleared.
 
-1. **Any other path using the same token has full write authority.** The flag
-   constrains this server's SQL calls; it does not constrain the token. The
-   token is account-wide, so it also carries Management API authority for
-   everything that is not SQL — project settings, secrets, function deploys.
-2. **A read-only transaction is not a sandbox.** `pg_terminate_backend` and
-   `pg_cancel_backend` both succeed inside one, because the role holds
-   `pg_signal_backend`. Availability is not protected by it. Those stay on a
-   keyword denylist.
+#### What read-only still does NOT protect
 
-A genuinely least-privilege setup needs a project-scoped token mapped to a
-restricted role, which this Supabase plan does not issue (§7).
+Be precise about this, because "read-only" invites over-trust:
+
+1. **`rolbypassrls` is TRUE.** The read-only role reads **every row in every
+   organization**, ignoring RLS. It cannot write anything, but it is not
+   tenant-scoped. Any ungrouped count taken through it merges all pilot orgs
+   and is wrong as a per-tenant figure. This is the same trap already recorded
+   for the Management API generally.
+2. **The token is not constrained.** The flag constrains this server's SQL
+   calls; it does not constrain the credential. The token is account-wide, so
+   any other path using it — including a second MCP server entry without the
+   flag — has full write authority and `postgres`.
+3. **It is not a sandbox against availability.** On the read-write connection
+   the role holds `pg_signal_backend`, and `pg_terminate_backend` /
+   `pg_cancel_backend` succeed inside a read-only transaction. Keep those on a
+   keyword denylist regardless of mode.
+
+So: `--read-only` is a real privilege reduction for **writes**, and no
+reduction at all for **reads**. A project-scoped token mapped to a
+tenant-scoped role is still the thing this plan cannot issue (§7).
 
 ### Verifying it took effect after a restart
 
@@ -132,15 +149,35 @@ The flag is read when the MCP server **launches**, so the session that edits
 session, with no write attempted:
 
 1. `npm run guard:mcp-readonly` — the config on disk carries the flag.
-2. `select current_setting('transaction_read_only')` — must read `on`. A
-   session started before the fix reads `off`, which is how you tell the
-   restart has not happened yet.
+2. `select current_user, current_setting('transaction_read_only')` — must read
+   **`supabase_read_only_user`** and **`on`**. Ask for `current_user` as well
+   as the setting: the role is the stronger of the two guarantees, and a
+   session started before the fix answers `postgres` / `off`, which is how you
+   tell the restart has not happened yet.
 3. The write tools are absent from the toolset. `apply_migration` and
    `deploy_edge_function` should not be callable at all.
 
-All three, together: 1 proves intent, 2 proves the transaction, 3 proves the
-tool layer. Step 2 alone would not distinguish a stale session from a fixed
-one.
+All three together: 1 proves intent, 2 proves the role and the transaction, 3
+proves the tool layer. No single step is sufficient — 2 alone cannot
+distinguish a stale session from an unfixed config, and 1 alone says only what
+is on disk.
+
+#### Verifying without restarting
+
+A restart is not actually required, and this is worth knowing because it lets
+you check the fix the moment you make it. Launch a **second** server with the
+flag and speak JSON-RPC to it over stdio:
+
+- `tools/list` → assert `apply_migration`, `deploy_edge_function` and the
+  branch tools are absent.
+- `tools/call execute_sql` with the query in step 2 → assert
+  `supabase_read_only_user` / `on`.
+
+Both are observations and neither writes. This is how the measurements in §3
+were taken while the surrounding session was still read-write. On Windows,
+spawn the resolved `dist/cli.js` under `node` rather than `npx`, which is a
+`.cmd` shim that `spawn` rejects with `EINVAL` unless a shell is used — and a
+shell would put the token on a command line.
 
 ---
 
