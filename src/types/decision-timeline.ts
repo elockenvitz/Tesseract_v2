@@ -74,8 +74,16 @@ export type TimelineDisposition =
  * writer stamps all three fields in `accepted-trade-service.ts` and
  * `EXECUTION_ORIGIN` (`:1448`) is the vocabulary:
  *
+ *   broker_confirmed `metadata.origin = 'broker_confirmed'` — an authoritative
+ *                 external confirmation. **Nothing writes this today**: there
+ *                 is no OMS/EMS/broker integration, and production holds zero
+ *                 such rows. It exists so that the other grades never have to
+ *                 stand in for it, and so a real confirmation lands in its own
+ *                 grade instead of being folded into `verified`.
  *   verified      `detected_by_system = true` and `source_type = 'holdings_diff'`
- *                 — the app applied the trade and watched the position change.
+ *                 — the app applied the trade to the MODEL book and watched
+ *                 the position change. Observation of our own arithmetic, not
+ *                 of a fill at a broker.
  *   attested      `metadata.origin = 'trader_attested'` — a human states it
  *                 filled away from the app. Evidence, but not observation.
  *   assumed       `metadata.origin = 'pm_assumed_execution'` — PILOT POLICY:
@@ -87,9 +95,11 @@ export type TimelineDisposition =
  *
  * Rendering `assumed` as though it were `verified` is the specific failure
  * this field exists to prevent: it would let the page assert a fill that no
- * system and no person ever saw.
+ * system and no person ever saw. `verified` carries its own, narrower limit —
+ * see `EXTERNALLY_CONFIRMED_PROOFS`.
  */
 export type ExecutionProof =
+  | 'broker_confirmed'
   | 'verified'
   | 'attested'
   | 'assumed'
@@ -224,9 +234,18 @@ export const EVENT_LABELS: Record<TimelineEventType, string> = {
   review_recorded: 'Decision Reviewed',
 }
 
-/** How each proof grade is named to a reader, and whether it asserts a fill. */
+/**
+ * How each proof grade is named to a reader, and whether it asserts a fill.
+ *
+ * `verified` is named "Observed", not "Verified". Once `broker_confirmed`
+ * exists as its own grade, "Verified" sitting next to "Confirmed" invites the
+ * reader to collapse them, and the two are a long way apart: one means our own
+ * arithmetic moved the model book, the other means a counterparty says the
+ * shares changed hands.
+ */
 export const EXECUTION_PROOF_LABELS: Record<ExecutionProof, string> = {
-  verified: 'Verified',
+  broker_confirmed: 'Confirmed',
+  verified: 'Observed',
   attested: 'Attested',
   assumed: 'Assumed',
   backfilled: 'Backfilled',
@@ -234,13 +253,43 @@ export const EXECUTION_PROOF_LABELS: Record<ExecutionProof, string> = {
 }
 
 /**
- * Proof grades where a fill was actually OBSERVED. Only `verified` qualifies.
- * `attested` is a person's word, `assumed` is a policy, `backfilled` is a
- * migration and `unattributed` is an absence of record — none of them is an
- * observation, and a UI that treats them as one is making a claim the data
- * does not support.
+ * Every grade, strongest first — DERIVED, not written out again.
+ *
+ * `EXECUTION_PROOF_LABELS` is a `Record<ExecutionProof, …>`, so a new member
+ * of the union cannot be added without adding a label, and this array picks it
+ * up for free. A test that wants to assert something about "all the grades"
+ * must use this: the previous hand-written list in
+ * `asset-decision-timeline.test.ts` silently stopped covering the union the
+ * moment `broker_confirmed` appeared, and went on passing.
  */
-export const OBSERVED_PROOFS: readonly ExecutionProof[] = ['verified']
+export const ALL_EXECUTION_PROOFS = Object.keys(EXECUTION_PROOF_LABELS) as ExecutionProof[]
+
+/**
+ * Proof grades where a fill was actually OBSERVED by this system or confirmed
+ * externally. `attested` is a person's word, `assumed` is a policy,
+ * `backfilled` is a migration and `unattributed` is an absence of record —
+ * none of them is an observation, and a UI that treats them as one is making
+ * a claim the data does not support.
+ *
+ * This is the "did anything actually happen" test. It is NOT the "was it
+ * confirmed by someone outside Tesseract" test — see
+ * `EXTERNALLY_CONFIRMED_PROOFS`, which is the far smaller set.
+ */
+export const OBSERVED_PROOFS: readonly ExecutionProof[] = ['broker_confirmed', 'verified']
+
+/**
+ * Proof grades that an authority OUTSIDE Tesseract stands behind.
+ *
+ * Exactly one grade qualifies, and nothing in the system can currently
+ * produce it. That is the honest state of a pilot with no broker integration,
+ * and keeping the set explicit is what stops `verified` drifting into the role
+ * — `verified` means the app applied the trade to the model book and watched
+ * its own numbers change. Nobody outside checked them.
+ *
+ * Any surface that wants to say "this trade really happened in the market"
+ * must test against THIS set, not `OBSERVED_PROOFS`.
+ */
+export const EXTERNALLY_CONFIRMED_PROOFS: readonly ExecutionProof[] = ['broker_confirmed']
 
 /**
  * The events that ARE the decision record: the idea pipeline, the
@@ -289,8 +338,17 @@ export const DECISION_RECORD_TYPES: readonly TimelineEventType[] = [
  * nothing to anybody. These say the same thing in the words a reader already
  * has. `verified` maps to null because an observed fill is the expectation,
  * and labelling the normal case is how every row ends up carrying a badge.
+ *
+ * `broker_confirmed` maps to null for the same reason, and `verified` KEEPS
+ * null rather than gaining an "applied in Tesseract" qualifier. The pilot has
+ * no broker integration, so every execution in the product is `verified` at
+ * best — qualifying it would put a badge on every executed row and say
+ * nothing a reader could act on. The place that distinction belongs is the
+ * grade itself, which `EXECUTION_PROOF_LABELS` and the timeline tooltips
+ * already state outright.
  */
 export const EXECUTION_PROOF_PLAIN: Record<ExecutionProof, string | null> = {
+  broker_confirmed: null,
   verified: null,
   attested: 'trader-reported',
   assumed: 'not confirmed',

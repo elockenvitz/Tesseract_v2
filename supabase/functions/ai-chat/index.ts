@@ -40,6 +40,7 @@ import { requirePublishableKey } from "../_shared/publishable-key.ts";
 import { requireSecretKey } from "../_shared/secret-key.ts";
 import { authorizeVerifiedUser } from "../_shared/verified-user.ts";
 import { resolveOrgForRequest } from "../_shared/attribution-org.ts";
+import { gradeTradesFromEvidence, PROOF_PHRASE } from "../_shared/execution-proof.ts";
 import {
   type ToolStatus,
   type ToolSourceRef,
@@ -2389,6 +2390,29 @@ async function executeResearchTool(
       const reviewRows = reviews.data || [];
       const outcomeRows = outcomes.data || [];
 
+      /*
+       * Execution evidence for the committed trades, so the model reports how
+       * well a fill is EVIDENCED rather than repeating a status column.
+       *
+       * `execution_status` says `complete` for a fill the app watched, a fill
+       * a trader reported from the desk, and a fill the pilot assumed because
+       * a PM approved it. Repeating it unqualified let the assistant assert a
+       * market event on the strength of a policy.
+       *
+       * Read with the caller's own client, keyed on trade ids the caller could
+       * already read, so RLS decides what comes back and this reveals nothing
+       * new. A failure is NOT a tool error: it costs a qualifier, and a
+       * `get_decisions` that fails outright because the evidence table was
+       * unreadable would be a worse answer than one without the grade.
+       */
+      const evidence = tradeRows.length
+        ? await runQuery<any[]>("get_decisions", "execution_evidence",
+            supabase.from("portfolio_trade_events")
+              .select("metadata, detected_by_system, source_type")
+              .in("metadata->>accepted_trade_id", tradeRows.map((t: any) => t.id)))
+        : { data: [] as any[], failed: false };
+      const proofs = gradeTradesFromEvidence((evidence.data || []) as any[]);
+
       // One name lookup for every person referenced by the rows above. Only
       // ids already present in rows the caller could read are resolved, so
       // this reveals nothing the caller could not already see.
@@ -2432,6 +2456,19 @@ async function executeResearchTool(
           "whether it was actually executed, so a committed trade with execution_status " +
           "'not_started' has NOT been traded. decision_reviews and price_target_outcomes are " +
           "retrospective judgements, not decisions.",
+        /*
+         * The status answers "does this system call it executed". The grade
+         * answers "who says so", and they come apart on every trade the pilot
+         * assumed. Stated in words for the same reason as above.
+         */
+        execution_evidence_rule:
+          "execution_status is this system's own label. execution_proof is how well it is " +
+          "evidenced, and execution_proof_note says it in full. Tesseract has NO broker or OMS " +
+          "integration, so no trade is externally confirmed: 'assumed' means a PM approved and a " +
+          "fill was assumed by pilot policy, with nobody observing one. Report the evidence, not " +
+          "the label. Never say a trade was executed, filled or confirmed without the " +
+          "qualification execution_proof gives it, and never treat a null execution_proof as " +
+          "proof that nothing executed.",
         counts: {
           recommendations: recRows.length,
           pm_rulings: rulingRows.length,
@@ -2508,6 +2545,17 @@ async function executeResearchTool(
           execution_status: t.execution_status ?? null,
           execution_completed_at: t.execution_completed_at ?? null,
           executed_by: personLabel(t.executed_by, who),
+          /*
+           * And the grade is not the same fact as the status. `null` means no
+           * evidence row is visible for this trade -- which is not evidence of
+           * no execution, and the phrase below says so rather than leaving the
+           * model to guess.
+           */
+          execution_proof: proofs.get(t.id) ?? null,
+          execution_proof_note: proofs.has(t.id)
+            ? PROOF_PHRASE[proofs.get(t.id)!]
+            : "no execution evidence row is visible to you for this trade; "
+              + "that is not the same as the trade not having executed",
           reconciliation_status: t.reconciliation_status ?? null,
           reconciled_at: t.reconciled_at ?? null,
           // A reverted or inactive row is still a record, but it is not a live

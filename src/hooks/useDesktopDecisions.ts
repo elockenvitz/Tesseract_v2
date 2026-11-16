@@ -28,6 +28,7 @@ import { useOrganization } from '../contexts/OrganizationContext'
 import type { DecisionRecord, DecisionStatus } from '../lib/desktop-decisions/model'
 import { fallbackExecutionFor, needsExecutionFallback } from '../lib/desktop-decisions/execution-link'
 import { isPilotSeedRow } from '../lib/pilot/seed-visibility'
+import { fetchExecutionProofsForTrades } from '../lib/asset-decisions/execution-evidence'
 
 const DAY = 86_400_000
 
@@ -153,6 +154,21 @@ export function useDecisionScan(portfolioId: string | null, options?: { enabled?
         }
       }
 
+      /*
+       * How well each committed trade's execution is actually evidenced.
+       *
+       * `execution_status` and `execution_completed_at` -- the two fields this
+       * surface reports -- are written identically for a fill the app watched
+       * and a fill the pilot assumed on a PM's approval. The grade is one join
+       * away, in `portfolio_trade_events.metadata.origin`.
+       *
+       * Same degradation contract as the batch and executor reads above: a
+       * failure means "no proof", never "no decisions".
+       */
+      const executionProofs = await fetchExecutionProofsForTrades(
+        rows.map(r => r.accepted_trades?.id).filter((x): x is string => !!x),
+      )
+
       return rows.map((r): DecisionRecord => {
         const snap = r.submission_snapshot ?? {}
         const idea = r.trade_queue_items
@@ -198,6 +214,7 @@ export function useDecisionScan(portfolioId: string | null, options?: { enabled?
                 status: exec.execution_status ?? null,
                 completedAt: exec.execution_completed_at ?? null,
                 executedByName: exec.executed_by ? (executorNames.get(exec.executed_by) ?? null) : null,
+                proof: executionProofs.get(exec.id) ?? null,
                 // The committed trade's own figures, as recorded.
                 targetWeight: num(exec.target_weight),
                 deltaWeight: num(exec.delta_weight),

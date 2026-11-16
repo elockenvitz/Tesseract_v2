@@ -43,6 +43,7 @@
  */
 
 import type { EngagementTarget } from '../engagement'
+import type { ExecutionProof } from '../../types/decision-timeline'
 
 /**
  * Every status the model defines.
@@ -116,6 +117,19 @@ export interface DecisionRecord {
     status: string | null
     completedAt: string | null
     executedByName: string | null
+    /**
+     * How well `status` and `completedAt` above are evidenced.
+     *
+     * Those two fields are written identically for a fill the app watched
+     * and a fill the pilot assumed on a PM's approval, so neither can carry
+     * the distinction. It comes from `portfolio_trade_events.metadata.origin`
+     * via `gradeTradeExecution`.
+     *
+     * `null` means no evidence row is visible to this reader -- none exists,
+     * or RLS does not grant it. It is NOT `'unattributed'`, which means a row
+     * exists and does not say where it came from.
+     */
+    proof?: ExecutionProof | null
     /**
      * What was actually committed, as `accepted_trades` recorded it: the
      * weight the book was taken to, the change that made, and the cash it

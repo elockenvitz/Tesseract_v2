@@ -804,10 +804,31 @@ export function summarizeToolResult(
     }
     for (const t of (p.committed_trades || [])) {
       if (!t?.id) continue;
+      /*
+       * The citation carries the GRADE as well as the status, because the
+       * title is what a reader sees when they check the assistant's work.
+       * "execution complete" on its own is true of a fill the app watched and
+       * of one the pilot assumed, and a source line that cannot tell them
+       * apart is the place a false claim becomes citable.
+       *
+       * Only grades that qualify the claim are appended. `verified` and
+       * `broker_confirmed` need no caveat, and labelling the normal case is
+       * how every citation ends up carrying a parenthesis.
+       */
       const exec = t.execution_status ? `, execution ${t.execution_status}` : "";
+      const QUALIFIED: Record<string, string> = {
+        assumed: "assumed, not confirmed",
+        attested: "trader-reported",
+        backfilled: "imported record",
+        unattributed: "provenance unknown",
+      };
+      const grade = typeof t.execution_proof === "string"
+        ? QUALIFIED[t.execution_proof] ?? null
+        : null;
+      const proof = grade ? ` (${grade})` : "";
       sources.push({
         kind: "accepted_trade", id: t.id, asset_id: assetId, symbol,
-        title: `${symbol} ${String(t.action || "").toUpperCase()} committed trade${exec}`,
+        title: `${symbol} ${String(t.action || "").toUpperCase()} committed trade${exec}${proof}`,
         timestamp: t.created_at ?? null,
       });
     }

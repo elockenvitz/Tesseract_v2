@@ -397,3 +397,67 @@ describe('non-vacuity: the old implementations are caught', () => {
     expect(s.result_count).toBeUndefined()
   })
 })
+
+describe('a committed trade\'s citation says how the execution is evidenced', () => {
+  /*
+   * The source line is what a reader checks the assistant's work against, and
+   * "AAPL BUY committed trade, execution complete" is identically true of a
+   * fill the app watched and of one the pilot merely assumed. Tesseract has no
+   * broker integration, so the second is the only kind that actually occurs —
+   * which makes the unqualified title the place a false claim becomes citable.
+   */
+  const decisionsPayload = (proof: string | null) => toolOk('get_decisions', {
+    symbol: 'AAPL',
+    asset_id: 'a-aapl',
+    records_returned: 1,
+    committed_trades: [{
+      id: 'at-1',
+      action: 'buy',
+      execution_status: 'complete',
+      created_at: '2026-11-16T09:00:00Z',
+      ...(proof ? { execution_proof: proof } : {}),
+    }],
+  })
+
+  const titleFor = (proof: string | null) => {
+    const s = summarizeToolResult('get_decisions', decisionsPayload(proof), capture().log)
+    return s.sources?.find(src => src.kind === 'accepted_trade')?.title ?? ''
+  }
+
+  it('qualifies an assumed execution', () => {
+    expect(titleFor('assumed')).toContain('assumed, not confirmed')
+  })
+
+  it('qualifies a trader attestation as reported, not observed', () => {
+    expect(titleFor('attested')).toContain('trader-reported')
+  })
+
+  it('qualifies backfilled and unattributed evidence', () => {
+    expect(titleFor('backfilled')).toContain('imported record')
+    expect(titleFor('unattributed')).toContain('provenance unknown')
+  })
+
+  it('leaves an observed or confirmed execution unqualified', () => {
+    /*
+     * Deliberate: labelling the normal case is how every citation ends up
+     * carrying a parenthesis nobody reads. These two grades need no caveat —
+     * and `verified` says what it means in the payload's own
+     * `execution_proof_note`, which the model reads.
+     */
+    expect(titleFor('verified')).not.toContain('(')
+    expect(titleFor('broker_confirmed')).not.toContain('(')
+  })
+
+  it('still names the trade and its status', () => {
+    // The qualifier is added to the existing title, not substituted for it.
+    expect(titleFor('assumed')).toContain('AAPL BUY committed trade')
+    expect(titleFor('assumed')).toContain('execution complete')
+  })
+
+  it('says nothing extra when no grade was resolvable', () => {
+    // No evidence row visible to this caller. Silence is correct here: the
+    // payload's `execution_proof_note` carries "not the same as the trade not
+    // having executed", and inventing a qualifier would contradict it.
+    expect(titleFor(null)).not.toContain('(')
+  })
+})

@@ -63,8 +63,9 @@ const CHIP_TONE: Record<TimelineEventType, string> = {
   review_recorded: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
 }
 
-/** Only `verified` reads as settled. See `ExecutionProof`. */
+/** Only `broker_confirmed` and `verified` read as settled. See `ExecutionProof`. */
 const PROOF_TONE: Record<ExecutionProof, string> = {
+  broker_confirmed: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
   verified: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
   attested: 'bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
   assumed: 'bg-amber-50 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',

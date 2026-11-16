@@ -79,6 +79,14 @@ export function gradeExecutionProof(row: {
   const origin = typeof row.metadata?.origin === 'string' ? row.metadata.origin : null
 
   // A declared origin is the most specific thing available, so it wins.
+  //
+  // `broker_confirmed` is checked FIRST and before the stamp conjunction
+  // below, because an authoritative external confirmation would plausibly
+  // arrive with `detected_by_system: true` and `source_type: 'holdings_diff'`
+  // too — and if the conjunction got there first, the strongest grade the
+  // system can hold would be silently downgraded to `verified`. Nothing
+  // writes this origin today; see `ExecutionProof`.
+  if (origin === 'broker_confirmed') return 'broker_confirmed'
   if (origin === 'trader_attested') return 'attested'
   if (origin === 'pm_assumed_execution') return 'assumed'
   if (origin === 'paper_execute_backfill') return 'backfilled'
@@ -89,5 +97,57 @@ export function gradeExecutionProof(row: {
     return 'verified'
   }
 
+  return 'unattributed'
+}
+
+/**
+ * Strongest-to-weakest, for picking one grade out of several.
+ *
+ * Not alphabetical and not the declaration order by accident: it is how much
+ * a grade entitles a surface to claim. The order is the whole content of
+ * `gradeTradeExecution` below.
+ */
+const PROOF_STRENGTH: readonly ExecutionProof[] = [
+  'broker_confirmed',
+  'verified',
+  'attested',
+  'assumed',
+  'backfilled',
+  'unattributed',
+]
+
+/**
+ * Grade a TRADE, from every execution evidence row it carries.
+ *
+ * `gradeExecutionProof` grades one row, which is what a timeline needs — one
+ * event, one badge. A trade is different: it can accumulate rows. The pilot
+ * path writes `pm_assumed_execution` at approval, and
+ * `emitAttestedExecutionEvent` deliberately lets a later human attestation
+ * through on top of exactly that, so "assumed, then attested" is a state the
+ * writer is built to produce.
+ *
+ * The strongest row wins, which is the only answer that does not lose
+ * information: a trade whose fill someone later stood behind is better
+ * evidenced than one resting on policy, and reporting the weakest or the
+ * newest row would hide that.
+ *
+ * No rows at all returns `null`, NOT `'unattributed'`. The two are different
+ * facts — "there is a record and it says nothing about where it came from"
+ * versus "there is no record that this executed" — and a trade with no
+ * evidence is the second. One production trade is `complete` with no evidence
+ * row at all, and it must not borrow the look of one that has one.
+ */
+export function gradeTradeExecution(
+  rows: Array<{
+    detected_by_system: boolean | null
+    source_type: string | null
+    metadata: Record<string, unknown> | null
+  }>,
+): ExecutionProof | null {
+  if (rows.length === 0) return null
+  const grades = rows.map(gradeExecutionProof)
+  for (const g of PROOF_STRENGTH) {
+    if (grades.includes(g)) return g
+  }
   return 'unattributed'
 }

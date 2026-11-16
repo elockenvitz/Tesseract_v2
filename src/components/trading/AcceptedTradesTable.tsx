@@ -1063,6 +1063,17 @@ export function AcceptedTradesTable({
                             detail.actual_shares != null && `Actual: ${detail.actual_shares.toLocaleString()}`,
                             detail.delta_shares != null && `Δ: ${detail.delta_shares > 0 ? '+' : ''}${detail.delta_shares.toLocaleString()} sh`,
                             detail.deviation_pct != null && `${(detail.deviation_pct * 100).toFixed(1)}% off`,
+                            /*
+                             * The pill above is derived from the trade's own
+                             * status columns, which an advisory comparison
+                             * deliberately does not write. Without this line
+                             * the numbers would sit under a pill that looks
+                             * like a verdict on them, and a PM would read
+                             * "Settled · Expected 9,890 · Actual 7,780" as a
+                             * reconciled trade. The note is the whole reason
+                             * the comparison was recorded.
+                             */
+                            detail.advisory && detail.advisory_note,
                           ].filter(Boolean).join(' · ')
                         : undefined
                       return (

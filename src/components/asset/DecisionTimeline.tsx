@@ -124,10 +124,17 @@ const EVENT_CHIP: Record<TimelineEventType, string> = {
 }
 
 const PROOF_STYLE: Record<ExecutionProof, { label: string; className: string; title: string }> = {
+  broker_confirmed: {
+    label: 'Confirmed',
+    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+    title: 'Confirmed by an authority outside Tesseract.',
+  },
   verified: {
-    label: 'Verified',
+    label: 'Observed',
     className: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
-    title: 'The app applied this trade and watched the position change.',
+    title:
+      'The app applied this trade to the model book and watched the position change. '
+      + 'No broker confirmed it.',
   },
   attested: {
     label: 'Attested',

@@ -1642,6 +1642,24 @@ export const EXECUTION_ORIGIN = {
    * by guessing from timestamps.
    */
   pmAssumed: 'pm_assumed_execution',
+  /**
+   * An authority outside Tesseract says the shares changed hands.
+   *
+   * **Nothing writes this.** There is no OMS/EMS/broker integration, no
+   * ingestion path that could produce it, and zero such rows in production.
+   * It is declared anyway, for one reason: the grade it maps to is the only
+   * one entitled to say a trade really happened in the market, and without a
+   * name of its own that claim gets made by `paper_execute` — which means
+   * nothing more than that our own arithmetic moved the model book.
+   *
+   * Deliberately NOT in `SYSTEM_APPLIED_ORIGINS`. A broker confirmation says
+   * a fill occurred at the desk; it says nothing about whether this
+   * application incremented holdings, so a revert must not subtract on the
+   * strength of it. If a confirmation path is ever built, whether it also
+   * applies holdings is a decision to make there, explicitly, and to record
+   * on the row it writes.
+   */
+  brokerConfirmed: 'broker_confirmed',
 } as const
 
 /**
