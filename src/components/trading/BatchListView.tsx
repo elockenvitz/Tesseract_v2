@@ -44,6 +44,11 @@ import {
   PHASE_META,
   type LifecyclePhase,
 } from '../../lib/trade-book/lifecycle'
+import { EVIDENCE_BADGE, evidenceStateFor } from '../../lib/trade-book/evidence-badge'
+import {
+  useExecutionProofs,
+  type UseExecutionProofsResult,
+} from '../../hooks/useExecutionProofs'
 import { TradeRationaleLog, historicalCaseProps } from './AcceptedTradesTable'
 import { MobileNoteField } from '../mobile/MobileNoteField'
 import { supabase } from '../../lib/supabase'
@@ -454,6 +459,15 @@ function BatchTradesList({
     return { buyTrades: buys, sellTrades: sells }
   }, [trades])
 
+  /*
+   * One evidence read for the whole batch, passed down rather than fetched
+   * per row. A hook inside `TradeRow` would key on that row's single id and
+   * so issue one request per trade: a batch of fifty would read the same
+   * table fifty times.
+   */
+  const tradeIds = useMemo(() => trades.map(t => t.id), [trades])
+  const evidence = useExecutionProofs(tradeIds)
+
   if (trades.length === 0) {
     return (
       <p className="text-xs text-gray-400 dark:text-gray-500 italic">
@@ -481,6 +495,7 @@ function BatchTradesList({
             batchDescription={batchDescription}
             onAddComment={onAddComment}
             collapseSignal={collapseSignal}
+            evidence={evidence}
           />
         )}
         {sellTrades.length > 0 && (
@@ -491,6 +506,7 @@ function BatchTradesList({
             batchDescription={batchDescription}
             onAddComment={onAddComment}
             collapseSignal={collapseSignal}
+            evidence={evidence}
           />
         )}
       </div>
@@ -523,6 +539,7 @@ function BatchTradesList({
               trades={buyTrades}
               batchDescription={batchDescription}
               onAddComment={onAddComment}
+              evidence={evidence}
             />
           )}
           {sellTrades.length > 0 && (
@@ -533,6 +550,7 @@ function BatchTradesList({
               trades={sellTrades}
               batchDescription={batchDescription}
               onAddComment={onAddComment}
+              evidence={evidence}
             />
           )}
         </table>
@@ -551,6 +569,7 @@ function MobileTradeGroup({
   batchDescription,
   onAddComment,
   collapseSignal,
+  evidence,
 }: {
   label: string
   accent: 'emerald' | 'red'
@@ -558,6 +577,8 @@ function MobileTradeGroup({
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
   collapseSignal: number
+  /** Read once per batch by `BatchTradesList` and handed down. */
+  evidence: UseExecutionProofsResult
 }) {
   return (
     <section>
@@ -580,6 +601,7 @@ function MobileTradeGroup({
             batchDescription={batchDescription}
             onAddComment={onAddComment}
             collapseSignal={collapseSignal}
+            evidence={evidence}
           />
         ))}
       </div>
@@ -593,16 +615,23 @@ function MobileTradeCard({
   batchDescription,
   onAddComment,
   collapseSignal,
+  evidence,
 }: {
   trade: AcceptedTradeWithJoins
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
   collapseSignal: number
+  evidence: UseExecutionProofsResult
 }) {
   const [expanded, setExpanded] = useState(false)
   React.useEffect(() => { if (collapseSignal > 0) setExpanded(false) }, [collapseSignal])
   const result = tradeLifecyclePhase(trade as any)
   const meta = PHASE_META[result.phase]
+  const evidenceState = evidenceStateFor({
+    phase: result.phase,
+    proof: evidence.proofs.get(trade.id),
+    unavailable: evidence.unavailable,
+  })
   const hasNote = !!(trade.acceptance_note && trade.acceptance_note.trim())
   const canExpand = hasNote || !!onAddComment
   const isSellSide = trade.action === 'sell' || trade.action === 'trim'
@@ -665,6 +694,17 @@ function MobileTradeCard({
             <span className={clsx('w-1 h-1 rounded-full', meta.dotClass)} />
             {meta.label}
           </span>
+          {evidenceState && (
+            <span
+              className={clsx(
+                'inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider',
+                EVIDENCE_BADGE[evidenceState].pillClass,
+              )}
+              title={EVIDENCE_BADGE[evidenceState].title}
+            >
+              {EVIDENCE_BADGE[evidenceState].label}
+            </span>
+          )}
           <span className="text-[11px] tabular-nums text-gray-400">
             {trade.delta_shares != null && trade.delta_shares !== 0
               ? `${trade.delta_shares > 0 ? '+' : ''}${trade.delta_shares.toLocaleString()} sh`
@@ -717,6 +757,7 @@ function TradeGroup({
   trades,
   batchDescription,
   onAddComment,
+  evidence,
 }: {
   label: string
   count: number
@@ -724,6 +765,8 @@ function TradeGroup({
   trades: AcceptedTradeWithJoins[]
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
+  /** Read once per batch by `BatchTradesList` and handed down. */
+  evidence: UseExecutionProofsResult
 }) {
   const dotClass =
     accent === 'emerald'
@@ -764,6 +807,7 @@ function TradeGroup({
           rowIndex={i}
           batchDescription={batchDescription}
           onAddComment={onAddComment}
+          evidence={evidence}
         />
       ))}
     </tbody>
@@ -779,15 +823,22 @@ function TradeRow({
   rowIndex,
   batchDescription,
   onAddComment,
+  evidence,
 }: {
   trade: AcceptedTradeWithJoins
   rowIndex: number
   batchDescription: string | null
   onAddComment?: (tradeId: string, content: string) => void
+  evidence: UseExecutionProofsResult
 }) {
   const [expanded, setExpanded] = useState(false)
   const result = tradeLifecyclePhase(trade as any)
   const meta = PHASE_META[result.phase]
+  const evidenceState = evidenceStateFor({
+    phase: result.phase,
+    proof: evidence.proofs.get(trade.id),
+    unavailable: evidence.unavailable,
+  })
   const src = (trade.source || 'adhoc') as 'inbox' | 'simulation' | 'adhoc'
   const srcCfg = SOURCE_CONFIG[src]
   const SourceIcon = srcCfg.icon
@@ -906,15 +957,28 @@ function TradeRow({
         </span>
       </td>
       <td className="px-3 py-2">
-        <span
-          className={clsx(
-            'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold',
-            meta.pillClass,
+        <div className="flex items-center gap-1.5">
+          <span
+            className={clsx(
+              'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[10px] font-semibold',
+              meta.pillClass,
+            )}
+          >
+            <span className={clsx('w-1 h-1 rounded-full', meta.dotClass)} />
+            {meta.label}
+          </span>
+          {evidenceState && (
+            <span
+              className={clsx(
+                'inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider',
+                EVIDENCE_BADGE[evidenceState].pillClass,
+              )}
+              title={EVIDENCE_BADGE[evidenceState].title}
+            >
+              {EVIDENCE_BADGE[evidenceState].label}
+            </span>
           )}
-        >
-          <span className={clsx('w-1 h-1 rounded-full', meta.dotClass)} />
-          {meta.label}
-        </span>
+        </div>
       </td>
       {/* Expand affordance — chevron toggles, message icon indicates the
           row has a rationale or comment thread available. Kept at the

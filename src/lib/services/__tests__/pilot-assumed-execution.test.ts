@@ -588,3 +588,55 @@ describe('the lifecycle transition is observable', () => {
     expect(store.idea.outcome).toBeNull()
   })
 })
+
+/**
+ * `holdings_source` has three values; the pilot policy covers two of them.
+ *
+ * `finalizeTradeForHoldingsSource` is written as "live_feed hands off,
+ * everything else applies", so `paper` works today only as a side effect of
+ * not being `live_feed`. Every execution test in the repo sets `manual_eod`
+ * or `live_feed` — the value `paper` is exercised nowhere, and production has
+ * zero paper portfolios to notice if it broke.
+ *
+ * That gap matters now rather than in principle. Separating execution mode
+ * from holdings source is live work, and the obvious shape of that change —
+ * branch on the mode that applies instead of the one that doesn't — would
+ * stop applying on `paper` with every existing test still green.
+ *
+ * What is pinned here is only the holdings EFFECT. `manual_eod` and `paper`
+ * are not the same claim and must not be collapsed into one: a paper book has
+ * no external reality to be confirmed against, a manual_eod book has fills
+ * arriving by EOD upload. That difference is carried by `metadata.origin`,
+ * which is asserted above and unchanged by the mode.
+ */
+describe('the pilot policy applies on paper too, not just manual_eod', () => {
+  beforeEach(() => {
+    store.holdingsSource = 'paper'
+  })
+
+  it('applies the trade to holdings exactly once', async () => {
+    await accept()
+    expect(appliedCalls()).toHaveLength(1)
+    expect(appliedCalls()[0].args.p_delta_shares).toBe(-2110)
+  })
+
+  it('reaches complete and matched, the same as manual_eod', async () => {
+    await accept()
+    const final = lastUpdate()
+    expect(final.execution_status).toBe('complete')
+    expect(final.reconciliation_status).toBe('matched')
+  })
+
+  it('still records the execution as assumed — nobody observed a paper fill either', async () => {
+    await accept()
+    expect(store.events).toHaveLength(1)
+    expect((store.events[0].metadata as Record<string, unknown>).origin)
+      .toBe(EXECUTION_ORIGIN.pmAssumed)
+    expect(store.events[0].detected_by_system).toBe(false)
+  })
+
+  it('emits execution.recorded, because the modeled book did move', async () => {
+    await accept()
+    expect(memory.execution).toHaveLength(1)
+  })
+})

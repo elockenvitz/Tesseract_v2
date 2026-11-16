@@ -27,6 +27,7 @@ import {
   type OutcomeFilters,
   type DecisionDirection,
 } from '../hooks/useOutcomes'
+import { EXECUTION_PROOF_LABELS, EXECUTION_PROOF_PLAIN } from '../types/decision-timeline'
 import { useAuth } from '../hooks/useAuth'
 import { useOrgMembers, type OrgMember } from '../hooks/useOrgMembers'
 
@@ -163,6 +164,19 @@ const EXEC_BADGE: Record<string, { label: string; cls: string }> = {
   missed:   { label: 'Failed', cls: 'bg-red-100 text-red-700' },
 }
 
+/**
+ * The qualifier an execution badge has to carry, if any.
+ *
+ * Only shown on `executed`. The other statuses are not claims about a fill —
+ * a `pending` trade has nothing to grade, and appending "not confirmed" to
+ * "Pending" would read as a second, contradictory status.
+ */
+function execProofNote(decision: OutcomeDecision): string | null {
+  if (decision.execution_status !== 'executed') return null
+  if (!decision.execution_proof) return null
+  return EXECUTION_PROOF_PLAIN[decision.execution_proof]
+}
+
 function DecisionCard({ decision }: { decision: OutcomeDecision }) {
   const { user } = useAuth()
   const addReflection = useAddReflection()
@@ -218,8 +232,23 @@ function DecisionCard({ decision }: { decision: OutcomeDecision }) {
 
           {/* Status badge */}
           {isActed && EXEC_BADGE[decision.execution_status] && (
-            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${EXEC_BADGE[decision.execution_status].cls}`}>
+            <span
+              className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${EXEC_BADGE[decision.execution_status].cls}`}
+              title={decision.execution_proof
+                ? `Execution evidence: ${EXECUTION_PROOF_LABELS[decision.execution_proof]}`
+                : undefined}
+            >
               {EXEC_BADGE[decision.execution_status].label}
+              {/*
+                * "Executed" alone is the same word for a fill the app watched
+                * and a fill the pilot assumed. The qualifier comes from the
+                * evidence row, and only the grades that need one carry one --
+                * see EXECUTION_PROOF_PLAIN, where an observed fill maps to
+                * null precisely so the normal case stays unbadged.
+                */}
+              {execProofNote(decision) && (
+                <span className="font-normal opacity-80"> · {execProofNote(decision)}</span>
+              )}
             </span>
           )}
           {isPassed && (

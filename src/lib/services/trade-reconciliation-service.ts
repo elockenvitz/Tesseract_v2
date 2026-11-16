@@ -2,20 +2,31 @@
  * Trade Reconciliation Service
  *
  * Compute per-trade reconciliations when a new holdings snapshot lands. For
- * each pending accepted_trade in the reconciliation window, compare the
+ * each active accepted_trade in the reconciliation window, compare the
  * trade's expected ending shares against the asset's actual shares in the
  * new snapshot and produce a trade_reconciliations row + update the trade's
  * summary fields.
  *
  * Scope:
- *   - `live_feed` portfolios — the primary use case. Trades stay pending
- *     until a holdings file lands and reconciles them.
- *   - `manual_eod` portfolios — accepted as a fallback for any historical
- *     pending trades that pre-date the auto-apply fix. New manual_eod trades
- *     are matched immediately on create (see finalizeTradeForHoldingsSource)
- *     and so are skipped here by the reconciliation_status='pending' filter.
- *   - `paper` portfolios — never enter this path. Auto-applied + matched on
- *     create.
+ *   - Only `manual_eod` portfolios reach this function at all — step 1 below
+ *     returns early for `paper` and for `live_feed`.
+ *   - **Every active trade in the window is compared**, including the ones
+ *     `finalizeTradeForHoldingsSource` already applied to the model book.
+ *     This header previously said such trades were "skipped here by the
+ *     reconciliation_status='pending' filter". There is no such filter in
+ *     this function — step 4 selects on `is_active` and `created_at` only.
+ *     The `pending` filter is in `markStaleAcceptedTrades`, further down.
+ *     The comment was wrong and it is the kind of wrong that gets believed:
+ *     it describes a gap that would be serious if it existed, so a reader
+ *     goes looking for the fix rather than for the comparison that is
+ *     already running.
+ *
+ * What the comparison CANNOT do (see `ADVISORY_NOTE`): an EOD upload reports
+ * positions, not fills. For a trade this application already applied under
+ * pilot policy, the comparison is recorded as advisory — neither confirming
+ * nor denying that this specific trade filled — and `reconciliation_status`
+ * is left exactly as it was, because that column means "are these shares
+ * already in holdings", which has not changed.
  *
  *   - Uses trade.target_shares as the authoritative expected (set by the
  *     Lab promotion path). Trades without target_shares fall back to
@@ -33,6 +44,28 @@
 
 import { supabase } from '../supabase'
 import type { ReconciliationStatus } from '../../types/trading'
+import { fetchExecutionProofsForTrades } from '../asset-decisions/execution-evidence'
+import { EXTERNALLY_CONFIRMED_PROOFS } from '../../types/decision-timeline'
+import type { ExecutionProof } from '../../types/decision-timeline'
+
+/**
+ * Grades where THIS application already moved the model book, so the EOD
+ * comparison is measuring partly its own arithmetic.
+ *
+ * `assumed` is the pilot's own apply. `verified` is the app applying the
+ * trade as book of record. `backfilled` rows stand for applies that happened
+ * before provenance stamping. `attested` is NOT here: an attested execution
+ * happened at the desk and the app never incremented holdings for it, so the
+ * upload is an independent measurement of it.
+ */
+const SELF_APPLIED_GRADES: readonly ExecutionProof[] = ['assumed', 'verified', 'backfilled']
+
+/** Why a self-applied trade's comparison is a review item, not a verdict. */
+const ADVISORY_NOTE =
+  'Tesseract already applied this trade to the modeled book, so the EOD upload '
+  + 'is being compared against a baseline that includes it. A holdings upload '
+  + 'reports positions, not fills, so this comparison cannot confirm or deny '
+  + 'that this specific trade was executed. Review it; do not read it as proof.'
 
 // ---------------------------------------------------------------------------
 // Tolerance
@@ -199,9 +232,32 @@ export async function reconcilePortfolioSnapshot(
   }
   if (!trades || trades.length === 0) return empty
 
+  /*
+   * 4b) How each trade's execution is evidenced.
+   *
+   * This decides whether the comparison below is a verdict or a review item,
+   * and it is read from evidence rather than inferred from `holdings_source`:
+   * a `manual_eod` portfolio can hold trades the app applied under pilot
+   * policy AND trades a trader executed at the desk, and only the second kind
+   * is independently measured by the upload.
+   *
+   * Best-effort. A trade with no readable grade is treated as advisory too —
+   * fail closed, because the wrong direction to be wrong in is recording an
+   * unearned verdict.
+   */
+  const proofs = await fetchExecutionProofsForTrades(
+    (trades as any[]).map(t => t.id as string),
+  )
+
   // 5) Build reconciliation rows.
   const rows: Array<Partial<ReconciliationRow>> = []
-  const perTradeSummary: Array<{ id: string; status: ReconciliationStatus; detail: any }> = []
+  const perTradeSummary: Array<{
+    id: string
+    status: ReconciliationStatus
+    detail: any
+    /** True when the status must NOT be mirrored onto the trade as a verdict. */
+    advisory: boolean
+  }> = []
   const counts: ReconcileResult = {
     reconciled: 0,
     skipped: 0,
@@ -232,6 +288,34 @@ export async function reconcilePortfolioSnapshot(
     const delta = actual - expected
     const deviationPct = Math.abs(expected) > 0 ? Math.abs(delta) / Math.abs(expected) : null
 
+    /*
+     * Is this comparison a verdict, or a review item?
+     *
+     * Advisory when THIS application already applied the trade to the model
+     * book, and also when the grade is unreadable or absent — the only grade
+     * that makes the upload an independent measurement is `attested` (the
+     * desk did it, we never touched holdings), and the only grade that
+     * confirms a fill outright is `broker_confirmed`, which nothing writes.
+     */
+    const grade = proofs.get(t.id as string) ?? null
+    const selfApplied = grade != null && SELF_APPLIED_GRADES.includes(grade)
+    const advisory = grade == null || selfApplied
+    const confirmsFill = grade != null && EXTERNALLY_CONFIRMED_PROOFS.includes(grade)
+
+    const detail = {
+      actual_shares: actual,
+      previous_shares: previous,
+      expected_shares: expected,
+      delta_shares: delta,
+      deviation_pct: deviationPct,
+      snapshot_id: snapshotId,
+      evidence_grade: grade,
+      confirms_fill: confirmsFill,
+      advisory,
+      baseline_includes_this_trade: selfApplied,
+      ...(advisory ? { advisory_note: ADVISORY_NOTE } : {}),
+    }
+
     rows.push({
       portfolio_id: portfolioId,
       accepted_trade_id: t.id as string,
@@ -244,19 +328,16 @@ export async function reconcilePortfolioSnapshot(
       delta_shares: delta,
       deviation_pct: deviationPct,
       status,
+      /*
+       * The comparison row is written for EVERY trade, advisory or not. It is
+       * the discrepancy record: queryable per trade and per snapshot, and the
+       * place a mismatch on an assumed execution becomes visible at all.
+       * Suppressing it for advisory trades would be the omission this lane
+       * exists to close.
+       */
+      notes: advisory ? ADVISORY_NOTE : null,
     })
-    perTradeSummary.push({
-      id: t.id as string,
-      status,
-      detail: {
-        actual_shares: actual,
-        previous_shares: previous,
-        expected_shares: expected,
-        delta_shares: delta,
-        deviation_pct: deviationPct,
-        snapshot_id: snapshotId,
-      },
-    })
+    perTradeSummary.push({ id: t.id as string, status, detail, advisory })
     counts.reconciled++
     counts.byStatus[status]++
   }
@@ -274,14 +355,48 @@ export async function reconcilePortfolioSnapshot(
     return counts
   }
 
-  // 7) Mirror the summary onto accepted_trades for fast filtering.
-  // One UPDATE per trade — acceptable for typical daily volumes.
+  /*
+   * 7) Mirror the summary onto accepted_trades for fast filtering.
+   *
+   * One UPDATE per trade — acceptable for typical daily volumes.
+   *
+   * ── Why an advisory comparison does NOT write reconciliation_status ─────
+   *
+   * That column answers "are these shares already reflected in holdings?",
+   * and two readers depend on exactly that meaning:
+   *
+   *   - `pro-forma-baseline-service.fetchPendingCommitments` selects
+   *     `reconciliation_status='pending'` as the L1 layer of commitments NOT
+   *     yet in holdings, and ADDS their shares on top of live holdings. It
+   *     applies no `execution_status` filter, so moving an already-applied
+   *     trade back to `pending` would double-count it on every pro-forma
+   *     surface.
+   *   - `tradeLifecyclePhase` renders `complete` + `matched` as `settled`,
+   *     labelled "fills confirmed, nothing to do".
+   *
+   * For a trade the app already applied, the column is already correct and
+   * nothing the upload says changes it: the shares were in holdings before
+   * the upload and they are in holdings after. Overwriting it with the
+   * comparison result would either make a fill claim the upload cannot
+   * support (`matched` → "fills confirmed") or deny one it cannot disprove
+   * (`deviated` on a baseline that contains the trade itself).
+   *
+   * So the verdict columns are left alone and the comparison lands where it
+   * is true: the `trade_reconciliations` row written above, and
+   * `reconciliation_detail`, which the Trade Book state pill already renders
+   * as its tooltip. `reconciled_at` is still stamped, because the comparison
+   * genuinely ran.
+   *
+   * A trade the DESK executed (`attested`) is not advisory: the app never
+   * moved those holdings, so the upload is an independent measurement and
+   * its result is a verdict. Those still mirror, exactly as before.
+   */
   const now = new Date().toISOString()
   for (const s of perTradeSummary) {
     await supabase
       .from('accepted_trades')
       .update({
-        reconciliation_status: s.status,
+        ...(s.advisory ? {} : { reconciliation_status: s.status }),
         reconciled_at: now,
         reconciliation_detail: s.detail,
         updated_at: now,

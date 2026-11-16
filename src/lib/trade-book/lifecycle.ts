@@ -17,8 +17,22 @@
  *     - needs_review        → discrepancy or stale; PM must look
  *
  *   Terminal phases (no action needed):
- *     - settled             → fills confirmed, nothing to do
+ *     - settled             → nothing left to chase in Tesseract
  *     - cancelled           → intentionally dropped
+ *
+ * `settled` was described here as "fills confirmed". It is not, and cannot
+ * be: it is reached from `execution_status='complete'` plus
+ * `reconciliation_status='matched'`, and BOTH of those are written by this
+ * app about its own bookkeeping. A trade a PM merely approved reaches
+ * `settled` identically to one the app watched move the book, because there
+ * is no broker or OMS connection to tell them apart. The phase is correct
+ * about what it measures; the old wording claimed something external.
+ *
+ * Who stands behind the execution is a separate question, answered from
+ * `portfolio_trade_events` evidence by `evidence-badge.ts` and rendered as a
+ * second badge beside the phase pill. It is deliberately NOT folded in here:
+ * these columns drive the filters, counts and section headers, and the
+ * evidence read is permission-scoped and may legitimately come back empty.
  *
  * For PAPER portfolios the flow collapses: every accepted trade jumps
  * straight to `settled` on commit (createAcceptedTrade finalizes

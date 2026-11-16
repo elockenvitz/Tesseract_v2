@@ -24,9 +24,11 @@ import {
   EVENT_PHASE,
   EVENT_LABELS,
   OBSERVED_PROOFS,
+  EXTERNALLY_CONFIRMED_PROOFS,
+  ALL_EXECUTION_PROOFS,
   TERMINAL_DECISION_STATUSES,
 } from '../../types/decision-timeline'
-import type { TimelineEventType, ExecutionProof } from '../../types/decision-timeline'
+import type { TimelineEventType } from '../../types/decision-timeline'
 
 const SRC = path.resolve(__dirname, '../..')
 const HOOK = fs.readFileSync(path.join(SRC, 'hooks/useAssetDecisionTimeline.ts'), 'utf8')
@@ -179,10 +181,29 @@ describe('gradeExecutionProof', () => {
     })).toBe('unattributed')
   })
 
-  it('treats only `verified` as an observed fill', () => {
-    const all: ExecutionProof[] =
-      ['verified', 'attested', 'assumed', 'backfilled', 'unattributed']
-    expect(all.filter(p => OBSERVED_PROOFS.includes(p))).toEqual(['verified'])
+  it('treats only observation and external confirmation as a fill', () => {
+    /*
+     * Derived from `ALL_EXECUTION_PROOFS`, not written out here.
+     *
+     * This assertion used to carry its own hardcoded list of five grades,
+     * and when `broker_confirmed` was added to the union the list did not
+     * change — so the filter still produced `['verified']` and the test went
+     * on passing while no longer covering the type it is about. A gate that
+     * cannot see a new member of the set it guards is decoration.
+     */
+    expect(ALL_EXECUTION_PROOFS.filter(p => OBSERVED_PROOFS.includes(p)))
+      .toEqual(['broker_confirmed', 'verified'])
+  })
+
+  it('counts NOTHING as externally confirmed that this system can produce', () => {
+    // The narrower claim, and the one that matters: `verified` means the app
+    // watched its own arithmetic move the model book. Only a broker saying so
+    // makes a trade externally confirmed, and nothing writes that origin.
+    expect(ALL_EXECUTION_PROOFS.filter(p => EXTERNALLY_CONFIRMED_PROOFS.includes(p)))
+      .toEqual(['broker_confirmed'])
+    expect(EXTERNALLY_CONFIRMED_PROOFS).not.toContain('verified')
+    expect(EXTERNALLY_CONFIRMED_PROOFS).not.toContain('attested')
+    expect(EXTERNALLY_CONFIRMED_PROOFS).not.toContain('assumed')
   })
 })
 

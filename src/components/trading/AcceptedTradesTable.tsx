@@ -46,6 +46,8 @@ import {
   SEVERITY_META,
   type LifecyclePhase,
 } from '../../lib/trade-book/lifecycle'
+import { EVIDENCE_BADGE, evidenceStateFor } from '../../lib/trade-book/evidence-badge'
+import { useExecutionProofs } from '../../hooks/useExecutionProofs'
 import type {
   AcceptedTradeWithJoins,
   AcceptedTradeComment,
@@ -561,6 +563,18 @@ export function AcceptedTradesTable({
     return m
   }, [trades, holdingsSource])
 
+  /*
+   * What each execution claim is actually worth, from the evidence table.
+   *
+   * Additive to the phase above, never a substitute for it: the pill still
+   * renders from the trade's own columns and does not wait on this. A failed
+   * or still-loading read surfaces as `unavailable`, which is a different
+   * badge from "no evidence" because it is a different claim.
+   */
+  const tradeIds = useMemo(() => trades.map(t => t.id), [trades])
+  const { proofs: executionProofs, unavailable: proofsUnavailable } =
+    useExecutionProofs(tradeIds)
+
   // Build batch lookup
   const batchMap = useMemo(() => {
     const m = new Map<string, TradeBatch>()
@@ -1057,12 +1071,31 @@ export function AcceptedTradesTable({
                       const result = phaseByTradeId.get(trade.id) || { phase: 'queued' as const }
                       const meta = PHASE_META[result.phase]
                       const detail = trade.reconciliation_detail
+                      // null on phases that claim no execution, so a queued
+                      // row does not grow evidence wording about a fill
+                      // nobody has asserted yet.
+                      const evidenceState = evidenceStateFor({
+                        phase: result.phase,
+                        proof: executionProofs.get(trade.id),
+                        unavailable: proofsUnavailable,
+                      })
                       const reconTooltip = detail
                         ? [
                             detail.expected_shares != null && `Expected: ${detail.expected_shares.toLocaleString()}`,
                             detail.actual_shares != null && `Actual: ${detail.actual_shares.toLocaleString()}`,
                             detail.delta_shares != null && `Δ: ${detail.delta_shares > 0 ? '+' : ''}${detail.delta_shares.toLocaleString()} sh`,
                             detail.deviation_pct != null && `${(detail.deviation_pct * 100).toFixed(1)}% off`,
+                            /*
+                             * The pill above is derived from the trade's own
+                             * status columns, which an advisory comparison
+                             * deliberately does not write. Without this line
+                             * the numbers would sit under a pill that looks
+                             * like a verdict on them, and a PM would read
+                             * "Settled · Expected 9,890 · Actual 7,780" as a
+                             * reconciled trade. The note is the whole reason
+                             * the comparison was recorded.
+                             */
+                            detail.advisory && detail.advisory_note,
                           ].filter(Boolean).join(' · ')
                         : undefined
                       return (
@@ -1085,6 +1118,17 @@ export function AcceptedTradesTable({
                               )}
                             >
                               {SEVERITY_META[result.severity].label}
+                            </span>
+                          )}
+                          {evidenceState && (
+                            <span
+                              className={clsx(
+                                'inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider',
+                                EVIDENCE_BADGE[evidenceState].pillClass,
+                              )}
+                              title={EVIDENCE_BADGE[evidenceState].title}
+                            >
+                              {EVIDENCE_BADGE[evidenceState].label}
                             </span>
                           )}
                           {(result.phase === 'needs_review' || result.phase === 'awaiting_recon') &&

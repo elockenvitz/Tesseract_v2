@@ -12,6 +12,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { subDays, differenceInDays, parseISO } from 'date-fns'
+import { fetchExecutionProofsForTrades } from '../lib/asset-decisions/execution-evidence'
+import type { ExecutionProof } from '../types/decision-timeline'
 
 // ============================================================
 // Types
@@ -51,6 +53,19 @@ export interface OutcomeDecision {
   decision_note: string | null
   // Outcome context
   execution_status: ExecutionStatus
+  /**
+   * How well the `execution_status` above is actually evidenced.
+   *
+   * `execution_status: 'executed'` is derived from
+   * `accepted_trades.execution_status === 'complete'`, which is identically
+   * true of a fill the app watched and of a fill the pilot merely assumed.
+   * This field is the difference, read from `portfolio_trade_events`.
+   *
+   * `null` means no evidence row is visible to this reader — either none
+   * exists, or RLS does not grant it. Both render as the unqualified status,
+   * which is what this page showed before.
+   */
+  execution_proof: ExecutionProof | null
   passed_reason: PassedReason
   deferred_until: string | null
   source: string | null
@@ -150,6 +165,9 @@ export function useOutcomeDecisions(filters: Partial<OutcomeFilters> = {}) {
             rationale: t.trade_idea?.rationale || t.trade_idea?.thesis_text || null,
             decision_note: t.acceptance_note,
             execution_status: mapExecStatus(t.execution_status),
+            // Filled in below, from the evidence table, in one read for the
+            // whole page rather than one per card.
+            execution_proof: null,
             passed_reason: null,
             deferred_until: null,
             source: t.source,
@@ -218,6 +236,10 @@ export function useOutcomeDecisions(filters: Partial<OutcomeFilters> = {}) {
             rationale: ti?.rationale || ti?.thesis_text || null,
             decision_note: d.decision_note,
             execution_status: 'unknown',
+            // A passed decision has no trade and therefore no execution to
+            // grade. Not `'unattributed'`: there is nothing here that was
+            // supposed to have evidence.
+            execution_proof: null,
             passed_reason: d.status as PassedReason,
             deferred_until: d.deferred_until,
             source: null,
@@ -233,6 +255,27 @@ export function useOutcomeDecisions(filters: Partial<OutcomeFilters> = {}) {
             _accepted_trade_id: null,
             _decision_request_id: d.id,
           })
+        }
+      }
+
+      /*
+       * Grade every committed trade's execution from the evidence table.
+       *
+       * One read for the page, after both category blocks, so the number of
+       * queries does not grow with the number of cards. Best-effort by
+       * design: `fetchExecutionProofsForTrades` never throws, and a trade it
+       * cannot grade keeps `execution_proof: null` and renders exactly as it
+       * did before this existed.
+       */
+      const tradeIds = results
+        .map(r => r._accepted_trade_id)
+        .filter((id): id is string => !!id)
+      if (tradeIds.length > 0) {
+        const proofs = await fetchExecutionProofsForTrades(tradeIds)
+        for (const r of results) {
+          if (r._accepted_trade_id) {
+            r.execution_proof = proofs.get(r._accepted_trade_id) ?? null
+          }
         }
       }
 

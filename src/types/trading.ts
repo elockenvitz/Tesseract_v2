@@ -1240,6 +1240,44 @@ export interface ReconciliationDetail {
   /** ID of the snapshot that produced this reconciliation. */
   snapshot_id?: string
   feed_timestamp?: string
+
+  /**
+   * How the trade's execution was evidenced when this comparison ran, from
+   * `portfolio_trade_events` via `gradeTradeExecution`. `null` when no
+   * evidence row was readable.
+   */
+  evidence_grade?: string | null
+  /**
+   * Whether this comparison confirms that THIS trade filled.
+   *
+   * Always false today, and that is not a defect. An EOD holdings upload
+   * reports positions, not fills: a position agreeing with what a trade
+   * expected is consistent with the trade having filled, with a different
+   * trade having filled, and with the desk having done nothing while our own
+   * assumed apply moved the number. Only `broker_confirmed` evidence confirms
+   * a fill, and nothing in the system writes that.
+   */
+  confirms_fill?: boolean
+  /**
+   * True when the comparison cannot confirm or deny this trade's fill and is
+   * recorded for review rather than as a verdict. Set for every trade this
+   * application already applied to the model book under pilot policy.
+   */
+  advisory?: boolean
+  /**
+   * True when the previous snapshot used as the comparison baseline already
+   * contains this trade, because `applyTradeToHoldings` wrote it into the
+   * latest snapshot's positions at approval time.
+   *
+   * It matters because it disables one branch of `deriveStatus`: `unmatched`
+   * means "did not move at all, previous snapshot still accurate", and when
+   * the baseline already includes the trade a desk that did nothing produces
+   * a baseline disagreeing with reality by exactly the trade size. The
+   * mismatch still surfaces, as `deviated` rather than `unmatched`.
+   */
+  baseline_includes_this_trade?: boolean
+  /** Why the comparison is advisory, in a sentence a PM can read. */
+  advisory_note?: string
 }
 
 export interface AcceptedTrade {
