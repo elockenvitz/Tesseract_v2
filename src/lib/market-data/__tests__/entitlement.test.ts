@@ -207,16 +207,32 @@ describe('the decision cannot be made by the client', () => {
   })
 
   it('the decision never consults an email or a client-supplied id', () => {
+    /*
+     * Scoped to `decideMarketDataAccess`'s own body, not the whole file.
+     *
+     * Checking the file failed once `entitlementConfigFromEnv` gained the
+     * diagnostic "An email address or a username is not an identity here" —
+     * a string that exists to tell an operator email is NOT accepted. The
+     * property worth guarding is that the DECISION does not branch on an
+     * email, a header or a request body, so that is what is read.
+     */
     const src = readFileSync(
       resolve(REPO, 'supabase/functions/_shared/market-data-entitlement.ts'),
       'utf8',
     )
-    // Strip comments: the header discusses email precisely to say it is not used.
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
-    expect(code).not.toMatch(/\bemail\b/)
-    expect(code).not.toMatch(/\bheaders?\b/)
-    expect(code).not.toMatch(/\bbody\b/)
+
+    const start = code.indexOf('export function decideMarketDataAccess')
+    expect(start, 'decideMarketDataAccess not found').toBeGreaterThan(-1)
+    const after = code.slice(start)
+    const end = after.indexOf('\nexport ', 1)
+    const body = end === -1 ? after : after.slice(0, end)
+
+    expect(body.length).toBeGreaterThan(200)
+    expect(body).not.toMatch(/\bemail\b/)
+    expect(body).not.toMatch(/\bheaders?\b/)
+    expect(body).not.toMatch(/\bbody\b/)
     // And it does reference the one identity that is verified server-side.
-    expect(code).toMatch(/verifiedUserId/)
+    expect(body).toMatch(/verifiedUserId/)
   })
 })

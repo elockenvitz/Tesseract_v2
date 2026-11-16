@@ -121,6 +121,72 @@ export interface EntitlementConfig {
   eodhdAuthorizedUserIds: readonly string[]
 }
 
+/**
+ * Read the entitlement config from the function's environment.
+ *
+ * Returns a discriminated result rather than an empty allowlist, because the
+ * two cases must behave differently and an empty list cannot express both:
+ *
+ *   - `EODHD_AUTHORIZED_USER_IDS` is MISSING  -> the deployment is incomplete.
+ *     The function must refuse to call the provider at all and say so, so the
+ *     operator fixes the configuration. Silently denying every request would
+ *     look identical to a licensing refusal and waste a debugging session.
+ *   - the list is present but does not contain the caller -> an ordinary,
+ *     correct denial, handled by `decideMarketDataAccess`.
+ *
+ * Accepts a comma, space or semicolon separated list, lowercases, and keeps
+ * only well-formed UUIDs — a malformed entry is dropped rather than trusted,
+ * and if that leaves nothing the result is `not_configured`.
+ */
+/**
+ * Declared above its first use on purpose. Both `entitlementConfigFromEnv`
+ * and `decideMarketDataAccess` test identities against it, and a `const` is
+ * not hoisted.
+ */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export type EntitlementConfigResult =
+  | { ok: true; config: EntitlementConfig }
+  | { ok: false; reason: 'not_configured'; detail: string }
+
+export const EODHD_AUTHORIZED_USER_IDS_VAR = 'EODHD_AUTHORIZED_USER_IDS'
+
+export function entitlementConfigFromEnv(
+  getEnv: (key: string) => string | undefined,
+): EntitlementConfigResult {
+  const raw = getEnv(EODHD_AUTHORIZED_USER_IDS_VAR)
+  if (!raw || !raw.trim()) {
+    return {
+      ok: false,
+      reason: 'not_configured',
+      detail:
+        `${EODHD_AUTHORIZED_USER_IDS_VAR} is not set. EODHD is licensed per seat, ` +
+        'so no caller can be authorized until the subscriber\'s auth.users.id is ' +
+        'configured as a function secret.',
+    }
+  }
+
+  const ids = raw
+    .split(/[,;\s]+/)
+    .map(s => s.trim().toLowerCase())
+    .filter(s => s.length > 0)
+
+  const valid = ids.filter(id => UUID_RE.test(id))
+  if (valid.length === 0) {
+    return {
+      ok: false,
+      reason: 'not_configured',
+      detail:
+        `${EODHD_AUTHORIZED_USER_IDS_VAR} is set but contains no well-formed ` +
+        `auth.users.id UUID (${ids.length} entr${ids.length === 1 ? 'y' : 'ies'} ` +
+        'rejected). An email address or a username is not an identity here.',
+    }
+  }
+
+  return { ok: true, config: { eodhdAuthorizedUserIds: valid } }
+}
+
 /** Uses that put data in front of somebody other than the requester. */
 const REDISTRIBUTING_USES: ReadonlySet<MarketDataUse> = new Set<MarketDataUse>([
   'persisted_cache',
@@ -128,9 +194,6 @@ const REDISTRIBUTING_USES: ReadonlySet<MarketDataUse> = new Set<MarketDataUse>([
   'ai_retrieval',
   'fallback',
 ])
-
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * The decision. Pure, synchronous, default-deny.
