@@ -92,6 +92,14 @@ const NODE_TESTS = collectTests(SRC)
   .map((f) => path.relative(dirname, f).split(path.sep).join('/'))
   .filter((rel) => !NEEDS_DOM_DESPITE_NO_HINT.includes(rel));
 
+/**
+ * Node-environment tests for build/safety tooling, which lives outside `src`
+ * and so is invisible to `collectTests`. Without this the suites exist and are
+ * never collected -- a test the runner ignores is decoration, which is the
+ * exact defect class this repo's standing rules name.
+ */
+const TOOLING_TESTS = ['scripts/__tests__/**/*.test.mjs'];
+
 // More info at: https://storybook.js.org/docs/next/writing-tests/integrations/vitest-addon
 export default defineConfig({
   plugins: [react()],
@@ -142,7 +150,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'unit-node',
-          include: NODE_TESTS,
+          include: [...NODE_TESTS, ...TOOLING_TESTS],
           environment: 'node',
           setupFiles: [],
           css: false,
