@@ -197,7 +197,7 @@ describe('reference data makes no claim about when it was true', () => {
     // Comments stripped: the branch now carries a comment explaining why
     // effectiveAt is gone, and prose must not satisfy or break the check.
     const code = FN_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
-    const ref = /case 'reference': \{[\s\S]*?\n      \}/.exec(code)?.[0] ?? ''
+    const ref = /case 'reference': \{[\s\S]*?\n {6}\}/.exec(code)?.[0] ?? ''
     expect(ref, 'the reference branch anchor no longer matches').not.toBe('')
     expect(ref.length).toBeGreaterThan(100)
     expect(ref).toContain('observedAt')
