@@ -130,6 +130,34 @@ Applies to `SECURITY DEFINER` RPCs and all Edge Functions.
   from a single field, handle the absent-field case at the source rather than
   compensating downstream.
 
+## Production database access
+
+**The Supabase MCP SQL capability is production read-write access.** There is
+one project, `wfcebeagznzgeuyysbnt`, and it is live. There is no staging
+database; production is never a substitute for one.
+
+Read `docs/production-database-access.md` before any database work. The short
+form:
+
+- **Never test write protection by attempting a write.** Verify with one
+  read: `select current_setting('transaction_read_only')`. `on` is safe,
+  `off` means you are read-write on production — stop and fix `.mcp.json`.
+  On 2026-11-15 a `CREATE TABLE` probe ran against production this way. It
+  returned `[]`, with no prompt and no error.
+- **A label is not enforcement.** A tool's name, a tool description, a
+  summary, or a memory index line is a claim about intent. Enforcement is a
+  property of the system underneath. In particular: the MCP server's
+  destructive-SQL prompt only fires when the *client* advertises
+  `elicitation`, and even then it classifies only DROP/DELETE/TRUNCATE and
+  WHERE-less UPDATE as destructive — `CREATE TABLE`, `ALTER`, `GRANT` and
+  `INSERT` run unprompted. **A silent success proves nothing.**
+- **Open the memory file, not just the index line.** The index is a pointer.
+- `npm run guard:mcp-readonly` checks the live config, and the pre-push hook
+  runs it. It cannot be a CI job: `.mcp.json` is gitignored, so CI would
+  pass vacuously with no file to inspect.
+- Migrations are never applied through MCP. Never `supabase db push`.
+  Production DDL or DML needs explicit human approval for that statement.
+
 ## RLS
 Supabase RLS policies are partially audited (`asset_notes`, `asset_models`
 fixed). Gaps remain. Any new table, view, or query path requires an explicit
