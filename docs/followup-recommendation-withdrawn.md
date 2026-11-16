@@ -137,9 +137,43 @@ gate passed 16/16 against exactly this mistake.
 - No backfill. The 29 historical withdrawals stay as they are.
 - No change to `RESOLVED_DECISION_REQUEST_STATUSES`. `withdrawn` remains a
   resolved status; what changes is which event a resolution implies.
-- No new table, no migration. `memory_events` already holds arbitrary event
-  types.
+- No new table.
 - No change to `decision.recorded` semantics for the other four statuses.
+
+## CORRECTION (2026-11-16): a migration IS required
+
+This document originally said "no new table, no migration — `memory_events`
+already holds arbitrary event types." **That was wrong, and it was asserted
+without checking.** `memory_events_type_ck` is a CLOSED enumeration:
+
+```
+thesis.reviewed, decision.reviewed, obligation.raised, obligation.cleared,
+rationale.captured, recommendation.submitted, decision.recorded,
+decision.reverted, execution.recorded
+```
+
+`recommendation.withdrawn` is not among them, so the insert fails the CHECK.
+And because `emit()` never throws by design — a lost memory must not fail a
+portfolio action that already succeeded — the failure surfaces as a console
+warning and a dropped event. The feature would have looked implemented and
+recorded nothing.
+
+`supabase/migrations/20261116020000_memory_events_recommendation_withdrawn.sql`
+adds the value. It is **authored and UNAPPLIED**, so until it is applied:
+
+- withdrawals still succeed; only their memory is lost;
+- **no `decision.recorded` event is written for a withdrawal any more**, which
+  is the part that needed no migration and is live.
+
+That second point is why the code ships ahead of the migration. The
+alternative was not "no change": before it, a withdrawal wrote a PM decision
+that nobody made. A gap in history is strictly better than a fabrication in
+it, and production holds 29 withdrawals with **zero** inside the Spine epoch,
+so nothing previously captured is lost either way.
+
+**The approval gate is applying that migration.** It is additive (nine values
+plus one), cannot be violated by any existing row, and touches no table,
+column, policy or grant.
 
 ## RLS posture
 

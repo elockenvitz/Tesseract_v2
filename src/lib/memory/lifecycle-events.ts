@@ -34,9 +34,19 @@
  */
 import { supabase } from '../supabase'
 
-/** The vocabulary this module writes. Mirrors the CHECK on `memory_events`. */
+/**
+ * The vocabulary this module writes. Mirrors the CHECK on `memory_events`.
+ *
+ * `memory_events_type_ck` is a CLOSED enumeration, so this union is not
+ * documentation — it is a claim about what the database will accept, and a
+ * value present here but absent there is an event that `emit` reports as a
+ * warning and drops. `recommendation.withdrawn` is in exactly that state
+ * until `20261116020000_memory_events_recommendation_withdrawn.sql` is
+ * applied. See the writer for what that means in practice.
+ */
 export type LifecycleEventType =
   | 'recommendation.submitted'
+  | 'recommendation.withdrawn'
   | 'decision.recorded'
   | 'decision.reverted'
   | 'execution.recorded'
@@ -259,6 +269,23 @@ export const dedupeKeys = {
   ].join(':'),
   decisionRecorded: (drId: string, status: string, reviewedAt: string | null) =>
     ['decision.recorded', drId, status, eventInstantToken(reviewedAt)].join(':'),
+  /**
+   * The request plus the withdrawal's own timestamp.
+   *
+   * Same shape and same reasoning as `decisionRecorded`: `reviewed_at` as the
+   * withdrawing UPDATE wrote it, rendered through `eventInstantToken` so the
+   * live writer and a later reconciler agree. The status is NOT in the key —
+   * unlike a PM ruling, which has five possible outcomes, a withdrawal has
+   * exactly one, so including it would add a constant.
+   *
+   * The FROM status is deliberately not in the key either. It is recorded in
+   * the payload because it is a fact worth keeping, but a withdrawal is
+   * identified by which recommendation was pulled and when; keying on the
+   * prior status would let a retry that raced a status change write a second
+   * withdrawal of the same recommendation.
+   */
+  recommendationWithdrawn: (drId: string, reviewedAt: string | null) =>
+    ['recommendation.withdrawn', drId, eventInstantToken(reviewedAt)].join(':'),
   decisionReverted: (acceptedTradeId: string) => `decision.reverted:${acceptedTradeId}`,
   executionRecorded: (acceptedTradeId: string) => `execution.recorded:${acceptedTradeId}`,
 }
@@ -424,6 +451,110 @@ export async function recordDecisionRecorded(input: DecisionRecordedInput) {
       input.reviewedAt,
     ),
     provenance: input.provenance ?? 'ui:decision-inbox',
+  })
+}
+
+export interface RecommendationWithdrawnInput {
+  organizationId: string
+  actorId: string
+  decisionRequestId: string
+  /**
+   * The status the request held BEFORE the withdrawal: pending,
+   * under_review or needs_discussion.
+   *
+   * Required, because "withdrawn from needs_discussion" and "withdrawn from
+   * pending" are different events in a reader's terms — the first means a
+   * conversation was abandoned, the second that nobody had looked yet. A
+   * reconstruction that flattens them loses the distinction permanently,
+   * since the prior status is gone from the row the moment it is overwritten.
+   */
+  fromStatus: string
+  /**
+   * `decision_requests.reviewed_at` AS THE WITHDRAWING WRITE SET IT.
+   *
+   * Required and read back from the UPDATE's returning row, never
+   * `new Date()` at emit time. Same reason as `DecisionRecordedInput`: a
+   * freshly minted clock reading is not the canonical row's identity, and a
+   * key built from one cannot be rebuilt from the database.
+   */
+  reviewedAt: string | null
+  /**
+   * The rationale the user actually typed, or null/undefined when they typed
+   * none.
+   *
+   * NEVER a placeholder, a default, or a string the code composed. All three
+   * modal withdrawal paths record no note at all, and an absent rationale is
+   * itself a fact: "withdrawn, no reason given" is the truth, and
+   * manufacturing one would put words in an analyst's mouth in a record the
+   * product exists to keep faithful. `compact()` drops it when empty, so the
+   * event carries no `rationale` key rather than a null one — an absent key
+   * and a null key read differently to anyone querying the history.
+   */
+  rationale?: string | null
+  proposalId?: string | null
+  tradeQueueItemId?: string | null
+  portfolioId?: string | null
+  provenance?: string
+}
+
+/**
+ * An analyst withdrew their own recommendation.
+ *
+ * NOT a PM ruling, and this is the entire reason the event type exists.
+ * `withdrawn` is in `RESOLVED_DECISION_REQUEST_STATUSES`, so before this
+ * existed `updateDecisionRequest` emitted `decision.recorded` for it — which
+ * put a decision in the record that nobody made and inflated any count of
+ * "decisions the PM took" in a way no reader could detect. The three
+ * `TradeIdeaDetailModal` paths meanwhile emitted nothing, so the same act had
+ * two different wrong answers depending on which button the user pressed.
+ *
+ * Subject is the REQUEST, not the idea. `recommendation.submitted` takes the
+ * idea as subject because "this idea was recommended" belongs on an idea's
+ * timeline; a withdrawal is about the specific request that was pulled, and
+ * an idea may have several in different books with different fates.
+ *
+ * ── Until the migration is applied, this records NOTHING ──────────────────
+ *
+ * `memory_events_type_ck` is a closed enumeration that does not yet include
+ * `recommendation.withdrawn`. Until
+ * `20261116020000_memory_events_recommendation_withdrawn.sql` is applied,
+ * every call here fails the CHECK, and `emit` — which never throws, by
+ * design — logs a warning and returns `{written: false}`. The withdrawal
+ * itself still succeeds; only its memory is lost.
+ *
+ * That is deliberate and it is still an improvement, because the alternative
+ * is not "no change". Routing withdrawal away from `recordDecisionRecorded`
+ * stops a WRONG event being written today, and a gap in history is strictly
+ * better than a fabricated PM decision in it. Production holds 29 historical
+ * withdrawals and ZERO inside the Spine epoch, so nothing is being lost that
+ * was previously captured.
+ */
+export async function recordRecommendationWithdrawn(input: RecommendationWithdrawnInput) {
+  return emit({
+    organizationId: input.organizationId,
+    actorId: input.actorId,
+    eventType: 'recommendation.withdrawn',
+    subjectType: 'decision',
+    subjectId: input.decisionRequestId,
+    sourceType: 'decision_requests',
+    sourceId: input.decisionRequestId,
+    // Only claim the column when there is something in it to read.
+    sourceField: input.rationale ? 'decision_note' : undefined,
+    related: {
+      trade_queue_item_id: input.tradeQueueItemId,
+      proposal_id: input.proposalId,
+      portfolio_id: input.portfolioId,
+    },
+    payload: {
+      from_status: input.fromStatus,
+      to_status: 'withdrawn',
+      rationale: input.rationale,
+    },
+    dedupeKey: dedupeKeys.recommendationWithdrawn(
+      input.decisionRequestId,
+      input.reviewedAt,
+    ),
+    provenance: input.provenance ?? 'ui:trade-idea',
   })
 }
 

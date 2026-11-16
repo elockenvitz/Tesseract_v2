@@ -43,9 +43,11 @@ vi.mock('../../supabase', () => ({
 
 import {
   recordRecommendationSubmitted,
+  recordRecommendationWithdrawn,
   recordDecisionRecorded,
   recordDecisionReverted,
   recordExecutionRecorded,
+  dedupeKeys,
   resolveOrganizationIdForPortfolio,
   __resetOrgCacheForTests,
 } from '../lifecycle-events'
@@ -520,5 +522,186 @@ describe('organisation resolution', () => {
 
   it('returns null for a missing portfolio id', async () => {
     await expect(resolveOrganizationIdForPortfolio(null)).resolves.toBeNull()
+  })
+})
+
+/* ──────────────────── a withdrawal is not a PM ruling ───────────────────── */
+
+const WITHDRAWN_AT = '2026-11-16T09:30:00.456Z'
+
+/** The arguments every withdrawal case starts from. */
+const WITHDRAW = {
+  ...BASE,
+  decisionRequestId: 'dr-77',
+  fromStatus: 'under_review',
+  reviewedAt: WITHDRAWN_AT,
+}
+
+describe('recommendation.withdrawn is its own event, not a decision', () => {
+  it('writes recommendation.withdrawn and never decision.recorded', async () => {
+    installUniqueIndex()
+    await recordRecommendationWithdrawn(WITHDRAW)
+
+    expect(insertSpy).toHaveBeenCalledTimes(1)
+    const row = insertSpy.mock.calls[0][0]
+    expect(row.event_type).toBe('recommendation.withdrawn')
+    // The whole point of the change. A withdrawal must not appear anywhere as
+    // a decision the PM recorded.
+    expect(row.event_type).not.toBe('decision.recorded')
+    expect(row.dedupe_key).not.toContain('decision.recorded')
+  })
+
+  it('carries the actor, the recommendation identity and the status transition', async () => {
+    installUniqueIndex()
+    await recordRecommendationWithdrawn({
+      ...WITHDRAW,
+      proposalId: 'prop-3',
+      tradeQueueItemId: 'tqi-4',
+      portfolioId: 'pf-5',
+    })
+
+    const row = insertSpy.mock.calls[0][0]
+    expect(row.actor_id).toBe('user-1')
+    expect(row.organization_id).toBe('org-1')
+    // Identity: the request, as both subject and source.
+    expect(row.subject_type).toBe('decision')
+    expect(row.subject_id).toBe('dr-77')
+    expect(row.source_type).toBe('decision_requests')
+    expect(row.source_id).toBe('dr-77')
+    // The transition, both ends of it.
+    expect(row.payload).toMatchObject({ from_status: 'under_review', to_status: 'withdrawn' })
+    // Navigation pointers, not copies.
+    expect(row.related).toMatchObject({
+      proposal_id: 'prop-3', trade_queue_item_id: 'tqi-4', portfolio_id: 'pf-5',
+    })
+  })
+
+  it('records NO rationale when the user supplied none', async () => {
+    installUniqueIndex()
+    await recordRecommendationWithdrawn({ ...WITHDRAW, rationale: null })
+
+    const row = insertSpy.mock.calls[0][0]
+    // Absent, not null. An absent key and a null key read differently to
+    // anyone querying the history, and inventing a reason an analyst never
+    // gave is the specific thing this must never do.
+    expect(row.payload).not.toHaveProperty('rationale')
+    expect(row.source_field).toBeNull()
+  })
+
+  it('records the rationale, and claims the column, when the user did supply one', async () => {
+    installUniqueIndex()
+    await recordRecommendationWithdrawn({
+      ...WITHDRAW, rationale: 'Thesis broke on the 10-K.',
+    })
+
+    const row = insertSpy.mock.calls[0][0]
+    expect(row.payload.rationale).toBe('Thesis broke on the 10-K.')
+    expect(row.source_field).toBe('decision_note')
+  })
+
+  it('an empty-string rationale is treated as none, not as an empty reason', async () => {
+    installUniqueIndex()
+    await recordRecommendationWithdrawn({ ...WITHDRAW, rationale: '' })
+    const row = insertSpy.mock.calls[0][0]
+    expect(row.payload).not.toHaveProperty('rationale')
+    expect(row.source_field).toBeNull()
+  })
+
+  it('a retried withdrawal lands exactly once', async () => {
+    const seen = installUniqueIndex()
+
+    const first = await recordRecommendationWithdrawn(WITHDRAW)
+    const second = await recordRecommendationWithdrawn(WITHDRAW)
+    const third = await recordRecommendationWithdrawn(WITHDRAW)
+
+    expect(first).toEqual({ written: true, duplicate: false })
+    expect(second).toEqual({ written: false, duplicate: true })
+    expect(third).toEqual({ written: false, duplicate: true })
+    expect(seen.size).toBe(1)
+  })
+
+  it('NEGATIVE CONTROL: two different requests are two withdrawals', async () => {
+    const seen = installUniqueIndex()
+    await recordRecommendationWithdrawn(WITHDRAW)
+    await recordRecommendationWithdrawn({ ...WITHDRAW, decisionRequestId: 'dr-78' })
+    expect(seen.size).toBe(2)
+  })
+
+  it('the prior status is NOT part of the identity, so a raced retry still lands once', async () => {
+    // A retry that read a different prior status must not be able to record a
+    // second withdrawal of the same recommendation at the same instant.
+    const seen = installUniqueIndex()
+    await recordRecommendationWithdrawn({ ...WITHDRAW, fromStatus: 'pending' })
+    await recordRecommendationWithdrawn({ ...WITHDRAW, fromStatus: 'needs_discussion' })
+    expect(seen.size).toBe(1)
+  })
+
+  it('a genuinely later withdrawal of the same request IS a new event', async () => {
+    const seen = installUniqueIndex()
+    await recordRecommendationWithdrawn(WITHDRAW)
+    await recordRecommendationWithdrawn({ ...WITHDRAW, reviewedAt: '2026-11-17T09:30:00.456Z' })
+    expect(seen.size).toBe(2)
+  })
+
+  it('the key is reproducible from the row in all three timestamp spellings', async () => {
+    // The defect fixed in c8ae04e4: the live writer and a later reconciler
+    // must render the same instant identically, and Postgres, PostgREST and
+    // the browser all spell it differently.
+    const browser = dedupeKeys.recommendationWithdrawn('dr-77', '2026-11-16T09:30:00.456Z')
+    const postgres = dedupeKeys.recommendationWithdrawn('dr-77', '2026-11-16 09:30:00.456+00')
+    const postgrest = dedupeKeys.recommendationWithdrawn('dr-77', '2026-11-16T09:30:00.456789+00:00')
+    expect(postgres).toBe(browser)
+    expect(postgrest).toBe(browser)
+  })
+
+  it('a different organisation cannot collide with this one', async () => {
+    // The unique index is (organization_id, dedupe_key). Two orgs withdrawing
+    // requests that happen to share an id must both be recorded, and neither
+    // may mask the other.
+    const seen = installUniqueIndex()
+    await recordRecommendationWithdrawn(WITHDRAW)
+    await recordRecommendationWithdrawn({ ...WITHDRAW, organizationId: 'org-2' })
+    expect(seen.size).toBe(2)
+    expect(insertSpy.mock.calls.map(c => c[0].organization_id)).toEqual(['org-1', 'org-2'])
+  })
+
+  it('a memory failure never fails the withdrawal', async () => {
+    insertSpy.mockImplementation(() => Promise.reject(new Error('network down')))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    // Must resolve, not throw: the request has already been withdrawn.
+    await expect(recordRecommendationWithdrawn(WITHDRAW))
+      .resolves.toEqual({ written: false, duplicate: false })
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it('the CHECK rejecting the new type degrades to a warning, not a thrown error', async () => {
+    // Until 20261116020000 is applied, `memory_events_type_ck` refuses this
+    // event_type. This pins the behaviour in that window: the withdrawal
+    // succeeds, the memory is lost, and nothing explodes in the user's face.
+    insertSpy.mockImplementation(() => Promise.resolve({
+      error: {
+        message: 'new row for relation "memory_events" violates check constraint "memory_events_type_ck"',
+      },
+    }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await expect(recordRecommendationWithdrawn(WITHDRAW))
+      .resolves.toEqual({ written: false, duplicate: false })
+    // Not reported as a duplicate: a rejected event is absent, and calling it
+    // a duplicate would tell a reconciler it was already recorded.
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it('REGRESSION: the four real PM outcomes still record a decision', async () => {
+    // The guard that stops this change from silently reclassifying rulings.
+    for (const status of ['accepted', 'accepted_with_modification', 'rejected', 'deferred']) {
+      insertSpy.mockReset()
+      installUniqueIndex()
+      await recordDecisionRecorded({
+        ...BASE, decisionRequestId: `dr-${status}`, status, reviewedAt: REVIEWED_AT,
+      })
+      const row = insertSpy.mock.calls[0][0]
+      expect(row.event_type, status).toBe('decision.recorded')
+      expect(row.payload.status, status).toBe(status)
+    }
   })
 })

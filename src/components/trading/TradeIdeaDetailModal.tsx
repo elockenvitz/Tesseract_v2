@@ -43,6 +43,7 @@ import {
   Loader2,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { withdrawDecisionRequestsForProposal } from '../../lib/services/decision-request-service'
 import { stageLabel as ideaStageLabel } from '../../lib/ideas/stage-model'
 import { fetchLatestBenchmarkWeightsFor } from '../../lib/holdings/benchmark-latest-query'
 import { emitAuditEvent } from '../../lib/audit'
@@ -4496,8 +4497,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                               <div className="flex items-center gap-2">
                                                 <button type="button" onClick={async () => {
                                                   setConfirmWithdrawId(null)
-                                                  const { data: activeReqs } = await supabase.from('decision_requests').select('id').eq('proposal_id', proposal.id).in('status', ['pending', 'under_review', 'needs_discussion'])
-                                                  if (activeReqs?.length) await Promise.all(activeReqs.map((r: any) => supabase.from('decision_requests').update({ status: 'withdrawn', reviewed_at: new Date().toISOString(), reviewed_by: user?.id }).eq('id', r.id)))
+                                                  await withdrawDecisionRequestsForProposal(proposal.id, user?.id, 'ui:trade-idea:pair-leg')
                                                   const { error } = await supabase.from('trade_proposals').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', proposal.id).eq('user_id', user?.id)
                                                   if (!error) {
                                                     await supabase.from('trade_events').insert({ trade_queue_item_id: proposal.trade_queue_item_id, event_type: 'proposal_withdrawn', actor_id: user?.id, proposal_id: proposal.id, metadata: { portfolio_id: proposal.portfolio_id, portfolio_name: proposal.portfolio?.name || null, weight: proposal.weight != null ? Number(proposal.weight) : null, is_pair_trade: true } })
@@ -6825,8 +6825,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                               setConfirmWithdrawId(null)
                                               queryClient.setQueryData(['trade-proposals', tradeId, pairTradeLegIds], (old: any) => old?.filter((p: any) => p.id !== proposal.id) ?? [])
                                               try {
-                                                const { data: activeReqs } = await supabase.from('decision_requests').select('id').eq('proposal_id', proposal.id).in('status', ['pending', 'under_review', 'needs_discussion'])
-                                                if (activeReqs?.length) await Promise.all(activeReqs.map((r: any) => supabase.from('decision_requests').update({ status: 'withdrawn', reviewed_at: new Date().toISOString(), reviewed_by: user?.id }).eq('id', r.id)))
+                                                await withdrawDecisionRequestsForProposal(proposal.id, user?.id, 'ui:trade-idea:portfolio')
                                                 await supabase.from('trade_proposals').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', proposal.id).eq('user_id', user?.id)
                                                 await supabase.from('trade_events').insert({ trade_queue_item_id: tradeId, event_type: 'proposal_withdrawn', actor_id: user?.id, proposal_id: proposal.id, metadata: { portfolio_id: portfolio.id, portfolio_name: portfolio.name, weight: proposal.weight != null ? Number(proposal.weight) : null } })
                                               } catch (e) { console.error('[Withdraw] failed:', e) }
@@ -7187,8 +7186,7 @@ export function TradeIdeaDetailModal({ isOpen, tradeId, onClose, initialTab = 'd
                                           queryClient.setQueryData(['trade-proposals', tradeId, pairTradeLegIds], (old: any) => old?.filter((p: any) => p.id !== userProposal.id) ?? [])
                                           setExpandedProposalInputs(prev => { const next = new Set(prev); next.delete(portfolio.id); return next })
                                           try {
-                                            const { data: activeReqs } = await supabase.from('decision_requests').select('id').eq('proposal_id', userProposal.id).in('status', ['pending', 'under_review', 'needs_discussion'])
-                                            if (activeReqs?.length) await Promise.all(activeReqs.map((r: any) => supabase.from('decision_requests').update({ status: 'withdrawn', reviewed_at: new Date().toISOString(), reviewed_by: user?.id }).eq('id', r.id)))
+                                            await withdrawDecisionRequestsForProposal(userProposal.id, user?.id, 'ui:trade-idea:own-proposal')
                                             await supabase.from('trade_proposals').update({ is_active: false, updated_at: new Date().toISOString() }).eq('id', userProposal.id).eq('user_id', user?.id)
                                             await supabase.from('trade_events').insert({ trade_queue_item_id: tradeId, event_type: 'proposal_withdrawn', actor_id: user?.id, proposal_id: userProposal.id, metadata: { portfolio_id: portfolio.id, portfolio_name: portfolio.name, weight: userProposal.weight != null ? Number(userProposal.weight) : null } })
                                           } catch (e) { console.error('[Withdraw] failed:', e) }

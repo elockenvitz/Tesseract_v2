@@ -18,6 +18,7 @@
 import { supabase } from '../supabase'
 import {
   recordDecisionRecorded,
+  recordRecommendationWithdrawn,
   resolveOrganizationIdForPortfolio,
 } from '../memory/lifecycle-events'
 import { syncDecisionRevisitObligation } from '../memory/obligation-writer'
@@ -74,6 +75,19 @@ export interface UpdateDecisionRequestInput {
   deferredUntil?: string | null
   deferredTrigger?: import('../../types/trading').DeferralTrigger | null
   acceptedTradeId?: string | null
+  /**
+   * The status the request held before this call, when the caller knows it.
+   *
+   * Only read for a withdrawal, where the prior status is a recorded fact —
+   * withdrawing from `needs_discussion` abandons a conversation, withdrawing
+   * from `pending` means nobody had looked yet. The UPDATE overwrites it, so
+   * if it is not passed in it cannot be recovered afterwards and the event
+   * records `unknown` rather than inventing a plausible value.
+   *
+   * Optional, because the four PM outcomes do not use it and requiring it
+   * would churn every existing call site for no gain.
+   */
+  previousStatus?: DecisionRequestStatus | null
 }
 
 /*
@@ -215,6 +229,100 @@ export async function getNeedsDecisionCountForIdea(tradeQueueItemId: string): Pr
 // Update / Delete
 // ---------------------------------------------------------------------------
 
+/**
+ * Withdraw every still-open decision request for a proposal, and record it.
+ *
+ * ── Why this exists as a function ─────────────────────────────────────────
+ *
+ * `TradeIdeaDetailModal` had this logic inline THREE times — pair-trade leg,
+ * single portfolio, and the user's own proposal — byte-identical except for
+ * which proposal id it read. All three wrote `status`, `reviewed_at` and
+ * `reviewed_by` straight to the table, bypassing `updateDecisionRequest`, so
+ * all three recorded nothing in organisational memory. Three copies of a
+ * write is three places to forget the event, and that is exactly what
+ * happened.
+ *
+ * It deliberately does NOT route through `updateDecisionRequest`: that
+ * function resolves the user, stamps its own timestamp and throws on failure,
+ * one call per request. A bulk withdrawal wants ONE timestamp across the
+ * batch (so the events share an instant, as the act did) and must not abort
+ * half way leaving some requests pulled and others live.
+ *
+ * Returns the ids it withdrew, so a caller can tell "nothing was open" from
+ * "the write failed".
+ */
+export async function withdrawDecisionRequestsForProposal(
+  proposalId: string,
+  actorId: string | null | undefined,
+  provenance = 'ui:trade-idea-modal',
+): Promise<{ withdrawnIds: string[] }> {
+  if (!proposalId || !actorId) return { withdrawnIds: [] }
+
+  // `status` is selected because it is the event's `from_status` and this
+  // UPDATE is about to destroy it. Selecting only `id`, as the inline copies
+  // did, discards it irrecoverably.
+  const { data: open, error: readErr } = await supabase
+    .from('decision_requests')
+    .select('id, status, portfolio_id, trade_queue_item_id')
+    .eq('proposal_id', proposalId)
+    .in('status', [...ACTIVE_DECISION_REQUEST_STATUSES])
+
+  if (readErr || !open?.length) return { withdrawnIds: [] }
+
+  // One instant for the whole batch: these withdrawals are one user action,
+  // and giving each row its own clock reading would make them look like
+  // separate events that happened to be close together.
+  const reviewedAt = new Date().toISOString()
+  const withdrawnIds: string[] = []
+
+  for (const row of open as unknown as Array<{
+    id: string
+    status: string
+    portfolio_id: string | null
+    trade_queue_item_id: string | null
+  }>) {
+    const { data: updated, error } = await supabase
+      .from('decision_requests')
+      .update({ status: 'withdrawn', reviewed_at: reviewedAt, reviewed_by: actorId })
+      .eq('id', row.id)
+      // Read back what the server stored, so the event's identity comes from
+      // the row and not from this client's clock.
+      .select('id, reviewed_at, portfolio_id, trade_queue_item_id')
+      .maybeSingle()
+
+    if (error) continue
+    withdrawnIds.push(row.id)
+
+    const stored = updated as unknown as {
+      reviewed_at?: string | null
+      portfolio_id?: string | null
+      trade_queue_item_id?: string | null
+    } | null
+
+    const organizationId = await resolveOrganizationIdForPortfolio(
+      stored?.portfolio_id ?? row.portfolio_id,
+    )
+    if (!organizationId) continue
+
+    await recordRecommendationWithdrawn({
+      organizationId,
+      actorId,
+      decisionRequestId: row.id,
+      fromStatus: row.status,
+      reviewedAt: stored?.reviewed_at ?? reviewedAt,
+      // These paths offer the user no field to explain themselves, so there
+      // is genuinely no rationale. Recorded as absent, not as a placeholder.
+      rationale: null,
+      proposalId,
+      tradeQueueItemId: stored?.trade_queue_item_id ?? row.trade_queue_item_id ?? null,
+      portfolioId: stored?.portfolio_id ?? row.portfolio_id ?? null,
+      provenance,
+    })
+  }
+
+  return { withdrawnIds }
+}
+
 export async function updateDecisionRequest(
   requestId: string,
   input: UpdateDecisionRequestInput
@@ -267,24 +375,54 @@ export async function updateDecisionRequest(
   // one, and it is recorded as `decision.reverted` by the revert itself. An
   // unguarded emit here would log a phantom decision every time a PM undid a
   // trade.
+  // A WITHDRAWAL IS NOT A RULING. `withdrawn` is a resolved status, so the
+  // single `isResolvedDecisionRequestStatus` gate above used to send it to
+  // `recordDecisionRecorded` along with the four real outcomes — recording a
+  // decision nobody made, and inflating any count of what the PM decided.
+  // An analyst pulling their own recommendation is a different kind of
+  // happening and gets its own event.
   if (isResolvedDecisionRequestStatus(input.status)) {
     const organizationId = await resolveOrganizationIdForPortfolio(updated.portfolio_id)
     if (organizationId) {
-      await recordDecisionRecorded({
-        organizationId,
-        actorId: user.id,
-        decisionRequestId: requestId,
-        status: input.status,
-        // The server's own value for the column this same UPDATE just wrote,
-        // not a fresh clock reading. It is the event's identity: see
-        // `dedupeKeys.decisionRecorded`. Falls back to the string that was
-        // sent, which is what was stored, if the select-back omits it.
-        reviewedAt: updated.reviewed_at ?? (updates.reviewed_at as string | null) ?? null,
-        tradeQueueItemId: updated.trade_queue_item_id ?? null,
-        proposalId: updated.proposal_id ?? null,
-        portfolioId: updated.portfolio_id ?? null,
-        acceptedTradeId: (updates.accepted_trade_id as string | null) ?? null,
-      })
+      // The server's own value for the column this same UPDATE just wrote,
+      // not a fresh clock reading. It is the event's identity: see
+      // `dedupeKeys`. Falls back to the string that was sent, which is what
+      // was stored, if the select-back omits it.
+      const reviewedAt =
+        updated.reviewed_at ?? (updates.reviewed_at as string | null) ?? null
+
+      if (input.status === 'withdrawn') {
+        await recordRecommendationWithdrawn({
+          organizationId,
+          actorId: user.id,
+          decisionRequestId: requestId,
+          // `previousStatus` is supplied by the caller that read the row
+          // before updating it. Absent, the prior status is unrecoverable —
+          // this UPDATE has already overwritten it — so it is recorded as
+          // unknown rather than guessed at.
+          fromStatus: input.previousStatus ?? 'unknown',
+          reviewedAt,
+          // Only what the user actually typed on THIS call. Never the row's
+          // existing note, which a previous action may have written.
+          rationale: input.decisionNote ?? null,
+          tradeQueueItemId: updated.trade_queue_item_id ?? null,
+          proposalId: updated.proposal_id ?? null,
+          portfolioId: updated.portfolio_id ?? null,
+          provenance: 'ui:decision-request-service',
+        })
+      } else {
+        await recordDecisionRecorded({
+          organizationId,
+          actorId: user.id,
+          decisionRequestId: requestId,
+          status: input.status,
+          reviewedAt,
+          tradeQueueItemId: updated.trade_queue_item_id ?? null,
+          proposalId: updated.proposal_id ?? null,
+          portfolioId: updated.portfolio_id ?? null,
+          acceptedTradeId: (updates.accepted_trade_id as string | null) ?? null,
+        })
+      }
     }
   }
 
