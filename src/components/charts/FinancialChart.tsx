@@ -6,6 +6,11 @@ import type { ChartDataPoint, TechnicalIndicator, ChartConfig } from './types'
 import { ChartDataAdapter } from './utils/dataAdapter'
 import { usePriceHistory, timeframeForDays, type PriceTimeframe } from '../../hooks/usePriceHistory'
 import { financialDataService, type Quote } from '../../lib/financial-data/browser-client'
+import {
+  useMarketDataPolling,
+  pollingQueryOptions,
+  quoteQueryKey,
+} from '../../lib/market-data/polling'
 
 interface FinancialChartProps {
   symbol: string
@@ -26,15 +31,27 @@ export function FinancialChart({
   const [selectedChartType, setSelectedChartType] = useState(chartType)
   const [activeIndicators, setActiveIndicators] = useState<TechnicalIndicator[]>([])
 
-  // Fetch current quote
+  /*
+   * Fetch current quote.
+   *
+   * Cadence comes from `useMarketDataPolling`. This was one of the three
+   * ungated `refetchInterval: 30000` sites behind the 26,368-request day
+   * recorded in `src/lib/market-data/polling.ts`, and it shared the quote
+   * resource with two other components under a different key.
+   */
+  const quotePolling = useMarketDataPolling({
+    kind: 'intraday_quote',
+    active: !!symbol,
+  })
+
   const { data: currentQuote, isLoading: quoteLoading } = useQuery({
-    queryKey: ['financial-chart-quote', symbol],
+    queryKey: quoteQueryKey(symbol),
     queryFn: async () => {
       const quote = await financialDataService.getQuote(symbol)
       return quote
     },
-    refetchInterval: 30000, // Refresh every 30 seconds
-    staleTime: 15000
+    enabled: !!symbol,
+    ...pollingQueryOptions(quotePolling),
   })
 
   // Generate chart data based on timeframe

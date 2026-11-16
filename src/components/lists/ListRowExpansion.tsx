@@ -402,8 +402,10 @@ export function ListRowExpansion({
    * The month, from the same table the collapsed row and the chart use.
    *
    * It read `signal.closes`, which comes from the `yahoo-chart-proxy` edge
-   * function — dead in this deployment, and a DIFFERENT series from the one
-   * the row draws. Overview said "+4.0% over 1M" directly under a row
+   * function — which fails on about 10% of calls rather than being dead as
+   * this comment used to say, and which is a DIFFERENT series from the one
+   * the row draws. The inconsistency, not the outage, is the reason for the
+   * change below. Overview said "+4.0% over 1M" directly under a row
    * reading "-0.6% 1M" for the same name and the same window.
    *
    * `workspace.history` is `price_history_cache`, which is what

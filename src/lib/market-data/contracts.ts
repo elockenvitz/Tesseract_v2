@@ -147,12 +147,35 @@ export type AdapterResult<T> =
   | { ok: true; data: T }
   | { ok: false; failure: AdapterFailure }
 
+/**
+ * Bar size.
+ *
+ * `'1d'` is the only value any current caller uses, and it is named rather
+ * than assumed so that a daily bar and a five-minute bar cannot be passed
+ * through the same code path unlabelled. `PriceBar.date` is a `YYYY-MM-DD`
+ * trading date, which is sufficient for `'1d'` and ambiguous for anything
+ * intraday — so an adapter that supports an intraday interval owes an
+ * instant, not a date, and the contract should be extended deliberately when
+ * the first one is written rather than inferred then.
+ */
+export type BarInterval = '1d' | '1h' | '15m' | '5m' | '1m'
+
 export interface BarsRequest {
   symbol: string
   /** Inclusive, `YYYY-MM-DD`. */
   from: string
   /** Inclusive, `YYYY-MM-DD`. */
   to: string
+  /**
+   * Bar size. Defaults to `'1d'` when omitted, which is what every caller
+   * means today.
+   *
+   * Present so daily history and intraday bars are distinguishable at the
+   * boundary. `polling.ts` makes the same distinction for cadence
+   * (`MarketDataKind`), and the two must not disagree: daily bars are settled
+   * facts and are never polled, intraday bars are not.
+   */
+  interval?: BarInterval
 }
 
 /**

@@ -73,6 +73,11 @@ import { useAssetTradeIdeas } from '../../hooks/useAssetTradeIdeas'
 import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
 import { financialDataService } from '../../lib/financial-data/browser-client'
+import {
+  useMarketDataPolling,
+  pollingQueryOptions,
+  quoteQueryKey,
+} from '../../lib/market-data/polling'
 import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
 import { AssetWorkspaceHeader } from '../asset/AssetWorkspaceHeader'
 import '../asset/asset-ux2.css'
@@ -2290,8 +2295,13 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   }, [portfolioBooks, asset.id])
 
   // Current stock price for P&L calculations
+  const quotePolling = useMarketDataPolling({
+    kind: 'intraday_quote',
+    active: !!asset.symbol,
+  })
+
   const { data: currentQuote } = useQuery({
-    queryKey: ['stock-quote', asset.symbol],
+    queryKey: quoteQueryKey(asset.symbol),
     queryFn: async () => {
       const quote = await financialDataService.getQuote(asset.symbol)
       return quote
@@ -2323,8 +2333,17 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
      * cost control, and the cost it saved is one quote per asset page.
      */
     enabled: !!asset.symbol,
-    staleTime: 15000, // Cache for 15 seconds
-    refetchInterval: 30000, // Auto-refresh every 30 seconds
+    /*
+     * Cadence is decided by `useMarketDataPolling`, not set here.
+     *
+     * This was `staleTime: 15000, refetchInterval: 30000`, ungated. With the
+     * two chart call sites it produced 26,368 proxy requests from two users
+     * in 24 hours and about 820 an hour overnight, because a visible but
+     * unattended tab kept the timer running. The gate stops on an inactive
+     * view, a hidden tab, an idle session and a closed market, and
+     * `refetchOnWindowFocus` stays on so returning to the tab still updates.
+     */
+    ...pollingQueryOptions(quotePolling),
   })
 
   // Unified view warnings (composes divergence + EV mismatch + revision-based rules)

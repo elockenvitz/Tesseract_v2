@@ -30,6 +30,11 @@ import {
   Maximize2
 } from 'lucide-react'
 import { financialDataService } from '../../lib/financial-data/browser-client'
+import {
+  useMarketDataPolling,
+  pollingQueryOptions,
+  quoteQueryKey,
+} from '../../lib/market-data/polling'
 import { usePriceHistory, timeframeForDays } from '../../hooks/usePriceHistory'
 import { TechnicalIndicators } from './utils/indicators'
 
@@ -199,15 +204,32 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [showSeriesDropdown, showIndicatorsDropdown])
 
-  // Fetch financial data
+  /*
+   * Fetch financial data.
+   *
+   * The cadence is decided by `useMarketDataPolling`, not by a constant here.
+   * This call site used to carry `refetchInterval: 30000` with no gate, and
+   * together with two siblings it produced 26,368 proxy requests from two
+   * users in 24 hours, around 820 of them per hour overnight. See
+   * `src/lib/market-data/polling.ts` for the measurement and the reasoning.
+   *
+   * `quoteQueryKey` replaces the private `['advanced-chart-quote', symbol]`
+   * key so this and the asset page share one cache entry per symbol instead
+   * of fetching the same number under two names.
+   */
+  const quotePolling = useMarketDataPolling({
+    kind: 'intraday_quote',
+    active: !!symbol,
+  })
+
   const { data: currentQuote, isLoading } = useQuery({
-    queryKey: ['advanced-chart-quote', symbol],
+    queryKey: quoteQueryKey(symbol),
     queryFn: async () => {
       const quote = await financialDataService.getQuote(symbol)
       return quote
     },
-    refetchInterval: 30000,
-    staleTime: 15000
+    enabled: !!symbol,
+    ...pollingQueryOptions(quotePolling),
   })
 
   // Calculate days based on date range
