@@ -18,17 +18,33 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 // have to be created inside `vi.hoisted` to exist by the time they run.
 const spies = vi.hoisted(() => ({
   recordDecisionRecorded: vi.fn().mockResolvedValue({ written: true, duplicate: false }),
+  recordRecommendationWithdrawn: vi.fn().mockResolvedValue({ written: true, duplicate: false }),
   resolveOrganizationIdForPortfolio: vi.fn().mockResolvedValue('org-1'),
 }))
-const { recordDecisionRecorded, resolveOrganizationIdForPortfolio } = spies
+const {
+  recordDecisionRecorded, recordRecommendationWithdrawn, resolveOrganizationIdForPortfolio,
+} = spies
 
 vi.mock('../../memory/lifecycle-events', () => ({
   recordDecisionRecorded: spies.recordDecisionRecorded,
+  recordRecommendationWithdrawn: spies.recordRecommendationWithdrawn,
   resolveOrganizationIdForPortfolio: spies.resolveOrganizationIdForPortfolio,
   recordDecisionReverted: vi.fn().mockResolvedValue({ written: true, duplicate: false }),
   recordExecutionRecorded: vi.fn().mockResolvedValue({ written: true, duplicate: false }),
   recordRecommendationSubmitted: vi.fn().mockResolvedValue({ written: true, duplicate: false }),
 }))
+
+/**
+ * The four statuses that are a PM RULING, and the one that is not.
+ *
+ * `withdrawn` used to sit in the same list as the rest, which is exactly how
+ * the defect worked: it is a resolved status, so it fell through the single
+ * resolved-status gate into `recordDecisionRecorded` and a withdrawal was
+ * recorded as a decision nobody made. Splitting the list here is the
+ * assertion. `accepted_with_modification` is included now — it is a real
+ * resolved status and its absence from the old list was an oversight.
+ */
+const PM_RULINGS = ['accepted', 'accepted_with_modification', 'rejected', 'deferred'] as const
 
 /*
  * This suite is about which lifecycle MEMORY EVENTS a decision writes.
@@ -93,6 +109,7 @@ import { updateDecisionRequest } from '../decision-request-service'
 
 beforeEach(() => {
   recordDecisionRecorded.mockClear()
+  recordRecommendationWithdrawn.mockClear()
   resolveOrganizationIdForPortfolio.mockClear()
   resolveOrganizationIdForPortfolio.mockResolvedValue('org-1')
   writes.updates.length = 0
@@ -103,7 +120,7 @@ const resolvingWrite = () =>
   writes.updates.find(u => typeof u.reviewed_at === 'string') as Record<string, unknown> | undefined
 
 describe('updateDecisionRequest records resolved decisions only', () => {
-  it.each(['accepted', 'rejected', 'deferred', 'withdrawn'])(
+  it.each(PM_RULINGS)(
     'records a decision for the resolved status %s',
     async (status) => {
       await updateDecisionRequest('dr-1', { status } as never)
@@ -114,8 +131,26 @@ describe('updateDecisionRequest records resolved decisions only', () => {
         actorId: 'user-1',
         organizationId: 'org-1',
       })
+      // And a ruling is never recorded as a withdrawal.
+      expect(recordRecommendationWithdrawn).not.toHaveBeenCalled()
     },
   )
+
+  it('records a WITHDRAWAL, not a decision, for the resolved status withdrawn', async () => {
+    await updateDecisionRequest('dr-1', {
+      status: 'withdrawn', previousStatus: 'under_review',
+    } as never)
+
+    expect(recordRecommendationWithdrawn).toHaveBeenCalledTimes(1)
+    expect(recordRecommendationWithdrawn.mock.calls[0][0]).toMatchObject({
+      decisionRequestId: 'dr-1',
+      fromStatus: 'under_review',
+      actorId: 'user-1',
+      organizationId: 'org-1',
+    })
+    // The point of the whole change: no phantom PM decision.
+    expect(recordDecisionRecorded).not.toHaveBeenCalled()
+  })
 
   it.each(['pending', 'under_review', 'needs_discussion'])(
     'records NOTHING for the active status %s',
@@ -200,7 +235,7 @@ describe('the decision event is identified by the write that resolved it', () =>
     expect(Date.parse(passed as string)).toBe(Date.parse(sent))
   })
 
-  it.each(['accepted', 'rejected', 'deferred', 'withdrawn'])(
+  it.each(PM_RULINGS)(
     'identifies the %s decision by the same instant the row records',
     async (status) => {
       await updateDecisionRequest('dr-1', { status } as never)
@@ -219,17 +254,42 @@ describe('the decision event is identified by the write that resolved it', () =>
     },
   )
 
+  it('identifies a WITHDRAWAL by the same instant the row records', async () => {
+    // Identical assertion strength to the rulings above. A withdrawal moving
+    // to its own writer must not move to a weaker identity, which is the
+    // easiest way for this change to quietly reintroduce the c8ae04e4 defect
+    // on a second code path.
+    await updateDecisionRequest('dr-1', {
+      status: 'withdrawn', previousStatus: 'pending',
+    } as never)
+
+    const sent = resolvingWrite()?.reviewed_at as string
+    const passed = (recordRecommendationWithdrawn.mock.calls[0][0] as Record<string, unknown>).reviewedAt
+
+    expect(passed).toBe(asPostgrestTimestamp(sent))
+    expect(passed).not.toBe(sent)
+    expect(Date.parse(passed as string)).toBe(Date.parse(sent))
+  })
+
   it('never passes a null identity on a path that stamps reviewed_at', async () => {
     // A null `reviewedAt` keys the event `...:no-instant`, which is
     // indistinguishable between two resolutions of the same request. It is
     // tolerated by the writer for genuinely unreviewed rows and must never
     // come from a path that just wrote the column.
-    for (const status of ['accepted', 'rejected', 'deferred', 'withdrawn']) {
+    for (const status of PM_RULINGS) {
       recordDecisionRecorded.mockClear()
       writes.updates.length = 0
       await updateDecisionRequest('dr-1', { status } as never)
       const passed = (recordDecisionRecorded.mock.calls[0][0] as Record<string, unknown>).reviewedAt
       expect(passed, `status ${status}`).toBeTruthy()
     }
+
+    // The withdrawal path carries the same obligation.
+    recordRecommendationWithdrawn.mockClear()
+    writes.updates.length = 0
+    await updateDecisionRequest('dr-1', { status: 'withdrawn' } as never)
+    const withdrawnInstant =
+      (recordRecommendationWithdrawn.mock.calls[0][0] as Record<string, unknown>).reviewedAt
+    expect(withdrawnInstant, 'status withdrawn').toBeTruthy()
   })
 })
