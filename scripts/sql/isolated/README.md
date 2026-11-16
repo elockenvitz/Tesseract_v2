@@ -8,6 +8,13 @@ them against production.
 Nothing here reads production. `00-harness.sql` is pure DDL — no rows, no
 credentials, no connection strings.
 
+`00-harness.sql` ends by including `10-decision-review-objects.sql`, which adds
+the `decision_reviews` object graph (plus `memory_events`) needed by
+`supabase/tests/decision-review-typed-subject.sql` and by the two Memory Spine
+migrations. Loading `00-harness.sql` loads both, so the procedure below is
+unchanged. That file opens with its own preconditions block and an explicit
+list of the four places it is deliberately a subset.
+
 ## Why this exists alongside `docs/contribution-visibility-isolated-env.md`
 
 That document describes the better procedure: `pg_dump --schema-only` from

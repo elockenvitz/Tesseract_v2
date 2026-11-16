@@ -349,3 +349,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   TO authenticated;
 GRANT EXECUTE ON FUNCTION public.current_org_id(), public.is_active_member_of_current_org(),
   public.current_user_id(), public.can_read_asset_contribution(uuid) TO authenticated;
+
+-- ── Part 2: the decision_reviews object graph ───────────────────────────────
+--
+-- Split into its own file because this harness serves the contribution and
+-- audience suites, and those objects serve
+-- `supabase/tests/decision-review-typed-subject.sql`. Loading it from here
+-- keeps the harness one command to run.
+--
+-- `\ir` (include relative) rather than `\i`, so the path resolves against this
+-- script's directory instead of the caller's working directory.
+\ir 10-decision-review-objects.sql

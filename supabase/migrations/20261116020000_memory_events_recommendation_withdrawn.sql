@@ -66,6 +66,7 @@ alter table public.memory_events
 do $$
 declare
   def text;
+  v_org uuid;
 begin
   select pg_get_constraintdef(con.oid) into def
   from pg_constraint con
@@ -96,16 +97,48 @@ begin
   end if;
 
   -- The constraint must still REJECT something, or it is decoration.
+  --
+  -- The probe row has to satisfy EVERY other constraint on the table, so that
+  -- the only thing left that can refuse it is `memory_events_type_ck`. The
+  -- first version of this block did not, and the migration could not be
+  -- applied at all:
+  --
+  --   * `provenance` is NOT NULL with no default and was omitted, so the
+  --     insert raised 23502 not_null_violation;
+  --   * `organization_id` and `actor_id` carry foreign keys, so the
+  --     gen_random_uuid() values would have raised 23503 next.
+  --
+  -- Neither is `check_violation`, so the handler below did not catch it, the
+  -- DO block aborted, and because this migration is a single transaction the
+  -- whole thing rolled back leaving the nine-value CHECK in place. It failed
+  -- closed, which is the right direction, but it meant a migration that
+  -- reported an error and changed nothing.
+  --
+  -- So: a real organization (NOT NULL + FK), a NULL actor (nullable, which
+  -- sidesteps the users FK entirely), and a provenance string.
+  select id into v_org from public.organizations limit 1;
+  if v_org is null then
+    raise exception
+      'memory_events_type_ck liveness probe needs one organizations row and found none; '
+      'refusing to apply the constraint change unverified';
+  end if;
+
   begin
     insert into public.memory_events
-      (organization_id, actor_id, event_type, subject_type, subject_id, dedupe_key)
+      (organization_id, actor_id, event_type, subject_type, subject_id, provenance, dedupe_key)
     values
-      (gen_random_uuid(), gen_random_uuid(), 'not.a.real.event', 'decision',
-       gen_random_uuid(), 'constraint-selftest');
+      (v_org, null, 'not.a.real.event', 'decision',
+       gen_random_uuid(), 'migration-selftest', 'constraint-selftest');
     raise exception 'memory_events_type_ck accepted an invalid event_type';
   exception
     when check_violation then
       null;  -- expected: the constraint is live
+    when others then
+      -- The probe never reached the CHECK. Say so, rather than letting an
+      -- unrelated SQLSTATE masquerade as a failed constraint test.
+      raise exception
+        'memory_events_type_ck liveness probe failed for an unrelated reason (%): %',
+        sqlstate, sqlerrm;
   end;
 end $$;
 
