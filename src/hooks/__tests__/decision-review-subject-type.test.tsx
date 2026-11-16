@@ -270,7 +270,9 @@ describe('the read paths survive the migration being unapplied', () => {
     const { result } = renderHook(() => useDecisionReview('dr-7'), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
 
-    expect((result.current.data as Row).subject_type).toBe('trade_queue_item')
+    // Via `unknown`: `DecisionReview` does not declare the typed columns yet,
+    // which is the whole point — they arrive from the database, not the type.
+    expect((result.current.data as unknown as Row).subject_type).toBe('trade_queue_item')
   })
 
   it('SELF-TEST: the double does reject an unguarded column in a read', async () => {
