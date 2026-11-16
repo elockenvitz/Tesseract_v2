@@ -124,11 +124,30 @@ holds even if the transaction setting were somehow cleared.
 
 Be precise about this, because "read-only" invites over-trust:
 
-1. **`rolbypassrls` is TRUE.** The read-only role reads **every row in every
-   organization**, ignoring RLS. It cannot write anything, but it is not
-   tenant-scoped. Any ungrouped count taken through it merges all pilot orgs
-   and is wrong as a per-tenant figure. This is the same trap already recorded
-   for the Management API generally.
+1. **`rolbypassrls` is TRUE, so this connection can never prove an
+   authorization result.** It is an administrative inspection connection, not
+   a tenant-scoped application session. RLS is not applied to it at all. Any
+   ungrouped count taken through it merges all pilot orgs and is wrong as a
+   per-tenant figure — the same trap already recorded for the Management API
+   generally.
+
+   There is a sharper version of this trap, and it caught me. The connection
+   carries no JWT, so `auth.uid()` is already NULL — exactly `anon`'s state —
+   which lets you evaluate a policy's `USING` expression directly, e.g.
+   `select user_is_portfolio_member(p.id, null) from portfolios p`. That is a
+   genuinely useful measurement, and it is how the `trade_event_rationales`
+   anon posture was assessed: false for all 37 portfolios.
+
+   But it evaluates **the predicate**; it does not observe **RLS denying a
+   request**. With `rolbypassrls` true, no policy was enforced during that
+   measurement at all. Only one of those is an authorization test. A real
+   denial needs an actual `anon` or `authenticated` session — which is what
+   `supabase/tests/trade-event-rationales-anon-denial.sql` Part B is for, and
+   why it cannot run without a staging database.
+
+   So say which one you have. "The policy predicate evaluates false" is
+   evidence about the policy. "The request was denied" is evidence about the
+   system, and this connection cannot produce it.
 2. **The token is not constrained.** The flag constrains this server's SQL
    calls; it does not constrain the credential. The token is account-wide, so
    any other path using it — including a second MCP server entry without the

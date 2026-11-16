@@ -75,66 +75,157 @@
  *
  * So: a silent success means nothing. Only the flag means anything.
  */
+/*
+ * ── Resolution, and why it is not `process.cwd()` ───────────────────────────
+ *
+ * This guard previously did `resolve(process.cwd(), '.mcp.json')`. Two
+ * failures, both observed:
+ *
+ *   1. Run from a different directory than the config, it inspected a
+ *      DIFFERENT file and printed PASS. A failure injection aimed at one
+ *      worktree's `.mcp.json` passed because the guard was reading another's.
+ *      A guard that reports on a file nobody asked about is worse than no
+ *      guard: it manufactures false assurance.
+ *   2. Missing file -> `exit 0`, "nothing to check". `.mcp.json` is
+ *      gitignored, so a freshly created worktree has none, so the pre-push
+ *      hook passed VACUOUSLY in exactly the situation it exists for.
+ *
+ * Both are fixed by being explicit. Resolution order:
+ *
+ *   --config <path> / MCP_READONLY_GUARD_CONFIG   one named file, only that
+ *   otherwise                                     EVERY git worktree's root
+ *
+ * Scanning every worktree matters because the dangerous config may not be in
+ * the one being pushed. The credential is account-wide, so a read-write entry
+ * in a sibling worktree is a live production write path regardless of where
+ * the hook fires.
+ *
+ * Absent config FAILS CLOSED (exit 1). Strictly, no `.mcp.json` means no MCP
+ * connection and so no risk — but "absent" and "I looked in the wrong place"
+ * are indistinguishable from inside the script, and the second is what
+ * actually happened. The escape hatch is explicit and logged:
+ * MCP_READONLY_GUARD_ALLOW_MISSING=1. An env var someone sets on purpose is
+ * reviewable; a silent `exit 0` is not.
+ */
 import { readFileSync, existsSync } from 'node:fs'
-import { resolve } from 'node:path'
-
-const CONFIG = resolve(process.cwd(), '.mcp.json')
+import { resolve, join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 /** Project refs known to be live. A ref not listed here is still reported. */
 const PRODUCTION_REFS = { wfcebeagznzgeuyysbnt: 'production' }
 
+const EXIT_OK = 0
+const EXIT_UNSAFE = 1
+const EXIT_CANNOT_TELL = 3
+
+const argv = process.argv.slice(2)
+const flagIdx = argv.indexOf('--config')
+const override =
+  (flagIdx >= 0 ? argv[flagIdx + 1] : null) ||
+  process.env.MCP_READONLY_GUARD_CONFIG ||
+  null
+
+/** Every worktree root for this repo, cwd-independent. [] if not in a repo. */
+function worktreeRoots() {
+  try {
+    const out = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    return out
+      .split('\n')
+      .filter(l => l.startsWith('worktree '))
+      .map(l => l.slice('worktree '.length).trim())
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+let targets
+if (override) {
+  targets = [resolve(override)]
+} else {
+  const roots = worktreeRoots()
+  if (roots.length === 0) {
+    console.error('guard:mcp-readonly CANNOT VERIFY — not inside a git repository, and')
+    console.error('no --config/MCP_READONLY_GUARD_CONFIG was given. Refusing to guess.')
+    process.exit(EXIT_CANNOT_TELL)
+  }
+  targets = roots.map(r => join(r, '.mcp.json'))
+}
+
+const present = targets.filter(t => existsSync(t))
+
+if (present.length === 0) {
+  if (process.env.MCP_READONLY_GUARD_ALLOW_MISSING === '1') {
+    console.log('guard:mcp-readonly SKIPPED — no .mcp.json found, and')
+    console.log('MCP_READONLY_GUARD_ALLOW_MISSING=1 was set deliberately.')
+    console.log('Searched:')
+    for (const t of targets) console.log(`  ${t}`)
+    process.exit(EXIT_OK)
+  }
+  console.error('guard:mcp-readonly FAILED CLOSED — no .mcp.json found in any location checked.\n')
+  for (const t of targets) console.error(`  looked at: ${t}`)
+  console.error('\nThis is NOT a pass. "Absent" and "the guard looked in the wrong')
+  console.error('place" are indistinguishable from here, and the second has happened.')
+  console.error('If this machine genuinely has no MCP config, set')
+  console.error('MCP_READONLY_GUARD_ALLOW_MISSING=1 so the decision is visible.')
+  process.exit(EXIT_UNSAFE)
+}
+
 const fail = []
 const note = []
+let supabaseServersSeen = 0
 
-if (!existsSync(CONFIG)) {
-  console.log('guard:mcp-readonly — no .mcp.json in this worktree, nothing to check')
-  process.exit(0)
-}
-
-let cfg
-try {
-  cfg = JSON.parse(readFileSync(CONFIG, 'utf8'))
-} catch (err) {
-  console.error(`guard:mcp-readonly — .mcp.json is not valid JSON: ${err.message}`)
-  process.exit(1)
-}
-
-const servers = Object.entries(cfg?.mcpServers ?? {})
-const supabase = servers.filter(([, s]) =>
-  (s?.args ?? []).some(a => typeof a === 'string' && a.includes('mcp-server-supabase')),
-)
-
-if (supabase.length === 0) {
-  console.log('guard:mcp-readonly — no Supabase MCP server configured, nothing to check')
-  process.exit(0)
-}
-
-for (const [name, srv] of supabase) {
-  const args = (srv?.args ?? []).filter(a => typeof a === 'string')
-  const readOnly = args.includes('--read-only') || args.includes('--read-only=true')
-  const refArg = args.find(a => a.startsWith('--project-ref'))
-  const ref = refArg ? refArg.split('=')[1] : null
-  const env = PRODUCTION_REFS[ref]
-
-  // Never print the token, or any env value. Only the key names.
-  const envKeys = Object.keys(srv?.env ?? {}).join(', ') || '(none)'
-
-  if (!readOnly) {
-    fail.push(
-      `  server "${name}" → project ${ref ?? '(unspecified)'}` +
-        `${env ? ` [${env.toUpperCase()}]` : ''}\n` +
-        `    missing --read-only: execute_sql can write, and apply_migration,\n` +
-        `    deploy_edge_function and the branch tools are all registered.\n` +
-        `    Fix: add "--read-only" to this server's args in .mcp.json.`,
-    )
-  } else {
-    note.push(`  server "${name}" → project ${ref ?? '(unspecified)'}${env ? ` [${env}]` : ''}: read-only`)
+for (const CONFIG of present) {
+  let cfg
+  try {
+    cfg = JSON.parse(readFileSync(CONFIG, 'utf8'))
+  } catch (err) {
+    fail.push(`  ${CONFIG}\n    is not valid JSON: ${err.message}\n` +
+              `    An unparseable config is not a safe config.`)
+    continue
   }
 
-  if (ref && !env) {
-    note.push(`  server "${name}": project ref ${ref} is not in this guard's known list — confirm which environment it is`)
+  const supabase = Object.entries(cfg?.mcpServers ?? {}).filter(([, s]) =>
+    (s?.args ?? []).some(a => typeof a === 'string' && a.includes('mcp-server-supabase')),
+  )
+
+  if (supabase.length === 0) {
+    note.push(`  ${CONFIG}: no Supabase MCP server configured`)
+    continue
   }
-  note.push(`  server "${name}": credential env keys present: ${envKeys}`)
+
+  for (const [name, srv] of supabase) {
+    supabaseServersSeen++
+    const args = (srv?.args ?? []).filter(a => typeof a === 'string')
+    const readOnly = args.includes('--read-only') || args.includes('--read-only=true')
+    const refArg = args.find(a => a.startsWith('--project-ref'))
+    const ref = refArg ? refArg.split('=')[1] : null
+    const env = PRODUCTION_REFS[ref]
+
+    // Never print the token, or any env value. Only the key names.
+    const envKeys = Object.keys(srv?.env ?? {}).join(', ') || '(none)'
+
+    if (!readOnly) {
+      fail.push(
+        `  ${CONFIG}\n` +
+          `  server "${name}" → project ${ref ?? '(unspecified)'}` +
+          `${env ? ` [${env.toUpperCase()}]` : ''}\n` +
+          `    missing --read-only: execute_sql can write, and apply_migration,\n` +
+          `    deploy_edge_function and the branch tools are all registered.\n` +
+          `    Fix: add "--read-only" to this server's args.`,
+      )
+    } else {
+      note.push(`  ${CONFIG}\n    server "${name}" → project ${ref ?? '(unspecified)'}${env ? ` [${env}]` : ''}: read-only`)
+    }
+
+    if (ref && !env) {
+      note.push(`    server "${name}": project ref ${ref} is not in this guard's known list — confirm which environment it is`)
+    }
+    note.push(`    server "${name}": credential env keys present: ${envKeys}`)
+  }
 }
 
 if (fail.length > 0) {
@@ -142,8 +233,9 @@ if (fail.length > 0) {
   console.error(fail.join('\n\n'))
   console.error('\nA silent success from execute_sql is not evidence of read-only access.')
   console.error('See the header of scripts/guard-mcp-readonly.mjs for why.')
-  process.exit(1)
+  process.exit(EXIT_UNSAFE)
 }
 
-console.log('guard:mcp-readonly PASS')
+console.log(`guard:mcp-readonly PASS — ${present.length} config(s), ${supabaseServersSeen} Supabase server(s)`)
 console.log(note.join('\n'))
+process.exit(EXIT_OK)
