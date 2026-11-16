@@ -57,13 +57,27 @@ export interface ValueSource {
   delivery?: Delivery
 }
 
-export interface Observed<T> {
+export type EffectivePrecision = 'instant' | 'session_date'
+
+export interface CurrencyUnit {
+  code: string
+  majorCode: string
+  minorPerMajor: number
+}
+
+/** No claim about when the value was true. Reference data is the case. */
+export interface Retrieved<T> {
   value: T
   source: ValueSource
   observedAt: string
+}
+
+export interface Observed<T> extends Retrieved<T> {
   effectiveAt: string
+  effectiveAtPrecision?: EffectivePrecision
   adjustment?: Adjustment
   currency?: string
+  currencyUnit?: CurrencyUnit
 }
 
 export interface PriceBar {
@@ -94,7 +108,9 @@ export interface ReferenceRecord {
   name?: string
   mic?: string
   exchangeLabel?: string
+  /** ISO 4217 only. A minor unit goes in `currencyUnit`. */
   currency?: string
+  currencyUnit?: CurrencyUnit
   country?: string
   securityClass?: string
   isin?: string
@@ -371,7 +387,7 @@ interface RawRealTime {
  */
 export function toQuote(
   raw: unknown,
-  opts: { delivery: Delivery; currency?: string; observedAt: string },
+  opts: { delivery: Delivery; observedAt: string },
 ): AdapterResult<Observed<number>> {
   const row = (raw ?? {}) as RawRealTime
   const price = positive(row.close)
@@ -407,8 +423,21 @@ export function toQuote(
         delivery: opts.delivery,
       },
       observedAt: opts.observedAt,
+      /*
+       * EODHD's `timestamp` is the instant of the LAST TRADE, not the instant
+       * the snapshot was generated. Those differ, and the difference is not a
+       * fault: on a delayed feed a thinly traded name can legitimately report
+       * a last trade from well beyond the feed's own delay, because no trade
+       * has happened since. So this is the honest `effectiveAt` -- the price
+       * really was true then -- but the gap between it and `observedAt`
+       * measures feed delay PLUS trade sparsity, and must not be read as the
+       * feed's delay alone.
+       */
       effectiveAt: new Date(ts * 1000).toISOString(),
-      currency: opts.currency,
+      /*
+       * No currency. The provider did not say, and the caller is not a
+       * source. See `fetchLatestQuote`.
+       */
     },
   }
 }
@@ -422,6 +451,68 @@ interface RawSearchHit {
   Country?: unknown
   ISIN?: unknown
   previousClose?: unknown
+}
+
+/**
+ * Vendor quoting codes that are MINOR units, not ISO 4217 currencies.
+ *
+ * EODHD's own corporate-actions documentation is explicit that London tickers
+ * are quoted in pence and reported as `GBX`, while the dividends it returns
+ * for those same tickers are in POUNDS. So a single instrument carries two
+ * units inside one provider, and nothing in the payload warns you. That is
+ * the misvaluation path: pence prices and pound dividends summed together, or
+ * a pence price shown as £.
+ *
+ * Keyed lowercase because vendors are inconsistent about case (`GBX`, `GBp`).
+ */
+const PENCE: CurrencyUnit = { code: 'GBX', majorCode: 'GBP', minorPerMajor: 100 }
+
+/**
+ * Codes whose MEANING depends on their case, matched exactly.
+ *
+ * `GBp` is pence and `GBP` is pounds, and the only thing separating them is
+ * one lowercase letter. Any case-insensitive lookup collapses the two, which
+ * is a hundredfold error in whichever direction it lands. So these are
+ * compared case-sensitively, before the case-insensitive table.
+ */
+const MINOR_UNIT_EXACT: Record<string, CurrencyUnit> = {
+  GBp: PENCE,
+  ZAc: { code: 'ZAc', majorCode: 'ZAR', minorPerMajor: 100 },
+}
+
+/**
+ * Codes that are unambiguous whatever their case, because the uppercase
+ * spelling is not itself an ISO 4217 currency: there is no `GBX`, `ZAC` or
+ * `ILA` to be confused with.
+ */
+const MINOR_UNIT_ANY_CASE: Record<string, CurrencyUnit> = {
+  gbx: PENCE,
+  zac: { code: 'ZAc', majorCode: 'ZAR', minorPerMajor: 100 },
+  ila: { code: 'ILA', majorCode: 'ILS', minorPerMajor: 100 },
+}
+
+/**
+ * Split a vendor currency string into an ISO 4217 code and, if the vendor
+ * quotes in a minor unit, the unit that says so.
+ *
+ * An unrecognised code is returned as-is with no unit rather than guessed at:
+ * a wrong `minorPerMajor` is worse than an unknown one, because a consumer
+ * will divide by it.
+ */
+export function classifyQuotingCurrency(
+  raw: unknown,
+): { currency?: string; currencyUnit?: CurrencyUnit } {
+  if (typeof raw !== 'string') return {}
+  const code = raw.trim()
+  if (!code) return {}
+  // Case-sensitive first: GBp is pence, GBP is pounds.
+  const exact = MINOR_UNIT_EXACT[code]
+  if (exact) return { currency: exact.majorCode, currencyUnit: exact }
+
+  const anyCase = MINOR_UNIT_ANY_CASE[code.toLowerCase()]
+  if (anyCase) return { currency: anyCase.majorCode, currencyUnit: anyCase }
+
+  return { currency: code.toUpperCase() }
 }
 
 const SECURITY_CLASS_BY_TYPE: Record<string, string> = {
@@ -461,7 +552,9 @@ export function toReferenceRecords(raw: unknown): ReferenceRecord[] {
       symbol: exchange ? `${code}.${exchange}` : code,
       name: typeof hit?.Name === 'string' ? hit.Name : undefined,
       exchangeLabel: exchange || undefined,
-      currency: typeof hit?.Currency === 'string' ? hit.Currency : undefined,
+      // GBX becomes GBP + a pence unit here, rather than travelling onward as
+      // a currency code that is not in ISO 4217.
+      ...classifyQuotingCurrency(hit?.Currency),
       country: typeof hit?.Country === 'string' ? hit.Country : undefined,
       securityClass: SECURITY_CLASS_BY_TYPE[type] ?? (type ? 'unknown' : undefined),
       isin: isin || undefined,
@@ -527,8 +620,21 @@ export async function fetchDailyBars(
       value: bars,
       source: { provider: EODHD_PROVIDER, feed: 'eod', via: 'live', delivery: 'eod' },
       observedAt: now.toISOString(),
-      // The last bar's trading date is the instant the series is true as of.
+      /*
+       * Midnight UTC of the last bar's trading date -- a LOWER BOUND, not the
+       * closing bell.
+       *
+       * We do not know when that session closed: EODHD's EOD payload carries
+       * a date and no time, and this codebase deliberately has no exchange
+       * calendar to ask. Midnight UTC of the trading date is safe in one
+       * specific direction. Every venue's closing bell falls later in the UTC
+       * day than 00:00Z -- New York closes 21:00Z, London 16:30Z, Tokyo
+       * 06:00Z, Auckland 04:00Z -- so an age measured from here is always an
+       * OVER-estimate and a freshness check can only fail safe. It is
+       * labelled `session_date` so nothing mistakes it for the real instant.
+       */
       effectiveAt: `${bars[bars.length - 1].date}T00:00:00.000Z`,
+      effectiveAtPrecision: 'session_date',
       // EODHD's `close` is the raw close; `adjusted_close` is a separate
       // field this adapter deliberately does not read.
       adjustment: 'raw',
@@ -593,19 +699,91 @@ export async function fetchIntradayBars(
   }
 }
 
+/**
+ * The latest price. It carries NO currency, and that is deliberate.
+ *
+ * This took a `currency?: string` argument, fed straight from the request
+ * body. EODHD's `real-time` endpoint returns no currency field at all, so the
+ * value being stamped onto the price as provenance came from the CALLER —
+ * which means a caller could label a London pence price `GBP` and the
+ * envelope would carry that claim as though the provider had said it. For
+ * SHEL.LSE that is a hundredfold overvaluation with a provenance trail
+ * pointing at EODHD.
+ *
+ * The provider does not say, so we do not say. A consumer that needs the unit
+ * asks `reference`, which reads it from the provider's own search payload and
+ * returns `currency` plus `currencyUnit`.
+ */
 export async function fetchLatestQuote(
   symbol: string,
   deps: EodhdFetchDeps,
-  currency?: string,
 ): Promise<AdapterResult<Observed<number>>> {
   const now = (deps.now ?? (() => new Date()))()
   const res = await eodhdGet(`real-time/${encodeURIComponent(symbol)}`, {}, deps)
   if (!res.ok) return res
   return toQuote(res.data, {
     delivery: classifyDelivery(),
-    currency,
     observedAt: now.toISOString(),
   })
+}
+
+interface RawExchange {
+  Name?: unknown
+  Code?: unknown
+  OperatingMIC?: unknown
+  Country?: unknown
+  Currency?: unknown
+  CountryISO2?: unknown
+}
+
+export interface ExchangeRecord {
+  /** The code to suffix a ticker with, e.g. `LSE` in `SHEL.LSE`. */
+  code: string
+  name?: string
+  country?: string
+  /** ISO 4217 after minor-unit splitting. */
+  currency?: string
+  currencyUnit?: CurrencyUnit
+  /**
+   * The operating MIC as the provider reports it.
+   *
+   * Carried separately from `code` and NOT copied into `ReferenceRecord.mic`,
+   * because EODHD returns comma-separated lists here for some venues and a
+   * half-parsed MIC is worse than none.
+   */
+  operatingMic?: string
+}
+
+/**
+ * The venues the subscription can actually address.
+ *
+ * This exists because guessing a suffix is how you conclude a market is not
+ * covered when the ticker was simply spelled wrong. `7203.TSE` returning
+ * `unknown_symbol` does not distinguish "Tokyo is not in this plan" from
+ * "Tokyo is not called TSE here", and only the provider can say which.
+ */
+export async function fetchExchanges(
+  deps: EodhdFetchDeps,
+): Promise<AdapterResult<ExchangeRecord[]>> {
+  const res = await eodhdGet('exchanges-list/', {}, deps)
+  if (!res.ok) return res
+  if (!Array.isArray(res.data)) {
+    return { ok: false, failure: { kind: 'unavailable', detail: 'exchange list was not a list' } }
+  }
+  const out: ExchangeRecord[] = []
+  for (const row of res.data as RawExchange[]) {
+    const code = typeof row?.Code === 'string' ? row.Code.trim() : ''
+    if (!code) continue
+    out.push({
+      code,
+      name: typeof row?.Name === 'string' ? row.Name : undefined,
+      country: typeof row?.Country === 'string' ? row.Country : undefined,
+      operatingMic: typeof row?.OperatingMIC === 'string' ? row.OperatingMIC : undefined,
+      ...classifyQuotingCurrency(row?.Currency),
+    })
+  }
+  out.sort((a, b) => a.code.localeCompare(b.code))
+  return { ok: true, data: out }
 }
 
 export async function searchSymbols(

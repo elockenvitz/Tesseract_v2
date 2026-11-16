@@ -35,7 +35,7 @@ import type {
   ProviderAdapter,
   ReferenceRecord,
 } from './contracts'
-import type { Observed } from './freshness'
+import type { Retrieved } from './freshness'
 import type { SecurityClass } from './identity'
 
 /** The one function this adapter reaches. */
@@ -199,7 +199,10 @@ export function createEodhdAdapter(invoke: EodhdInvoker = defaultInvoker): Provi
     },
 
     reference(symbol: string) {
-      return call<Observed<ReferenceRecord>>({ op: 'reference', symbol })
+      // `Retrieved`, not `Observed`: a search payload states an exchange and a
+      // currency but never says when they became true, so there is no honest
+      // `effectiveAt` to return. See `ProviderAdapter.reference`.
+      return call<Retrieved<ReferenceRecord>>({ op: 'reference', symbol })
     },
 
     latest(symbol: string) {

@@ -114,11 +114,41 @@ export interface DeliveryTerms {
  * half crosses a function boundary without the other the label is gone — which
  * is exactly how a holdings mark came to be called "Current price".
  */
-export interface Observed<T> {
+/**
+ * Something a provider gave us, with NO claim about when it was true.
+ *
+ * Reference data is the case this exists for. An exchange code, a currency or
+ * an ISIN has no validity instant that a search endpoint will tell us, so an
+ * `Observed` would have to invent one — and inventing one is exactly what
+ * `effectiveAt` forbids below. A `Retrieved` states only what we know: this
+ * is what the provider answered, and this is when we asked.
+ */
+export interface Retrieved<T> {
   value: T
   source: ValueSource
   /** When we obtained it. ISO 8601. */
   observedAt: string
+}
+
+/** How precisely `effectiveAt` is known. Absent means `instant`. */
+export type EffectivePrecision = 'instant' | 'session_date'
+
+/**
+ * A quoting unit that is not the currency's major unit.
+ *
+ * `{ code: 'GBX', majorCode: 'GBP', minorPerMajor: 100 }` reads as: the number
+ * beside me is in GBX, one hundred of which make one GBP.
+ */
+export interface CurrencyUnit {
+  /** The vendor's quoting code, e.g. `GBX`. Not necessarily ISO 4217. */
+  code: string
+  /** The ISO 4217 code of the major unit, e.g. `GBP`. */
+  majorCode: string
+  /** How many minor units make one major unit. */
+  minorPerMajor: number
+}
+
+export interface Observed<T> extends Retrieved<T> {
   /**
    * When it was TRUE. ISO 8601. For a daily close, the close date.
    *
@@ -126,10 +156,82 @@ export interface Observed<T> {
    * decide honestly what instant the value describes, and record that.
    */
   effectiveAt: string
+  /**
+   * Set to `session_date` when only the trading DATE is known and the instant
+   * within it is not.
+   *
+   * A daily bar is that case. We know the close belongs to 2026-11-13; we do
+   * not know that session's closing bell in UTC, and this codebase
+   * deliberately has no exchange calendar to ask. So the adapter pins
+   * `effectiveAt` to midnight UTC of that date, which is a LOWER BOUND: on
+   * every real venue the closing bell falls later in the UTC day than 00:00Z,
+   * so an age computed from it can only ever be an OVER-estimate and a
+   * freshness check can only ever fail safe. A consumer that needs the true
+   * instant must not read this one.
+   */
+  effectiveAtPrecision?: EffectivePrecision
   /** Only meaningful for prices. Omitted elsewhere rather than defaulted. */
   adjustment?: Adjustment
-  /** ISO 4217. A price without one is a number with no unit. */
+  /**
+   * ISO 4217. A price without one is a number with no unit.
+   *
+   * ISO 4217 means ISO 4217, and `GBX` is not a member of it. Vendors use
+   * `GBX` for pence, and a pence figure read as pounds overvalues a UK
+   * holding one hundredfold. Anything with a minor unit to express carries
+   * `currencyUnit` beside this field rather than quietly putting `GBX` here.
+   */
   currency?: string
+  /**
+   * Present when the figure is quoted in a currency's MINOR unit.
+   *
+   * Absent means major units. Present means the number is in hundredths (or
+   * whatever `minorPerMajor` says), and converting is the consumer's explicit
+   * decision rather than something an adapter did silently.
+   */
+  currencyUnit?: CurrencyUnit
+}
+
+/**
+ * Convert a figure into its currency's MAJOR unit, explicitly.
+ *
+ * There is no overload that guesses. A caller holding a `GBX` figure has to
+ * come here and say so, which is the point: the 100x UK misvaluation happens
+ * when nobody is asked to think about the unit at all.
+ *
+ * Returns the ISO 4217 code alongside the number so the pair cannot drift
+ * apart on the way to a sum.
+ */
+export function toMajorUnits(
+  value: number,
+  unit?: CurrencyUnit,
+  currency?: string,
+): { value: number; currency?: string } {
+  if (!unit) return { value, currency }
+  if (!Number.isFinite(unit.minorPerMajor) || unit.minorPerMajor <= 0) {
+    throw new Error(
+      `Refusing to convert ${unit.code}: minorPerMajor is ${unit.minorPerMajor}`,
+    )
+  }
+  return { value: value / unit.minorPerMajor, currency: unit.majorCode }
+}
+
+/**
+ * True when two figures cannot be added or compared without conversion.
+ *
+ * Deliberately conservative: an UNKNOWN currency is incompatible with
+ * everything, including another unknown. Two prices whose units we cannot name
+ * are not safe to sum just because they are equally mysterious.
+ */
+export function needsCurrencyConversion(
+  a: { currency?: string; currencyUnit?: CurrencyUnit },
+  b: { currency?: string; currencyUnit?: CurrencyUnit },
+): boolean {
+  const effective = (x: { currency?: string; currencyUnit?: CurrencyUnit }) =>
+    x.currencyUnit ? x.currencyUnit.code : x.currency
+  const ea = effective(a)
+  const eb = effective(b)
+  if (!ea || !eb) return true
+  return ea !== eb
 }
 
 export type FreshnessState = 'fresh' | 'stale' | 'missing'

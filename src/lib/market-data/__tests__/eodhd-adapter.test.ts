@@ -23,14 +23,26 @@ import {
   toReferenceRecords,
   mapIntradayInterval,
   classifyDelivery,
+  classifyQuotingCurrency,
   exchangeSuffix,
 } from '../../../../supabase/functions/_shared/eodhd'
+import { needsCurrencyConversion, toMajorUnits } from '../freshness'
 import {
   decideMarketDataAccess,
   entitlementConfigFromEnv,
 } from '../../../../supabase/functions/_shared/market-data-entitlement'
 
 const OBSERVED_AT = '2026-11-16T20:00:00.000Z'
+
+/** The two server files, read once, for the source-level guards below. */
+const WIRE_SRC = readFileSync(
+  resolve(__dirname, '../../../../supabase/functions/_shared/eodhd.ts'),
+  'utf8',
+)
+const FN_SRC = readFileSync(
+  resolve(__dirname, '../../../../supabase/functions/eodhd-market-data/index.ts'),
+  'utf8',
+)
 
 const stub = (data: unknown, error: unknown = null): EodhdInvoker => async () => ({ data, error })
 
@@ -107,13 +119,108 @@ describe('toIntradayBars', () => {
   })
 })
 
+describe('a daily bar never claims an instant it does not know', () => {
+  /*
+   * EODHD's EOD payload carries a DATE and no time, and this codebase has no
+   * exchange calendar by deliberate decision. So the series is stamped at
+   * midnight UTC of the last trading date and labelled `session_date`.
+   *
+   * The safety property is directional: midnight UTC must never be LATER
+   * than the real closing bell, because a later `effectiveAt` would make the
+   * data look fresher than it is. These are the actual closing bells in UTC.
+   */
+  const CLOSES_UTC: Array<[string, number]> = [
+    ['New York (EST)', 21.0],
+    ['New York (EDT)', 20.0],
+    ['Toronto', 21.0],
+    ['London (GMT)', 16.5],
+    ['London (BST)', 15.5],
+    ['Frankfurt/XETRA', 16.5],
+    ['Tokyo', 6.0],
+    ['Hong Kong', 8.0],
+    ['Sydney', 6.0],
+    ['Auckland', 4.0],
+  ]
+
+  it('midnight UTC of the trading date is at or before every real close', () => {
+    for (const [venue, closeHourUtc] of CLOSES_UTC) {
+      expect(closeHourUtc, `${venue} closes before 00:00Z, which would break the bound`)
+        .toBeGreaterThan(0)
+    }
+  })
+
+  it('so an age computed from effectiveAt can only OVER-state staleness', () => {
+    const date = '2026-11-13'
+    const stamped = Date.parse(`${date}T00:00:00.000Z`)
+    const observed = Date.parse('2026-11-16T20:00:00.000Z')
+
+    for (const [venue, closeHourUtc] of CLOSES_UTC) {
+      const realClose = Date.parse(`${date}T00:00:00.000Z`) + closeHourUtc * 3_600_000
+      const reportedAge = observed - stamped
+      const trueAge = observed - realClose
+      expect(reportedAge, `${venue}: reported age must not be younger than the truth`)
+        .toBeGreaterThanOrEqual(trueAge)
+    }
+  })
+
+  it('and the series says so, rather than leaving it to be assumed', () => {
+    // Asserted against the source because fetchDailyBars needs a live fetch.
+    expect(WIRE_SRC).toMatch(/effectiveAtPrecision: 'session_date'/)
+    // The adjustment basis is stated too: raw closes, never adjusted_close.
+    expect(WIRE_SRC).toMatch(/adjustment: 'raw'/)
+    expect(WIRE_SRC).not.toMatch(/row\?\.adjusted_close|row\.adjusted_close/)
+  })
+
+  it('raw bars across a split are labelled raw, not silently comparable', () => {
+    // 4-for-1: the close falls from ~600 to ~150 with no adjustment applied.
+    const bars = toDailyBars([
+      { date: '2026-11-12', open: 598, high: 604, low: 596, close: 600, volume: 1_000 },
+      { date: '2026-11-13', open: 150, high: 152, low: 149, close: 151, volume: 4_000 },
+    ])
+    expect(bars.map(b => b.close)).toEqual([600, 151])
+    // The bars themselves make no claim; the envelope's `adjustment: 'raw'`
+    // is what tells a consumer these two numbers are not one series.
+    expect(bars.every(b => !('adjustment' in b))).toBe(true)
+  })
+})
+
+describe('reference data makes no claim about when it was true', () => {
+  it('the handler returns observedAt and NO effectiveAt', () => {
+    /*
+     * This returned `effectiveAt: now`, commented as "the honest instant ...
+     * because that is all the provider told us". That was backwards:
+     * `effectiveAt` means when the value was TRUE, and its own doc comment
+     * forbids "now as a convenience". An exchange code has a validity window
+     * the search endpoint never states, so `now` was a fabricated fact that
+     * any freshness check would read as perfectly fresh.
+     */
+    // Comments stripped: the branch now carries a comment explaining why
+    // effectiveAt is gone, and prose must not satisfy or break the check.
+    const code = FN_SRC.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    const ref = /case 'reference': \{[\s\S]*?\n      \}/.exec(code)?.[0] ?? ''
+    expect(ref, 'the reference branch anchor no longer matches').not.toBe('')
+    expect(ref.length).toBeGreaterThan(100)
+    expect(ref).toContain('observedAt')
+    expect(ref).not.toMatch(/effectiveAt/)
+  })
+
+  it('and the contract types it as Retrieved, so a consumer cannot read one', () => {
+    const contracts = readFileSync(resolve(__dirname, '../contracts.ts'), 'utf8')
+    expect(contracts).toMatch(/reference\(symbol: string\): Promise<AdapterResult<Retrieved<ReferenceRecord>>>/)
+    const freshness = readFileSync(resolve(__dirname, '../freshness.ts'), 'utf8')
+    expect(freshness).toMatch(/export interface Retrieved<T>/)
+    // Observed still has effectiveAt; Retrieved must not gain one.
+    const retrieved = /export interface Retrieved<T> \{[\s\S]*?\n\}/.exec(freshness)?.[0] ?? ''
+    expect(retrieved).not.toMatch(/effectiveAt/)
+  })
+})
+
 describe('toQuote', () => {
   const ts = Math.floor(Date.parse('2026-11-16T19:55:00Z') / 1000)
 
   it('maps a quote and reports the provider instant, not now', () => {
     const r = toQuote({ code: 'AAPL.US', close: 332.89, previousClose: 330.1, timestamp: ts }, {
       delivery: 'delayed',
-      currency: 'USD',
       observedAt: OBSERVED_AT,
     })
     expect(r.ok).toBe(true)
@@ -121,9 +228,62 @@ describe('toQuote', () => {
     expect(r.data.value).toBe(332.89)
     expect(r.data.effectiveAt).toBe('2026-11-16T19:55:00.000Z')
     expect(r.data.observedAt).toBe(OBSERVED_AT)
-    expect(r.data.currency).toBe('USD')
     expect(r.data.source.delivery).toBe('delayed')
     expect(r.data.source.provider).toBe('eodhd')
+  })
+
+  it('carries NO currency, because the real-time payload states none', () => {
+    /*
+     * `toQuote` used to accept a `currency` that the edge function read
+     * straight out of the REQUEST BODY. EODHD's real-time endpoint returns no
+     * currency field at all, so that value came from the CALLER while the
+     * provenance still named EODHD: a caller could label a London pence price
+     * `GBP` and produce a hundredfold overvaluation carrying a provider's
+     * name. The unit now comes only from `reference`, which reads it from the
+     * provider's own payload.
+     */
+    const r = toQuote({ close: 2847.5, timestamp: ts }, {
+      delivery: 'delayed',
+      observedAt: OBSERVED_AT,
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.data.currency).toBeUndefined()
+    expect(r.data.currencyUnit).toBeUndefined()
+
+    // And neither the signature nor the body can take one again.
+    expect(toQuote.length).toBe(2)
+    expect(WIRE_SRC).not.toMatch(/currency: opts\.currency/)
+    expect(FN_SRC).not.toMatch(/body\.currency/)
+  })
+
+  it('effectiveAt is the last TRADE, which is not the feed delay', () => {
+    /*
+     * SHOP.TO came back ~31 minutes old on a feed documented at 15-20
+     * minutes, which looks like a fault and is not one. EODHD's `timestamp`
+     * is the instant of the last trade. On a delayed feed a thinly traded
+     * name reports a last trade from well beyond the feed's own delay simply
+     * because nothing has traded since.
+     *
+     * So the gap between `effectiveAt` and `observedAt` measures delay PLUS
+     * trade sparsity, and nothing may present it as the delay alone. This
+     * test pins the arithmetic: a 31-minute-old trade yields a 31-minute gap,
+     * and the envelope still says only `delayed`, with no delay figure.
+     */
+    const stale = Math.floor(Date.parse('2026-11-16T19:29:00Z') / 1000)
+    const r = toQuote({ close: 184.2, timestamp: stale }, {
+      delivery: 'delayed',
+      observedAt: '2026-11-16T20:00:00.000Z',
+    })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    const gapMinutes =
+      (Date.parse(r.data.observedAt) - Date.parse(r.data.effectiveAt)) / 60_000
+    expect(gapMinutes).toBe(31)
+    expect(r.data.source.delivery).toBe('delayed')
+    // No delayMinutes claim anywhere: we have not demonstrated one.
+    expect((r.data.source as { delayMinutes?: number }).delayMinutes).toBeUndefined()
+    expect(WIRE_SRC).not.toMatch(/delayMinutes/)
   })
 
   it('NEVER substitutes previousClose for a missing price', () => {
@@ -164,10 +324,86 @@ describe('toReferenceRecords', () => {
     ])
     expect(r.symbol).toBe('SHEL.LSE')
     expect(r.exchangeLabel).toBe('LSE')
-    expect(r.currency).toBe('GBX')
     expect(r.securityClass).toBe('stock')
     expect(r.isin).toBe('GB00BP6MXD84')
     expect(r.listedByProvider).toBe(true)
+
+    /*
+     * GBX does NOT survive as a currency code.
+     *
+     * `currency` is documented as ISO 4217 and GBX is not in ISO 4217 -- it
+     * is the vendor's code for pence. This used to pass `GBX` straight
+     * through, so anything summing a UK holding against a GBP cash balance
+     * would have been out by a factor of one hundred with no warning.
+     */
+    expect(r.currency).toBe('GBP')
+    expect(r.currencyUnit).toEqual({ code: 'GBX', majorCode: 'GBP', minorPerMajor: 100 })
+  })
+
+  it('a GBX price and a GBP price are never silently comparable', () => {
+    const [uk] = toReferenceRecords([{ Code: 'SHEL', Exchange: 'LSE', Currency: 'GBX' }])
+    const [us] = toReferenceRecords([{ Code: 'AAPL', Exchange: 'US', Currency: 'USD' }])
+    const [gbpFund] = toReferenceRecords([{ Code: 'VMID', Exchange: 'LSE', Currency: 'GBP' }])
+
+    // 2847.5 pence is £28.475, not £2,847.50.
+    expect(toMajorUnits(2847.5, uk.currencyUnit, uk.currency))
+      .toEqual({ value: 28.475, currency: 'GBP' })
+
+    // A major-unit figure passes through untouched.
+    expect(toMajorUnits(332.89, us.currencyUnit, us.currency))
+      .toEqual({ value: 332.89, currency: 'USD' })
+
+    // Same nominal currency, different unit: still needs conversion.
+    expect(needsCurrencyConversion(uk, gbpFund)).toBe(true)
+    expect(needsCurrencyConversion(uk, uk)).toBe(false)
+    expect(needsCurrencyConversion(uk, us)).toBe(true)
+
+    // An unknown unit is incompatible with everything, including itself.
+    expect(needsCurrencyConversion({}, {})).toBe(true)
+    expect(needsCurrencyConversion(us, {})).toBe(true)
+  })
+
+  it('refuses to convert on a nonsensical scale rather than dividing by it', () => {
+    for (const bad of [0, -100, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => toMajorUnits(100, { code: 'XXX', majorCode: 'YYY', minorPerMajor: bad }))
+        .toThrow(/Refusing to convert XXX/)
+    }
+  })
+
+  it('GBp is pence and GBP is pounds, and case is the ONLY difference', () => {
+    /*
+     * The trap that nearly shipped. A case-insensitive lookup collapses `GBp`
+     * into `GBP`, which is a hundredfold error in whichever direction it
+     * lands. Nothing else in the payload distinguishes them.
+     */
+    const pence = classifyQuotingCurrency('GBp')
+    expect(pence.currency).toBe('GBP')
+    expect(pence.currencyUnit?.minorPerMajor).toBe(100)
+
+    const pounds = classifyQuotingCurrency('GBP')
+    expect(pounds.currency).toBe('GBP')
+    expect(pounds.currencyUnit).toBeUndefined()
+
+    // 2847.5 of each is £28.475 and £2847.50 -- a factor of 100 apart.
+    expect(toMajorUnits(2847.5, pence.currencyUnit, pence.currency).value).toBe(28.475)
+    expect(toMajorUnits(2847.5, pounds.currencyUnit, pounds.currency).value).toBe(2847.5)
+  })
+
+  it('classifies unambiguous minor units in any case, and guesses at nothing', () => {
+    // GBX, ZAC and ILA are not ISO 4217 spellings, so case cannot mislead.
+    expect(classifyQuotingCurrency('GBX').currencyUnit?.minorPerMajor).toBe(100)
+    expect(classifyQuotingCurrency('gbx').currencyUnit?.code).toBe('GBX')
+    expect(classifyQuotingCurrency(' gbx ').currency).toBe('GBP')
+    expect(classifyQuotingCurrency('ILA').currencyUnit?.majorCode).toBe('ILS')
+    expect(classifyQuotingCurrency('ZAc').currencyUnit?.majorCode).toBe('ZAR')
+
+    // An unrecognised code is NOT guessed at: a wrong minorPerMajor is worse
+    // than an absent one, because a consumer will divide by it.
+    expect(classifyQuotingCurrency('QQQ')).toEqual({ currency: 'QQQ' })
+    expect(classifyQuotingCurrency('ILS')).toEqual({ currency: 'ILS' })
+    expect(classifyQuotingCurrency(undefined)).toEqual({})
+    expect(classifyQuotingCurrency('')).toEqual({})
+    expect(classifyQuotingCurrency(42)).toEqual({})
   })
 
   it('leaves mic UNSET, because an EODHD exchange code is not a MIC', () => {

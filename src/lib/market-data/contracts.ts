@@ -37,7 +37,7 @@
  * exists.
  */
 
-import type { Observed } from './freshness'
+import type { CurrencyUnit, Observed, Retrieved } from './freshness'
 import type { SecurityClass } from './identity'
 
 /**
@@ -61,8 +61,24 @@ export interface ReferenceRecord {
    * appear for one venue. Useful to show a person, useless to join on.
    */
   exchangeLabel?: string
-  /** ISO 4217. */
+  /**
+   * ISO 4217 — and only ISO 4217.
+   *
+   * A provider that quotes a venue in a minor unit reports that unit in
+   * `currencyUnit`; it does NOT go here. EODHD returns `GBX` for London
+   * listings, which means pence and is not an ISO 4217 code, so for SHEL.LSE
+   * this field reads `GBP` and `currencyUnit` carries the GBX scaling.
+   */
   currency?: string
+  /**
+   * The venue's quoting unit, when it is not the currency's major unit.
+   *
+   * Absent means prices for this instrument are in major units. Its presence
+   * is the only thing standing between a pence price and a hundredfold
+   * overvaluation, so it travels on the record itself rather than being
+   * re-derived from the exchange at each call site.
+   */
+  currencyUnit?: CurrencyUnit
   country?: string
   securityClass?: SecurityClass
   isin?: string
@@ -200,8 +216,17 @@ export interface ProviderAdapter {
    */
   resolve(query: string, limit?: number): Promise<AdapterResult<ReferenceRecord[]>>
 
-  /** Reference data for one exact symbol. */
-  reference(symbol: string): Promise<AdapterResult<Observed<ReferenceRecord>>>
+  /**
+   * Reference data for one exact symbol.
+   *
+   * `Retrieved`, not `Observed`, and that is the whole point: a search
+   * endpoint tells us an exchange code and a currency but never says when
+   * those became true. Returning an `Observed` forced the adapter to put
+   * something in `effectiveAt`, and what it put there was `now` — a
+   * fabricated validity instant for data whose validity window is unknown,
+   * which is the one thing `Observed.effectiveAt` explicitly forbids.
+   */
+  reference(symbol: string): Promise<AdapterResult<Retrieved<ReferenceRecord>>>
 
   /** The most recent price, with the instant it was true. */
   latest(symbol: string): Promise<AdapterResult<PriceQuote>>

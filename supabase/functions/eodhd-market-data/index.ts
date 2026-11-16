@@ -38,6 +38,7 @@ import {
 } from '../_shared/market-data-entitlement.ts'
 import {
   fetchDailyBars,
+  fetchExchanges,
   fetchIntradayBars,
   fetchLatestQuote,
   searchSymbols,
@@ -57,7 +58,7 @@ const json = (body: unknown, status = 200) =>
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
 
-type Operation = 'resolve' | 'reference' | 'latest' | 'bars'
+type Operation = 'exchanges' | 'resolve' | 'reference' | 'latest' | 'bars'
 
 interface RequestBody {
   op?: unknown
@@ -67,7 +68,15 @@ interface RequestBody {
   from?: unknown
   to?: unknown
   interval?: unknown
-  currency?: unknown
+  /*
+   * There is deliberately no `currency` field.
+   *
+   * It used to exist and was passed through to the quote envelope, which made
+   * a CALLER the source of a price's unit while the provenance still said
+   * EODHD. A caller could label a London pence price `GBP` -- a hundredfold
+   * overvaluation carrying a provider's name. The unit now comes only from
+   * the provider's own payload, via the `reference` operation.
+   */
 }
 
 const isIsoDate = (v: unknown): v is string =>
@@ -182,6 +191,11 @@ Deno.serve(async req => {
 
   try {
     switch (op) {
+      case 'exchanges':
+        // Provider-supported venue discovery. One small response, and the
+        // only authoritative answer to "what is this exchange's suffix".
+        return json(await fetchExchanges(deps))
+
       case 'resolve': {
         const query = typeof body.query === 'string' ? body.query.trim() : ''
         if (!query) return json({ error: 'query is required' }, 400)
@@ -209,15 +223,27 @@ Deno.serve(async req => {
         if (!exact) {
           return json({ ok: false, failure: { kind: 'unknown_symbol', symbol } })
         }
+        /*
+         * A `Retrieved`, with NO `effectiveAt`.
+         *
+         * This previously returned `effectiveAt: now`, described as "the
+         * honest instant ... because that is all the provider told us". That
+         * was wrong, and the contract says why: `effectiveAt` is when the
+         * value was TRUE, and `Observed.effectiveAt` forbids "now as a
+         * convenience" in as many words. An exchange code and a currency have
+         * a validity window the search endpoint never states, so claiming
+         * they became true at the moment we asked is a fabricated fact that
+         * any freshness check would then read as perfectly fresh.
+         *
+         * `observedAt` survives on its own and says the one true thing: this
+         * is what the provider answered, and this is when we asked it.
+         */
         return json({
           ok: true,
           data: {
             value: exact,
             source: { provider: 'eodhd', feed: 'search', via: 'live' },
             observedAt: new Date().toISOString(),
-            // Reference data has no provider timestamp. The honest instant is
-            // when we asked, because that is all the provider told us.
-            effectiveAt: new Date().toISOString(),
           },
         })
       }
@@ -225,8 +251,7 @@ Deno.serve(async req => {
       case 'latest': {
         const symbol = typeof body.symbol === 'string' ? body.symbol.trim() : ''
         if (!symbol) return json({ error: 'symbol is required' }, 400)
-        const currency = typeof body.currency === 'string' ? body.currency : undefined
-        return json(await fetchLatestQuote(symbol, deps, currency))
+        return json(await fetchLatestQuote(symbol, deps))
       }
 
       case 'bars': {
