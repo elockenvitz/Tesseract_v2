@@ -219,6 +219,40 @@ BEGIN
   v_kind := public.decision_review_subject_type(NEW.decision_id);
 
   /*
+   * DELETING THE SUBJECT MUST NOT ERASE WHAT WAS REVIEWED.
+   *
+   * `ON DELETE SET NULL` on the three typed columns is implemented as an
+   * UPDATE of this table, so deleting a reviewed idea fires this very trigger.
+   * Re-resolving then returns NULL -- the subject is gone -- and the
+   * unconditional assignment below used to write `subject_type = 'unknown'`,
+   * discarding the one remaining statement of WHAT the review was about. The
+   * typed id going null is intended; the label going with it is not. This
+   * column's own COMMENT, further down, promises the opposite: "NULL once the
+   * idea is deleted; subject_type and decision_id still record what was
+   * reviewed."
+   *
+   * So on UPDATE, when the subject no longer resolves, keep the label the row
+   * already carried and let the typed ids go null. `decision_id` is immutable,
+   * so OLD.subject_type cannot describe a different decision than NEW does,
+   * which is what makes preserving it safe rather than merely convenient.
+   *
+   * This is the same shape `decision_reviews_set_owner` already uses one
+   * trigger earlier: on UPDATE with nothing resolvable it keeps
+   * OLD.organization_id rather than clearing it.
+   *
+   * The resulting row -- a non-'unknown' subject_type with every typed id
+   * null -- satisfies `decision_reviews_one_subject`, whose typed-id clauses
+   * are each guarded by `IS NULL OR`.
+   */
+  IF v_kind IS NULL AND TG_OP = 'UPDATE' THEN
+    NEW.subject_type := OLD.subject_type;
+    NEW.trade_queue_item_id := NULL;
+    NEW.decision_request_id := NULL;
+    NEW.portfolio_trade_event_id := NULL;
+    RETURN NEW;
+  END IF;
+
+  /*
    * Anything the client sent in `subject_type` or the typed columns is
    * discarded. The client's value is a UI inference from (source, category);
    * a review row's identity must not depend on a caller deriving it correctly,
@@ -286,24 +320,36 @@ DO $$
 DECLARE
   v_bad int;
 BEGIN
+  -- Every row agrees with the resolver, EXCEPT a row whose subject has since
+  -- been deleted: the trigger deliberately preserves the label it already
+  -- carried, so such a row reads 'idea' (say) while the resolver now answers
+  -- nothing. That shape is recognised by having no typed id at all.
   SELECT count(*) INTO v_bad
     FROM public.decision_reviews r
-   WHERE r.subject_type <> COALESCE(public.decision_review_subject_type(r.decision_id), 'unknown');
+   WHERE r.subject_type <> COALESCE(public.decision_review_subject_type(r.decision_id), 'unknown')
+     AND NOT (
+       public.decision_review_subject_type(r.decision_id) IS NULL
+       AND r.trade_queue_item_id IS NULL
+       AND r.decision_request_id IS NULL
+       AND r.portfolio_trade_event_id IS NULL
+     );
   IF v_bad > 0 THEN
     RAISE EXCEPTION 'decision_reviews: % row(s) disagree with the resolver after backfill', v_bad;
   END IF;
 
-  -- A resolvable row must carry its typed pointer. An 'unknown' row must carry
-  -- none. Both directions, so a one-sided bug cannot pass.
+  -- A typed pointer must always be labelled. The converse is NOT asserted:
+  -- a labelled row with no pointer is the legitimate after-state of deleting
+  -- the reviewed subject, which is the whole point of preserving the label.
   SELECT count(*) INTO v_bad
     FROM public.decision_reviews r
-   WHERE (r.subject_type <> 'unknown') <> (
+   WHERE r.subject_type = 'unknown'
+     AND (
            r.trade_queue_item_id IS NOT NULL
            OR r.decision_request_id IS NOT NULL
            OR r.portfolio_trade_event_id IS NOT NULL
          );
   IF v_bad > 0 THEN
-    RAISE EXCEPTION 'decision_reviews: % row(s) have a subject_type without a typed id, or the reverse', v_bad;
+    RAISE EXCEPTION 'decision_reviews: % row(s) carry a typed id while labelled unknown', v_bad;
   END IF;
 END $$;
 
