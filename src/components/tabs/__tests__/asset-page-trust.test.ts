@@ -27,18 +27,25 @@ const HISTORY = codeOf(
 )
 
 /*
- * The quote query's ANCHOR changed on 2026-11-16, not its invariant.
+ * The quote query's ANCHOR has now changed twice, and its invariant never has.
  *
- * The key was `['stock-quote', asset.symbol]` and is now
- * `quoteQueryKey(asset.symbol)`, because three components were fetching the
- * same quote under three private keys and so could not share one cache entry.
- * The two assertions below are unchanged: the quote must still be gated on a
- * symbol and must still NOT be gated on holdings.
+ * The key was `['stock-quote', asset.symbol]`, then `quoteQueryKey(asset
+ * .symbol)` when three components were unified onto one cache entry, and is
+ * now `quoteQueryKey(asset.symbol, marketDataProvider)` because the provider
+ * has to be part of the key — without it, an entitled session and an
+ * unentitled one in the same browser tab share one entry, and the second
+ * reads the first one's licensed price with no request made.
  *
- * If the key moves again, these tests go silent rather than red — the regex
- * would match nothing and `quoteQuery` would be `''`. The empty-anchor check
- * at the end of this block is what makes that fail loudly.
+ * The two assertions below are unchanged across all three moves: the quote
+ * must still be gated on a symbol and must still NOT be gated on holdings.
+ *
+ * The anchor is matched loosely on purpose — `quoteQueryKey\(asset\.symbol`
+ * with no closing paren — so adding a further argument moves it again without
+ * silencing the guard. The empty-anchor check at the end of this block is
+ * what made the second move fail loudly rather than go quiet, which is
+ * exactly what it did.
  */
+const QUOTE_QUERY = /queryKey: quoteQueryKey\(asset\.symbol[\s\S]{0,700}?\}\)/
 describe('a price is fetched for every security, held or not', () => {
   /** THE regression. */
   it('does not gate the quote on owning the asset', () => {
@@ -48,7 +55,7 @@ describe('a price is fetched for every security, held or not', () => {
      * and its rating-vs-EV divergence warning was suppressed — on precisely
      * the assets nobody holds yet.
      */
-    const quoteQuery = /queryKey: quoteQueryKey\(asset\.symbol\)[\s\S]{0,600}?\}\)/.exec(ASSET_TAB)?.[0] ?? ''
+    const quoteQuery = QUOTE_QUERY.exec(ASSET_TAB)?.[0] ?? ''
     expect(quoteQuery, 'the stock-quote query should still exist').toContain('enabled')
     expect(quoteQuery).not.toMatch(/portfolioHoldings/)
     expect(quoteQuery).toMatch(/enabled:\s*!!asset\.symbol\s*,/)
@@ -56,7 +63,7 @@ describe('a price is fetched for every security, held or not', () => {
 
   it('still declines to fetch without a symbol', () => {
     // The one real precondition: there is nothing to ask a provider for.
-    const quoteQuery = /queryKey: quoteQueryKey\(asset\.symbol\)[\s\S]{0,600}?\}\)/.exec(ASSET_TAB)?.[0] ?? ''
+    const quoteQuery = QUOTE_QUERY.exec(ASSET_TAB)?.[0] ?? ''
     expect(quoteQuery).toMatch(/!!asset\.symbol/)
   })
 
@@ -66,12 +73,22 @@ describe('a price is fetched for every security, held or not', () => {
      * string when the anchor stops matching, and `expect('')` satisfies both
      * `.not.toMatch(/portfolioHoldings/)` and `.toContain` never runs — so a
      * renamed query key would turn the guard off silently instead of failing.
-     * That already happened once, when the key moved to `quoteQueryKey`.
+     * That has now happened twice — when the key moved to `quoteQueryKey`,
+     * and again when the provider was added to it — and both times this is
+     * the assertion that said so.
      */
-    const quoteQuery = /queryKey: quoteQueryKey\(asset\.symbol\)[\s\S]{0,600}?\}\)/.exec(ASSET_TAB)?.[0] ?? ''
+    const quoteQuery = QUOTE_QUERY.exec(ASSET_TAB)?.[0] ?? ''
     expect(quoteQuery, 'the quote query anchor no longer matches AssetTab').not.toBe('')
     expect(quoteQuery.length).toBeGreaterThan(40)
-    expect(quoteQuery).toContain('financialDataService.getQuote')
+    /*
+     * The fetch is still a real provider call, not a placeholder.
+     *
+     * It was `financialDataService.getQuote` directly; it is now
+     * `fetchRoutedQuote`, which calls exactly that for every user who is not
+     * entitled to EODHD. The invariant is "a real provider answers this",
+     * and the routing layer is where the provider is now chosen.
+     */
+    expect(quoteQuery).toContain('fetchRoutedQuote')
   })
 })
 

@@ -10,6 +10,7 @@
  * and has no CORS constraints.
  */
 import { supabase } from './supabase'
+import type { BarInterval, MarketDataProviderId } from './market-data/contracts'
 
 export interface CandlestickData {
   time: string // YYYY-MM-DD format for daily, or unix timestamp
@@ -24,6 +25,48 @@ export interface ChartDataRequest {
   symbol: string
   interval: '1m' | '5m' | '15m' | '30m' | '1h' | '1d' | '1wk' | '1mo'
   range: '1d' | '5d' | '1mo' | '3mo' | '6mo' | '1y' | '2y' | '5y' | 'max'
+  /**
+   * Which provider to read from. Defaults to `yahoo`, which every user has.
+   *
+   * A caller passes `eodhd` only when `useMarketDataEntitlement` reported the
+   * server said yes. Naming it here grants nothing: the edge function
+   * re-decides on every request and answers an unentitled caller with a 403.
+   */
+  provider?: MarketDataProviderId
+}
+
+/**
+ * The UI's interval in EODHD's vocabulary, or null when it has no such bar.
+ *
+ * EODHD offers 1m, 5m and 1h intraday and daily. It has no 15m and no 30m
+ * bar, and no weekly or monthly intraday aggregate — so those return null and
+ * the caller shows an unsupported state. Silently serving a 5m series for a
+ * 15m request would mislabel the bar width on the axis.
+ */
+function eodhdIntervalFor(interval: ChartDataRequest['interval']): BarInterval | null {
+  switch (interval) {
+    case '1m': return '1m'
+    case '5m': return '5m'
+    case '1h': return '1h'
+    case '1d': return '1d'
+    // 15m, 30m, 1wk and 1mo have no EODHD equivalent.
+    default: return null
+  }
+}
+
+/** How far back a UI range reaches, in days. */
+function rangeToDays(range: ChartDataRequest['range']): number {
+  switch (range) {
+    case '1d': return 4
+    case '5d': return 9
+    case '1mo': return 31
+    case '3mo': return 92
+    case '6mo': return 183
+    case '1y': return 366
+    case '2y': return 731
+    case '5y': return 1826
+    case 'max': return 365 * 25
+  }
 }
 
 // Map our timeframes to Yahoo Finance parameters
@@ -175,7 +218,18 @@ class ChartDataService {
   private readonly CACHE_TTL = 60 * 1000 // 1 minute cache for chart data
 
   async getChartData(request: ChartDataRequest): Promise<CandlestickData[]> {
-    const cacheKey = `${request.symbol}-${request.interval}-${request.range}`
+    /*
+     * The provider is part of the cache key.
+     *
+     * This cache is a module-level `Map` shared by every chart in the tab and
+     * it outlives a sign-out, so a key of symbol+interval+range alone would
+     * hand an incoming unentitled session the previous user's EODHD candles —
+     * no request made, nothing in any log to show it happened. The provider in
+     * the key is what makes that impossible, and `clearCache` on sign-out is
+     * the belt to this braces.
+     */
+    const provider = request.provider ?? 'yahoo'
+    const cacheKey = `${provider}-${request.symbol}-${request.interval}-${request.range}`
 
     // Check cache
     const cached = this.cache.get(cacheKey)
@@ -184,7 +238,15 @@ class ChartDataService {
     }
 
     try {
-      const data = await this.fetchFromYahooFinance(request)
+      /*
+       * No cross-provider fallback. If EODHD declines, the chart draws
+       * nothing and the caller says why — substituting Yahoo candles under an
+       * "EODHD" label would misattribute the data and change its adjustment
+       * basis mid-series.
+       */
+      const data = provider === 'eodhd'
+        ? await this.fetchFromEodhd(request)
+        : await this.fetchFromYahooFinance(request)
       if (data.length > 0) {
         this.cache.set(cacheKey, { data, timestamp: Date.now() })
       }
@@ -197,6 +259,69 @@ class ChartDataService {
       }
       return []
     }
+  }
+
+  /**
+   * EODHD candles for the same request shape.
+   *
+   * Maps the UI's interval/range pair onto the provider's inclusive date
+   * window, and narrows the window to the documented per-interval cap before
+   * asking rather than letting the provider refuse it.
+   */
+  private async fetchFromEodhd(request: ChartDataRequest): Promise<CandlestickData[]> {
+    const to = new Date()
+    const from = new Date(to.getTime() - rangeToDays(request.range) * 86_400_000)
+    return this.fetchEodhdWindow(request.symbol, request.interval, from, to)
+  }
+
+  /**
+   * One EODHD window fetch, used by every candle path.
+   *
+   * All three public methods route through this so a chart cannot end up with
+   * its preset range from one provider and its panned-in history from
+   * another — a series whose adjustment basis changes partway along is worse
+   * than a short series, because nothing on screen says where the join is.
+   */
+  private async fetchEodhdWindow(
+    symbol: string,
+    uiInterval: ChartDataRequest['interval'] | string,
+    from: Date,
+    to: Date,
+  ): Promise<CandlestickData[]> {
+    const { eodhdBars } = await import('./market-data/eodhd-client')
+    const { toCandles, INTRADAY_MAX_SPAN_DAYS } = await import('./market-data/eodhd-series')
+    const { resolveEodhdSymbol } = await import('./market-data/eodhd-symbol')
+
+    const interval = eodhdIntervalFor(uiInterval as ChartDataRequest['interval'])
+    if (!interval) {
+      // EODHD publishes no bar of this size. Empty, not substituted: the
+      // caller renders an unsupported state instead of a different bar width
+      // wearing the requested label.
+      return []
+    }
+
+    // Narrow to the documented per-interval cap before asking, so an
+    // over-wide window comes back as a shorter series rather than a refusal.
+    const cap = INTRADAY_MAX_SPAN_DAYS[interval]
+    let start = from
+    if (cap) {
+      const days = (to.getTime() - from.getTime()) / 86_400_000
+      if (days > cap) start = new Date(to.getTime() - cap * 86_400_000)
+    }
+
+    // `AAPL` is not an EODHD symbol. Resolved through the provider's own
+    // search, never built from `assets.exchange`.
+    const resolved = await resolveEodhdSymbol(symbol)
+    if (!resolved.ok) return []
+
+    const res = await eodhdBars({
+      symbol: resolved.symbol,
+      from: start.toISOString().slice(0, 10),
+      to: to.toISOString().slice(0, 10),
+      interval,
+    })
+    if (!res.ok) return []
+    return toCandles((res.data.value ?? []) as never[])
   }
 
   private async fetchFromYahooFinance(request: ChartDataRequest): Promise<CandlestickData[]> {
@@ -217,10 +342,16 @@ class ChartDataService {
     symbol: string,
     interval: string,
     endTime: number, // Unix timestamp in seconds
-    durationSeconds: number // How far back to fetch
+    durationSeconds: number, // How far back to fetch
+    provider: MarketDataProviderId = 'yahoo'
   ): Promise<CandlestickData[]> {
     const period1 = Math.floor(endTime - durationSeconds)
     const period2 = Math.floor(endTime)
+
+    if (provider === 'eodhd') {
+      return this.fetchEodhdWindow(symbol, interval, new Date(period1 * 1000), new Date(period2 * 1000))
+    }
+
     const intervalParam = intervalMap[interval] || '1d'
 
     const data = await fetchYahooChart({ symbol, interval: intervalParam, period1, period2 })
@@ -233,8 +364,13 @@ class ChartDataService {
     symbol: string,
     startDate: Date,
     endDate: Date,
-    interval: string
+    interval: string,
+    provider: MarketDataProviderId = 'yahoo'
   ): Promise<CandlestickData[]> {
+    if (provider === 'eodhd') {
+      return this.fetchEodhdWindow(symbol, interval, startDate, endDate)
+    }
+
     const intervalParam = intervalMap[interval] || '1d'
 
     // Calculate days

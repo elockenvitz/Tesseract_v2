@@ -16,6 +16,7 @@ import {
   HistogramData
 } from 'lightweight-charts'
 import { chartDataService, timeframeToParams, CandlestickData } from '../../../lib/chartData'
+import { useMarketDataEntitlement } from '../../../lib/market-data/provider-routing'
 
 export type ChartType = 'candlestick' | 'line' | 'bar' | 'area'
 export type TimeFrame = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'ALL'
@@ -259,6 +260,13 @@ export function ChartContainer({
     }
   }, [chartType, indicators])
 
+  /*
+   * The provider is the server's decision. It is in the effect's dependency
+   * list so the chart refetches once the entitlement answer arrives, rather
+   * than keeping whatever the fail-safe default drew first.
+   */
+  const { provider: marketDataProvider } = useMarketDataEntitlement()
+
   // Fetch data when symbol or timeframe changes
   useEffect(() => {
     if (!symbol) return
@@ -272,7 +280,8 @@ export function ChartContainer({
         const data = await chartDataService.getChartData({
           symbol: symbol.toUpperCase(),
           interval: params.interval as any,
-          range: params.range as any
+          range: params.range as any,
+          provider: marketDataProvider
         })
 
         if (data.length === 0) {
@@ -290,7 +299,7 @@ export function ChartContainer({
     }
 
     fetchData()
-  }, [symbol, timeFrame])
+  }, [symbol, timeFrame, marketDataProvider])
 
   const updateSeriesData = useCallback((data: CandlestickData[]) => {
     if (!mainSeriesRef.current || !isChartReady.current || data.length === 0) return

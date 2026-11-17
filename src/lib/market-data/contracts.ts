@@ -38,6 +38,8 @@
  */
 
 import type { CurrencyUnit, Observed, Retrieved } from './freshness'
+
+export type { CurrencyUnit } from './freshness'
 import type { SecurityClass } from './identity'
 
 /**
@@ -153,10 +155,44 @@ export interface AdapterCapabilities {
  * "we are being throttled" arrive identically and only one of them should be
  * retried.
  */
+/**
+ * The providers this product knows how to read from.
+ *
+ * Declared here rather than imported from the edge function's own entitlement
+ * module, which holds the same union: that file is deliberately unreachable
+ * from the browser bundle so client-side authorization is impossible rather
+ * than merely discouraged, and `__tests__/entitlement.test.ts` sweeps `src/`
+ * to keep it that way — by the module's bare name, comments included, which
+ * is why this paragraph does not spell it.
+ *
+ * A name here selects a CODE PATH. It never grants access to anything; the
+ * entitlement decision is the edge function's, on every request.
+ */
+export type MarketDataProviderId = 'yahoo' | 'eodhd'
+
 export type AdapterFailure =
+  /** The provider does not know this instrument. Asking again will not help. */
   | { kind: 'unknown_symbol'; symbol: string }
+  /**
+   * The instrument is real and the WINDOW is empty.
+   *
+   * Distinct from `unknown_symbol` because conflating them produced a real
+   * misreading: asking for today's daily bar during an open session returns
+   * nothing (the bar is not published yet), and a good ticker was reported as
+   * unknown. A weekend, a holiday, or any window before first trade does the
+   * same. A caller seeing this should widen the window, not doubt the symbol.
+   */
+  | { kind: 'no_data'; detail: string }
+  /**
+   * This provider cannot serve this REQUEST, and never will as asked.
+   *
+   * An interval it does not offer, or a venue outside its intraday coverage.
+   * Distinct from `no_data` because the fix is a different request, not a
+   * different window.
+   */
   | { kind: 'not_supported'; detail: string }
   | { kind: 'rate_limited'; retryAfterMs: number | null }
+  /** A transport or provider fault. Worth trying again. */
   | { kind: 'unavailable'; detail: string }
 
 export type AdapterResult<T> =

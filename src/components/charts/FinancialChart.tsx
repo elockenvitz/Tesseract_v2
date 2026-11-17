@@ -5,12 +5,14 @@ import { InteractiveChart } from './InteractiveChart'
 import type { ChartDataPoint, TechnicalIndicator, ChartConfig } from './types'
 import { ChartDataAdapter } from './utils/dataAdapter'
 import { usePriceHistory, timeframeForDays, type PriceTimeframe } from '../../hooks/usePriceHistory'
-import { financialDataService, type Quote } from '../../lib/financial-data/browser-client'
+import type { Quote } from '../../lib/financial-data/browser-client'
 import {
   useMarketDataPolling,
   pollingQueryOptions,
   quoteQueryKey,
 } from '../../lib/market-data/polling'
+import { useMarketDataEntitlement } from '../../lib/market-data/provider-routing'
+import { fetchRoutedQuote } from '../../lib/market-data/routed-quote'
 
 interface FinancialChartProps {
   symbol: string
@@ -44,15 +46,17 @@ export function FinancialChart({
     active: !!symbol,
   })
 
-  const { data: currentQuote, isLoading: quoteLoading } = useQuery({
-    queryKey: quoteQueryKey(symbol),
-    queryFn: async () => {
-      const quote = await financialDataService.getQuote(symbol)
-      return quote
-    },
+  // The provider is the server's decision; the key carries it so an entitled
+  // and an unentitled session cannot share one cache entry.
+  const { provider: marketDataProvider } = useMarketDataEntitlement()
+
+  const { data: quoteResult, isLoading: quoteLoading } = useQuery({
+    queryKey: quoteQueryKey(symbol, marketDataProvider),
+    queryFn: async () => fetchRoutedQuote(symbol, marketDataProvider),
     enabled: !!symbol,
     ...pollingQueryOptions(quotePolling),
   })
+  const currentQuote = quoteResult?.quote ?? null
 
   // Generate chart data based on timeframe
   // Real closes. Every branch below synthesised: generateIntradayData is an

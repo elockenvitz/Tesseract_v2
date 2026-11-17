@@ -473,7 +473,21 @@ export function pollingQueryOptions(decision: PollingDecision): PollingQueryOpti
  * and a header quote fetched the same number twice.
  *
  * One key, so the cache does what it was already capable of doing.
+ *
+ * ── Why the provider is part of the key ───────────────────────────────────
+ *
+ * Two sessions in one browser tab are the case that matters. Sign out as an
+ * EODHD-entitled account, sign in as somebody who is not, and a key without
+ * the provider would serve the second account the first one's licensed quote
+ * straight from the React Query cache — a licensing leak achieved entirely by
+ * caching, with no request made and nothing to audit.
+ *
+ * It defaults to `yahoo`, which is what every user has, so a caller that has
+ * not been taught about routing cannot accidentally read an EODHD entry.
  */
-export function quoteQueryKey(symbol: string | null | undefined) {
-  return ['market-data', 'quote', symbol ?? null] as const
+export function quoteQueryKey(
+  symbol: string | null | undefined,
+  provider: 'yahoo' | 'eodhd' = 'yahoo',
+) {
+  return ['market-data', 'quote', provider, symbol ?? null] as const
 }

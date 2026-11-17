@@ -29,12 +29,14 @@ import {
   Target,
   Maximize2
 } from 'lucide-react'
-import { financialDataService } from '../../lib/financial-data/browser-client'
 import {
   useMarketDataPolling,
   pollingQueryOptions,
   quoteQueryKey,
 } from '../../lib/market-data/polling'
+import { useMarketDataEntitlement } from '../../lib/market-data/provider-routing'
+import { fetchRoutedQuote } from '../../lib/market-data/routed-quote'
+import { DataProvenanceBadge } from '../market-data/DataProvenanceBadge'
 import { usePriceHistory, timeframeForDays } from '../../hooks/usePriceHistory'
 import { TechnicalIndicators } from './utils/indicators'
 
@@ -222,15 +224,20 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
     active: !!symbol,
   })
 
-  const { data: currentQuote, isLoading } = useQuery({
-    queryKey: quoteQueryKey(symbol),
-    queryFn: async () => {
-      const quote = await financialDataService.getQuote(symbol)
-      return quote
-    },
+  /*
+   * Which provider answers is the server's decision, never this component's.
+   * `useMarketDataEntitlement` reports it, and the key carries it so an
+   * entitled and an unentitled session cannot share one cache entry.
+   */
+  const { provider: marketDataProvider } = useMarketDataEntitlement()
+
+  const { data: quoteResult, isLoading } = useQuery({
+    queryKey: quoteQueryKey(symbol, marketDataProvider),
+    queryFn: async () => fetchRoutedQuote(symbol, marketDataProvider),
     enabled: !!symbol,
     ...pollingQueryOptions(quotePolling),
   })
+  const currentQuote = quoteResult?.quote ?? null
 
   // Calculate days based on date range
   const getDaysFromRange = useCallback((range: DateRangeType): number => {
@@ -1032,6 +1039,20 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
 
           {/* Right Controls */}
           <div className="flex items-center space-x-2">
+            {/*
+              Where the data came from and when it was true. Renders nothing
+              unless the provider stated a delivery mode, so every existing
+              Yahoo surface looks exactly as it did before.
+            */}
+            <DataProvenanceBadge
+              delivery={quoteResult?.quote?.delivery ?? history?.delivery}
+              effectiveAt={quoteResult?.quote?.effectiveAt ?? history?.lastBarAt}
+              precision={quoteResult?.quote?.effectiveAt ? 'instant' : history?.lastBarPrecision}
+              adjustment={history?.adjustment}
+              failure={quoteResult?.failure ?? history?.failure}
+              className="mr-1"
+            />
+
             {/* View Controls */}
             <button
               onClick={resetView}
