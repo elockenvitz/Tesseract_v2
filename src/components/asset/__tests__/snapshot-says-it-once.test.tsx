@@ -38,7 +38,7 @@ import type { AssetWorkspaceData } from '../../../hooks/useAssetWorkspace'
 
 const BASE: AssetWorkspaceData = {
   sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
-  history: [], spot: null, ladder: null, target: null, targetStanding: null,
+  history: [], spot: null, ladder: null, rungs: [], target: null, targetStanding: null,
   positions: [], liveIdeas: [], decisions: [],
 }
 
@@ -125,15 +125,27 @@ function withLadder() {
     scenarioId: null, name, price, probability: null, timeframe: null,
     reasoning: null, id: `r-${name}`, userId: null,
   })
+  /* Bull is deliberately NOT the target: otherwise "$180.00" appears
+     legitimately as a rung and an assertion against the restated target
+     could never tell the two apart. */
+  const cases = [rung('Bear', 90), rung('Base', 120), rung('Bull', 400)]
   data = {
     ...BASE, target: 180, spot: 243.79,
+    /*
+     * `rungs` as well as `ladder`, and the SAME rungs.
+     *
+     * The valuation reads `rungs` because `ladder` is narrowed to
+     * `valid && cases.length >= 2` and so hides a single level and a
+     * horizon disagreement. A fixture that set only `ladder` left the
+     * valuation empty, which silently turned the two restatement
+     * assertions below into assertions against a block that was not
+     * drawn at all -- the vacuity the first version of this case had.
+     */
+    rungs: cases,
     ladder: {
       assetId: 'a-1', symbol: 'AMZN', companyName: null, updatedAt: WRITTEN,
       valid: true, reason: '',
-      /* Bull is deliberately NOT the target: otherwise "$180.00" appears
-         legitimately as a rung and an assertion against the restated target
-         could never tell the two apart. */
-      cases: [rung('Bear', 90), rung('Base', 120), rung('Bull', 400)],
+      cases,
     },
   }
 }
@@ -264,21 +276,31 @@ describe('nothing the strip already states is restated', () => {
     withLadder()
     renderSnapshot({ currentUserId: 'me' })
     const exposure = screen.getByTestId('snapshot-exposure')
-    expect(exposure).toHaveTextContent(/bear/)   // the band IS open
+    /* The band IS open: asserted on the rendered ladder rather than on the
+       word "bear", which only held while the band was a line of prose. */
+    expect(screen.getByTestId('valuation-ladder')).toBeTruthy()
     expect(exposure).not.toHaveTextContent('Target')
+    /* 180 is the official target and is NOT one of the rungs, so this still
+       distinguishes a restated point estimate from a legitimate level. */
     expect(exposure).not.toHaveTextContent('$180.00')
     expect(exposure.textContent).not.toMatch(/-26\./)
   })
 
-  it('keeps the spread, which the strip cannot say', () => {
+  it('keeps the distribution, which the strip cannot say', () => {
     /*
-     * One target number says what we think it is worth; the bear/bull pair
+     * One target number says what we think it is worth; the spread of cases
      * says how sure we are. That is the part worth the room, and removing
      * the point estimate must not take it with it.
+     *
+     * This asserts every rung rather than "bear ... bull": the block now
+     * draws the MIDDLE of the distribution too, and a two-ended assertion
+     * would pass against a ladder that had quietly lost its base case.
      */
     withLadder()
     renderSnapshot({ currentUserId: 'me' })
-    expect(screen.getByTestId('snapshot-exposure')).toHaveTextContent(/bear .*bull/)
+    const names = screen.getAllByTestId('valuation-rung')
+      .map(n => n.getAttribute('data-scenario'))
+    expect(names).toEqual(['Bear', 'Base', 'Bull'])
   })
 
   it('leaves no empty rule across the block when there is no spread at all', () => {

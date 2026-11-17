@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 /* `Sparkles` is gone with the "AI summary" read mode: the only remaining
    sparkles on this page belong to ThesisUnifiedSummary, which draws its own. */
@@ -807,6 +807,31 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
 
   // Create effective asset with full data merged in
   const effectiveAsset = fullAsset ? { ...asset, ...fullAsset } : asset
+
+  /*
+   * What the Overview's Snapshot needs, and a stable object identity.
+   *
+   * Only three identity fields plus the quoting currency. Memoised on the
+   * VALUES rather than spread inline, because a fresh object on every render
+   * is a prop change on every render, and this page re-renders on every
+   * keystroke in the research editor.
+   *
+   * `currency` is null until the reference row lands. That is deliberate: the
+   * valuation renders bare numbers rather than assuming USD, which on a
+   * London price would be wrong about the currency and wrong by a
+   * hundredfold at once.
+   */
+  const assetCurrency =
+    (effectiveAsset as { currency?: string | null } | undefined)?.currency ?? null
+  const snapshotAsset = useMemo(
+    () => ({
+      id: asset.id,
+      symbol: asset.symbol ?? null,
+      company_name: asset.company_name ?? null,
+      currency: assetCurrency,
+    }),
+    [asset.id, asset.symbol, asset.company_name, assetCurrency],
+  )
 
   // Fetch workflow-specific priority
   const { data: workflowPriority } = useQuery({
@@ -4675,7 +4700,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
         {/* ========== OVERVIEW ========== */}
         {activeMode === 'overview' && (
           <InvestmentSnapshot
-            asset={asset}
+            /*
+              `snapshotAsset`, not `asset`: the tab descriptor carries no
+              currency, and the valuation needs one to label its prices. It
+              comes from `effectiveAsset`, which already merges the reference
+              row this tab fetched (`ASSET_REFERENCE_COLUMNS` includes
+              `currency`), so this adds no read. Null until that row lands,
+              and the valuation renders bare numbers in the meantime rather
+              than assuming dollars.
+            */
+            asset={snapshotAsset}
             /* Already fetched above for the ticker dropdown — passed down so
                the Snapshot adds no second read of the same rows. */
             coverage={coverage || []}

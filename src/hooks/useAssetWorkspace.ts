@@ -37,7 +37,7 @@ import {
   type HoldingRow, type Position,
 } from '../lib/portfolio/holdings'
 import {
-  selectCurrentLadders, type TargetRow, type CurrentLadder,
+  selectCurrentLadders, type TargetRow, type CurrentLadder, type LadderCase,
 } from '../lib/signals/current-ladder'
 /* The one rule for "does this price target still stand". Imported, never
    restated: the pane and the canonical page reporting different answers for
@@ -154,6 +154,19 @@ export interface AssetWorkspaceData {
   spot: number | null
   /** The whole ladder, so FrameworkScale can be reused rather than reshaped. */
   ladder: CurrentLadder | null
+  /**
+   * Every current rung, including ladders `ladder` refuses.
+   *
+   * `ladder` is deliberately narrow: `valid && cases.length >= 2`, because
+   * `FrameworkScale` draws a RANGE and one rung is not one. The valuation has
+   * something to say about a single rung though -- that it is a level somebody
+   * recorded and not a distribution -- and about two rungs whose horizons
+   * disagree. Those are exactly the cases `ladder` drops, so they are kept
+   * here rather than by loosening a field other surfaces depend on.
+   *
+   * Same rows, same supersession, no extra request.
+   */
+  rungs: LadderCase[]
   target: number | null
   /**
    * Whether the number in `target` still stands, and as of when.
@@ -170,7 +183,7 @@ export interface AssetWorkspaceData {
 
 const EMPTY: AssetWorkspaceData = {
   sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
-  history: [], spot: null, ladder: null, target: null, targetStanding: null,
+  history: [], spot: null, ladder: null, rungs: [], target: null, targetStanding: null,
   positions: [], liveIdeas: [], decisions: [],
 }
 
@@ -276,8 +289,16 @@ export function useAssetWorkspace(
           /* `target_date`, `is_rolling`, `timeframe` and `timeframe_type` are
              here for `targetFreshness`. Without them this pane could report a
              price and not whether it still stood, which is how the pane and
-             the canonical page came to disagree about the same number. */
-          .select('id, asset_id, price, is_official, created_at, updated_at, target_date, is_rolling, timeframe, timeframe_type, scenarios(name), assets(id, symbol, company_name)')
+             the canonical page came to disagree about the same number.
+
+             `probability` is what turns the ladder from a range into a
+             valuation. It was already typed on `TargetRow` and already
+             mapped onto `LadderCase` by `selectCurrentLadders` -- but it was
+             never named HERE, so every rung arrived `probability: null` and
+             the Overview could only ever draw a bear and a bull. One column
+             on a select this hook already issues: no new request, no
+             waterfall. See `lib/asset-workspace/valuation`. */
+          .select('id, asset_id, price, probability, is_official, created_at, updated_at, target_date, is_rolling, timeframe, timeframe_type, scenarios(name), assets(id, symbol, company_name)')
           .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!),
         /*
@@ -360,8 +381,13 @@ export function useAssetWorkspace(
 
       /* ------------------------------------------------------- framework */
       const targetRows = (targets.data ?? []) as TargetRow[]
-      const ladder = selectCurrentLadders(targetRows).find(l => l.valid && l.cases.length >= 2)
+      /* `targetRows` is already one asset, so this yields at most one ladder.
+         Taken once and used twice: the narrow `ladder` FrameworkScale needs,
+         and the full rung list the valuation reads. */
+      const ladders = selectCurrentLadders(targetRows)
+      const ladder = ladders.find(l => l.valid && l.cases.length >= 2)
       if (ladder) out.ladder = ladder
+      out.rungs = ladders[0]?.cases ? [...ladders[0].cases] : []
       const official = targetRows.find((t: any) => t.is_official && Number((t as any).price) > 0)
       if (official) out.target = Number((official as any).price)
 

@@ -28,7 +28,7 @@ import type { AssetWorkspaceData } from '../../../hooks/useAssetWorkspace'
 
 const BASE: AssetWorkspaceData = {
   sections: [], evidence: [], caseWrittenAt: null, coreSections: [],
-  history: [], spot: null, ladder: null, target: null, targetStanding: null,
+  history: [], spot: null, ladder: null, rungs: [], target: null, targetStanding: null,
   positions: [], liveIdeas: [], decisions: [],
 }
 
