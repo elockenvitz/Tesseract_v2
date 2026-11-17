@@ -58,7 +58,7 @@ const json = (body: unknown, status = 200) =>
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
 
-type Operation = 'exchanges' | 'resolve' | 'reference' | 'latest' | 'bars'
+type Operation = 'entitlement' | 'exchanges' | 'resolve' | 'reference' | 'latest' | 'bars'
 
 interface RequestBody {
   op?: unknown
@@ -131,9 +131,66 @@ Deno.serve(async req => {
     return json({ error: auth.error }, auth.status)
   }
 
+  /*
+   * The body is read here, before entitlement, because the `entitlement`
+   * operation has to be answerable by a caller who is NOT entitled -- that is
+   * its entire purpose. Reading JSON costs no provider request, so nothing
+   * about the ordering property below changes.
+   */
+  let body: RequestBody
+  try {
+    body = await req.json()
+  } catch {
+    return json({ error: 'Body must be JSON' }, 400)
+  }
+  const op = body.op as Operation
+
   /* ── 2 + 3. entitlement, before any provider request ─────────────────── */
 
   const configResult = entitlementConfigFromEnv(k => Deno.env.get(k))
+
+  /*
+   * A missing allowlist is not an entitled caller. Expressing it as a denial
+   * here, rather than returning early, means the `entitlement` probe can
+   * report "no" with a reason instead of a 503 that a frontend would have to
+   * interpret -- while the data operations below still get their 503.
+   */
+  const decision = configResult.ok
+    ? decideMarketDataAccess(
+      {
+        subject: { verifiedUserId: auth.user.id },
+        provider: 'eodhd',
+        // Every operation here serves the requesting user, looking at it now.
+        // No caller may ask this function to populate a shared cache, feed AI
+        // retrieval, or stand in as a fallback: those uses are refused by
+        // `decideMarketDataAccess` and are not reachable from this endpoint.
+        use: 'interactive_read',
+      },
+      configResult.config,
+    )
+    : { allowed: false as const, reason: 'not_configured' as const }
+
+  /*
+   * The entitlement probe. It answers for EVERY verified caller, entitled or
+   * not, and makes no provider request of any kind -- so an unentitled user
+   * asking "may I?" costs nothing and leaks nothing: the reply names no
+   * allowlist and no other account.
+   *
+   * This exists so the frontend can route on SERVER-VERIFIED state instead of
+   * comparing a user id or an email in the browser. The browser is told only
+   * yes or no, and the yes is still re-decided here on every data request.
+   */
+  if (op === 'entitlement') {
+    return json({
+      ok: true,
+      data: {
+        provider: 'eodhd',
+        entitled: decision.allowed,
+        reason: decision.allowed ? undefined : decision.reason,
+      },
+    })
+  }
+
   if (!configResult.ok) {
     /*
      * 503, not 403. The caller is not at fault and retrying will not help —
@@ -151,19 +208,6 @@ Deno.serve(async req => {
     )
   }
 
-  const decision = decideMarketDataAccess(
-    {
-      subject: { verifiedUserId: auth.user.id },
-      provider: 'eodhd',
-      // Every operation here serves the requesting user, looking at it now.
-      // No caller may ask this function to populate a shared cache, feed AI
-      // retrieval, or stand in as a fallback: those uses are refused by
-      // `decideMarketDataAccess` and are not reachable from this endpoint.
-      use: 'interactive_read',
-    },
-    configResult.config,
-  )
-
   if (!decision.allowed) {
     // 403 with the reason, but never the allowlist and never who is on it.
     return json({ error: 'Not entitled to EODHD', reason: decision.reason }, 403)
@@ -179,14 +223,6 @@ Deno.serve(async req => {
 
   /* ── 4. the provider request ─────────────────────────────────────────── */
 
-  let body: RequestBody
-  try {
-    body = await req.json()
-  } catch {
-    return json({ error: 'Body must be JSON' }, 400)
-  }
-
-  const op = body.op as Operation
   const deps: EodhdFetchDeps = { apiToken }
 
   try {

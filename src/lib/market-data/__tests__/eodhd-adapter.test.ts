@@ -657,6 +657,13 @@ describe('the edge function wire types still match the contract', () => {
     const fromContracts = [...new Set(kinds(read(resolve(MD, 'contracts.ts'))))].sort()
     const fromWire = [...new Set(kinds(read(WIRE)))].sort()
     expect(fromContracts).toEqual([
+      /*
+       * `no_data` joined the union when the daily empty-window defect was
+       * fixed. An unpublished daily bar used to come back as
+       * `unknown_symbol`, so a perfectly good ticker read as a bad one every
+       * time anyone asked for today's bar during an open session.
+       */
+      'no_data',
       'not_supported',
       'rate_limited',
       'unavailable',

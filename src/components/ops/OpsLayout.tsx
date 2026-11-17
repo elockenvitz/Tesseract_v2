@@ -15,6 +15,7 @@ import { OpsSupportPage } from '../../pages/ops/OpsSupportPage'
 import { OpsSettingsPage } from '../../pages/ops/OpsSettingsPage'
 import { OpsMetricsPage } from '../../pages/ops/OpsMetricsPage'
 import { OpsAIUsagePage } from '../../pages/ops/OpsAIUsagePage'
+import { OpsMarketDataPage } from '../../pages/ops/OpsMarketDataPage'
 
 /*
  * Phone: the sidebar becomes a scrolling strip under the header and the page
@@ -36,6 +37,9 @@ export function OpsLayout() {
             <Route path="holdings" element={<OpsHoldingsPage />} />
             <Route path="metrics" element={<OpsMetricsPage />} />
             <Route path="ai-usage" element={<OpsAIUsagePage />} />
+            {/* Temporary EODHD validation surface. Delete this line and
+                OpsMarketDataPage to remove it. */}
+            <Route path="market-data" element={<OpsMarketDataPage />} />
             <Route path="support" element={<OpsSupportPage />} />
             <Route path="settings" element={<OpsSettingsPage />} />
             <Route path="*" element={<Navigate to="/ops" replace />} />

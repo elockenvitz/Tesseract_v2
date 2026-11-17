@@ -12,6 +12,9 @@ import { ChartTransform } from './transform'
 import { ChartRenderer, IndicatorRenderConfig, LineStyle } from './renderer'
 import { SubPanelRenderer, SubPanelData } from './SubPanelRenderer'
 import { chartDataService, timeframeToParams, CandlestickData } from '../../../lib/chartData'
+import { useMarketDataEntitlement } from '../../../lib/market-data/provider-routing'
+import { failureMessage } from '../../../lib/market-data/eodhd-series'
+import type { AdapterFailure } from '../../../lib/market-data/contracts'
 import {
   calculateSMA,
   calculateEMA,
@@ -292,6 +295,15 @@ export function ProChart({
     : null
 
   // Fetch data when symbol or timeframe changes
+  /*
+   * The provider is the server's decision, and it is passed to every one of
+   * this chart's four fetch paths rather than some of them: a series whose
+   * preset range came from one provider and whose panned-in history came from
+   * another has no single adjustment basis and nothing on screen marks the
+   * join.
+   */
+  const { provider: marketDataProvider } = useMarketDataEntitlement()
+
   useEffect(() => {
     if (!symbol) return
 
@@ -303,6 +315,10 @@ export function ProChart({
       try {
         let rawData: CandlestickData[]
         let interval: string
+        // Only the preset-timeframe path reports a reason today; the custom
+        // range path returns candles alone, so this stays undefined there and
+        // the generic message is used.
+        let failure: AdapterFailure | undefined
 
         if (timeFrame === 'CUSTOM' && customRange) {
           // Use custom date range
@@ -314,7 +330,8 @@ export function ProChart({
             symbol.toUpperCase(),
             customRange.startDate,
             customRange.endDate,
-            interval
+            interval,
+            marketDataProvider
           )
         } else {
           // Use preset timeframe
@@ -322,15 +339,28 @@ export function ProChart({
           interval = params.interval
           setCurrentInterval(interval)
 
-          rawData = await chartDataService.getChartData({
+          const result = await chartDataService.getChartDataResult({
             symbol: symbol.toUpperCase(),
             interval: params.interval as any,
-            range: params.range as any
+            range: params.range as any,
+            provider: marketDataProvider
           })
+          rawData = result.candles
+          failure = result.failure
         }
 
         if (rawData.length === 0) {
-          setError('No data available for this symbol')
+          /*
+           * Say which of the four it was, when the provider said. The single
+           * message covered an unknown instrument, an unpublished bar size,
+           * an empty window and a transport failure alike — and only the
+           * first is about the symbol.
+           *
+           * No fallback to another provider: an entitled account is told why
+           * EODHD declined rather than shown different data without being
+           * told it changed.
+           */
+          setError(failure ? failureMessage(failure) : 'No data available for this symbol')
           setData([])
         } else {
           const ohlcData = convertToOHLC(rawData)
@@ -366,7 +396,7 @@ export function ProChart({
     fetchData()
     // customRangeKey is derived from customRange and ensures the effect triggers on changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, timeFrame, customRangeKey, customRange])
+  }, [symbol, timeFrame, customRangeKey, customRange, marketDataProvider])
 
   // Fetch comparison symbol data
   useEffect(() => {
@@ -387,14 +417,16 @@ export function ProChart({
               compare.symbol.toUpperCase(),
               customRange.startDate,
               customRange.endDate,
-              customRange.interval
+              customRange.interval,
+              marketDataProvider
             )
           } else {
             const params = timeframeToParams[timeFrame] || { interval: '1d', range: '1mo' }
             rawData = await chartDataService.getChartData({
               symbol: compare.symbol.toUpperCase(),
               interval: params.interval as any,
-              range: params.range as any
+              range: params.range as any,
+              provider: marketDataProvider
             })
           }
 
@@ -410,7 +442,7 @@ export function ProChart({
     }
 
     fetchCompareData()
-  }, [compareSymbols, timeFrame, customRange])
+  }, [compareSymbols, timeFrame, customRange, marketDataProvider])
 
   // Transform data based on display mode
   const transformedData = useMemo(() => {
@@ -832,7 +864,8 @@ export function ProChart({
             symbol.toUpperCase(),
             currentInterval,
             earliestDataTime,
-            durationSeconds
+            durationSeconds,
+            marketDataProvider
           )
 
           if (moreData.length > 0) {

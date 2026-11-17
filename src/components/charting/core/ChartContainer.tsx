@@ -16,6 +16,8 @@ import {
   HistogramData
 } from 'lightweight-charts'
 import { chartDataService, timeframeToParams, CandlestickData } from '../../../lib/chartData'
+import { useMarketDataEntitlement } from '../../../lib/market-data/provider-routing'
+import { failureMessage } from '../../../lib/market-data/eodhd-series'
 
 export type ChartType = 'candlestick' | 'line' | 'bar' | 'area'
 export type TimeFrame = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'ALL'
@@ -259,6 +261,13 @@ export function ChartContainer({
     }
   }, [chartType, indicators])
 
+  /*
+   * The provider is the server's decision. It is in the effect's dependency
+   * list so the chart refetches once the entitlement answer arrives, rather
+   * than keeping whatever the fail-safe default drew first.
+   */
+  const { provider: marketDataProvider } = useMarketDataEntitlement()
+
   // Fetch data when symbol or timeframe changes
   useEffect(() => {
     if (!symbol) return
@@ -269,14 +278,30 @@ export function ChartContainer({
 
       try {
         const params = timeframeToParams[timeFrame] || { interval: '1d', range: '1mo' }
-        const data = await chartDataService.getChartData({
+        const result = await chartDataService.getChartDataResult({
           symbol: symbol.toUpperCase(),
           interval: params.interval as any,
-          range: params.range as any
+          range: params.range as any,
+          provider: marketDataProvider
         })
+        const data = result.candles
 
         if (data.length === 0) {
-          setError('No data available for this symbol')
+          /*
+           * The reason, when the provider gave one.
+           *
+           * "No data available for this symbol" was the only message, and it
+           * covered four different situations: an unknown instrument, a bar
+           * size the provider does not publish, an empty window, and a
+           * transport failure. Only the first is about the symbol, and
+           * saying it for the other three sent people looking for a ticker
+           * problem that was not there.
+           *
+           * There is deliberately no fallback to another provider here. An
+           * entitled account sees why EODHD declined, not quietly different
+           * data from somewhere else.
+           */
+          setError(result.failure ? failureMessage(result.failure) : 'No data available for this symbol')
         } else {
           setChartData(data)
           updateSeriesData(data)
@@ -290,7 +315,7 @@ export function ChartContainer({
     }
 
     fetchData()
-  }, [symbol, timeFrame])
+  }, [symbol, timeFrame, marketDataProvider])
 
   const updateSeriesData = useCallback((data: CandlestickData[]) => {
     if (!mainSeriesRef.current || !isChartReady.current || data.length === 0) return

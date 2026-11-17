@@ -72,12 +72,13 @@ import { AddToThemeButton } from '../lists/AddToThemeButton'
 import { useAssetTradeIdeas } from '../../hooks/useAssetTradeIdeas'
 import { AssetTimelineView } from '../ui/AssetTimelineView'
 import { FinancialNews } from '../financial/FinancialNews'
-import { financialDataService } from '../../lib/financial-data/browser-client'
 import {
   useMarketDataPolling,
   pollingQueryOptions,
   quoteQueryKey,
 } from '../../lib/market-data/polling'
+import { useMarketDataEntitlement } from '../../lib/market-data/provider-routing'
+import { fetchRoutedQuote } from '../../lib/market-data/routed-quote'
 import { InvestmentSnapshot } from '../asset/InvestmentSnapshot'
 import { AssetWorkspaceHeader } from '../asset/AssetWorkspaceHeader'
 import '../asset/asset-ux2.css'
@@ -2300,12 +2301,16 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
     active: !!asset.symbol,
   })
 
-  const { data: currentQuote } = useQuery({
-    queryKey: quoteQueryKey(asset.symbol),
-    queryFn: async () => {
-      const quote = await financialDataService.getQuote(asset.symbol)
-      return quote
-    },
+  /*
+   * Which provider answers is the server's decision, not this page's. The key
+   * carries it so an entitled session and an unentitled one cannot share a
+   * cache entry after a user switch in the same tab.
+   */
+  const { provider: marketDataProvider } = useMarketDataEntitlement()
+
+  const { data: quoteResult } = useQuery({
+    queryKey: quoteQueryKey(asset.symbol, marketDataProvider),
+    queryFn: async () => fetchRoutedQuote(asset.symbol, marketDataProvider),
     /*
      * A price does not depend on owning the thing.
      *
@@ -2345,6 +2350,7 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
      */
     ...pollingQueryOptions(quotePolling),
   })
+  const currentQuote = quoteResult?.quote ?? null
 
   // Unified view warnings (composes divergence + EV mismatch + revision-based rules)
   const viewWarnings = useViewWarnings({

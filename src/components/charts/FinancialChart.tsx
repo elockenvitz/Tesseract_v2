@@ -5,12 +5,14 @@ import { InteractiveChart } from './InteractiveChart'
 import type { ChartDataPoint, TechnicalIndicator, ChartConfig } from './types'
 import { ChartDataAdapter } from './utils/dataAdapter'
 import { usePriceHistory, timeframeForDays, type PriceTimeframe } from '../../hooks/usePriceHistory'
-import { financialDataService, type Quote } from '../../lib/financial-data/browser-client'
 import {
   useMarketDataPolling,
   pollingQueryOptions,
   quoteQueryKey,
 } from '../../lib/market-data/polling'
+import { useMarketDataEntitlement } from '../../lib/market-data/provider-routing'
+import { fetchRoutedQuote } from '../../lib/market-data/routed-quote'
+import { displayMoney, resolveDisplayUnit } from '../../lib/market-data/currency'
 
 interface FinancialChartProps {
   symbol: string
@@ -44,15 +46,17 @@ export function FinancialChart({
     active: !!symbol,
   })
 
-  const { data: currentQuote, isLoading: quoteLoading } = useQuery({
-    queryKey: quoteQueryKey(symbol),
-    queryFn: async () => {
-      const quote = await financialDataService.getQuote(symbol)
-      return quote
-    },
+  // The provider is the server's decision; the key carries it so an entitled
+  // and an unentitled session cannot share one cache entry.
+  const { provider: marketDataProvider } = useMarketDataEntitlement()
+
+  const { data: quoteResult, isLoading: quoteLoading } = useQuery({
+    queryKey: quoteQueryKey(symbol, marketDataProvider),
+    queryFn: async () => fetchRoutedQuote(symbol, marketDataProvider),
     enabled: !!symbol,
     ...pollingQueryOptions(quotePolling),
   })
+  const currentQuote = quoteResult?.quote ?? null
 
   // Generate chart data based on timeframe
   // Real closes. Every branch below synthesised: generateIntradayData is an
@@ -76,6 +80,28 @@ export function FinancialChart({
   }, [selectedTimeframe])
 
   const { data: history } = usePriceHistory(symbol, resolvedTimeframe)
+
+  /*
+   * The unit this chart renders prices in. Declared above every consumer so
+   * it cannot be read from inside its own temporal dead zone.
+   *
+   * `undefined` when neither the quote nor the series stated a currency, and
+   * that renders a bare number — never an assumed dollar sign.
+   */
+  const displayUnit = useMemo(
+    () => resolveDisplayUnit(
+      currentQuote
+        ? { currency: currentQuote.currency, currencyUnit: currentQuote.currencyUnit }
+        : null,
+      history ? { currency: history.currency, currencyUnit: history.currencyUnit } : null,
+    ),
+    [currentQuote, history],
+  )
+
+  const priceDisplay = useMemo(
+    () => displayMoney(currentQuote?.price ?? Number.NaN, displayUnit),
+    [currentQuote, displayUnit],
+  )
 
   const chartData = useMemo(() => {
     const data: ChartDataPoint[] = (history?.points ?? []) as unknown as ChartDataPoint[]
@@ -188,7 +214,17 @@ export function FinancialChart({
             <div className="flex items-center space-x-4 text-sm">
               <div>
                 <span className="text-gray-600 dark:text-gray-400">Current:</span>
-                <span className="ml-1 font-medium">${currentQuote.price.toFixed(2)}</span>
+                {/*
+                  This read `${currentQuote.price.toFixed(2)}`. For a London
+                  listing the figure is in PENCE, so the label was wrong
+                  about the currency and wrong about the magnitude by a
+                  hundredfold at once. `displayMoney` converts to major units
+                  and labels what it converted to; with no stated currency it
+                  renders a bare number rather than assuming dollars.
+                */}
+                <span className="ml-1 font-medium" title={priceDisplay.converted ? 'Converted to major units from the venue\'s quoting unit' : undefined}>
+                  {priceDisplay.text}
+                </span>
               </div>
               {/* A change needs a previous close. Without one there is no
                   figure to colour, so the row says so rather than showing a
@@ -201,8 +237,8 @@ export function FinancialChart({
                   <span className={`ml-1 font-medium ${
                     currentQuote.change >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}>
-                    {currentQuote.change >= 0 ? '+' : ''}${currentQuote.change.toFixed(2)}
-                    ({currentQuote.change >= 0 ? '+' : ''}{currentQuote.changePercent.toFixed(2)}%)
+                    {currentQuote.change >= 0 ? '+' : ''}{displayMoney(currentQuote.change, displayUnit).text}
+                    {' '}({currentQuote.change >= 0 ? '+' : ''}{currentQuote.changePercent.toFixed(2)}%)
                   </span>
                 )}
               </div>

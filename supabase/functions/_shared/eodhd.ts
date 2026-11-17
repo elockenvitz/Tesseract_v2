@@ -122,6 +122,7 @@ export interface ReferenceRecord {
 
 export type AdapterFailure =
   | { kind: 'unknown_symbol'; symbol: string }
+  | { kind: 'no_data'; detail: string }
   | { kind: 'not_supported'; detail: string }
   | { kind: 'rate_limited'; retryAfterMs: number | null }
   | { kind: 'unavailable'; detail: string }
@@ -160,6 +161,24 @@ const INTRADAY_INTERVALS: Record<string, string | null> = {
 
 export function mapIntradayInterval(interval: BarInterval): string | null {
   return INTRADAY_INTERVALS[interval] ?? null
+}
+
+/**
+ * The widest from-to window EODHD serves per intraday interval, in days.
+ *
+ * Documented per interval rather than per plan. Keyed by the PROVIDER's
+ * interval string, so it is looked up after `mapIntradayInterval`.
+ */
+export const INTRADAY_MAX_SPAN_DAYS: Record<string, number> = {
+  '1m': 120,
+  '5m': 600,
+  '1h': 7200,
+}
+
+/** The widest window a caller may ask for, in our own interval vocabulary. */
+export function maxIntradaySpanDays(interval: BarInterval): number | null {
+  const mapped = mapIntradayInterval(interval)
+  return mapped ? (INTRADAY_MAX_SPAN_DAYS[mapped] ?? null) : null
 }
 
 /* ───────────────────────────── HTTP plumbing ───────────────────────────── */
@@ -608,9 +627,30 @@ export async function fetchDailyBars(
 
   const bars = toDailyBars(res.data)
   if (bars.length === 0) {
+    /*
+     * Empty is NOT a bad ticker.
+     *
+     * This returned `unknown_symbol`, and that was wrong in a way that showed
+     * up the moment anyone asked for today's bar during an open session:
+     * EODHD has not published it yet, so the list comes back empty and a
+     * perfectly good ticker was reported as unknown. A weekend, a holiday or
+     * any window before a listing's first trade does the same thing.
+     *
+     * EODHD answers 404 for a symbol it does not know, and `eodhdGet` already
+     * maps that to `unknown_symbol`. So reaching here with a 200 means the
+     * symbol EXISTS and the window is empty, which is `no_data` -- a distinct
+     * kind, carrying the window, so a caller can widen it rather than
+     * concluding the instrument is wrong.
+     */
     return {
       ok: false,
-      failure: { kind: 'unknown_symbol', symbol },
+      failure: {
+        kind: 'no_data',
+        detail:
+          `EODHD published no daily bars for ${symbol} between ${from} and ${to}. `
+          + 'The symbol resolved, so this is an empty window: today before '
+          + 'publication, a non-trading day, or a period before first trade.',
+      },
     }
   }
 
@@ -656,6 +696,29 @@ export async function fetchIntradayBars(
       failure: {
         kind: 'not_supported',
         detail: `EODHD does not offer a ${interval} intraday bar (supported: 1m, 5m, 1h)`,
+      },
+    }
+  }
+
+  /*
+   * EODHD caps the from-to window per interval, and exceeding it is refused
+   * at the provider -- which would surface here as a vague `unavailable`
+   * instead of the real reason. Saying it plainly costs nothing and saves the
+   * caller guessing.
+   *
+   * The caps are documented per interval, not per plan: 1m 120 days, 5m 600
+   * days, 1h 7200 days.
+   */
+  const spanDays = (toUnix - fromUnix) / 86_400
+  const cap = INTRADAY_MAX_SPAN_DAYS[mapped]
+  if (cap && spanDays > cap) {
+    return {
+      ok: false,
+      failure: {
+        kind: 'not_supported',
+        detail:
+          `EODHD serves at most ${cap} days of ${mapped} bars per request; `
+          + `${Math.ceil(spanDays)} were asked for. Narrow the window or page it.`,
       },
     }
   }
