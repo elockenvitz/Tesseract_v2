@@ -10,23 +10,42 @@ import {
 import { AssetTab } from '../components/tabs/AssetTab'
 import { UnsavedEditsPrompt } from '../components/contributions/UnsavedEditsPrompt'
 import { requestUnsavedNavigation } from '../lib/contributions/unsaved-edits-guard'
-import { IdeasApp } from '../components/ideas-app/IdeasApp'
+const IdeasApp = lazy(() => import('../components/ideas-app/IdeasApp').then(m => ({ default: m.IdeasApp })))
 import { DashboardNext } from '../components/dashboard-next/DashboardNext'
 import { DashboardShell } from '../components/dashboard/DashboardShell'
-import { MobileAssetPage } from '../components/mobile/asset/MobileAssetPage'
-import { MobilePipeline } from '../components/mobile/MobilePipeline'
-import { MobileCoverage } from '../components/mobile/MobileCoverage'
-import { AssetsListPage } from './AssetsListPage'
-import { ThemesListPage } from './ThemesListPage'
-import { PortfoliosListPage } from './PortfoliosListPage'
-import { NotesListPage } from './NotesListPage'
-import { ListsPage } from './ListsPage'
-import { NoteEditor } from '../components/notes/NoteEditorUnified'
-import { PortfolioNoteEditor } from '../components/notes/PortfolioNoteEditorUnified'
-import { ThemeNoteEditor } from '../components/notes/ThemeNoteEditorUnified'
-import { ThemeTab } from '../components/tabs/ThemeTab'
-import { PortfolioTab } from '../components/tabs/PortfolioTab'
-import { ListTab } from '../components/tabs/ListTab'
+const MobileAssetPage = lazy(() => import('../components/mobile/asset/MobileAssetPage').then(m => ({ default: m.MobileAssetPage })))
+const MobilePipeline = lazy(() => import('../components/mobile/MobilePipeline').then(m => ({ default: m.MobilePipeline })))
+const MobileCoverage = lazy(() => import('../components/mobile/MobileCoverage').then(m => ({ default: m.MobileCoverage })))
+/*
+ * ── Why these are lazy ───────────────────────────────────────────────────
+ *
+ * The entry chunk measured 8,950 kB raw (2,236 kB brotli on production), and
+ * all of it is parsed and compiled before the first paint. `vite.config.ts`
+ * already records that this is "the wait", and that splitting the libraries
+ * out bought caching rather than a smaller critical path.
+ *
+ * Seven pages here were already `lazy()`. These are the rest of the ones
+ * that `renderTabContent` returns for a single tab type — a person who never
+ * opens Templates should not be compiling TemplatesTab before they see
+ * anything. They are all rendered inside the existing `<Suspense>` boundary
+ * around `renderTabContent()`, which is what makes this safe.
+ *
+ * Deliberately NOT lazy: `AssetTab`, the most-opened tab in the product, and
+ * `BlankTab`/`DesktopOnlyCard`, which are small and render immediately on a
+ * new tab. Deferring those would trade a cold-load win for a click the
+ * person makes constantly.
+ */
+const AssetsListPage = lazy(() => import('./AssetsListPage').then(m => ({ default: m.AssetsListPage })))
+const ThemesListPage = lazy(() => import('./ThemesListPage').then(m => ({ default: m.ThemesListPage })))
+const PortfoliosListPage = lazy(() => import('./PortfoliosListPage').then(m => ({ default: m.PortfoliosListPage })))
+const NotesListPage = lazy(() => import('./NotesListPage').then(m => ({ default: m.NotesListPage })))
+const ListsPage = lazy(() => import('./ListsPage').then(m => ({ default: m.ListsPage })))
+const NoteEditor = lazy(() => import('../components/notes/NoteEditorUnified').then(m => ({ default: m.NoteEditor })))
+const PortfolioNoteEditor = lazy(() => import('../components/notes/PortfolioNoteEditorUnified').then(m => ({ default: m.PortfolioNoteEditor })))
+const ThemeNoteEditor = lazy(() => import('../components/notes/ThemeNoteEditorUnified').then(m => ({ default: m.ThemeNoteEditor })))
+const ThemeTab = lazy(() => import('../components/tabs/ThemeTab').then(m => ({ default: m.ThemeTab })))
+const PortfolioTab = lazy(() => import('../components/tabs/PortfolioTab').then(m => ({ default: m.PortfolioTab })))
+const ListTab = lazy(() => import('../components/tabs/ListTab').then(m => ({ default: m.ListTab })))
 import { BlankTab } from '../components/tabs/BlankTab.tsx'
 import { DesktopOnlyCard } from '../components/mobile/DesktopOnlyCard'
 import { MobileDashboard } from '../components/mobile/MobileDashboard'
@@ -35,27 +54,27 @@ import { isDesktopOnly } from '../lib/mobile/mobile-surfaces'
 import { canonicalTabTarget } from '../lib/tabs/legacy-tab-aliases'
 import { useIsMobile } from '../hooks/useMediaQuery'
 const WorkflowsPage = lazy(() => import('./WorkflowsPage').then(m => ({ default: m.WorkflowsPage })))
-import { ProjectsPage } from './ProjectsPage'
-import { ProjectDetailTab } from '../components/tabs/ProjectDetailTab'
+const ProjectsPage = lazy(() => import('./ProjectsPage').then(m => ({ default: m.ProjectsPage })))
+const ProjectDetailTab = lazy(() => import('../components/tabs/ProjectDetailTab').then(m => ({ default: m.ProjectDetailTab })))
 // Project widgets removed - content now in Command Center carousel
-import { TradeQueuePage } from './TradeQueuePage'
+const TradeQueuePage = lazy(() => import('./TradeQueuePage').then(m => ({ default: m.TradeQueuePage })))
 import { AddTradeIdeaModal } from '../components/trading/AddTradeIdeaModal'
 const DecisionAccountabilityPage = lazy(() => import('./DecisionAccountabilityPage').then(m => ({ default: m.DecisionAccountabilityPage })))
-import { FilesPage } from './FilesPage'
+const FilesPage = lazy(() => import('./FilesPage').then(m => ({ default: m.FilesPage })))
 import { useSessionTracking } from '../hooks/useSessionTracking'
 const ChartingPage = lazy(() => import('./ChartingPage').then(m => ({ default: m.ChartingPage })))
 const SimulationPage = lazy(() => import('./SimulationPage').then(m => ({ default: m.SimulationPage })))
 const TradeBookPage = lazy(() => import('./TradeBookPage').then(m => ({ default: m.TradeBookPage })))
-import { AssetAllocationPage } from './AssetAllocationPage'
-import { TDFListPage } from './TDFListPage'
-import { TDFTab } from '../components/tabs/TDFTab'
-import { UserTab } from '../components/tabs/UserTab'
-import { TemplatesTab } from '../components/tabs/TemplatesTab'
+const AssetAllocationPage = lazy(() => import('./AssetAllocationPage').then(m => ({ default: m.AssetAllocationPage })))
+const TDFListPage = lazy(() => import('./TDFListPage').then(m => ({ default: m.TDFListPage })))
+const TDFTab = lazy(() => import('../components/tabs/TDFTab').then(m => ({ default: m.TDFTab })))
+const UserTab = lazy(() => import('../components/tabs/UserTab').then(m => ({ default: m.UserTab })))
+const TemplatesTab = lazy(() => import('../components/tabs/TemplatesTab').then(m => ({ default: m.TemplatesTab })))
 const CalendarPage = lazy(() => import('./CalendarPage').then(m => ({ default: m.CalendarPage })))
 const CoveragePage = lazy(() => import('./CoveragePage').then(m => ({ default: m.CoveragePage })))
-import { OrganizationPage } from './OrganizationPage'
-import { AuditExplorerPage } from './AuditExplorerPage'
-import { AdminConsolePage } from './AdminConsolePage'
+const OrganizationPage = lazy(() => import('./OrganizationPage').then(m => ({ default: m.OrganizationPage })))
+const AuditExplorerPage = lazy(() => import('./AuditExplorerPage').then(m => ({ default: m.AuditExplorerPage })))
+const AdminConsolePage = lazy(() => import('./AdminConsolePage').then(m => ({ default: m.AdminConsolePage })))
 import { ASSET_REFERENCE_SELECT } from '../lib/assets/asset-columns'
 import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
@@ -1690,7 +1709,18 @@ export function DashboardPage() {
       case 'files':
         return <FilesPage onItemSelect={handleSearchResult} />
       case 'charting':
-        return <ChartingPage onItemSelect={handleSearchResult} initialSymbol={activeTab.data?.symbol} />
+        /*
+         * `workspaceId` is what lets the chart survive this very switch.
+         * Only the active tab is rendered, so leaving Charting unmounts the
+         * page; the tab id keys the workspace it is restored from.
+         */
+        return (
+          <ChartingPage
+            onItemSelect={handleSearchResult}
+            initialSymbol={activeTab.data?.symbol}
+            workspaceId={activeTab.id}
+          />
+        )
       case 'audit':
         return <AuditExplorerPage onNavigate={handleSearchResult} />
       case 'admin-console':

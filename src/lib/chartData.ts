@@ -325,12 +325,31 @@ class ChartDataService {
     const { eodhdBars } = await import('./market-data/eodhd-client')
     const { toCandles, INTRADAY_MAX_SPAN_DAYS } = await import('./market-data/eodhd-series')
     const { resolveEodhdSymbol } = await import('./market-data/eodhd-symbol')
+    const { resamplePlanFor, resampleCandles } = await import('./market-data/resample')
 
-    const interval = eodhdIntervalFor(uiInterval as ChartDataRequest['interval'])
+    /*
+     * EODHD publishes 1m, 5m, 1h and 1d. For 15m, 30m, 1wk and 1mo we ask for
+     * the base size and combine the bars ourselves.
+     *
+     * Routing the entitled account to EODHD without this broke seven of the
+     * fifteen Charting frequencies and four of the ten timeframe presets,
+     * because `eodhdIntervalFor` correctly refused sizes the provider has no
+     * endpoint for. Refusing was right; stopping there was incomplete.
+     *
+     * This is not the substitution the adapter still refuses. A weekly bar is
+     * its daily bars combined, so the figures remain EODHD's own and the
+     * delivery badge stays accurate. Drawing 5m bars under a 15m label, or
+     * quietly serving Yahoo instead, would both misstate what is on screen.
+     */
+    const plan = resamplePlanFor(uiInterval as string)
+    const requestedInterval = plan
+      ? plan.base
+      : eodhdIntervalFor(uiInterval as ChartDataRequest['interval'])
+
+    const interval = requestedInterval
     if (!interval) {
-      // EODHD publishes no bar of this size. Refused, not substituted: a 5m
-      // series drawn for a 15m request would mislabel the bar width on the
-      // axis, and silently swapping to Yahoo would change the feed.
+      // No EODHD bar of this size and no base to build it from. Refused
+      // rather than substituted, and named so the UI can say which it was.
       return {
         candles: [],
         failure: {
@@ -362,15 +381,32 @@ class ChartDataService {
     })
     if (!res.ok) return { candles: [], failure: res.failure }
 
-    const candles = toCandles((res.data.value ?? []) as never[])
-    if (candles.length === 0) {
+    const baseCandles = toCandles((res.data.value ?? []) as never[])
+    if (baseCandles.length === 0) {
       // The symbol resolved and the window is empty. Distinct from an
       // unknown instrument, and the two read identically on a blank chart.
       return {
-        candles,
+        candles: baseCandles,
         failure: {
           kind: 'no_data',
           detail: `EODHD published no ${interval} bars for ${resolved.symbol} in this window.`,
+        },
+      }
+    }
+
+    // Combined only when a base was substituted for an unpublished size.
+    const candles = plan ? resampleCandles(baseCandles, plan.target) : baseCandles
+    if (candles.length === 0) {
+      /*
+       * Base bars arrived but none survived bucketing. That means every
+       * timestamp was unparseable, which is a provider-shape problem rather
+       * than an empty window, so it must not be reported as "no data".
+       */
+      return {
+        candles,
+        failure: {
+          kind: 'unavailable',
+          detail: `EODHD ${interval} bars for ${resolved.symbol} carried no usable timestamps.`,
         },
       }
     }
@@ -417,6 +453,28 @@ class ChartDataService {
     const data = await fetchYahooChart({ symbol, interval: intervalParam, period1, period2 })
     if (!data) return []
     return parseYahooChart(data, intervalParam)
+  }
+
+  /**
+   * A custom window, with the reason when it comes back empty.
+   *
+   * The Charting page's frequency picker reaches the provider through here —
+   * choosing "Weekly" or "15 Min" sets `timeFrame: 'CUSTOM'` and an
+   * `apiInterval` — so this is the path that has to explain itself. Before,
+   * every failure arrived as a bare empty array and the chart said "No data
+   * available for this symbol" whatever had actually gone wrong.
+   */
+  async getCustomRangeDataResult(
+    symbol: string,
+    startDate: Date,
+    endDate: Date,
+    interval: string,
+    provider: MarketDataProviderId = 'yahoo'
+  ): Promise<{ candles: CandlestickData[]; failure?: AdapterFailure }> {
+    if (provider === 'eodhd') {
+      return this.fetchEodhdWindowResult(symbol, interval, startDate, endDate)
+    }
+    return { candles: await this.getCustomRangeData(symbol, startDate, endDate, interval, provider) }
   }
 
   // Fetch data for a custom date range

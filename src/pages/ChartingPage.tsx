@@ -12,6 +12,13 @@ import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ProChart, ChartType, TimeFrame, IndicatorType, CustomDateRange } from '../components/charting'
+import { useAuth } from '../contexts/AuthContext'
+import { useOrganization } from '../contexts/OrganizationContext'
+import {
+  chartingWorkspaceKey,
+  readChartingWorkspace,
+  writeChartingWorkspace,
+} from '../lib/charting/workspace-state'
 import { Annotation, AnnotationType } from '../components/charting/engine/annotations'
 
 // Metric types for charting
@@ -101,6 +108,15 @@ function createAnnotation(type: AnnotationType, time: number, price: number): An
 interface ChartingPageProps {
   onItemSelect?: (item: any) => void
   initialSymbol?: string
+  /**
+   * The tab this workspace belongs to.
+   *
+   * Part of the persistence key, so two Charting tabs keep separate
+   * selections. Optional because a caller that does not supply one gets the
+   * old behaviour — a fresh workspace each mount — rather than silently
+   * sharing one slot with every other caller.
+   */
+  workspaceId?: string
 }
 
 type ViewMode = 'single' | 'grid'
@@ -216,12 +232,22 @@ function parseIntervalToDays(interval: string): number {
 }
 
 
-// Get fresh default state (no persistence)
-function getDefaultChartingState(): {
+/**
+ * What survives a tab switch.
+ *
+ * Held outside React by `lib/charting/workspace-state`, because
+ * `renderTabContent` mounts only the active tab and therefore unmounts this
+ * page entirely when you move to Overview. These are the fields a person
+ * chose and would have to choose again.
+ */
+interface ChartingWorkspace {
   panels: ChartPanel[]
   activePanel: string
   viewMode: ViewMode
-} {
+}
+
+// Get fresh default state, used only when nothing was stored for this tab.
+function getDefaultChartingState(): ChartingWorkspace {
   return {
     panels: [{ id: '1', symbol: '', companyName: '', chartType: 'line' as ChartType, timeFrame: '1M' as TimeFrame, indicators: [] as string[], metric: 'price' as MetricType, annotations: [] as Annotation[], compareSymbols: [], displayMode: 'absolute' as DisplayMode, indexBase: DEFAULT_INDEX_BASE }],
     activePanel: '1',
@@ -229,9 +255,33 @@ function getDefaultChartingState(): {
   }
 }
 
-export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps) {
-  // Always start with fresh default state
-  const [initialState] = useState(() => getDefaultChartingState())
+// `onItemSelect` stays in the props -- DashboardPage passes it -- but it is
+// not destructured, because nothing in this page reads it. That was already
+// true before this change; adding a parameter beside it is what made the
+// lint rule attribute it to a new line.
+export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) {
+  const { user } = useAuth()
+  const { currentOrgId } = useOrganization()
+
+  /*
+   * The workspace key carries the principal, so a different account or
+   * organization reads a different entry and cannot see this one's symbols
+   * or comparisons. Partitioned by construction rather than by remembering
+   * to clear — though the principal change clears the map too.
+   */
+  const workspaceKey = chartingWorkspaceKey(user?.id, currentOrgId, workspaceId)
+
+  /*
+   * Restored, not reset.
+   *
+   * This page is unmounted outright whenever another tab becomes active, so
+   * a `useState` default meant the selected asset, timeframe and indicators
+   * were rebuilt from scratch on every return. Reading the stored workspace
+   * first is the whole fix for that.
+   */
+  const [initialState] = useState<ChartingWorkspace>(
+    () => readChartingWorkspace<ChartingWorkspace>(workspaceKey) ?? getDefaultChartingState(),
+  )
 
   // Track symbols that have been added via initialSymbol to avoid duplicates
   const [addedSymbols, setAddedSymbols] = useState<Set<string>>(new Set())
@@ -249,6 +299,23 @@ export function ChartingPage({ onItemSelect, initialSymbol }: ChartingPageProps)
   const [showCompareMenu, setShowCompareMenu] = useState(false)
   const [compareSearchQuery, setCompareSearchQuery] = useState('')
   const [showDisplayModeMenu, setShowDisplayModeMenu] = useState(false)
+
+  /*
+   * Persist on every change, so an unmount needs no warning.
+   *
+   * An unmount-time save would be the obvious alternative and is the wrong
+   * shape: React does not guarantee an effect cleanup runs with the latest
+   * state when a parent stops rendering the child, and this page is removed
+   * by exactly that. Writing as the state changes means the stored copy is
+   * already current whenever the page disappears.
+   *
+   * The open/closed state of the menus above is deliberately NOT stored. A
+   * reopened tab showing the indicator menu already open would be restoring
+   * a transient, not a choice.
+   */
+  useEffect(() => {
+    writeChartingWorkspace<ChartingWorkspace>(workspaceKey, { panels, activePanel, viewMode })
+  }, [workspaceKey, panels, activePanel, viewMode])
 
   // Context menu state for right-click annotations
   const [contextMenu, setContextMenu] = useState<ContextMenuState>({

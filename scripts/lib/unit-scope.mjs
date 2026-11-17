@@ -399,6 +399,15 @@ export const GATED_DIRS = [
    * that locks a user out of their own account. Gated on arrival.
    */
   'src/components/auth/__tests__',
+  /*
+   * The chart workspace that a tab switch must not destroy, and the key that
+   * keeps one account's selections away from the next. Gated because both
+   * failures are silent: a broken store quietly resets the selected asset
+   * (which is the bug it was written for), and a key that drops the principal
+   * quietly shows the previous account's symbols to whoever signs in next.
+   * Gated on arrival.
+   */
+  'src/lib/charting/__tests__',
   // What a file type means, what a size reads as, and what the repository
   // refuses to store. Desktop and mobile both import these, so a drift here
   // is two surfaces disagreeing about the same file. Gated on arrival.

@@ -17,6 +17,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import { fetchSignedUrl } from '../lib/storage/signed-url'
 import { ORG_LOGO_BUCKET } from '../lib/storage/buckets'
+import { downscaleImage } from '../lib/storage/downscale-image'
 import {
   Building2,
   Users,
@@ -2829,8 +2830,24 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
       // Handle logo upload
       if (branding.logoFile) {
+        /*
+         * Resized before it is stored.
+         *
+         * The one logo in the database is 1.44 MB and the org switcher paints
+         * it into a 24x24 box, which is the measured reason the switcher icons
+         * are slow. Storage delivery transforms would fix it without a
+         * re-upload but are a paid feature, and this project is on the free
+         * plan, so the file is shrunk at the source instead.
+         *
+         * `downscaleImage` never throws and returns the ORIGINAL file if it
+         * cannot do the work, so a logo upload still succeeds on a browser
+         * that cannot decode it.
+         */
+        const downscaled = await downscaleImage(branding.logoFile)
+        const logoFile = downscaled.file
+
         const randomId = Math.random().toString(36).substring(2, 10)
-        const extension = branding.logoFile.name.split('.').pop() || 'png'
+        const extension = logoFile.name.split('.').pop() || 'png'
         const storagePath = `org/${organization.id}/${randomId}.${extension}`
 
         // Remove old logo if exists
@@ -2840,7 +2857,7 @@ function OrganizationContent({ isOrgAdmin, onUserClick, initialTab, initialAcces
 
         const { error: uploadError } = await supabase.storage
           .from('template-branding')
-          .upload(storagePath, branding.logoFile)
+          .upload(storagePath, logoFile)
 
         if (uploadError) throw uploadError
         logoUrl = storagePath

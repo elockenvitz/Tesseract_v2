@@ -101,13 +101,17 @@ describe('no cache can serve one account the other account\'s licensed data', ()
     expect(shouldClearProviderCaches('user-a', null), 'sign-out').toBe(true)
   })
 
-  it('clears BOTH module-level caches, not just one of them', () => {
+  it('clears EVERY module-level cache, not just one of them', () => {
     const cleared: string[] = []
     clearProviderCaches({
       clearCharts: () => cleared.push('charts'),
       clearReference: () => cleared.push('reference'),
+      // The Charting page's per-tab workspace joined this clear when the
+      // workspace stopped living in component state. Asserted by exact list
+      // so a dependency cannot be added and then left uncalled.
+      clearWorkspaces: () => cleared.push('workspaces'),
     })
-    expect(cleared.sort()).toEqual(['charts', 'reference'])
+    expect(cleared.sort()).toEqual(['charts', 'reference', 'workspaces'])
   })
 
   it('actually empties the reference and symbol caches, not just calls something', () => {

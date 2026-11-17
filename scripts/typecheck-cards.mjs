@@ -307,7 +307,15 @@ const MAX_ERRORS = 0
 // 8571 -> 8570 on 2026-11-16. Routing the chart price formatters through
 // `displayMoney` removed an implicitly-typed expression in
 // `FinancialChart.tsx`. Ratcheted because the gate asked.
-const MAX_REPO_ERRORS = 8570
+//
+// 8570 -> 8569 on 2026-11-16. Converting the remaining route-level pages and
+// tabs in `DashboardPage.tsx` to `lazy()` removed an implicitly-typed
+// expression along with a static import. Ratcheted because the gate asked.
+//
+// 8569 -> 8568 on 2026-11-16. Replacing `(supabase.rpc as any)` in
+// `useObjectSearch.ts` with the typed `callGlobalSearch` helper removed
+// another one. Ratcheted because the gate asked.
+const MAX_REPO_ERRORS = 8568
 
 /**
  * A floor on real source files, now that they are counted as source files.
