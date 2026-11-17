@@ -212,6 +212,29 @@ describe('the Charting page is wired to it', () => {
     expect(effect).not.toMatch(/searchQuery|contextMenu/)
   })
 
+  it('changes a timeframe or frequency by MERGING, so the symbol survives', () => {
+    /*
+     * The other half of "switching combinations must not reset the selected
+     * asset". Persistence across a tab switch is no use if changing the
+     * interval replaces the panel instead of updating it.
+     */
+    const update = /const updatePanel = useCallback\(\([\s\S]*?\}, \[\]\)/.exec(page)?.[0] ?? ''
+    expect(update, 'updatePanel was not found').not.toBe('')
+    expect(update).toMatch(/p\.id === panelId \? \{ \.\.\.p, \.\.\.updates \} : p/)
+  })
+
+  it('never sets symbol in the same update as a timeframe or frequency', () => {
+    // An update carrying both would be the regression: picking Weekly would
+    // also rewrite which asset is charted.
+    const calls = page.match(/updatePanel\([^,]+, \{[\s\S]*?\n {4}\}\)/g) ?? []
+    expect(calls.length, 'no updatePanel calls were found').toBeGreaterThan(0)
+    for (const call of calls) {
+      if (/timeFrame|customRange|selectedFreq/.test(call)) {
+        expect(call, `a timeframe update also writes symbol:\n${call}`).not.toMatch(/\bsymbol:/)
+      }
+    }
+  })
+
   it('is given a tab id by the dashboard', () => {
     const dash = readFileSync(resolve(__dirname, '../../../pages/DashboardPage.tsx'), 'utf8')
     const node = /<ChartingPage[\s\S]*?\/>/.exec(dash)?.[0] ?? ''
