@@ -151,6 +151,15 @@ describe('licensed data never reaches a shared destination', () => {
   it('writes to no database table from any EODHD code path', () => {
     for (const file of eodhdFiles) {
       const src = stripComments(read(file))
+      /*
+       * A `not.toMatch` on an EMPTY string passes, so every negative sweep
+       * in this file needs the length floor. It is not theoretical:
+       * `stripComments` treats the `/*` inside a route path like
+       * `path="/ops/*"` as a comment opener and eats the rest of the file,
+       * which would turn each assertion below into a silent pass.
+       */
+      expect(src.length, `${file} came back gutted — check stripComments`)
+        .toBeGreaterThan(300)
       expect(src, `${file} reaches the database directly`).not.toMatch(/\.from\(/)
       expect(src, `${file} writes`).not.toMatch(/\.(insert|upsert|update|delete)\(/)
     }
@@ -262,6 +271,91 @@ describe('the browser never decides entitlement for itself', () => {
     expect(routing).toMatch(/entitled \? 'eodhd' : 'yahoo'/)
   })
 
+  it('reports whether the server has answered, separately from loading', () => {
+    /*
+     * An unresolved session and a genuinely unentitled one BOTH report
+     * `provider: 'yahoo'`, so a surface cannot tell them apart from the
+     * provider alone — and a label drawn before the answer arrives could
+     * attribute Yahoo data to EODHD or the reverse. `resolved` is what a
+     * label reads, and it is not the same as `!isLoading`.
+     */
+    expect(routing).toMatch(/resolved/)
+    const expr = /const resolved = [^\n]+/.exec(routing)?.[0] ?? ''
+    expect(expr, 'the resolved expression was not found').not.toBe('')
+    // A signed-out session is resolved: there is nobody to be entitled.
+    expect(expr).toMatch(/!userId/)
+    // And it is the presence of an ANSWER, not the absence of loading.
+    expect(expr).toMatch(/query\.data !== undefined/)
+  })
+})
+
+describe('an entitled session is never quietly served the other provider', () => {
+  const chartData = stripComments(read('lib/chartData.ts'))
+  const routedQuote = stripComments(read('lib/market-data/routed-quote.ts'))
+  const history = stripComments(read('hooks/usePriceHistory.ts'))
+
+  it('has no provider fallback in the candle service', () => {
+    /*
+     * The shape to prevent: `catch { return fetchFromYahooFinance(...) }`.
+     * Substituting Yahoo candles under an EODHD label changes the
+     * adjustment basis and the currency of the series with nothing on
+     * screen marking the swap, and the provenance badge beside it would be
+     * describing a feed that supplied none of the data.
+     */
+    const eodhdBranch = /if \(provider === 'eodhd'\) \{[\s\S]*?\n {6}\}/.exec(chartData)?.[0] ?? ''
+    expect(eodhdBranch, 'the eodhd branch was not found').not.toBe('')
+    expect(eodhdBranch).not.toMatch(/fetchFromYahoo/)
+
+    // And the only Yahoo call sits behind the non-eodhd path.
+    const yahooCalls = [...chartData.matchAll(/fetchFromYahooFinance\(/g)].length
+    expect(yahooCalls, 'more Yahoo call sites than the single routed one').toBe(2)
+  })
+
+  it('returns this provider\'s own stale answer on error, never another\'s', () => {
+    /*
+     * The cached-on-error branch is NOT a fallback, and the reason is the
+     * cache key: it contains the provider, so a lookup under the eodhd key
+     * can only ever return eodhd data. Worth asserting, because removing
+     * the provider from the key would silently turn this branch into a
+     * cross-provider fallback.
+     */
+    const assignment = /const cacheKey = `[^`]*`/.exec(chartData)?.[0] ?? ''
+    expect(assignment).toContain('${provider}')
+  })
+
+  it('has no provider fallback in the quote path', () => {
+    const eodhdPart = routedQuote.slice(routedQuote.indexOf("provider !== 'eodhd'"))
+    expect(eodhdPart.length).toBeGreaterThan(200)
+    // After the yahoo early-return, the EODHD path must not call it again.
+    const afterEarlyReturn = eodhdPart.slice(eodhdPart.indexOf('eodhdLatest'))
+    expect(afterEarlyReturn).not.toMatch(/financialDataService/)
+  })
+
+  it('has no provider fallback in the history path', () => {
+    const fn = /async function fetchEodhdHistory[\s\S]*?\n\}/.exec(history)?.[0] ?? ''
+    expect(fn, 'fetchEodhdHistory was not found').not.toBe('')
+    expect(fn.length).toBeGreaterThan(400)
+    expect(fn).not.toMatch(/yahoo-chart-proxy|fetchYahooHistory/)
+  })
+
+  it('carries a reason instead of an empty chart with no explanation', () => {
+    /*
+     * "No data available for this symbol" covered four situations — unknown
+     * instrument, unpublished bar size, empty window, transport failure —
+     * and only the first is about the symbol. Saying it for the other three
+     * sent people hunting a ticker problem that did not exist.
+     */
+    expect(chartData).toMatch(/getChartDataResult/)
+    expect(chartData).toMatch(/failure\?: AdapterFailure/)
+
+    for (const file of ['components/charting/core/ChartContainer.tsx',
+      'components/charting/engine/ProChart.tsx']) {
+      const src = stripComments(read(file))
+      expect(src, `${file} still reports only the generic message`)
+        .toMatch(/failureMessage\(/)
+    }
+  })
+
   /*
    * Not duplicated here: "no shipped file imports the server entitlement
    * module" is already owned by `entitlement.test.ts`, and its version is
@@ -270,6 +364,80 @@ describe('the browser never decides entitlement for itself', () => {
    * that the sweep read more than 500 files. A second, comment-stripping copy
    * of the same rule would only create a weaker one to argue with.
    */
+})
+
+/* ──────────────────────── the diagnostic's two gates ──────────────────── */
+
+describe('the probe page is reachable by nobody it should not be', () => {
+  it('sits inside the ops routes, which are server-gated', () => {
+    /*
+     * Two independent gates, both server-side. `OpsGuard` calls the
+     * `is_platform_admin()` RPC, so the ROUTE is not reachable by an ordinary
+     * user; and the function re-decides EODHD entitlement on every request,
+     * so even a platform admin who is not the licensed seat gets 403s and
+     * sees no provider data.
+     *
+     * Asserted because moving this page out of `/ops` would remove the first
+     * gate silently — the component would still render, and only the second
+     * gate would be left.
+     */
+    const layout = stripComments(read('components/ops/OpsLayout.tsx'))
+    expect(layout).toMatch(/path="market-data"/)
+
+    /*
+     * Read RAW, deliberately.
+     *
+     * `stripComments` cannot be used on this file: the route's own path,
+     * `path="/ops/*"`, contains the two characters `/*`, so the
+     * block-comment regex treats it as a comment opener and eats the rest of
+     * the file to the next `*​/`. That is why this assertion first matched
+     * nothing — worth recording, because any source guard over JSX with
+     * glob-like route paths hits the same trap.
+     *
+     * Reading raw means a commented-out route could in principle satisfy it,
+     * so the anchor includes `element={` and the guard file is checked
+     * separately below.
+     */
+    const app = read('App.tsx')
+    // Self-closing `} />`, not a closing tag — the first version of this
+    // regex looked for `</Route>` and matched nothing, which the empty-match
+    // check below turned into a failure rather than a silent pass.
+    const opsRoute = /<Route path="\/ops\/\*" element=\{[\s\S]*?\} \/>/.exec(app)?.[0] ?? ''
+    expect(opsRoute, 'the /ops route was not found').not.toBe('')
+    expect(opsRoute.length).toBeGreaterThan(60)
+    expect(opsRoute).toContain('OpsGuard')
+    expect(opsRoute).toContain('ProtectedRoute')
+
+    const guard = stripComments(read('components/ops/OpsGuard.tsx'))
+    expect(guard, 'the ops guard no longer asks the server').toMatch(/is_platform_admin/)
+  })
+
+  it('refuses to probe at all without a server yes', () => {
+    const src = stripComments(read('components/market-data/EodhdDiagnostic.tsx'))
+    // The entitlement comes from the hook, and the refusal is an early
+    // return before any probe function exists to call.
+    expect(src).toMatch(/useMarketDataEntitlement\(\)/)
+    const refusal = src.indexOf('if (!entitled)')
+    const runner = src.indexOf('const run = async')
+    expect(refusal).toBeGreaterThan(-1)
+    expect(runner).toBeGreaterThan(-1)
+    expect(refusal, 'the probes are defined before the entitlement refusal')
+      .toBeLessThan(runner)
+    // And it never compares an identity itself.
+    expect(src).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)
+    expect(src).not.toMatch(/@[\w-]+\.(com|io|dev|net|org)/)
+  })
+
+  it('handles no token and prints no session', () => {
+    /*
+     * The point of replacing the DevTools script. supabase-js attaches the
+     * JWT; nothing here reads, stores or logs one, so there is nothing to
+     * redact out of what a person copies off the screen.
+     */
+    const src = stripComments(read('components/market-data/EodhdDiagnostic.tsx'))
+    expect(src).not.toMatch(/access_token|getSession|localStorage|Authorization/)
+    expect(src).not.toMatch(/console\.(log|info|dir)/)
+  })
 })
 
 /* ──────────────────────── price and trade safety (§4) ──────────────────── */

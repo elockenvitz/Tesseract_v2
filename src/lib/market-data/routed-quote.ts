@@ -74,7 +74,14 @@ export function clearReferenceCache() {
   referenceCache.clear()
 }
 
-async function referenceFor(symbol: string) {
+/**
+ * Reference data for a provider-format symbol, cached for the session.
+ *
+ * Exported because the history path needs the same answer: the series and
+ * the quote beside it must be labelled in the same currency, and fetching
+ * the unit twice from two call sites is how they end up disagreeing.
+ */
+export async function referenceFor(symbol: string) {
   const key = symbol.toUpperCase()
   const hit = referenceCache.get(key)
   if (hit) return hit

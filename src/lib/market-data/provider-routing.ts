@@ -44,6 +44,20 @@ export interface EntitlementState {
   /** Why not, when the server said so. Diagnostic only, never authorization. */
   reason?: string
   isLoading: boolean
+  /**
+   * Whether the server has actually answered.
+   *
+   * Distinct from `!isLoading`, and the distinction is the point. While the
+   * answer is outstanding, `provider` reads `yahoo` so the existing
+   * experience is preserved — but that Yahoo result must NOT be presented as
+   * EODHD data, and a surface cannot tell the difference from `provider`
+   * alone, because an unresolved session and a genuinely unentitled one
+   * both report `yahoo`.
+   *
+   * So a label reads this: unresolved means say nothing about the provider,
+   * not say "Yahoo" and not say "EODHD".
+   */
+  resolved: boolean
 }
 
 interface EntitlementBody {
@@ -208,10 +222,17 @@ export function useMarketDataEntitlement(): EntitlementState {
 
   const entitled = query.data?.entitled === true
 
+  /*
+   * Resolved means the server answered, either way. A signed-out session is
+   * also resolved: there is nobody to be entitled, and the answer is no.
+   */
+  const resolved = !userId || query.data !== undefined
+
   return {
     provider: entitled ? 'eodhd' : 'yahoo',
     entitled,
     reason: query.data?.reason,
     isLoading: !!userId && query.isLoading,
+    resolved,
   }
 }

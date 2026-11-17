@@ -303,7 +303,11 @@ const MAX_ERRORS = 0
 // `TradeIdeaDetailModal.tsx` with `withdrawDecisionRequestsForProposal`
 // removed two implicitly-typed `(r: any)` expressions. Ratcheted because the
 // gate asked: ground gained and not held is ground given back.
-const MAX_REPO_ERRORS = 8571
+//
+// 8571 -> 8570 on 2026-11-16. Routing the chart price formatters through
+// `displayMoney` removed an implicitly-typed expression in
+// `FinancialChart.tsx`. Ratcheted because the gate asked.
+const MAX_REPO_ERRORS = 8570
 
 /**
  * A floor on real source files, now that they are counted as source files.

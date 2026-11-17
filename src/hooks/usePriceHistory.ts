@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
-import type { AdapterFailure, MarketDataProviderId } from '../lib/market-data/contracts'
+import type { AdapterFailure, CurrencyUnit, MarketDataProviderId } from '../lib/market-data/contracts'
+import { classifyQuotingCurrency } from '../lib/market-data/currency'
 import { useMarketDataEntitlement } from '../lib/market-data/provider-routing'
 import { eodhdBars, eodhdLatest } from '../lib/market-data/eodhd-client'
 import { resolveEodhdSymbol } from '../lib/market-data/eodhd-symbol'
+import { referenceFor } from '../lib/market-data/routed-quote'
 import {
   toSeriesPoints,
   windowForTimeframe,
@@ -84,6 +86,23 @@ export interface PriceHistory {
   lastBarPrecision?: 'instant' | 'session_date'
   /** Raw versus adjusted basis, where the provider stated it. */
   adjustment?: string
+  /**
+   * The currency these prices are in, ISO 4217.
+   *
+   * Absent means the provider said nothing, and a surface showing these
+   * values must then render them WITHOUT a currency symbol. The alternative
+   * — assuming dollars — is wrong for every non-US listing and says so
+   * confidently.
+   */
+  currency?: string
+  /**
+   * Set when the prices are quoted in a minor unit, e.g. GBX pence.
+   *
+   * `points[].value` is left in the quoted unit. Converting here would make
+   * the series disagree with the provider's own figures; conversion is the
+   * display layer's explicit step, via `displayMoney`.
+   */
+  currencyUnit?: CurrencyUnit
   /**
    * Set when the provider declined rather than returned bars.
    *
@@ -228,6 +247,17 @@ async function fetchEodhdHistory(
   if (!resolved.ok) return { ...empty, failure: resolved.failure }
   const providerSymbol = resolved.symbol
 
+  /*
+   * The quoting unit, from reference data or not at all — EODHD's price
+   * endpoints state no currency. Resolution often hands it over already; the
+   * fallback covers a symbol that arrived pre-qualified and so skipped the
+   * search. Shared with the quote path so a chart and the price above it
+   * cannot be labelled in different currencies.
+   */
+  const unit = resolved.reference
+    ? { currency: resolved.reference.currency, currencyUnit: resolved.reference.currencyUnit }
+    : await referenceFor(providerSymbol)
+
   const window = windowForTimeframe(timeframe)
   const bars = await eodhdBars({
     symbol: providerSymbol,
@@ -284,6 +314,8 @@ async function fetchEodhdHistory(
     lastBarAt: envelope.effectiveAt,
     lastBarPrecision: envelope.effectiveAtPrecision,
     adjustment: envelope.adjustment,
+    currency: unit?.currency,
+    currencyUnit: unit?.currencyUnit,
   }
 }
 
@@ -411,6 +443,14 @@ async function fetchYahooHistory(
         stitched: merged.stitched,
         stitchRejected: merged.stitchRejected,
         provider: 'yahoo',
+        /*
+         * Yahoo states the quoting currency in `meta.currency`, and it was
+         * being thrown away — which is why every chart rendered a dollar
+         * sign. For a London listing it returns `GBp`, meaning PENCE, and
+         * `classifyQuotingCurrency` is case-sensitive about that because
+         * `GBp` and `GBP` differ only by case and mean figures 100x apart.
+         */
+        ...classifyQuotingCurrency(meta.currency),
       }
   }
 }

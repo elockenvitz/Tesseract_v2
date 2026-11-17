@@ -37,6 +37,7 @@ import {
 import { useMarketDataEntitlement } from '../../lib/market-data/provider-routing'
 import { fetchRoutedQuote } from '../../lib/market-data/routed-quote'
 import { DataProvenanceBadge } from '../market-data/DataProvenanceBadge'
+import { displayMoney, resolveDisplayUnit } from '../../lib/market-data/currency'
 import { usePriceHistory, timeframeForDays } from '../../hooks/usePriceHistory'
 import { TechnicalIndicators } from './utils/indicators'
 
@@ -229,7 +230,7 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
    * `useMarketDataEntitlement` reports it, and the key carries it so an
    * entitled and an unentitled session cannot share one cache entry.
    */
-  const { provider: marketDataProvider } = useMarketDataEntitlement()
+  const { provider: marketDataProvider, resolved: entitlementResolved } = useMarketDataEntitlement()
 
   const { data: quoteResult, isLoading } = useQuery({
     queryKey: quoteQueryKey(symbol, marketDataProvider),
@@ -270,6 +271,32 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
   // series (SMA, RSI, MACD) as extra keys, which the narrower PricePoint type
   // does not model.
   const rawChartData = (history?.points ?? []) as any[]
+
+  /*
+   * The unit every price on this chart is rendered in.
+   *
+   * Declared HERE, above every consumer, not beside `formatValue` lower
+   * down: the statistics effect lists it as a dependency, and a dependency
+   * array is evaluated during render. A `const` declared after that point is
+   * in its temporal dead zone when the array is built, which throws on every
+   * render — the exact failure that once broke the feed in banner code.
+   *
+   * The quote is preferred over the series because it is the more specific
+   * statement. When neither provider stated a currency this is `undefined`,
+   * which renders a bare number. That is the fix: the formatter read
+   * `$${value.toFixed(2)}` unconditionally, so a Toronto price showed as US
+   * dollars, and a London price showed PENCE with a dollar sign — wrong
+   * about the currency and wrong by a hundredfold at the same time.
+   */
+  const displayUnit = useMemo(
+    () => resolveDisplayUnit(
+      currentQuote
+        ? { currency: currentQuote.currency, currencyUnit: currentQuote.currencyUnit }
+        : null,
+      history ? { currency: history.currency, currencyUnit: history.currencyUnit } : null,
+    ),
+    [currentQuote, history],
+  )
 
   // Process data based on selected metric
   const chartData = useMemo(() => {
@@ -357,16 +384,24 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
     const maxValue = Math.max(...values)
     const change = ((lastValue - firstValue) / firstValue) * 100
 
+    /*
+     * Through the same formatter as the axis and the tooltip. These three
+     * read `toFixed(2)` with no unit at all, so a converted axis beside an
+     * unconverted "Current" would have shown the same price twice, a
+     * hundredfold apart, on one screen.
+     */
+    const money = (v: number) => displayMoney(v, displayUnit).text
+
     const newStatistics: ChartStatistic[] = [
-      { id: 'current', name: 'Current', value: lastValue.toFixed(2), visible: true, color: '#3b82f6' },
+      { id: 'current', name: 'Current', value: money(lastValue), visible: true, color: '#3b82f6' },
       { id: 'change', name: 'Change', value: `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`, visible: true, color: change >= 0 ? '#10b981' : '#ef4444' },
-      { id: 'high', name: 'High', value: maxValue.toFixed(2), visible: true, color: '#10b981' },
-      { id: 'low', name: 'Low', value: minValue.toFixed(2), visible: true, color: '#ef4444' },
+      { id: 'high', name: 'High', value: money(maxValue), visible: true, color: '#10b981' },
+      { id: 'low', name: 'Low', value: money(minValue), visible: true, color: '#ef4444' },
       { id: 'points', name: 'Data Points', value: chartData.length.toString(), visible: true, color: '#6b7280' }
     ]
 
     setStatistics(newStatistics)
-  }, [chartData])
+  }, [chartData, displayUnit])
 
   // Track whether body styles need cleanup
   const bodyStyleDirtyRef = useRef(false)
@@ -777,9 +812,15 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
       case 'macd':
         return value.toFixed(3)
       default:
-        return `$${value.toFixed(2)}`
+        /*
+         * One formatter for the axis, the tooltip and the metrics strip, so
+         * a GBX series cannot be divided by 100 on the axis and left raw in
+         * the tooltip — which would put two numbers a hundredfold apart on
+         * one screen, both looking reasonable.
+         */
+        return displayMoney(value, displayUnit).text
     }
-  }, [selectedMetric])
+  }, [selectedMetric, displayUnit])
 
   // Custom tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -1043,15 +1084,25 @@ export function AdvancedChart({ symbol, symbols = [], height = 500, className = 
               Where the data came from and when it was true. Renders nothing
               unless the provider stated a delivery mode, so every existing
               Yahoo surface looks exactly as it did before.
+
+              Gated on `entitlementResolved`. Before the server answers,
+              `marketDataProvider` reads `yahoo` so the existing experience is
+              preserved — but an unresolved session and a genuinely
+              unentitled one are indistinguishable from the provider alone, so
+              a badge drawn then could attribute the data to the wrong feed.
+              Saying nothing until the answer arrives is the only honest
+              option, and it arrives in well under a second.
             */}
-            <DataProvenanceBadge
-              delivery={quoteResult?.quote?.delivery ?? history?.delivery}
-              effectiveAt={quoteResult?.quote?.effectiveAt ?? history?.lastBarAt}
-              precision={quoteResult?.quote?.effectiveAt ? 'instant' : history?.lastBarPrecision}
-              adjustment={history?.adjustment}
-              failure={quoteResult?.failure ?? history?.failure}
-              className="mr-1"
-            />
+            {entitlementResolved && (
+              <DataProvenanceBadge
+                delivery={quoteResult?.quote?.delivery ?? history?.delivery}
+                effectiveAt={quoteResult?.quote?.effectiveAt ?? history?.lastBarAt}
+                precision={quoteResult?.quote?.effectiveAt ? 'instant' : history?.lastBarPrecision}
+                adjustment={history?.adjustment}
+                failure={quoteResult?.failure ?? history?.failure}
+                className="mr-1"
+              />
+            )}
 
             {/* View Controls */}
             <button

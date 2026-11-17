@@ -13,6 +13,8 @@ import { ChartRenderer, IndicatorRenderConfig, LineStyle } from './renderer'
 import { SubPanelRenderer, SubPanelData } from './SubPanelRenderer'
 import { chartDataService, timeframeToParams, CandlestickData } from '../../../lib/chartData'
 import { useMarketDataEntitlement } from '../../../lib/market-data/provider-routing'
+import { failureMessage } from '../../../lib/market-data/eodhd-series'
+import type { AdapterFailure } from '../../../lib/market-data/contracts'
 import {
   calculateSMA,
   calculateEMA,
@@ -313,6 +315,10 @@ export function ProChart({
       try {
         let rawData: CandlestickData[]
         let interval: string
+        // Only the preset-timeframe path reports a reason today; the custom
+        // range path returns candles alone, so this stays undefined there and
+        // the generic message is used.
+        let failure: AdapterFailure | undefined
 
         if (timeFrame === 'CUSTOM' && customRange) {
           // Use custom date range
@@ -333,16 +339,28 @@ export function ProChart({
           interval = params.interval
           setCurrentInterval(interval)
 
-          rawData = await chartDataService.getChartData({
+          const result = await chartDataService.getChartDataResult({
             symbol: symbol.toUpperCase(),
             interval: params.interval as any,
             range: params.range as any,
             provider: marketDataProvider
           })
+          rawData = result.candles
+          failure = result.failure
         }
 
         if (rawData.length === 0) {
-          setError('No data available for this symbol')
+          /*
+           * Say which of the four it was, when the provider said. The single
+           * message covered an unknown instrument, an unpublished bar size,
+           * an empty window and a transport failure alike — and only the
+           * first is about the symbol.
+           *
+           * No fallback to another provider: an entitled account is told why
+           * EODHD declined rather than shown different data without being
+           * told it changed.
+           */
+          setError(failure ? failureMessage(failure) : 'No data available for this symbol')
           setData([])
         } else {
           const ohlcData = convertToOHLC(rawData)

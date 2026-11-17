@@ -182,6 +182,7 @@ describe('the decision cannot be made by the client', () => {
    */
   const isTestFile = (f: string) => /\.test\.tsx?$/.test(f)
 
+  // Same whole-tree scan, same raised budget, same reason as below.
   it('no shipped file under src/ imports the entitlement module', () => {
     const shipped = walk(resolve(REPO, 'src')).filter(f => !isTestFile(f))
     const offenders = shipped.filter(f =>
@@ -191,8 +192,18 @@ describe('the decision cannot be made by the client', () => {
       offenders.map(f => f.replace(REPO, '')),
       'the entitlement decision must not be reachable from the browser bundle',
     ).toEqual([])
-  })
+  }, 20_000)
 
+  /*
+   * 20s, not the 5s default.
+   *
+   * This walks and reads all of `src/` twice, so its cost grows with the
+   * repository and has nothing to do with the property it checks. It began
+   * tripping the default budget under parallel load while passing in
+   * isolation — a timeout, not a failing assertion, which is the worst kind
+   * of red because it points at nothing. The budget is raised rather than
+   * the scan narrowed: reading every file is the whole point.
+   */
   it('that guard actually scanned the tree, rather than an empty list', () => {
     // A walk that silently returned nothing would make the assertion above
     // pass forever. src/ is large; assert it is being read.
@@ -204,7 +215,7 @@ describe('the decision cannot be made by the client', () => {
     )
     expect(importers.length).toBeGreaterThan(0)
     expect(importers.every(isTestFile)).toBe(true)
-  })
+  }, 20_000)
 
   it('the decision never consults an email or a client-supplied id', () => {
     /*
