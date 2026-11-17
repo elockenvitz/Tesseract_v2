@@ -27,6 +27,25 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { AIConversationList } from '../AIConversationList'
 
+/*
+ * The row's timestamp is RELATIVE TO NOW, not a fixed date.
+ *
+ * `formatRelative` in AIConversationList leaves the "N<unit> ago" family at
+ * seven days (`if (ago < 10080)`, minutes) and returns
+ * `toLocaleDateString()` beyond it. A pinned `2026-11-10T12:00:00Z` therefore
+ * matched `/\d+[mhd] ago$/` for exactly seven days and then stopped: it went
+ * red at 2026-11-17T12:00:00Z, which blocked every deploy, because Netlify
+ * runs `guard:unit` BEFORE `vite build`.
+ *
+ * The test was already written to dodge this -- it matches a pattern rather
+ * than a fixed string -- but a tolerant matcher cannot save a fixture that
+ * ages out of the format entirely. Anchoring the fixture to `Date.now()` is
+ * what makes it durable, and it needs no fake timers, which `userEvent`
+ * would otherwise have to be reconfigured around.
+ */
+const HOURS_AGO_2 = () => new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+const DAYS_AGO_9 = () => new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toISOString()
+
 const conversation = (id: string, title: string) => ({
   id,
   user_id: 'u-1',
@@ -35,9 +54,9 @@ const conversation = (id: string, title: string) => ({
   title,
   is_archived: false,
   is_pinned: false,
-  last_message_at: '2026-11-10T12:00:00Z',
-  created_at: '2026-11-01T12:00:00Z',
-  updated_at: '2026-11-10T12:00:00Z',
+  last_message_at: HOURS_AGO_2(),
+  created_at: DAYS_AGO_9(),
+  updated_at: HOURS_AGO_2(),
   folder_id: null,
   tags: [{ type: 'asset' as const, id: 'a-aapl' }],
 })
