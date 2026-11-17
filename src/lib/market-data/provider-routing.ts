@@ -30,6 +30,7 @@ import { chartDataService } from '../chartData'
 import type { MarketDataProviderId } from './contracts'
 import { clearReferenceCache } from './routed-quote'
 import { clearSymbolCache } from './eodhd-symbol'
+import { clearChartingWorkspaces } from '../charting/workspace-state'
 
 export const EODHD_FUNCTION = 'eodhd-market-data'
 
@@ -171,6 +172,14 @@ export function shouldClearProviderCaches(
 export interface ProviderCacheDeps {
   clearCharts: () => void
   clearReference: () => void
+  /**
+   * The Charting page's per-tab workspace.
+   *
+   * Keyed by principal already, so a new account cannot read the previous
+   * one's selections — this stops the map holding a signed-out account's
+   * symbols and comparisons in memory.
+   */
+  clearWorkspaces: () => void
 }
 
 /**
@@ -184,6 +193,7 @@ export interface ProviderCacheDeps {
 export function clearProviderCaches(deps: ProviderCacheDeps = DEFAULT_CACHE_DEPS): void {
   deps.clearCharts()
   deps.clearReference()
+  deps.clearWorkspaces()
 }
 
 const DEFAULT_CACHE_DEPS: ProviderCacheDeps = {
@@ -192,6 +202,7 @@ const DEFAULT_CACHE_DEPS: ProviderCacheDeps = {
     clearReferenceCache()
     clearSymbolCache()
   },
+  clearWorkspaces: () => clearChartingWorkspaces(),
 }
 
 /**

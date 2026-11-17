@@ -149,16 +149,26 @@ describe('a model-file result never lands on Files', () => {
     vi.restoreAllMocks()
   })
 
-  it('opens the owning asset on a phone, not the Files empty state', () => {
+  it('opens the owning asset on a phone, not the Files empty state', async () => {
     setViewportWidth(PHONE)
     seedModelFileTab()
     render(<DashboardPage />)
 
-    // The defect, stated directly.
-    expect(screen.queryByTestId('files-page')).not.toBeInTheDocument()
-
-    const asset = screen.getByTestId('mobile-asset')
+    /*
+     * Awaited, because `MobileAssetPage` and `FilesPage` are both `lazy()`
+     * now -- the tab content arrives after the chunk resolves, behind the
+     * Suspense boundary in DashboardPage.
+     *
+     * The positive assertion comes FIRST on purpose. Checking for the absence
+     * of the Files page before anything has rendered passes against an empty
+     * document, which is how this test would have gone on reading green while
+     * the routing it exists to protect was broken.
+     */
+    const asset = await screen.findByTestId('mobile-asset')
     expect(asset).toHaveAttribute('data-asset-id', ASSET_ID)
+
+    // The defect, stated directly -- now against a document that has content.
+    expect(screen.queryByTestId('files-page')).not.toBeInTheDocument()
   })
 
   it('opens the asset workspace on the models section on a laptop', () => {

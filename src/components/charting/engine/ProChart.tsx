@@ -315,9 +315,8 @@ export function ProChart({
       try {
         let rawData: CandlestickData[]
         let interval: string
-        // Only the preset-timeframe path reports a reason today; the custom
-        // range path returns candles alone, so this stays undefined there and
-        // the generic message is used.
+        // Both branches report a reason now. The custom-range one matters
+        // most: the Charting frequency picker reaches the provider through it.
         let failure: AdapterFailure | undefined
 
         if (timeFrame === 'CUSTOM' && customRange) {
@@ -325,14 +324,15 @@ export function ProChart({
           interval = customRange.interval
           setCurrentInterval(interval)
 
-
-          rawData = await chartDataService.getCustomRangeData(
+          const custom = await chartDataService.getCustomRangeDataResult(
             symbol.toUpperCase(),
             customRange.startDate,
             customRange.endDate,
             interval,
             marketDataProvider
           )
+          rawData = custom.candles
+          failure = custom.failure
         } else {
           // Use preset timeframe
           const params = timeframeToParams[timeFrame] || { interval: '1d', range: '1mo' }
