@@ -12,12 +12,27 @@ import { render, screen } from '@testing-library/react'
 import { ValuationLadder } from '../ValuationLadder'
 import { buildValuation, type ValuationInput } from '../../../lib/asset-workspace/valuation'
 
+/*
+ * Returns a price-DEFINITE input.
+ *
+ * `ValuationInput.price` is `number | null`, because a stored target row may
+ * carry no price. Every fixture here sets one, and the narrower return type
+ * is what lets the pence case below derive its figures from the pounds case
+ * (`s.price * 100`) instead of hand-copying a second set of numbers that
+ * could drift from the first.
+ */
 const t = (
   name: string,
   price: number,
   probability: number | null,
   timeframe: string | null,
-): ValuationInput => ({ id: `${name}-${price}`, name, price, probability, timeframe })
+): ValuationInput & { price: number } => ({
+  id: `${name}-${price}`,
+  name,
+  price,
+  probability,
+  timeframe,
+})
 
 /** TSLA as it stands in production: weighted, one horizon. */
 const TSLA = [
