@@ -31,8 +31,21 @@ import {
 import {
   AnnotationRenderer,
   ChartEvent,
-  Annotation
+  Annotation,
+  AnnotationStyle,
+  AnnotationType,
+  DEFAULT_ANNOTATION_STYLE
 } from './annotations'
+/*
+ * What a press means, and what a finished drag draws.
+ *
+ * Both are pure and tested in `lib/charting/__tests__`. They live outside
+ * this file because a canvas cannot be rendered in jsdom, so a decision made
+ * in here is a decision no test can reach -- and the placement logic this
+ * replaces is what that costs: it derived the second point of every mark by
+ * arithmetic, so every trend line was 30 days long and rose exactly 5%.
+ */
+import { beginGesture, completeDraw } from '../../../lib/charting/drawing-gesture'
 
 export type TimeFrame = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'ALL' | 'CUSTOM'
 
@@ -104,6 +117,26 @@ interface ProChartProps {
   onContextMenu?: (e: React.MouseEvent, chartTime: number, chartPrice: number) => void
   onLineContextMenu?: (e: React.MouseEvent, symbol: string, isMainSymbol: boolean) => void
   onLineClick?: (symbol: string, isMainSymbol: boolean) => void // Left-click on line to select
+  /**
+   * The drawing tool in hand, or null when the pointer is a pointer.
+   *
+   * While a tool is selected, a press inside the plot starts a drawing
+   * instead of a pan. The axis gutters keep zooming either way, because they
+   * are the only way to change the view and a tool that captured them would
+   * strand a reader who needed to zoom before placing the next mark.
+   */
+  activeTool?: AnnotationType | null
+  /** Style for a newly drawn mark. The owner of the marks owns their style. */
+  annotationStyle?: AnnotationStyle
+  /**
+   * A mark was drawn. Fires once, on release, with the mark already built
+   * from the two points the analyst actually indicated.
+   *
+   * Not fired for a press that never moved with a two-point tool selected:
+   * a zero-length trend line is invisible and selectable only by accident,
+   * and stray clicks would otherwise accumulate them silently.
+   */
+  onAnnotationDraw?: (annotation: Annotation) => void
 }
 
 // Convert API data to OHLC format
@@ -138,7 +171,10 @@ export function ProChart({
   onCrosshairMove,
   onContextMenu,
   onLineContextMenu,
-  onLineClick
+  onLineClick,
+  activeTool = null,
+  annotationStyle = DEFAULT_ANNOTATION_STYLE,
+  onAnnotationDraw
 }: ProChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -285,6 +321,21 @@ export function ProChart({
   const [crosshair, setCrosshair] = useState<{ x: number; y: number } | null>(null)
   const [cursorStyle, setCursorStyle] = useState('crosshair')
   const [hoveredLine, setHoveredLine] = useState<string | null>(null) // symbol of hovered line
+
+  /**
+   * The drawing in progress: where the press landed, and with which tool.
+   *
+   * A ref and not state, deliberately. Nothing renders from it yet -- the
+   * mark appears on release -- so setting state on mousedown would re-render
+   * the chart for no visible change, on a canvas that redraws the whole
+   * series. It is also read inside a window-level `mouseup` listener, where
+   * a state value captured at subscribe time would be the stale one.
+   *
+   * The tool is captured HERE rather than read from the `activeTool` prop at
+   * release: a reader who switches tool mid-drag, or a parent that clears
+   * the selection, must not change what the gesture already began drawing.
+   */
+  const drawRef = useRef<{ from: { x: number; y: number }; tool: AnnotationType } | null>(null)
 
   // Device pixel ratio for sharp rendering
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
@@ -906,20 +957,35 @@ export function ProChart({
     const area = transformRef.current.chartArea
     const dims = transformRef.current.getDimensions()
 
-    // Determine drag mode based on click location
-    let mode: 'pan' | 'zoom-price' | 'zoom-time' = 'pan'
+    /*
+     * One decision, made in `lib/charting/drawing-gesture`.
+     *
+     * The three pan/zoom kinds are named exactly as `dragMode`'s values, so
+     * the answer passes straight through with no translation table for the
+     * two to disagree across.
+     */
+    const gesture = beginGesture({
+      at: { x, y },
+      chartArea: area,
+      dimensions: dims,
+      activeTool
+    })
 
-    // Check if clicking on price axis (right side)
-    if (x > area.x + area.width && x <= dims.width) {
-      mode = 'zoom-price'
-    }
-    // Check if clicking on time axis (bottom)
-    else if (y > area.y + area.height && y <= dims.height) {
-      mode = 'zoom-time'
+    if (gesture.kind === 'none') return
+
+    if (gesture.kind === 'draw') {
+      /*
+       * A drawing is NOT a drag in the pan/zoom sense, so `isDragging` stays
+       * false. That matters: `isDragging` drives the window-level listener
+       * that pans the view on every mouse move, and a drawing that also
+       * panned would move the chart out from under the mark being drawn.
+       */
+      drawRef.current = { from: gesture.from, tool: gesture.tool }
+      return
     }
 
     setIsDragging(true)
-    setDragMode(mode)
+    setDragMode(gesture.kind)
     setDragStart({
       x,
       y,
@@ -928,7 +994,7 @@ export function ProChart({
       minPrice: view.minPrice,
       maxPrice: view.maxPrice
     })
-  }, [view])
+  }, [view, activeTool])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -1040,10 +1106,67 @@ export function ProChart({
     }
   }, [isDragging, dragStart, dragMode, onCrosshairMove])
 
-  const handleMouseUp = useCallback(() => {
+  /**
+   * Finish a drawing, if one was in progress, at the given canvas pixel.
+   *
+   * Shared by the canvas `mouseup` and the window-level one, because a drag
+   * that begins on the chart very often ends off it -- a trend line drawn
+   * out to the right edge is the normal case, not the exception. Without the
+   * window path the mark would simply never appear and the gesture would
+   * stay armed, so the NEXT press would complete a line from the old start.
+   *
+   * Always clears `drawRef`, including when nothing is built: an abandoned
+   * gesture must not survive to be completed by an unrelated press.
+   */
+  const finishDrawing = useCallback((at: { x: number; y: number } | null) => {
+    const pending = drawRef.current
+    drawRef.current = null
+    if (!pending || !at || !transformRef.current || !onAnnotationDraw) return
+
+    const annotation = completeDraw({
+      tool: pending.tool,
+      from: pending.from,
+      to: at,
+      project: transformRef.current,
+      style: annotationStyle,
+      /* Supplied here so the geometry stays pure: it has no clock. */
+      id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+    })
+
+    /* null is a normal answer: a press that never moved with a two-point
+       tool in hand, or a tool this build does not know how to draw. */
+    if (annotation) onAnnotationDraw(annotation)
+  }, [annotationStyle, onAnnotationDraw])
+
+  /*
+   * Release anywhere ends the drawing.
+   *
+   * Subscribed for the component's whole life rather than only while a
+   * drawing is in progress. The existing window listener keys off
+   * `isDragging`, which a drawing deliberately does not set, and the
+   * in-progress drawing lives in a ref -- so there is no state change to
+   * subscribe on. An always-on listener that reads the ref at event time is
+   * both simpler and correct; it does nothing at all when `drawRef` is null,
+   * which is almost always.
+   */
+  useEffect(() => {
+    const onWindowMouseUp = (e: MouseEvent) => {
+      if (!drawRef.current) return
+      const rect = canvasRef.current?.getBoundingClientRect()
+      finishDrawing(rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : null)
+    }
+    window.addEventListener('mouseup', onWindowMouseUp)
+    return () => window.removeEventListener('mouseup', onWindowMouseUp)
+  }, [finishDrawing])
+
+  const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (drawRef.current) {
+      const rect = canvasRef.current?.getBoundingClientRect()
+      finishDrawing(rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : null)
+    }
     setIsDragging(false)
     setDragMode('pan')
-  }, [])
+  }, [finishDrawing])
 
   const handleMouseLeave = useCallback(() => {
     // Only clear crosshair when leaving, don't cancel drag
