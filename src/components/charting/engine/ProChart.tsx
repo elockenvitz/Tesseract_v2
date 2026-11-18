@@ -15,6 +15,7 @@ import { chartDataService, timeframeToParams, CandlestickData } from '../../../l
 import { useMarketDataEntitlement } from '../../../lib/market-data/provider-routing'
 import { failureMessage } from '../../../lib/market-data/eodhd-series'
 import type { AdapterFailure } from '../../../lib/market-data/contracts'
+import { adjustmentForProvider, type SeriesMeta } from '../workspace/series-meta'
 import {
   calculateSMA,
   calculateEMA,
@@ -176,6 +177,20 @@ interface ProChartProps {
    */
   onAnnotationSelect?: (id: string | null) => void
   /**
+   * What was drawn, reported to whoever owns the page furniture.
+   *
+   * The chart is the only thing that knows the last close, how many bars
+   * came back, which feed answered and on what adjustment basis -- and none
+   * of it was leaving this component, so the page above could show a symbol
+   * and a company name and nothing else. A reader could not tell a live
+   * series from a three-day-old cached one.
+   *
+   * Reported rather than lifted: the fetch belongs here, beside the view
+   * state it initialises, and moving it out to share four facts would be a
+   * much larger change for a much smaller reason.
+   */
+  onSeriesMeta?: (meta: SeriesMeta) => void
+  /**
    * A mark is being dragged. Fires on every frame of the drag, so the mark
    * follows the cursor.
    *
@@ -227,7 +242,8 @@ export function ProChart({
   onAnnotationDraw,
   onAnnotationSelect,
   onAnnotationChange,
-  onAnnotationCommit
+  onAnnotationCommit,
+  onSeriesMeta
 }: ProChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -492,6 +508,27 @@ export function ProChart({
         } else {
           const ohlcData = convertToOHLC(rawData)
           setData(ohlcData)
+
+          /*
+           * The basis comes from the provider, not from a literal here.
+           * Both feeds currently map a RAW close and ignore the adjusted
+           * one they also return, which is why a stock split draws as a
+           * step change in the line. `adjustmentForProvider` names the two
+           * mapping sites it read that from, so the claim can be rechecked
+           * when either changes.
+           */
+          const lastBar = ohlcData[ohlcData.length - 1]
+          const prevBar = ohlcData[ohlcData.length - 2]
+          onSeriesMeta?.({
+            symbol: symbol.toUpperCase(),
+            last: lastBar ? lastBar.close : null,
+            previous: prevBar ? prevBar.close : null,
+            lastBarTime: lastBar ? lastBar.time : null,
+            bars: ohlcData.length,
+            interval,
+            provider: marketDataProvider,
+            adjustment: adjustmentForProvider(marketDataProvider),
+          })
 
           // Calculate initial view
           const timeRange = ChartTransform.calculateTimeRange(ohlcData)

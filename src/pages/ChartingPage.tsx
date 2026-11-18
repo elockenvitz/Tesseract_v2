@@ -12,6 +12,8 @@ import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ProChart, ChartType, TimeFrame, IndicatorType, CustomDateRange } from '../components/charting'
+import { InstrumentHeader } from '../components/charting/workspace/InstrumentHeader'
+import type { SeriesMeta } from '../components/charting/workspace/series-meta'
 import { DrawingPalette } from '../components/charting/workspace/DrawingPalette'
 import { AnnotationInspector } from '../components/charting/workspace/AnnotationInspector'
 import { armedCaption, toolForKey } from '../components/charting/workspace/drawing-tools'
@@ -384,6 +386,13 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     chartY: 0
   })
   const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
+  /*
+   * What the chart last drew: last close, bar count, interval, feed, basis.
+   * Reported up by ProChart because only the fetch knows it. Cleared when
+   * the symbol changes, so the header cannot show one instrument's price
+   * beside another instrument's name while the new series loads.
+   */
+  const [seriesMeta, setSeriesMeta] = useState<SeriesMeta | null>(null)
 
   /**
    * The drawing tool in hand, or null for an ordinary pointer.
@@ -1022,10 +1031,11 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             </div>
 
             {currentPanel.symbol && (
-              <div className="flex items-center space-x-3">
-                <span className="text-lg font-bold text-gray-900 dark:text-white">{currentPanel.symbol}</span>
-                <span className="text-sm text-gray-500 dark:text-gray-400">{currentPanel.companyName}</span>
-              </div>
+              <InstrumentHeader
+                symbol={currentPanel.symbol}
+                companyName={currentPanel.companyName}
+                meta={seriesMeta}
+              />
             )}
           </div>
 
@@ -1625,6 +1635,7 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                   indexBase={currentPanel.indexBase}
                   selectedLine={selectedLine}
                   mainSymbolStyle={currentPanel.mainSymbolStyle}
+                  onSeriesMeta={setSeriesMeta}
                   onContextMenu={handleChartContextMenu}
                   onLineContextMenu={handleLineContextMenu}
                   onLineClick={handleLineClick}
