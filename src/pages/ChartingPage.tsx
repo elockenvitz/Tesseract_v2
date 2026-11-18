@@ -585,6 +585,29 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     closeContextMenu()
   }, [activePanel, panels, contextMenu, setAnnotations, closeContextMenu])
 
+  /**
+   * A mark is mid-drag: redraw it, but record nothing.
+   *
+   * Deliberately NOT routed through `setAnnotations`. A drag emits a frame
+   * per mouse move, and recording each would fill the undo history with a
+   * hundred near-identical states, so one Ctrl+Z would appear to do nothing
+   * and fifty would be needed to get back.
+   */
+  const previewAnnotation = useCallback((next: Annotation) => {
+    const panel = panels.find(p => p.id === activePanel)
+    if (!panel) return
+    updatePanel(activePanel, {
+      annotations: panel.annotations.map(a => (a.id === next.id ? next : a)),
+    })
+  }, [activePanel, panels, updatePanel])
+
+  /** The drag ended: this is the one undoable step for the whole gesture. */
+  const commitAnnotationChange = useCallback((next: Annotation) => {
+    const panel = panels.find(p => p.id === activePanel)
+    if (!panel) return
+    setAnnotations(panel.annotations.map(a => (a.id === next.id ? next : a)))
+  }, [activePanel, panels, setAnnotations])
+
   /** A two-point tool finished its drag; the mark is already built. */
   const handleAnnotationDraw = useCallback((annotation: Annotation) => {
     const panel = panels.find(p => p.id === activePanel)
@@ -658,8 +681,31 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   /* Ctrl/Cmd+Z to undo, with Shift to redo; Escape puts the tool down. */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      /*
+       * Escape puts down the tool, and failing that drops the selection --
+       * in that order, because a reader with a tool in hand who presses
+       * Escape means "stop drawing", not "deselect something else".
+       */
       if (e.key === 'Escape') {
-        setActiveTool(null)
+        if (activeTool) setActiveTool(null)
+        else setSelectedAnnotation(null)
+        return
+      }
+
+      /* Delete removes the selected mark, which until now could only be
+         removed by clearing every mark on the panel. */
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedAnnotation) {
+        const target = e.target as HTMLElement | null
+        if (
+          target &&
+          (target.tagName === 'INPUT' ||
+            target.tagName === 'TEXTAREA' ||
+            target.isContentEditable)
+        ) {
+          return
+        }
+        e.preventDefault()
+        deleteAnnotation(selectedAnnotation)
         return
       }
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return
@@ -684,7 +730,7 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [undoAnnotations, redoAnnotations])
+  }, [undoAnnotations, redoAnnotations, activeTool, selectedAnnotation, deleteAnnotation])
 
   // Line context menu handlers
   const handleLineContextMenu = useCallback((e: React.MouseEvent, symbol: string, isMainSymbol: boolean) => {
@@ -1432,8 +1478,35 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             * to explain it. The strip also carries the two controls that are
             * otherwise keyboard-only.
             */}
-          {(activeTool || historyCanUndo(history) || historyCanRedo(history)) && (
+          {(activeTool || selectedAnnotation || historyCanUndo(history) || historyCanRedo(history)) && (
             <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-gray-200/80 bg-white/95 px-2 py-1 shadow-sm backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
+              {/*
+                * The selection has to be stated somewhere.
+                *
+                * `AnnotationRenderer` draws no selection outline and no
+                * handles -- that needs the canvas render loop, which this
+                * change does not touch -- so without this line the reader
+                * would have picked up a mark with nothing to show it. The
+                * drag itself is the other feedback.
+                */}
+              {!activeTool && selectedAnnotation && (
+                <>
+                  <span className="pl-1 text-[11px] font-medium text-gray-700 dark:text-gray-200">
+                    {(annotationTools.find(
+                      t => t.type === currentPanel.annotations.find(a => a.id === selectedAnnotation)?.type,
+                    )?.label ?? 'Mark')}{' '}
+                    selected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => deleteAnnotation(selectedAnnotation)}
+                    className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-rose-50 hover:text-rose-600 dark:text-gray-400 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
+                  >
+                    Delete
+                  </button>
+                  <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
+                </>
+              )}
               {activeTool && (
                 <>
                   <span className="pl-1 text-[11px] font-medium text-gray-700 dark:text-gray-200">
@@ -1492,6 +1565,9 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                   activeTool={activeTool}
                   annotationStyle={NEW_ANNOTATION_STYLE}
                   onAnnotationDraw={handleAnnotationDraw}
+                  onAnnotationSelect={setSelectedAnnotation}
+                  onAnnotationChange={previewAnnotation}
+                  onAnnotationCommit={commitAnnotationChange}
                 />
               ) : (
                 <div className="h-full flex items-center justify-center">
@@ -1541,6 +1617,9 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                       activeTool={panel.id === activePanel ? activeTool : null}
                       annotationStyle={NEW_ANNOTATION_STYLE}
                       onAnnotationDraw={panel.id === activePanel ? handleAnnotationDraw : undefined}
+                      onAnnotationSelect={panel.id === activePanel ? setSelectedAnnotation : undefined}
+                      onAnnotationChange={panel.id === activePanel ? previewAnnotation : undefined}
+                      onAnnotationCommit={panel.id === activePanel ? commitAnnotationChange : undefined}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center">

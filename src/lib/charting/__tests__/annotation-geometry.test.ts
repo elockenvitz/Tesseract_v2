@@ -13,8 +13,11 @@ import {
   isDrag,
   isTwoPointTool,
   MIN_DRAG_PIXELS,
+  moveAnnotation,
   normalizeSpan,
   POINTS_REQUIRED,
+  reshapeAnnotation,
+  settleAnnotation,
   type ChartPoint,
 } from '../annotation-geometry'
 import {
@@ -231,5 +234,136 @@ describe('normalizeSpan', () => {
     const s = normalizeSpan(A, A)
     expect(s.startTime).toBe(s.endTime)
     expect(s.startPrice).toBe(s.endPrice)
+  })
+})
+
+describe('moving a mark', () => {
+  it('shifts both ends of a line by the same delta, preserving its slope', () => {
+    const before = build('trend-line')!
+    const after = moveAnnotation(before, 100, -5) as unknown as Record<string, number>
+    const b = before as unknown as Record<string, number>
+    expect(after.startTime).toBe(b.startTime + 100)
+    expect(after.endTime).toBe(b.endTime + 100)
+    expect(after.startPrice).toBe(b.startPrice - 5)
+    expect(after.endPrice).toBe(b.endPrice - 5)
+    /* The claim the mark makes about the shape of the move is unchanged. */
+    expect(after.endPrice - after.startPrice).toBeCloseTo(b.endPrice - b.startPrice, 10)
+    expect(after.endTime - after.startTime).toBe(b.endTime - b.startTime)
+  })
+
+  it('moves a horizontal line in price only', () => {
+    /*
+     * A price level has no horizontal position to change. Requiring the
+     * time delta to be zero before moving it would turn a diagonal drag
+     * into no movement at all.
+     */
+    const a = moveAnnotation(build('horizontal-line')!, 999_999, 10) as unknown as Record<string, number>
+    expect(a.price).toBe(A.price + 10)
+    expect(a.time).toBeUndefined()
+  })
+
+  it('moves a vertical line in time only', () => {
+    const a = moveAnnotation(build('vertical-line')!, 60, 999) as unknown as Record<string, number>
+    expect(a.time).toBe(A.time + 60)
+    expect(a.price).toBeUndefined()
+  })
+
+  it('moves a text note on both axes', () => {
+    const a = moveAnnotation(build('text')!, 60, 2) as unknown as Record<string, number>
+    expect(a.time).toBe(A.time + 60)
+    expect(a.price).toBe(A.price + 2)
+  })
+
+  it('does not mutate the mark it was given', () => {
+    const before = build('trend-line')!
+    const snapshot = JSON.stringify(before)
+    moveAnnotation(before, 100, 100)
+    expect(JSON.stringify(before)).toBe(snapshot)
+  })
+
+  it('returns to the start after equal and opposite moves', () => {
+    /*
+     * Why the delta is in CHART space and not pixels: converting per frame
+     * would accumulate each intermediate rounding, and a mark dragged in a
+     * circle would not come home.
+     */
+    const before = build('trend-line')!
+    const there = moveAnnotation(before, 500, 12.5)
+    const back = moveAnnotation(there, -500, -12.5)
+    expect(back).toEqual(before)
+  })
+
+  it('keeps a fibonacci ladder intact through a move', () => {
+    const a = moveAnnotation(build('fibonacci')!, 60, 1) as unknown as { levels: number[] }
+    expect(a.levels).toEqual(DEFAULT_FIBONACCI_LEVELS)
+  })
+})
+
+describe('reshaping one end', () => {
+  const T = { time: 1_770_000_000, price: 99 }
+
+  it('moves the grabbed end and leaves the other alone', () => {
+    const before = build('trend-line')!
+    const b = before as unknown as Record<string, number>
+    const a = reshapeAnnotation(before, 'end', T) as unknown as Record<string, number>
+    expect(a.endTime).toBe(T.time)
+    expect(a.endPrice).toBe(T.price)
+    expect(a.startTime).toBe(b.startTime)
+    expect(a.startPrice).toBe(b.startPrice)
+  })
+
+  it('reshapes by the mark\'s own start, not by whichever end looks left', () => {
+    /*
+     * A right-to-left ray has its `start` on the right. Grabbing `start`
+     * must move the right-hand end, because that is the one the reader took
+     * hold of.
+     */
+    const rtl = annotationFromPoints('ray', B, A, S, 'r')!
+    const a = reshapeAnnotation(rtl, 'start', T) as unknown as Record<string, number>
+    expect(a.startTime).toBe(T.time)
+    expect(a.endTime).toBe(A.time)
+  })
+
+  it('leaves a one-point mark untouched rather than treating it as a move', () => {
+    /* A caller that hit-tested a handle on a horizontal line has a bug;
+       silently moving the line would hide it. */
+    const h = build('horizontal-line')!
+    expect(reshapeAnnotation(h, 'start', T)).toEqual(h)
+  })
+
+  it('allows a box to pass through an inverted state mid-drag', () => {
+    /*
+     * Normalising on every frame would flip the shape and then fight the
+     * cursor. The caller settles it on release instead.
+     */
+    const box = build('rectangle')!
+    const dragged = reshapeAnnotation(box, 'start', { time: 1_790_000_000, price: 900 })
+    const d = dragged as unknown as Record<string, number>
+    expect(d.startTime).toBeGreaterThan(d.endTime)
+  })
+})
+
+describe('settling a mark on release', () => {
+  it('normalises an inverted rectangle', () => {
+    const inverted = reshapeAnnotation(build('rectangle')!, 'start', { time: 1_790_000_000, price: 900 })
+    const settled = settleAnnotation(inverted) as unknown as Record<string, number>
+    expect(settled.startTime).toBeLessThan(settled.endTime)
+    expect(settled.startPrice).toBeLessThan(settled.endPrice)
+  })
+
+  it('leaves a line alone, because its direction is meaning', () => {
+    const ray = annotationFromPoints('ray', B, A, S, 'r')!
+    expect(settleAnnotation(ray)).toEqual(ray)
+  })
+
+  it('leaves a fibonacci alone, because its price anchors are meaning', () => {
+    /* Sorting them would turn a measured decline into a measured rally. */
+    const fib = build('fibonacci')!
+    expect(settleAnnotation(fib)).toEqual(fib)
+  })
+
+  it('is idempotent on an already-settled box', () => {
+    const once = settleAnnotation(build('rectangle')!)
+    expect(settleAnnotation(once)).toEqual(once)
   })
 })
