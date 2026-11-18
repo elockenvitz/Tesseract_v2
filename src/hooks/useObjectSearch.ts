@@ -48,7 +48,19 @@ export const STATIC_PAGES = [
     search term that found a door we removed, finding nothing instead, is the
     half-fix the launcher comment warns about.
   */
-  { id: CANONICAL_HOME_TAB.id, title: 'Dashboard', type: 'page' as const, subtitle: 'Attention feed and Explore', keywords: ['home', 'main', 'overview', 'dashboard', 'ideas', 'opportunities', 'screening', 'explore', 'attention'] },
+  /*
+    The `today` row's keywords moved ONTO this one for the same reason the
+    Ideas keywords did, and because leaving them on a second row was an actual
+    defect rather than a tidiness question: that row carried `id: 'today'` as
+    well, so both rendered with the React key `page-today`. Searching
+    "attention", "dashboard", "decisions" or "today" put two children with the
+    same key in the list -- React logged
+    "Encountered two children with the same key, page-today" on every such
+    search, and the behaviour when it happens is documented as unsupported.
+    Both rows opened the identical tab, so there was never a second door for a
+    reader to choose; there was one door drawn twice.
+  */
+  { id: CANONICAL_HOME_TAB.id, title: 'Dashboard', type: 'page' as const, subtitle: 'Attention feed and Explore', keywords: ['home', 'main', 'overview', 'dashboard', 'ideas', 'opportunities', 'screening', 'explore', 'attention', 'today', 'alerts', 'flags', 'urgent', 'review', 'notifications', 'priorities', 'todo', 'decisions'] },
   { id: 'assets-list', title: 'Assets', type: 'page' as const, subtitle: 'Browse all assets', keywords: ['stocks', 'securities', 'holdings'] },
   { id: 'portfolios-list', title: 'Portfolios', type: 'page' as const, subtitle: 'Manage portfolios', keywords: ['funds', 'accounts'] },
   { id: 'themes-list', title: 'Themes', type: 'page' as const, subtitle: 'Investment themes', keywords: ['sectors', 'categories'] },
@@ -69,7 +81,9 @@ export const STATIC_PAGES = [
   { id: 'outcomes', title: 'Outcomes', type: 'page' as const, subtitle: 'Decisions and results', keywords: ['decisions', 'execution', 'results', 'approved', 'trades'] },
   /* My Priorities is retired. Its question — what needs me now — is Today's,
      and the attention keywords that used to find it now do. */
-  { id: 'today', title: 'Today', type: 'page' as const, subtitle: 'What needs your attention right now', keywords: ['today', 'attention', 'alerts', 'flags', 'urgent', 'review', 'notifications', 'priorities', 'todo', 'decisions'] },
+  /* The separate `today` row is retired. It shared `id: 'today'` with the
+     Dashboard row above and opened the same tab, so it was a duplicate React
+     key rather than a second destination. Its keywords are on that row. */
   { id: 'files', title: 'Files', type: 'page' as const, subtitle: 'File management', keywords: ['documents', 'uploads', 'models'] },
   { id: 'templates', title: 'Templates', type: 'page' as const, subtitle: 'Model and text templates', keywords: ['models', 'spreadsheets'] },
   { id: 'organization', title: 'Organization', type: 'page' as const, subtitle: 'Team and settings', keywords: ['team', 'settings', 'users', 'members'] },
@@ -114,11 +128,35 @@ interface GlobalSearchRpc {
  * It is not in the generated database types, so the call needs a cast either
  * way. Doing it here keeps the cast off the call site and lets the result be
  * typed properly rather than as `any`.
+ *
+ * ── `.bind(supabase)`, and why its absence emptied the whole search ───────
+ *
+ * `const rpc = supabase.rpc` detaches the method from the client. Called as a
+ * bare function its `this` is undefined, and the first thing `rpc` does is
+ * read `this.rest`, so every call threw
+ *
+ *   TypeError: Cannot read properties of undefined (reading 'rest')
+ *
+ * before a request was ever made. Observed in the browser on the running app:
+ * typing a ticker produced no network request at all, and the query in the
+ * React Query cache sat at `status: "error"` with exactly that message.
+ *
+ * Nothing in the interface said so. The thrown error is not the `{ error }`
+ * the `if (error)` branch below checks -- that branch is for an RPC that
+ * ANSWERS with a failure -- so it escaped the queryFn, React Query held no
+ * data, and the dropdown rendered its empty state. Every object search in the
+ * application said "No results": assets, themes, portfolios, users, projects,
+ * lists, workflows, teams, notebooks and model files alike. Only the static
+ * page rows survived, because they are matched locally.
+ *
+ * The cast is what hid it. `as unknown as (fn, args) => …` describes a plain
+ * function, so TypeScript stopped tracking that this value needs a receiver,
+ * and a method being torn off its object became invisible at the call site.
  */
 function callGlobalSearch(
   query: string,
 ): Promise<{ data: GlobalSearchRpc | null; error: unknown }> {
-  const rpc = supabase.rpc as unknown as (
+  const rpc = supabase.rpc.bind(supabase) as unknown as (
     fn: string,
     args: Record<string, unknown>,
   ) => Promise<{ data: GlobalSearchRpc | null; error: unknown }>
@@ -170,7 +208,15 @@ export function useObjectSearch(debouncedQuery: string, liveQuery?: string) {
     })
   }, [isPilotForGate, pilotMode.access])
 
-  const { data: results = [], isFetching } = useQuery({
+  /*
+   * `isError` is reported because a failure and a genuine absence of matches
+   * are different answers and were being drawn identically. When the RPC
+   * threw, this hook returned the same empty list it returns for a nonsense
+   * search term, and the dropdown said "No results for AAPL" -- a confident,
+   * wrong statement about the organization's data. The consumer decides how
+   * to say "this did not work"; the hook's job is to stop pretending it did.
+   */
+  const { data: results = [], isFetching, isError } = useQuery({
     // Re-key on the access state so a flag change forces a fresh result list.
     queryKey: ['global-search', debouncedQuery, isPilotForGate, JSON.stringify(pilotMode.access)],
     queryFn: async () => {
@@ -345,5 +391,5 @@ export function useObjectSearch(debouncedQuery: string, liveQuery?: string) {
     [visibleStaticPages, liveQuery, debouncedQuery],
   )
 
-  return { results: results as SearchResult[], isFetching, localResults }
+  return { results: results as SearchResult[], isFetching, isError, localResults }
 }

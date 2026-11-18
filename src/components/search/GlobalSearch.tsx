@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import {
   Search, TrendingUp, Briefcase, Tag, FileText, List, PieChart, Clock, User,
   GitBranch, FolderKanban, BookOpen, FileSpreadsheet, FileType, Beaker, Users,
-  Calendar, Camera, LayoutDashboard
+  Calendar, Camera, LayoutDashboard, AlertCircle
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useObjectSearch, type SearchResult } from '../../hooks/useObjectSearch'
@@ -145,7 +145,7 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
   // `query` as well as `debouncedQuery`: the local page matches are a
   // substring test over a constant array, so they need not wait on the
   // 250 ms debounce or on the network behind it.
-  const { results: searchResults, isFetching, localResults } = useObjectSearch(debouncedQuery, query)
+  const { results: searchResults, isFetching, isError, localResults } = useObjectSearch(debouncedQuery, query)
 
   // Keep stable results - only update when we have actual new results
   useEffect(() => {
@@ -181,13 +181,28 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
   // Dropdown visibility state
   const showDropdown = isOpen && query.length > 1
 
-  // Determine content state
+  /*
+   * Four states, not three.
+   *
+   * `failed` exists because a search that BROKE and a search that found
+   * nothing were drawn as the same panel. When the search RPC threw, the
+   * dropdown said `No results for "AAPL"` -- which reads as a fact about the
+   * organization's data and is not one. A reader has no way to tell the
+   * difference, and the honest reading of the sentence is the wrong one: that
+   * the firm does not cover Apple.
+   *
+   * Ordered before `empty` and after `results`. If anything matched -- the
+   * static pages match locally and do not depend on the network -- those rows
+   * are worth more than the notice, and the shimmer above already reports
+   * that something is still arriving.
+   */
   const contentState = useMemo(() => {
     if (displayResults.length > 0) return 'results'
     if (isFetching || query !== debouncedQuery) return 'loading'
+    if (isError) return 'failed'
     if (debouncedQuery.length > 1) return 'empty'
     return 'loading'
-  }, [displayResults.length, isFetching, query, debouncedQuery])
+  }, [displayResults.length, isFetching, isError, query, debouncedQuery])
 
   // Click outside handler
   useEffect(() => {
@@ -336,6 +351,16 @@ export function GlobalSearch({ onSelectResult, placeholder = "Search everything.
             <Search className="w-10 h-10 text-gray-200 mx-auto mb-3" />
             <p className="text-sm text-gray-500 dark:text-gray-400">No results for "<span className="font-medium text-gray-700">{query}</span>"</p>
             <p className="text-xs text-gray-400 mt-1">Try a different search term</p>
+          </div>
+
+          {/* Failed state. Says the search did not run, not that nothing matched. */}
+          <div className={clsx(
+            "py-10 text-center transition-all duration-200",
+            contentState === 'failed' ? "opacity-100" : "opacity-0 absolute inset-0 pointer-events-none"
+          )}>
+            <AlertCircle className="w-10 h-10 text-amber-300 mx-auto mb-3" />
+            <p className="text-sm text-gray-600 dark:text-gray-300">Search is unavailable right now</p>
+            <p className="text-xs text-gray-400 mt-1">This is not a result for "{query}". Try again in a moment.</p>
           </div>
         </div>
       </div>
