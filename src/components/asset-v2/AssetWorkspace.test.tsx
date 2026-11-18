@@ -974,14 +974,76 @@ describe('the workspace is one column, not a mosaic', () => {
     ...root.querySelectorAll('[data-testid="desktop-section"],[data-testid="desktop-module"]'),
   ]
 
-  /** THE case: one parent for every panel on the page. */
-  it('hangs every section off a single stack', () => {
+  /**
+   * THE case, restated: one stack for everything whose length is unbounded,
+   * and ONE permitted exception for panels that hold a handful of figures.
+   *
+   * ── Why this replaced "one parent for every panel" ──────────────────────
+   *
+   * It asserted `parents.size === 1`. That is a proxy, and it was the right
+   * proxy while the only alternative on the table was the auto-placed grid
+   * this describe block exists to keep out — the one that "stack[s] down the
+   * left and leave[s] the right empty whenever the data is sparse".
+   *
+   * What that grid actually got wrong was putting panels of UNBOUNDED length
+   * beside each other: a decisions list of nine rows next to a research
+   * status of two opens a hole the height of seven. Measured on the running
+   * pane at 1400px, three panels that can never do that — Largest position,
+   * Also held in, Research status — were each spending a full-width band and
+   * ~300px between them on six values.
+   *
+   * So the rule is now written against the thing that was really wrong,
+   * rather than against the shape that happened to express it: a panel whose
+   * content is a list keeps the column; the three figure panels may share one
+   * band. A future panel holding a list cannot join them without failing the
+   * second case below.
+   */
+  const FIGURE_PANELS = ['Largest position', 'Also held in', 'Research status']
+
+  it('keeps one stack for everything but the figures band', () => {
     data = populated()
     render(<AssetWorkspacePane asset={asset} />)
-    const found = panels(screen.getByTestId('asset-workspace'))
+    const root = screen.getByTestId('asset-workspace')
+    const found = panels(root)
     expect(found.length).toBeGreaterThan(3)
+
+    const band = root.querySelector('[data-asset-figures]')
     const parents = new Set(found.map(p => p.parentElement))
-    expect(parents.size).toBe(1)
+    /* At most two: the reading stack, and the figures band. Never a third,
+       which is what a creeping mosaic would look like. */
+    expect(parents.size).toBeLessThanOrEqual(2)
+    if (parents.size === 2) {
+      expect(band, 'a second parent exists that is not the figures band').not.toBeNull()
+      expect([...parents]).toContain(band)
+    }
+  })
+
+  it('puts nothing in the figures band that can grow a list', () => {
+    /*
+     * NON-VACUITY, and the real content of the rule above. The previous case
+     * would pass against a band holding every panel on the page; this one
+     * fails the moment anything joins it whose height depends on how much
+     * data the organisation happens to have.
+     */
+    data = populated()
+    render(<AssetWorkspacePane asset={asset} />)
+    const root = screen.getByTestId('asset-workspace')
+    const band = root.querySelector('[data-asset-figures]')
+    expect(band, 'the figures band should render for a populated name').not.toBeNull()
+
+    const inBand = panels(band as HTMLElement)
+    expect(inBand.length).toBeGreaterThan(0)
+    for (const panel of inBand) {
+      const title = FIGURE_PANELS.find(t => panel.textContent?.includes(t))
+      expect(title, `an unexpected panel joined the figures band: ${panel.textContent?.slice(0, 60)}`)
+        .toBeDefined()
+    }
+
+    /* And the panels that hold lists are still in the stack, not the band. */
+    const bandText = band!.textContent ?? ''
+    expect(bandText).not.toContain('The case')
+    expect(bandText).not.toContain('Recent decisions')
+    expect(bandText).not.toContain('New since the case was written')
   })
 
   /**
