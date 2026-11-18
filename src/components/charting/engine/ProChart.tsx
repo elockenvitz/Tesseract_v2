@@ -46,6 +46,12 @@ import {
  * arithmetic, so every trend line was 30 days long and rose exactly 5%.
  */
 import { beginGesture, completeDraw } from '../../../lib/charting/drawing-gesture'
+import {
+  moveAnnotation,
+  reshapeAnnotation,
+  settleAnnotation,
+} from '../../../lib/charting/annotation-geometry'
+import { hitTest, type HitPart } from '../../../lib/charting/annotation-hit-test'
 
 export type TimeFrame = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'ALL' | 'CUSTOM'
 
@@ -137,6 +143,27 @@ interface ProChartProps {
    * and stray clicks would otherwise accumulate them silently.
    */
   onAnnotationDraw?: (annotation: Annotation) => void
+  /**
+   * A press picked up a mark, or landed on empty chart and dropped it.
+   *
+   * Before this existed, `ChartingPage.selectedAnnotation` could only ever
+   * be set to null -- nothing hit-tested annotations, so a drawn mark was
+   * permanent furniture that could not be picked up or removed except by
+   * clearing the whole panel.
+   */
+  onAnnotationSelect?: (id: string | null) => void
+  /**
+   * A mark is being dragged. Fires on every frame of the drag, so the mark
+   * follows the cursor.
+   *
+   * Separate from `onAnnotationCommit` because the two have different
+   * consequences: this one redraws, that one records an undo step. Recording
+   * every frame would fill the history with a hundred near-identical states
+   * and make one Ctrl+Z appear to do nothing.
+   */
+  onAnnotationChange?: (annotation: Annotation) => void
+  /** The drag ended. Fires once, and is the undoable step. */
+  onAnnotationCommit?: (annotation: Annotation) => void
 }
 
 // Convert API data to OHLC format
@@ -174,7 +201,10 @@ export function ProChart({
   onLineClick,
   activeTool = null,
   annotationStyle = DEFAULT_ANNOTATION_STYLE,
-  onAnnotationDraw
+  onAnnotationDraw,
+  onAnnotationSelect,
+  onAnnotationChange,
+  onAnnotationCommit
 }: ProChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -336,6 +366,29 @@ export function ProChart({
    * the selection, must not change what the gesture already began drawing.
    */
   const drawRef = useRef<{ from: { x: number; y: number }; tool: AnnotationType } | null>(null)
+
+  /**
+   * The mark being dragged: which one, which part, and where from.
+   *
+   * `original` is the mark as it was when the press landed, and every frame
+   * is computed from THAT rather than from the previous frame. Applying each
+   * frame's delta to the result of the last would accumulate the rounding of
+   * every intermediate position, so a mark dragged out and back would not
+   * return to where it started.
+   *
+   * A ref for the same reasons as `drawRef`: the canvas redraws from the
+   * `annotations` prop, and this is read inside a window-level listener
+   * where a captured state value would be the stale one.
+   */
+  const editRef = useRef<{
+    id: string
+    part: HitPart
+    /* The press, in chart space, so deltas need no pixel arithmetic. */
+    fromTime: number
+    fromPrice: number
+    original: Annotation
+    moved: boolean
+  } | null>(null)
 
   // Device pixel ratio for sharp rendering
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
@@ -984,6 +1037,37 @@ export function ProChart({
       return
     }
 
+    /*
+     * A press that would pan might instead be picking up a mark.
+     *
+     * Checked here rather than inside `beginGesture` so that module stays
+     * free of the annotation list and remains testable on pixel geometry
+     * alone. Only a would-be PAN is intercepted: a press on an axis still
+     * zooms even if a mark happens to be drawn across it.
+     */
+    if (gesture.kind === 'pan') {
+      const hit = hitTest(annotations, { x, y }, transformRef.current)
+      if (hit) {
+        const picked = annotations.find(a => a.id === hit.id)
+        if (picked) {
+          editRef.current = {
+            id: hit.id,
+            part: hit.part,
+            fromTime: transformRef.current.xToTime(x),
+            fromPrice: transformRef.current.yToPrice(y),
+            original: picked,
+            moved: false
+          }
+          onAnnotationSelect?.(hit.id)
+          /* No `isDragging`: an edit must not pan the chart out from under
+             the mark, for the same reason a drawing must not. */
+          return
+        }
+      }
+      /* Empty chart: a press puts down whatever was held. */
+      onAnnotationSelect?.(null)
+    }
+
     setIsDragging(true)
     setDragMode(gesture.kind)
     setDragStart({
@@ -994,7 +1078,7 @@ export function ProChart({
       minPrice: view.minPrice,
       maxPrice: view.maxPrice
     })
-  }, [view, activeTool])
+  }, [view, activeTool, annotations, onAnnotationSelect])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -1107,6 +1191,32 @@ export function ProChart({
   }, [isDragging, dragStart, dragMode, onCrosshairMove])
 
   /**
+   * Recompute the mark being dragged, from the press rather than the frame.
+   *
+   * Returns the new mark so a caller can also commit it. `settle` is true
+   * only on release: a rectangle dragged past its opposite corner has to be
+   * allowed through the inverted state while the mouse is down, or the shape
+   * would flip and then fight the cursor.
+   */
+  const applyEdit = useCallback(
+    (at: { x: number; y: number }, settle: boolean): Annotation | null => {
+      const edit = editRef.current
+      if (!edit || !transformRef.current) return null
+
+      const time = transformRef.current.xToTime(at.x)
+      const price = transformRef.current.yToPrice(at.y)
+
+      const next =
+        edit.part === 'body'
+          ? moveAnnotation(edit.original, time - edit.fromTime, price - edit.fromPrice)
+          : reshapeAnnotation(edit.original, edit.part, { time, price })
+
+      return settle ? settleAnnotation(next) : next
+    },
+    [],
+  )
+
+  /**
    * Finish a drawing, if one was in progress, at the given canvas pixel.
    *
    * Shared by the canvas `mouseup` and the window-level one, because a drag
@@ -1149,24 +1259,79 @@ export function ProChart({
    * both simpler and correct; it does nothing at all when `drawRef` is null,
    * which is almost always.
    */
-  useEffect(() => {
-    const onWindowMouseUp = (e: MouseEvent) => {
-      if (!drawRef.current) return
-      const rect = canvasRef.current?.getBoundingClientRect()
-      finishDrawing(rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : null)
+  /**
+   * End an edit: settle the mark and record it as ONE undoable step.
+   *
+   * `moved` guards the commit. A plain click that selected a mark without
+   * dragging it must not enter the history, or every selection would cost a
+   * Ctrl+Z press that appears to do nothing.
+   */
+  const finishEdit = useCallback((at: { x: number; y: number } | null) => {
+    const edit = editRef.current
+    if (!edit) return
+    if (at && edit.moved) {
+      const settled = applyEdit(at, true)
+      if (settled) onAnnotationCommit?.(settled)
+    } else if (edit.moved) {
+      /* Released somewhere unmeasurable: keep the last drawn position
+         rather than snapping the mark back to where it started. */
+      onAnnotationCommit?.(edit.original)
     }
+    editRef.current = null
+  }, [applyEdit, onAnnotationCommit])
+
+  useEffect(() => {
+    const toCanvas = (e: MouseEvent) => {
+      const rect = canvasRef.current?.getBoundingClientRect()
+      return rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : null
+    }
+
+    /*
+     * Both a drawing and an edit continue at the window.
+     *
+     * The existing window listener keys off `isDragging`, which neither sets
+     * -- deliberately, so that neither pans the chart -- and both live in
+     * refs, so there is no state change to subscribe on. An always-on pair
+     * that reads the refs at event time is simpler and correct; it does
+     * nothing when both refs are null, which is almost always.
+     *
+     * The MOVE handler matters as much as the up: a mark dragged towards the
+     * edge of the plot would otherwise stop following the cursor the moment
+     * the pointer crossed into the axis gutter.
+     */
+    const onWindowMouseMove = (e: MouseEvent) => {
+      if (!editRef.current) return
+      const at = toCanvas(e)
+      if (!at) return
+      const next = applyEdit(at, false)
+      if (next) {
+        editRef.current.moved = true
+        onAnnotationChange?.(next)
+      }
+    }
+
+    const onWindowMouseUp = (e: MouseEvent) => {
+      const at = toCanvas(e)
+      if (drawRef.current) finishDrawing(at)
+      if (editRef.current) finishEdit(at)
+    }
+
+    window.addEventListener('mousemove', onWindowMouseMove)
     window.addEventListener('mouseup', onWindowMouseUp)
-    return () => window.removeEventListener('mouseup', onWindowMouseUp)
-  }, [finishDrawing])
+    return () => {
+      window.removeEventListener('mousemove', onWindowMouseMove)
+      window.removeEventListener('mouseup', onWindowMouseUp)
+    }
+  }, [finishDrawing, finishEdit, applyEdit, onAnnotationChange])
 
   const handleMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (drawRef.current) {
-      const rect = canvasRef.current?.getBoundingClientRect()
-      finishDrawing(rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : null)
-    }
+    const rect = canvasRef.current?.getBoundingClientRect()
+    const at = rect ? { x: e.clientX - rect.left, y: e.clientY - rect.top } : null
+    if (drawRef.current) finishDrawing(at)
+    if (editRef.current) finishEdit(at)
     setIsDragging(false)
     setDragMode('pan')
-  }, [finishDrawing])
+  }, [finishDrawing, finishEdit])
 
   const handleMouseLeave = useCallback(() => {
     // Only clear crosshair when leaving, don't cancel drag

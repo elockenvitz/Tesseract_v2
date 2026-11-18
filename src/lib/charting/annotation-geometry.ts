@@ -199,3 +199,99 @@ export function isDrag(
     Math.abs(toPx.x - fromPx.x) >= minPixels || Math.abs(toPx.y - fromPx.y) >= minPixels
   )
 }
+
+/**
+ * Move a whole mark by a delta in CHART space.
+ *
+ * Time and price, not pixels, because the caller converts once at the start
+ * of the drag: converting per-frame would accumulate the rounding of every
+ * intermediate position, and a mark dragged in a circle would not come back
+ * to where it started.
+ *
+ * A one-point mark moves along the axis it describes and ignores the other
+ * delta entirely. A horizontal line dragged diagonally changes its PRICE
+ * and nothing else -- it has no horizontal position to change, and pretending
+ * otherwise would quietly convert a drag into no movement at all.
+ */
+export function moveAnnotation(
+  a: Annotation,
+  deltaTime: number,
+  deltaPrice: number,
+): Annotation {
+  switch (a.type) {
+    case 'horizontal-line':
+      return { ...a, price: (a.price as number) + deltaPrice }
+    case 'vertical-line':
+      return { ...a, time: (a.time as number) + deltaTime }
+    case 'text':
+      return { ...a, time: a.time + deltaTime, price: a.price + deltaPrice }
+    case 'trend-line':
+    case 'ray':
+    case 'arrow':
+    case 'rectangle':
+    case 'ellipse':
+    case 'fibonacci':
+      return {
+        ...a,
+        startTime: (a.startTime as number) + deltaTime,
+        startPrice: (a.startPrice as number) + deltaPrice,
+        endTime: (a.endTime as number) + deltaTime,
+        endPrice: (a.endPrice as number) + deltaPrice,
+      }
+    default:
+      return a
+  }
+}
+
+/**
+ * Drag ONE end of a two-point mark to a new place.
+ *
+ * `end` here is the mark's own first or second point in the order it was
+ * drawn, not its left or right. Reshaping a right-to-left ray by its
+ * `start` must move the end on the right, because that is the one the
+ * reader grabbed.
+ *
+ * A one-point mark has no ends, so it is returned untouched rather than
+ * being reinterpreted as a move: a caller that hit-tested a handle on a
+ * horizontal line has a bug, and silently moving the line would hide it.
+ *
+ * Rectangles and ellipses are NOT re-normalised here. Dragging the lower
+ * corner above the upper one has to be allowed to pass through the inverted
+ * state while the mouse is down, or the shape would flip and then fight the
+ * cursor. The caller normalises on release.
+ */
+export function reshapeAnnotation(
+  a: Annotation,
+  which: 'start' | 'end',
+  to: ChartPoint,
+): Annotation {
+  switch (a.type) {
+    case 'trend-line':
+    case 'ray':
+    case 'arrow':
+    case 'rectangle':
+    case 'ellipse':
+    case 'fibonacci':
+      return which === 'start'
+        ? { ...a, startTime: to.time, startPrice: to.price }
+        : { ...a, endTime: to.time, endPrice: to.price }
+    default:
+      return a
+  }
+}
+
+/**
+ * Tidy a mark after a reshape, if its kind has no inherent point order.
+ *
+ * Applied on release, for the reason given on `reshapeAnnotation`. Only
+ * rectangles and ellipses: a line's direction is meaning, and a fibonacci's
+ * price anchors are meaning, so neither is sorted.
+ */
+export function settleAnnotation(a: Annotation): Annotation {
+  if (a.type !== 'rectangle' && a.type !== 'ellipse') return a
+  const s = normalizeSpan(
+    { time: a.startTime, price: a.startPrice },
+    { time: a.endTime, price: a.endPrice },
+  )
+  return { ...a, ...s }
+}
