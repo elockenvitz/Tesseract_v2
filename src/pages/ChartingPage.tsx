@@ -12,6 +12,9 @@ import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ProChart, ChartType, TimeFrame, IndicatorType, CustomDateRange } from '../components/charting'
+import { DrawingPalette } from '../components/charting/workspace/DrawingPalette'
+import { AnnotationInspector } from '../components/charting/workspace/AnnotationInspector'
+import { armedCaption, toolForKey } from '../components/charting/workspace/drawing-tools'
 /*
  * `hooks/useAuth`, NOT `contexts/AuthContext`.
  *
@@ -755,6 +758,38 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
         deleteAnnotation(selectedAnnotation)
         return
       }
+      /*
+       * A bare letter arms a tool, the way every professional chart does.
+       *
+       * Guarded three ways, in this order. No modifier, because Ctrl+S is the
+       * browser's and Alt+H may be the operating system's. No typing target,
+       * because the page carries a symbol search and an `H` typed into it
+       * must stay an `H` -- the same guard the undo shortcut below already
+       * applies, for the same reason. And no unknown key, so the handler
+       * passes everything it does not claim straight through.
+       */
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.length === 1) {
+        const typing = e.target as HTMLElement | null
+        if (
+          typing &&
+          (typing.tagName === 'INPUT' ||
+            typing.tagName === 'TEXTAREA' ||
+            typing.isContentEditable)
+        ) {
+          return
+        }
+        const tool = toolForKey(e.key)
+        if (tool) {
+          e.preventDefault()
+          setActiveTool(tool.type)
+          /* Picking up a tool drops the selection: the next press is going to
+             draw, not move what was selected, and leaving a mark lit would
+             say otherwise. */
+          if (tool.type) setSelectedAnnotation(null)
+          return
+        }
+      }
+
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return
       /*
        * Never steal the shortcut from a field being typed in. The page
@@ -1516,6 +1551,25 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
 
       {/* Main Chart Area */}
       <div className="flex-1 flex overflow-hidden" onClick={() => { closeContextMenu(); closeLineContextMenu(); }}>
+        {/*
+          The drawing tools, stated.
+          Every tool here already worked and was reachable only by
+          right-clicking empty canvas, which nothing on the page mentioned.
+          See `workspace/drawing-tools.ts`.
+        */}
+        <DrawingPalette
+          activeTool={activeTool}
+          onSelectTool={type => {
+            setActiveTool(type)
+            if (type) setSelectedAnnotation(null)
+          }}
+          onUndo={undoAnnotations}
+          onRedo={redoAnnotations}
+          canUndo={historyCanUndo(history)}
+          canRedo={historyCanRedo(history)}
+          onClearAll={clearAllAnnotations}
+          markCount={currentPanel.annotations.length}
+        />
         {/* Chart Canvas */}
         <div className="flex-1 overflow-hidden relative">
           {/*
@@ -1525,68 +1579,33 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             * to explain it. The strip also carries the two controls that are
             * otherwise keyboard-only.
             */}
-          {(activeTool || selectedAnnotation || historyCanUndo(history) || historyCanRedo(history)) && (
-            <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-gray-200/80 bg-white/95 px-2 py-1 shadow-sm backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
-              {/*
-                * The selection has to be stated somewhere.
-                *
-                * `AnnotationRenderer` draws no selection outline and no
-                * handles -- that needs the canvas render loop, which this
-                * change does not touch -- so without this line the reader
-                * would have picked up a mark with nothing to show it. The
-                * drag itself is the other feedback.
-                */}
-              {!activeTool && selectedAnnotation && (
-                <>
-                  <span className="pl-1 text-[11px] font-medium text-gray-700 dark:text-gray-200">
-                    {(annotationTools.find(
-                      t => t.type === currentPanel.annotations.find(a => a.id === selectedAnnotation)?.type,
-                    )?.label ?? 'Mark')}{' '}
-                    selected
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => deleteAnnotation(selectedAnnotation)}
-                    className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-rose-50 hover:text-rose-600 dark:text-gray-400 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
-                  >
-                    Delete
-                  </button>
-                  <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
-                </>
-              )}
-              {activeTool && (
-                <>
-                  <span className="pl-1 text-[11px] font-medium text-gray-700 dark:text-gray-200">
-                    Drag to draw{' '}
-                    {(annotationTools.find(t => t.type === activeTool)?.label ?? activeTool).toLowerCase()}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTool(null)}
-                    className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
-                  >
-                    Cancel
-                  </button>
-                  <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
-                </>
-              )}
+          {/*
+            * Reduced to the one thing the rail cannot say.
+            *
+            * Undo, redo and the selection used to live here. Undo and redo
+            * are on the palette now, where they sit beside the tools they
+            * reverse; the selection is in the inspector, which can state the
+            * mark's anchors rather than just its name. What is left is the
+            * instruction, and it has to be HERE rather than on the button:
+            * the reader is looking at the canvas, which is where their next
+            * press has to land.
+            *
+            * `armedCaption` is used rather than a sentence built here,
+            * because the sentence differs by tool. "Drag to draw horizontal
+            * line" was wrong -- a horizontal line is placed by a click, and
+            * dragging to make one produces nothing at all.
+            */}
+          {activeTool && (
+            <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-gray-200/80 bg-white/95 px-3 py-1 shadow-sm backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
+              <span className="text-[11px] font-medium text-gray-700 dark:text-gray-200">
+                {armedCaption(activeTool)}
+              </span>
               <button
                 type="button"
-                onClick={undoAnnotations}
-                disabled={!historyCanUndo(history)}
-                title="Undo (Ctrl+Z)"
-                className="rounded-full p-1 text-gray-500 enabled:hover:bg-gray-100 enabled:hover:text-gray-900 disabled:opacity-30 dark:text-gray-400 dark:enabled:hover:bg-white/10 dark:enabled:hover:text-white"
+                onClick={() => setActiveTool(null)}
+                className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
               >
-                <Undo2 className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={redoAnnotations}
-                disabled={!historyCanRedo(history)}
-                title="Redo (Ctrl+Shift+Z)"
-                className="rounded-full p-1 text-gray-500 enabled:hover:bg-gray-100 enabled:hover:text-gray-900 disabled:opacity-30 dark:text-gray-400 dark:enabled:hover:bg-white/10 dark:enabled:hover:text-white"
-              >
-                <Redo2 className="h-3.5 w-3.5" />
+                Cancel · Esc
               </button>
             </div>
           )}
@@ -1681,6 +1700,17 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             </div>
           )}
         </div>
+        {/*
+          The inspector, which takes no width until a mark is picked up.
+          It edits through `commitAnnotationChange`, the same undoable path a
+          drag ends on, so a colour change is one Ctrl+Z like everything else.
+        */}
+        <AnnotationInspector
+          annotation={currentPanel.annotations.find(a => a.id === selectedAnnotation) ?? null}
+          onChange={commitAnnotationChange}
+          onDelete={deleteAnnotation}
+          onClose={() => setSelectedAnnotation(null)}
+        />
       </div>
 
       {/* Right-Click Context Menu for Annotations */}
