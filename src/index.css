@@ -960,6 +960,54 @@
   }
 }
 
+/* ── The Asset Overview figures band, sized by its pane ───────────────────
+   The band holds the bounded figure panels -- largest position, also held in,
+   research status -- three abreast where there is room for three.
+
+   Why the PANE and not the window. This surface renders in the Ideas work
+   pane, and measured on the running app a 1920px window gives it 1489px: the
+   window is 29% wider than the thing being laid out. Open a second pane or a
+   lens beside it and the gap grows. So `md:`/`xl:` were asking the wrong
+   question -- they would keep three tracks in a pane narrowed to a rail, and
+   each panel's figures would collide with their own labels. Same mistake,
+   same fix, same reasoning as `.gallery-host` and `.book-header`: the region
+   is the container.
+
+   The thresholds are the panels' own floor, not a device. A figure panel
+   stops being readable below ~300px -- label and value share a baseline and
+   collide before that, which is the collision seen in the browser while
+   `Row` still had a fixed 104px label. Two 16px gaps plus three 300px tracks
+   is 932px, so three tracks begin at 56rem; two begin at 34rem, the same step
+   the gallery uses for page-or-rail.
+
+   ── Outside `@layer utilities`, and outside the mobile media query ────────
+   Deliberately at the top level. The first attempt put this inside the
+   `@layer utilities` block that ends just above -- which is nested in
+   `@media (max-width: 767px) and (pointer: coarse)`. Every rule parsed, the
+   stylesheet contained the text, and `container-type` computed to `normal` on
+   a 1489px desktop pane: the band stayed one column and looked exactly like
+   an unapplied change. Checking `document.styleSheets` for the rule's
+   presence is not checking that it applies; `getComputedStyle` is.
+
+   Here and not in Tailwind: 3.3 ships no container-query variants and this
+   project adds no plugin, so `@[56rem]:grid-cols-3` would emit nothing and
+   the band would silently stay one column. `grid-cols-1` stays on the element
+   as the floor, so if these rules ever fail to apply the band degrades to a
+   single column, which is a layout that works. */
+.asset-body-host {
+  container-type: inline-size;
+}
+@container (min-width: 34rem) {
+  .asset-body-host [data-asset-figures] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container (min-width: 56rem) {
+  .asset-body-host [data-asset-figures] {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 767px) and (pointer: coarse) {
   button:not(.no-touch-target),
   [role='button']:not(.no-touch-target),

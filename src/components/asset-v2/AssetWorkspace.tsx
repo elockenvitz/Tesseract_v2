@@ -1155,7 +1155,12 @@ export function AssetWorkspacePane({
         column outnumber the paragraphs, and they were the things being
         starved.
       */}
-      <div className="px-4 pb-12 pt-5" data-asset-body>
+      {/*
+        `asset-body-host` makes this element the container the figures band
+        measures itself against -- the PANE, which at a 1534px window is
+        1103px wide, not the window. See the rule in `index.css`.
+      */}
+      <div className="asset-body-host px-4 pb-12 pt-5" data-asset-body>
         <div className="mx-auto flex w-full max-w-[140ch] flex-col gap-6">
           {/*
             The event the reader pressed, above everything.
@@ -1177,7 +1182,7 @@ export function AssetWorkspacePane({
           {compact.length > 0 && (
             <div
               data-asset-figures
-              className="grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-3"
+              className="grid grid-cols-1 items-start gap-4"
             >
               {compact}
             </div>
