@@ -200,7 +200,7 @@ const LINE_STYLES: { value: LineStyleOption; label: string }[] = [
 
 // Frequency/Interval configuration
 type FrequencyType =
-  | 'tick' | '1min' | '3min' | '5min' | '10min' | '15min' | '30min' | '60min' | '120min' | '240min'
+  | '1min' | '3min' | '5min' | '10min' | '15min' | '30min' | '60min' | '120min' | '240min'
   | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly'
 
 interface FrequencyConfig {
@@ -209,25 +209,49 @@ interface FrequencyConfig {
   apiInterval: string // Yahoo Finance interval mapping
 }
 
+/*
+ * ── Every option now asks for its own bar size ───────────────────────────
+ *
+ * Six of these used to ask for a DIFFERENT size than their label, and said
+ * so in a trailing comment:
+ *
+ *   '3 Min'     apiInterval: '5m'   // Closest available
+ *   '10 Min'    apiInterval: '15m'  // Closest available
+ *   '120 Min'   apiInterval: '1h'   // Will aggregate
+ *   '240 Min'   apiInterval: '1h'   // Will aggregate
+ *   'Quarterly' apiInterval: '1mo'  // Will aggregate
+ *   'Yearly'    apiInterval: '1mo'  // Will aggregate
+ *
+ * The aggregation those comments promised was never written. Picking
+ * "240 Min" drew hourly bars while the control went on reading 240 Min, and
+ * a reader measuring a move against the wrong bar width has nothing on
+ * screen to tell them. All six are exact multiples of a published size, and
+ * `lib/market-data/resample` now builds all six, so each one asks for
+ * itself.
+ *
+ * 'Tick' is gone. EODHD publishes no tick stream and a 1m bar is not a tick
+ * at any multiple, so there was nothing to build it from -- it was being
+ * served minute bars under a label promising individual trades. Removing an
+ * option is the honest form of not having it.
+ */
 const historicalFrequencies: Record<string, FrequencyConfig> = {
   daily: { label: 'Daily', intervals: ['3M', '6M', '1Y', '2Y', '3Y', '5Y'], apiInterval: '1d' },
   weekly: { label: 'Weekly', intervals: ['1Y', '2Y', '3Y', '4Y', '5Y', '10Y'], apiInterval: '1wk' },
   monthly: { label: 'Monthly', intervals: ['5Y', '10Y', '15Y', '20Y', '25Y', '30Y'], apiInterval: '1mo' },
-  quarterly: { label: 'Quarterly', intervals: ['10Y', '20Y', '30Y', '40Y', '50Y'], apiInterval: '1mo' }, // Will aggregate
-  yearly: { label: 'Yearly', intervals: ['10Y', '20Y', '30Y', '40Y', '50Y'], apiInterval: '1mo' } // Will aggregate
+  quarterly: { label: 'Quarterly', intervals: ['10Y', '20Y', '30Y', '40Y', '50Y'], apiInterval: '1q' },
+  yearly: { label: 'Yearly', intervals: ['10Y', '20Y', '30Y', '40Y', '50Y'], apiInterval: '1y' }
 }
 
 const intradayFrequencies: Record<string, FrequencyConfig> = {
-  tick: { label: 'Tick', intervals: ['1D', '2D', '3D', '4D', '5D', '10D'], apiInterval: '1m' },
   '1min': { label: '1 Min', intervals: ['1D', '2D', '3D', '4D', '5D'], apiInterval: '1m' },
-  '3min': { label: '3 Min', intervals: ['1D', '2D', '3D', '4D', '5D', '10D'], apiInterval: '5m' }, // Closest available
+  '3min': { label: '3 Min', intervals: ['1D', '2D', '3D', '4D', '5D', '10D'], apiInterval: '3m' },
   '5min': { label: '5 Min', intervals: ['1D', '2D', '3D', '4D', '5D', '10D'], apiInterval: '5m' },
-  '10min': { label: '10 Min', intervals: ['3D', '4D', '5D', '10D', '20D', '30D'], apiInterval: '15m' }, // Closest available
+  '10min': { label: '10 Min', intervals: ['3D', '4D', '5D', '10D', '20D', '30D'], apiInterval: '10m' },
   '15min': { label: '15 Min', intervals: ['3D', '4D', '5D', '10D', '20D', '30D'], apiInterval: '15m' },
   '30min': { label: '30 Min', intervals: ['10D', '20D', '30D', '60D', '3M', '6M'], apiInterval: '30m' },
   '60min': { label: '60 Min', intervals: ['10D', '20D', '30D', '60D', '3M', '6M'], apiInterval: '1h' },
-  '120min': { label: '120 Min', intervals: ['10D', '20D', '30D', '60D', '3M', '6M'], apiInterval: '1h' }, // Will aggregate
-  '240min': { label: '240 Min', intervals: ['10D', '20D', '30D', '60D', '3M', '6M'], apiInterval: '1h' } // Will aggregate
+  '120min': { label: '120 Min', intervals: ['10D', '20D', '30D', '60D', '3M', '6M'], apiInterval: '2h' },
+  '240min': { label: '240 Min', intervals: ['10D', '20D', '30D', '60D', '3M', '6M'], apiInterval: '4h' }
 }
 
 // Convert interval string to days/months for date calculation

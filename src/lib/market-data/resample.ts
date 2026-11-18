@@ -34,11 +34,51 @@
  */
 import type { Candle } from './eodhd-series'
 
-/** A bar size that must be built rather than requested. */
-export type ResampleTarget = '15m' | '30m' | '1wk' | '1mo'
+/**
+ * A bar size that must be built rather than requested.
+ *
+ * ── The six added after the first four ───────────────────────────────────
+ *
+ * The first version of this module covered the sizes EODHD routing had
+ * BROKEN. It left alone six Charting options that were wrong in a quieter
+ * way: they had never asked for their own size at all.
+ *
+ *   '3 Min'     asked for 5m    // its comment read "Closest available"
+ *   '10 Min'    asked for 15m   // its comment read "Closest available"
+ *   '120 Min'   asked for 1h    // its comment read "Will aggregate"
+ *   '240 Min'   asked for 1h    // its comment read "Will aggregate"
+ *   'Quarterly' asked for 1mo   // its comment read "Will aggregate"
+ *   'Yearly'    asked for 1mo   // its comment read "Will aggregate"
+ *
+ * The aggregation those comments promised was never written. Picking
+ * "240 Min" drew HOURLY bars, and the frequency control went on reading
+ * 240 Min. That is the one thing this module exists to prevent: a chart
+ * whose bar width is not the width it claims. Where every surfaced figure
+ * has to trace to its source, a mislabelled bar size is a provenance
+ * failure rather than a cosmetic one -- a reader measuring a move against
+ * the wrong bar width draws the wrong conclusion with nothing on screen to
+ * show why.
+ *
+ * All six are exact multiples of a published size, so all six are now built
+ * rather than substituted. 'Tick' is the one that cannot be: EODHD
+ * publishes no tick stream, and a 1m bar is not a tick at any multiple, so
+ * that option is removed from the page instead of being quietly served
+ * minute bars.
+ */
+export type ResampleTarget =
+  | '3m'
+  | '10m'
+  | '15m'
+  | '30m'
+  | '2h'
+  | '4h'
+  | '1wk'
+  | '1mo'
+  | '1q'
+  | '1y'
 
 /** A bar size EODHD actually publishes. */
-export type ResampleBase = '5m' | '1d'
+export type ResampleBase = '1m' | '5m' | '1h' | '1d'
 
 export interface ResamplePlan {
   /** The interval to ask the provider for. */
@@ -53,10 +93,31 @@ export interface ResamplePlan {
 }
 
 const PLANS: Record<ResampleTarget, ResamplePlan> = {
+  /*
+   * Each base is the LARGEST published size that divides the target exactly.
+   * 10m is built from 5m rather than 1m because two bars cost a tenth of the
+   * rows of ten, and both give the identical bar: the high of two 5m highs is
+   * the high of the ten 1m highs they were themselves built from.
+   */
+  '3m': { base: '1m', target: '3m', baseBarsPerTarget: 3 },
+  '10m': { base: '5m', target: '10m', baseBarsPerTarget: 2 },
   '15m': { base: '5m', target: '15m', baseBarsPerTarget: 3 },
-  '1wk': { base: '1d', target: '1wk', baseBarsPerTarget: 5 },
   '30m': { base: '5m', target: '30m', baseBarsPerTarget: 6 },
+  '2h': { base: '1h', target: '2h', baseBarsPerTarget: 2 },
+  '4h': { base: '1h', target: '4h', baseBarsPerTarget: 4 },
+  '1wk': { base: '1d', target: '1wk', baseBarsPerTarget: 5 },
   '1mo': { base: '1d', target: '1mo', baseBarsPerTarget: 21 },
+  /*
+   * A quarter and a year are built from DAILY bars, not from monthly ones.
+   *
+   * 1mo is itself a resampled size here, and resampling a resampling would
+   * mean the quarter inherited whatever the month's bucketing decided. Going
+   * straight to the daily bars keeps one aggregation step between the
+   * provider's figures and the drawn candle, which is what makes the
+   * provenance statement "every figure is an EODHD daily bar" literally true.
+   */
+  '1q': { base: '1d', target: '1q', baseBarsPerTarget: 63 },
+  '1y': { base: '1d', target: '1y', baseBarsPerTarget: 252 },
 }
 
 /**
@@ -68,10 +129,24 @@ export function resamplePlanFor(interval: string): ResamplePlan | null {
   return PLANS[interval as ResampleTarget] ?? null
 }
 
-/** Seconds per bucket, for the clock-aligned intraday targets. */
+/**
+ * Seconds per bucket, for the clock-aligned intraday targets.
+ *
+ * 2h and 4h align to the UTC clock like the rest, so a 4h bucket starts at
+ * 00:00, 04:00, 08:00 and so on. That does not line up with any one market's
+ * session open, and it is still the right choice for the reason given at the
+ * top of this file: an alignment derived from the session would depend on
+ * which exchange the symbol trades on, and an alignment derived from the
+ * first bar in the window would move every boundary when the chart is panned.
+ * A stable bucket that a reader can reason about beats a flattering one.
+ */
 const INTRADAY_BUCKET_SECONDS: Partial<Record<ResampleTarget, number>> = {
+  '3m': 3 * 60,
+  '10m': 10 * 60,
   '15m': 15 * 60,
   '30m': 30 * 60,
+  '2h': 2 * 60 * 60,
+  '4h': 4 * 60 * 60,
 }
 
 /**
@@ -115,6 +190,27 @@ function monthStartKey(time: string): string {
   return `${date.toISOString().slice(0, 7)}-01`
 }
 
+/** The first of a date's calendar quarter, as `YYYY-MM-DD`. */
+function quarterStartKey(time: string): string {
+  const ymd = isInstant(time)
+    ? new Date(secondsOf(time) * 1000).toISOString().slice(0, 10)
+    : time
+  const month = Number(ymd.slice(5, 7))
+  /* Calendar quarters, so Q1 opens in January -- not a fiscal year, which
+     differs per company and would make one chart's quarters disagree with
+     another's for no reason a reader could see. */
+  const start = Math.floor((month - 1) / 3) * 3 + 1
+  return `${ymd.slice(0, 4)}-${String(start).padStart(2, '0')}-01`
+}
+
+/** The first of a date's calendar year, as `YYYY-MM-DD`. */
+function yearStartKey(time: string): string {
+  const ymd = isInstant(time)
+    ? new Date(secondsOf(time) * 1000).toISOString().slice(0, 10)
+    : time
+  return `${ymd.slice(0, 4)}-01-01`
+}
+
 /**
  * The bucket a candle belongs to: a key to group by, and the `time` the
  * resulting bar carries.
@@ -129,7 +225,30 @@ function bucketOf(candle: Candle, target: ResampleTarget): string | null {
     // boundaries do not move when the window does.
     return String(Math.floor(seconds / bucketSeconds) * bucketSeconds)
   }
-  return target === '1wk' ? weekStartKey(candle.time) : monthStartKey(candle.time)
+  /*
+   * Switched on explicitly rather than falling through to a month.
+   *
+   * The previous shape was `target === '1wk' ? week : month`, which was
+   * correct while those were the only two dated targets -- and would have
+   * silently bucketed a quarter and a year BY MONTH the moment they were
+   * added, producing twelve bars a year under a label reading Yearly. That
+   * is the same class of defect this change exists to remove, so the
+   * fall-through is gone.
+   */
+  switch (target) {
+    case '1wk':
+      return weekStartKey(candle.time)
+    case '1mo':
+      return monthStartKey(candle.time)
+    case '1q':
+      return quarterStartKey(candle.time)
+    case '1y':
+      return yearStartKey(candle.time)
+    default:
+      /* An intraday target with no entry in the seconds table. Dropping the
+         bar is better than filing it under a size it does not belong to. */
+      return null
+  }
 }
 
 /**

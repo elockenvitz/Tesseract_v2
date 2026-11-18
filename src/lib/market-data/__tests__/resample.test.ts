@@ -297,3 +297,242 @@ describe('aggregation did not become provider substitution', () => {
     expect(chartData).toMatch(/plan \? resampleCandles\(/)
   })
 })
+
+/* ───────────────── the six sizes that never asked for themselves ──────── */
+
+describe('a frequency option asks for the size it is named after', () => {
+  /**
+   * The gap the coverage test above could not see.
+   *
+   * That test asserts every `apiInterval` is FETCHABLE -- native or planned.
+   * Six options passed it while asking for the wrong size, because `5m`,
+   * `1h` and `1mo` are all perfectly fetchable; they were simply not what
+   * the label said. "240 Min" asked for `1h` and drew hourly bars with the
+   * control still reading 240 Min.
+   *
+   * So this reads the label and the interval off the same line and checks
+   * they agree. A future option that borrows a neighbour's bar size fails
+   * here by name.
+   */
+  const charting = readFileSync(resolve(__dirname, '../../../pages/ChartingPage.tsx'), 'utf8')
+
+  /** Minutes for an intraday interval token; null for a dated one. */
+  const minutesOfInterval = (interval: string): number | null => {
+    const m = /^(\d+)(m|h)$/.exec(interval)
+    if (!m) return null
+    return Number(m[1]) * (m[2] === 'h' ? 60 : 1)
+  }
+
+  /** Minutes a label promises, e.g. "240 Min" -> 240; null if not intraday. */
+  const minutesOfLabel = (label: string): number | null => {
+    const m = /^(\d+)\s*Min$/i.exec(label.trim())
+    return m ? Number(m[1]) : null
+  }
+
+  const DATED: Record<string, string> = {
+    Daily: '1d',
+    Weekly: '1wk',
+    Monthly: '1mo',
+    Quarterly: '1q',
+    Yearly: '1y',
+  }
+
+  /* Every `{ label: '...', intervals: [...], apiInterval: '...' }` entry. */
+  const entries = [
+    ...charting.matchAll(
+      /label:\s*'([^']+)',\s*intervals:\s*\[[^\]]*\],\s*apiInterval:\s*'([^']+)'/g,
+    ),
+  ].map(m => ({ label: m[1], interval: m[2] }))
+
+  it('found the frequency table, so the assertions below are not vacuous', () => {
+    /* A stale regex would make every case below pass over an empty list --
+       the exact way a guard in this repo has gone quietly green before. */
+    expect(entries.length).toBeGreaterThanOrEqual(14)
+    expect(entries.map(e => e.label)).toContain('240 Min')
+    expect(entries.map(e => e.label)).toContain('Quarterly')
+  })
+
+  it('matches every minute-labelled option to an interval of the same length', () => {
+    const mismatched: string[] = []
+    for (const { label, interval } of entries) {
+      const wanted = minutesOfLabel(label)
+      if (wanted === null) continue
+      const got = minutesOfInterval(interval)
+      if (got !== wanted) mismatched.push(`${label} asks for ${interval}`)
+    }
+    expect(mismatched, 'these options draw a bar width other than their label').toEqual([])
+  })
+
+  it('matches every dated option to its own calendar size', () => {
+    const mismatched: string[] = []
+    for (const { label, interval } of entries) {
+      const wanted = DATED[label.trim()]
+      if (!wanted) continue
+      if (interval !== wanted) mismatched.push(`${label} asks for ${interval}`)
+    }
+    expect(mismatched, 'these options draw a period other than their label').toEqual([])
+  })
+
+  it('offers no Tick option, because there is no tick data to build it from', () => {
+    /*
+     * EODHD publishes no tick stream, and a 1m bar is not a tick at any
+     * multiple -- so unlike the other five, this one could not be fixed by
+     * aggregating. It was being served minute bars under a label promising
+     * individual trades. Removing it is the honest form of not having it,
+     * and this is what stops it coming back.
+     */
+    expect(entries.map(e => e.label)).not.toContain('Tick')
+    expect(charting).not.toMatch(/tick:\s*\{\s*label:\s*'Tick'/)
+  })
+})
+
+/* ─────────────────── the six new sizes, as arithmetic ─────────────────── */
+
+describe('the added intraday sizes', () => {
+  it('builds each from the largest published size that divides it', () => {
+    /* 10m from 5m rather than 1m: two bars instead of ten, and the identical
+       bar, because the high of two 5m highs is the high of the ten 1m highs
+       they were built from. */
+    expect(resamplePlanFor('3m')).toMatchObject({ base: '1m', target: '3m' })
+    expect(resamplePlanFor('10m')).toMatchObject({ base: '5m', target: '10m' })
+    expect(resamplePlanFor('2h')).toMatchObject({ base: '1h', target: '2h' })
+    expect(resamplePlanFor('4h')).toMatchObject({ base: '1h', target: '4h' })
+  })
+
+  it('combines three 1m bars into one 3m bar, aligned to the clock', () => {
+    /* 09:30, 09:31 and 09:32 UTC all fall in the 3m bucket opening 09:30.
+       09:33 would open the NEXT one, which is the point of clock alignment. */
+    const base = Date.UTC(2026, 10, 17, 9, 30) / 1000
+    const out = resampleCandles(
+      [
+        bar(String(base), 10, 12, 9, 11, 100),
+        bar(String(base + 60), 11, 15, 10, 14, 200),
+        bar(String(base + 120), 14, 14, 13, 13, 300),
+      ],
+      '3m',
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ open: 10, high: 15, low: 9, close: 13, volume: 600 })
+    expect(Number(out[0].time)).toBe(Date.UTC(2026, 10, 17, 9, 30) / 1000)
+  })
+
+  it('splits a 4h boundary at the clock, not at the first bar', () => {
+    /* 03:00 and 04:00 UTC belong to different 4h buckets (00:00 and 04:00),
+       so two bars in, two bars out -- not one. */
+    const three = Date.UTC(2026, 10, 17, 3, 0) / 1000
+    const out = resampleCandles(
+      [bar(String(three), 10, 11, 9, 10), bar(String(three + 3600), 20, 21, 19, 20)],
+      '4h',
+    )
+    expect(out).toHaveLength(2)
+    expect(Number(out[0].time)).toBe(Date.UTC(2026, 10, 17, 0, 0) / 1000)
+    expect(Number(out[1].time)).toBe(Date.UTC(2026, 10, 17, 4, 0) / 1000)
+  })
+
+  it('puts two 1h bars inside one 2h bucket', () => {
+    const start = Date.UTC(2026, 10, 17, 14, 0) / 1000
+    const out = resampleCandles(
+      [bar(String(start), 10, 11, 9, 10, 5), bar(String(start + 3600), 10, 20, 8, 18, 7)],
+      '2h',
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ open: 10, high: 20, low: 8, close: 18, volume: 12 })
+  })
+})
+
+describe('quarterly and yearly follow the calendar', () => {
+  it('builds both from daily bars, not from monthly ones', () => {
+    /*
+     * Resampling a resampling would make the quarter inherit whatever the
+     * month's bucketing decided. One aggregation step is what makes the
+     * provenance claim -- every figure is an EODHD daily bar -- literally so.
+     */
+    expect(resamplePlanFor('1q')).toMatchObject({ base: '1d', target: '1q' })
+    expect(resamplePlanFor('1y')).toMatchObject({ base: '1d', target: '1y' })
+  })
+
+  it('groups a quarter into one bar stamped at the quarter start', () => {
+    const out = resampleCandles(
+      [
+        bar('2026-04-01', 100, 110, 95, 105, 10),
+        bar('2026-05-15', 105, 130, 100, 120, 20),
+        bar('2026-06-30', 120, 125, 90, 92, 30),
+      ],
+      '1q',
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      time: '2026-04-01', open: 100, high: 130, low: 90, close: 92, volume: 60,
+    })
+  })
+
+  it('does NOT bucket a quarter by month', () => {
+    /*
+     * The trap this guards. `bucketOf` used to read
+     * `target === '1wk' ? week : month`, so any dated target that was not
+     * weekly fell through to MONTHLY -- and a quarter added without touching
+     * that line would have produced twelve bars a year under a Quarterly
+     * label. Same defect class as the one this change removes.
+     */
+    const out = resampleCandles(
+      [bar('2026-04-10', 1, 1, 1, 1), bar('2026-05-10', 2, 2, 2, 2), bar('2026-06-10', 3, 3, 3, 3)],
+      '1q',
+    )
+    expect(out).toHaveLength(1)
+  })
+
+  it('separates the four calendar quarters', () => {
+    const out = resampleCandles(
+      [
+        bar('2026-02-02', 1, 1, 1, 1),
+        bar('2026-04-02', 2, 2, 2, 2),
+        bar('2026-08-02', 3, 3, 3, 3),
+        bar('2026-11-02', 4, 4, 4, 4),
+      ],
+      '1q',
+    )
+    expect(out.map(c => c.time)).toEqual([
+      '2026-01-01', '2026-04-01', '2026-07-01', '2026-10-01',
+    ])
+  })
+
+  it('opens Q1 in January, not in a fiscal month', () => {
+    /* A fiscal year differs per company; two charts would then disagree
+       about when a quarter began for no reason a reader could see. */
+    const out = resampleCandles([bar('2026-01-05', 1, 1, 1, 1)], '1q')
+    expect(out[0].time).toBe('2026-01-01')
+  })
+
+  it('groups a year into one bar stamped 1 January', () => {
+    const out = resampleCandles(
+      [
+        bar('2026-01-02', 100, 110, 95, 105, 10),
+        bar('2026-07-01', 105, 200, 90, 180, 20),
+        bar('2026-12-31', 180, 185, 170, 175, 30),
+      ],
+      '1y',
+    )
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      time: '2026-01-01', open: 100, high: 200, low: 90, close: 175, volume: 60,
+    })
+  })
+
+  it('separates two years', () => {
+    const out = resampleCandles(
+      [bar('2025-12-31', 1, 1, 1, 1), bar('2026-01-01', 2, 2, 2, 2)],
+      '1y',
+    )
+    expect(out.map(c => c.time)).toEqual(['2025-01-01', '2026-01-01'])
+  })
+
+  it('emits no bar for a year with no data, as everywhere else here', () => {
+    const out = resampleCandles(
+      [bar('2024-06-01', 1, 1, 1, 1), bar('2026-06-01', 2, 2, 2, 2)],
+      '1y',
+    )
+    /* 2025 is absent, not flat. A zero-volume doji across a year with no
+       bars is a lie that looks like data. */
+    expect(out.map(c => c.time)).toEqual(['2024-01-01', '2026-01-01'])
+  })
+})

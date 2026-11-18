@@ -59,7 +59,30 @@ export type TimeFrame = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'ALL' |
 export interface CustomDateRange {
   startDate: Date
   endDate: Date
-  interval: '1m' | '5m' | '15m' | '30m' | '1h' | '1d' | '1wk' | '1mo'
+  /**
+   * The bar size to DRAW, which is not always one the provider publishes.
+   *
+   * `3m`, `10m`, `2h`, `4h`, `1q` and `1y` are built from a published size
+   * by `lib/market-data/resample`. They are named here because this union is
+   * what the Charting page selects into, and a size missing from it is a size
+   * the page has to misreport as something else -- which is exactly what the
+   * frequency table used to do.
+   */
+  interval:
+    | '1m'
+    | '3m'
+    | '5m'
+    | '10m'
+    | '15m'
+    | '30m'
+    | '1h'
+    | '2h'
+    | '4h'
+    | '1d'
+    | '1wk'
+    | '1mo'
+    | '1q'
+    | '1y'
 }
 
 // Indicator types available for the chart
