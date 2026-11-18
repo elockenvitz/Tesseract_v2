@@ -380,7 +380,19 @@ export class ChartRenderer {
   }
 
   // Draw crosshair
-  drawCrosshair(mouseX: number, mouseY: number, currentPrice: number | null) {
+  /**
+   * @param timeLabel What to print on the time axis, when the caller knows
+   *   better than the raw cursor position does.
+   *
+   *   It used to always print `formatTime(xToTime(mouseX), true)` -- the
+   *   continuous timestamp under the pixel, with a clock time forced on.
+   *   On a daily series that reads "Nov 3, 2026, 06:09 PM", and there is no
+   *   06:09 PM bar; the day's single bar is being labelled with the moment
+   *   the cursor happened to sit at. The caller passes the HOVERED BAR's
+   *   own timestamp, formatted at the bar's precision, so the label names
+   *   something that exists.
+   */
+  drawCrosshair(mouseX: number, mouseY: number, currentPrice: number | null, timeLabel?: string) {
     const ctx = this.ctx
     const area = this.transform.chartArea
     const dims = this.transform.getDimensions()
@@ -431,11 +443,10 @@ export class ChartRenderer {
     ctx.fillText(priceLabel, labelX + labelWidth / 2, mouseY * dpr)
 
     // Draw time label on X axis
-    const time = this.transform.xToTime(mouseX)
-    const timeLabel = ChartTransform.formatTime(time, true)
+    const label = timeLabel ?? ChartTransform.formatTime(this.transform.xToTime(mouseX), true)
 
     ctx.fillStyle = '#6b7280'
-    const timeLabelWidth = ctx.measureText(timeLabel).width + 16 * dpr
+    const timeLabelWidth = ctx.measureText(label).width + 16 * dpr
     const timeLabelHeight = 18 * dpr
     const timeLabelX = mouseX * dpr - timeLabelWidth / 2
     const timeLabelY = (area.y + area.height) * dpr
@@ -445,13 +456,13 @@ export class ChartRenderer {
     ctx.font = `${10 * dpr}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(timeLabel, mouseX * dpr, timeLabelY + timeLabelHeight / 2)
+    ctx.fillText(label, mouseX * dpr, timeLabelY + timeLabelHeight / 2)
 
     ctx.restore()
   }
 
   // Main render function
-  render(data: OHLC[], chartType: ChartType, showVolume: boolean = false, crosshair?: { x: number; y: number }) {
+  render(data: OHLC[], chartType: ChartType, showVolume: boolean = false, crosshair?: { x: number; y: number; timeLabel?: string }) {
     this.clear()
     this.drawGrid(data)
 
@@ -482,7 +493,7 @@ export class ChartRenderer {
 
     // Draw crosshair if provided
     if (crosshair) {
-      this.drawCrosshair(crosshair.x, crosshair.y, null)
+      this.drawCrosshair(crosshair.x, crosshair.y, null, crosshair.timeLabel)
     }
   }
 
@@ -704,7 +715,7 @@ export class ChartRenderer {
     chartType: ChartType,
     showVolume: boolean = false,
     mainIndicators: IndicatorRenderConfig[] = [],
-    crosshair?: { x: number; y: number },
+    crosshair?: { x: number; y: number; timeLabel?: string },
     mainSymbolStyle?: { color?: string; lineWidth?: number; lineStyle?: LineStyle }
   ) {
     this.clear()
@@ -740,7 +751,7 @@ export class ChartRenderer {
 
     // Draw crosshair if provided
     if (crosshair) {
-      this.drawCrosshair(crosshair.x, crosshair.y, null)
+      this.drawCrosshair(crosshair.x, crosshair.y, null, crosshair.timeLabel)
     }
   }
 }

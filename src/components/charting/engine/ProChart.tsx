@@ -16,6 +16,9 @@ import { useMarketDataEntitlement } from '../../../lib/market-data/provider-rout
 import { failureMessage } from '../../../lib/market-data/eodhd-series'
 import type { AdapterFailure } from '../../../lib/market-data/contracts'
 import { adjustmentForProvider, type SeriesMeta } from '../workspace/series-meta'
+import { OhlcReadout } from '../workspace/OhlcReadout'
+import { formatBarTime } from '../../../lib/charting/bar-format'
+import { barAtTime, reachForInterval, secondsForInterval } from '../../../lib/charting/bar-at-time'
 import {
   calculateSMA,
   calculateEMA,
@@ -269,6 +272,8 @@ export function ProChart({
 
   // Track the current interval for loading more data
   const [currentInterval, setCurrentInterval] = useState<string>('1d')
+  /** The bar the cursor is over, shown as O/H/L/C/V over the canvas. */
+  const [hoveredBar, setHoveredBar] = useState<OHLC | null>(null)
 
   // Separate indicators into main chart overlays and sub-panels
   const mainChartIndicators: IndicatorType[] = useMemo(() =>
@@ -901,7 +906,18 @@ export function ProChart({
       chartType,
       showVolume,
       [...indicatorData.main, ...comparisonLines],
-      crosshair || undefined,
+      /*
+       * The time label names the hovered BAR, not the pixel. The renderer's
+       * own fallback prints `xToTime(mouseX)` with a clock time forced on,
+       * which on a daily series reads "Nov 3, 2026, 06:09 PM" -- a moment
+       * that is not in the data, attached to a bar that covers the session.
+       */
+      crosshair
+        ? {
+            ...crosshair,
+            timeLabel: hoveredBar ? formatBarTime(hoveredBar.time, currentInterval) : undefined,
+          }
+        : undefined,
       mainSymbolStyle
     )
 
@@ -939,7 +955,10 @@ export function ProChart({
         }
       }
     }
-  }, [data, view, dimensions, chartType, showVolume, theme, crosshair, indicatorData, mainChartHeightRatio, events, annotations, transformedData, comparisonLines, selectedLine, symbol, compareSymbols, mainSymbolStyle])
+    /* `hoveredBar` and `currentInterval` are here because the crosshair's
+       time label is derived from them: without them the canvas keeps the
+       label of whichever bar was hovered when this last ran. */
+  }, [data, view, dimensions, chartType, showVolume, theme, crosshair, indicatorData, mainChartHeightRatio, events, annotations, transformedData, comparisonLines, selectedLine, symbol, compareSymbols, mainSymbolStyle, hoveredBar, currentInterval])
 
   // Auto-scale price when view changes
   useEffect(() => {
@@ -1174,13 +1193,21 @@ export function ProChart({
         y >= area.y && y <= area.y + area.height) {
       setCrosshair({ x, y })
 
+      const time = transformRef.current.xToTime(x)
       if (onCrosshairMove) {
-        const price = transformRef.current.yToPrice(y)
-        const time = transformRef.current.xToTime(x)
-        onCrosshairMove(price, time)
+        onCrosshairMove(transformRef.current.yToPrice(y), time)
       }
+      /*
+       * Nearest bar, capped at one bar's reach, so panning into the empty
+       * canvas past the last bar clears the readout instead of pinning it
+       * to the final bar and asserting the cursor is over something it is
+       * nowhere near. `barAtTime` binary-searches: this runs on every
+       * mousemove, and the ALL view is thousands of bars.
+       */
+      setHoveredBar(barAtTime(data, time, reachForInterval(secondsForInterval(currentInterval))))
     } else {
       setCrosshair(null)
+      setHoveredBar(null)
       if (onCrosshairMove) {
         onCrosshairMove(null, null)
       }
@@ -1248,7 +1275,11 @@ export function ProChart({
         }
       }
     }
-  }, [isDragging, dragStart, dragMode, onCrosshairMove])
+    /* `data` and `currentInterval` are dependencies now: without them this
+       handler closes over the bars of whichever series was loaded when it
+       was last built, and the readout would report the previous symbol's
+       prices after a symbol change. */
+  }, [isDragging, dragStart, dragMode, onCrosshairMove, data, currentInterval])
 
   /**
    * Recompute the mark being dragged, from the press rather than the frame.
@@ -1642,6 +1673,15 @@ export function ProChart({
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
+      {/*
+        The bar under the cursor, in numbers. Rendered here rather than in
+        the page because the series and the crosshair both live in this
+        component, and because it is positioned against this container --
+        moving it up would mean lifting the whole data set to show five
+        values.
+      */}
+      <OhlcReadout bar={hoveredBar} interval={currentInterval} />
+
       {/* Zoom controls */}
       <div className="absolute top-2 right-2 z-10 flex items-center space-x-1">
         <button

@@ -110,20 +110,38 @@ export function timesForStep(startTime: number, endTime: number, step: Step): nu
     return out
   }
 
+  /*
+   * ── UTC, deliberately, and not the reader's zone ──────────────────────
+   *
+   * A daily bar's timestamp is a calendar date parsed to UTC midnight:
+   * `2026-11-09` is 2026-11-09T00:00:00Z. If this walked LOCAL months, a
+   * grid line for "1 November" would land at local midnight -- five hours
+   * away from the bar it is meant to sit on, in New York -- and the line
+   * would miss the bar by that much.
+   *
+   * It also made this function internally inconsistent: the seconds steps
+   * below a week align with `Math.ceil(t / every) * every`, which is UTC.
+   * So a 1M view (weekly step) agreed with the data and a 1Y view (quarterly
+   * step) did not, for no reason a reader could see.
+   */
   const from = new Date(startTime * 1000)
   const cursor = step.unit === 'year'
     // Align down to a multiple of `every` years, so a 10-year step lands on
     // 2020 and 2030 rather than on whatever year the window happens to open.
-    ? new Date(Math.floor(from.getFullYear() / step.every) * step.every, 0, 1)
-    : new Date(from.getFullYear(), Math.floor(from.getMonth() / step.every) * step.every, 1)
+    ? new Date(Date.UTC(Math.floor(from.getUTCFullYear() / step.every) * step.every, 0, 1))
+    : new Date(Date.UTC(
+        from.getUTCFullYear(),
+        Math.floor(from.getUTCMonth() / step.every) * step.every,
+        1,
+      ))
 
   // Guard against a window far in the past producing an unbounded walk.
   for (let i = 0; i < 2000; i++) {
     const t = Math.floor(cursor.getTime() / 1000)
     if (t > endTime) break
     if (t >= startTime) out.push(t)
-    if (step.unit === 'year') cursor.setFullYear(cursor.getFullYear() + step.every)
-    else cursor.setMonth(cursor.getMonth() + step.every)
+    if (step.unit === 'year') cursor.setUTCFullYear(cursor.getUTCFullYear() + step.every)
+    else cursor.setUTCMonth(cursor.getUTCMonth() + step.every)
   }
   return out
 }

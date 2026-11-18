@@ -75,19 +75,43 @@ describe('the labels stay inside the window and in order', () => {
 })
 
 describe('the alignment that was worth keeping', () => {
-  it('a multi-year window lands on January 1st', () => {
+  /*
+   * Asserted in UTC, because the bars are in UTC. A daily bar's timestamp is
+   * a calendar date parsed to UTC midnight, so a grid line walked in the
+   * READER's zone would sit five hours from the bar it is drawn for in New
+   * York. These assertions fail if this function goes back to local-time
+   * arithmetic, in any zone that is not UTC.
+   */
+  it('a multi-year window lands on January 1st, UTC', () => {
     const times = calendarGridTimes(...windowOf(365 * 6))
+    expect(times.length).toBeGreaterThan(0)
     for (const t of times) {
       const d = new Date(t * 1000)
-      expect(d.getMonth(), `label at ${d.toISOString()}`).toBe(0)
-      expect(d.getDate()).toBe(1)
+      expect(d.getUTCMonth(), `label at ${d.toISOString()}`).toBe(0)
+      expect(d.getUTCDate(), `label at ${d.toISOString()}`).toBe(1)
+      expect(d.getUTCHours(), `label at ${d.toISOString()}`).toBe(0)
     }
   })
 
-  it('a months-long window lands on the 1st of a month', () => {
+  it('a months-long window lands on the 1st of a month, UTC midnight', () => {
     const times = calendarGridTimes(...windowOf(365))
+    expect(times.length).toBeGreaterThan(0)
     for (const t of times) {
-      expect(new Date(t * 1000).getDate(), `label at ${new Date(t * 1000).toISOString()}`).toBe(1)
+      const d = new Date(t * 1000)
+      expect(d.getUTCDate(), `label at ${d.toISOString()}`).toBe(1)
+      expect(d.getUTCHours(), `label at ${d.toISOString()}`).toBe(0)
+    }
+  })
+
+  it('every step agrees with the others about midnight', () => {
+    /* The inconsistency this stops: the sub-week steps align with
+       `Math.ceil(t / every) * every`, which is UTC, while the month and
+       year steps used local `Date` arithmetic. A 1M view then agreed with
+       the data and a 1Y view did not, for no visible reason. */
+    for (const days of [30, 90, 180, 365, 365 * 5]) {
+      for (const t of calendarGridTimes(...windowOf(days))) {
+        expect(t % 3600, `a ${days}-day window put a label off the hour`).toBe(0)
+      }
     }
   })
 })
@@ -122,7 +146,8 @@ describe('a single step, on its own', () => {
     const to = Math.floor(Date.UTC(2026, 5, 15) / 1000)
     const times = timesForStep(from, to, { unit: 'month', every: 1 } as never)
     expect(times.length).toBeGreaterThanOrEqual(4)
-    for (const t of times) expect(new Date(t * 1000).getDate()).toBe(1)
+    // UTC, matching the bars. See the alignment block above.
+    for (const t of times) expect(new Date(t * 1000).getUTCDate()).toBe(1)
   })
 
   it('aligns a seconds step to a whole multiple, so a daily grid lands on midnight', () => {
