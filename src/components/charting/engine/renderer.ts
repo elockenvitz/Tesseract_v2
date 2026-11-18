@@ -1,5 +1,6 @@
 import { OHLC, ChartTheme, ChartType, ChartDimensions } from './types'
-import { ChartTransform, getTimeGridInterval, generateFutureTimePoints } from './transform'
+import { ChartTransform } from './transform'
+import { calendarGridTimes } from '../../../lib/charting/time-axis'
 import {
   IndicatorValue,
   MACDValue,
@@ -71,15 +72,16 @@ export class ChartRenderer {
       ctx.stroke()
     }
 
-    // Vertical grid lines (time intervals)
-    const timeRange = view.endTime - view.startTime
-    const timeInterval = getTimeGridInterval(timeRange)
-
-    // Find first grid line time
-    const firstGridTime = Math.ceil(view.startTime / timeInterval) * timeInterval
-
-    // Draw time grid lines including future
-    for (let time = firstGridTime; time <= view.endTime; time += timeInterval) {
+    /*
+     * Vertical grid lines, on the SAME times the axis labels.
+     *
+     * They used to disagree: the grid walked `getTimeGridInterval`, a fixed
+     * range-to-interval table, while the labels walked calendar boundaries.
+     * On the default 1M view that produced one unlabelled line down the
+     * middle of the canvas, which reads as a rendering fault rather than as a
+     * date. One source for both, so a line always has a label under it.
+     */
+    for (const time of calendarGridTimes(view.startTime, view.endTime)) {
       const x = this.transform.timeToX(time) * dpr
       if (x >= area.x * dpr && x <= (area.x + area.width) * dpr) {
         ctx.beginPath()
@@ -151,10 +153,14 @@ export class ChartRenderer {
     ctx.textBaseline = 'top'
 
     const timeRange = view.endTime - view.startTime
-    const dayInSeconds = 86400
 
-    // Generate calendar-aligned time labels
-    const gridTimes = this.getCalendarAlignedGridTimes(view.startTime, view.endTime, timeRange)
+    /*
+     * Chosen by how many labels land in the window, not by a range table.
+     * The table asked which UNIT the window was, and a one-month window is a
+     * month -- so it labelled the one month boundary inside it and left
+     * thirty days of price under a single word. See `lib/charting/time-axis`.
+     */
+    const gridTimes = calendarGridTimes(view.startTime, view.endTime)
 
     for (const time of gridTimes) {
       const x = this.transform.timeToX(time) * dpr
@@ -167,61 +173,14 @@ export class ChartRenderer {
     ctx.restore()
   }
 
-  // Get calendar-aligned grid times (years align to Jan 1, months to 1st, etc.)
-  private getCalendarAlignedGridTimes(startTime: number, endTime: number, timeRange: number): number[] {
-    const times: number[] = []
-    const dayInSeconds = 86400
-    const startDate = new Date(startTime * 1000)
-    const endDate = new Date(endTime * 1000)
-
-    // More than 2 years - show year boundaries
-    if (timeRange >= dayInSeconds * 730) {
-      let year = startDate.getFullYear()
-      while (true) {
-        const yearStart = new Date(year, 0, 1).getTime() / 1000 // Jan 1st
-        if (yearStart > endTime) break
-        if (yearStart >= startTime) {
-          times.push(yearStart)
-        }
-        year++
-      }
-    }
-    // 6 months to 2 years - show quarter or month boundaries
-    else if (timeRange >= dayInSeconds * 180) {
-      let date = new Date(startDate.getFullYear(), startDate.getMonth(), 1)
-      const monthInterval = timeRange >= dayInSeconds * 365 ? 3 : 1 // Quarterly or monthly
-      while (date.getTime() / 1000 <= endTime) {
-        const time = date.getTime() / 1000
-        if (time >= startTime) {
-          times.push(time)
-        }
-        date.setMonth(date.getMonth() + monthInterval)
-      }
-    }
-    // 1-6 months - show month boundaries
-    else if (timeRange >= dayInSeconds * 30) {
-      let date = new Date(startDate.getFullYear(), startDate.getMonth(), 1)
-      while (date.getTime() / 1000 <= endTime) {
-        const time = date.getTime() / 1000
-        if (time >= startTime) {
-          times.push(time)
-        }
-        date.setMonth(date.getMonth() + 1)
-      }
-    }
-    // Less than 1 month - use regular interval-based approach
-    else {
-      const timeInterval = getTimeGridInterval(timeRange)
-      let time = Math.ceil(startTime / timeInterval) * timeInterval
-      while (time <= endTime) {
-        times.push(time)
-        time += timeInterval
-      }
-    }
-
-    return times
-  }
-
+  /*
+   * `getCalendarAlignedGridTimes` was here. It is deleted rather than left
+   * unused: it is the range-to-unit table that starved the axis, and an
+   * unused private method with the right-sounding name is the obvious thing
+   * for a later change to call again. `calendarGridTimes` replaces it, keeps
+   * the calendar alignment that was its good idea, and chooses by label count
+   * instead of by unit.
+   */
   // Draw candlestick chart
   drawCandlesticks(data: OHLC[]) {
     const ctx = this.ctx
