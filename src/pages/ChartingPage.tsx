@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -6,7 +6,7 @@ import {
   BarChart3, CandlestickChart, Activity, Layers, Settings, Maximize2,
   Download, Share2, Star, Clock, Grid3X3, LayoutGrid, Calendar, X,
   DollarSign, BarChart2, PieChart, Percent, TrendingUp as TrendIcon,
-  Minus, ArrowRight, Square, Circle, Type, MousePointer, Trash2, Lock, Unlock, Move
+  Minus, ArrowRight, Square, Circle, Type, Trash2, Undo2, Redo2
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
@@ -19,7 +19,25 @@ import {
   readChartingWorkspace,
   writeChartingWorkspace,
 } from '../lib/charting/workspace-state'
-import { Annotation, AnnotationType } from '../components/charting/engine/annotations'
+import {
+  Annotation,
+  AnnotationType,
+  DEFAULT_ANNOTATION_STYLE,
+} from '../components/charting/engine/annotations'
+import {
+  annotationFromPoints,
+  isTwoPointTool,
+} from '../lib/charting/annotation-geometry'
+import {
+  canRedo as historyCanRedo,
+  canUndo as historyCanUndo,
+  commit as historyCommit,
+  createHistory,
+  present as historyPresent,
+  redo as historyRedo,
+  reset as historyReset,
+  undo as historyUndo,
+} from '../lib/charting/annotation-history'
 
 // Metric types for charting
 type MetricType = 'price' | 'volume' | 'market_cap' | 'pe_ratio' | 'eps' | 'revenue' | 'dividend_yield'
@@ -71,38 +89,28 @@ const annotationTools: { type: AnnotationType; label: string; icon: any }[] = [
   { type: 'arrow', label: 'Arrow', icon: ArrowRight },
 ]
 
-// Helper to create a new annotation at the given coordinates
-function createAnnotation(type: AnnotationType, time: number, price: number): Annotation {
-  const id = `annotation-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-  const defaultStyle = {
-    color: '#2563eb',
-    lineWidth: 2,
-    lineStyle: 'solid' as const,
-    fillColor: '#2563eb',
-    fillOpacity: 0.1,
-    fontSize: 12
-  }
+/**
+ * The style a newly drawn mark carries.
+ *
+ * Two deliberate differences from the local object this replaces: there is no
+ * `fillColor` equal to the stroke colour (a filled shape at full stroke
+ * colour hides the series underneath it), and there is no `label`. The old
+ * code wrote `label: `$${price.toFixed(2)}`` onto every horizontal line,
+ * which hardcodes a currency the asset may not quote in -- a pence-quoted
+ * holding got a dollar sign on a hundredfold-wrong figure -- and froze a
+ * number the renderer can read off `price` itself.
+ */
+const NEW_ANNOTATION_STYLE = {
+  ...DEFAULT_ANNOTATION_STYLE,
+  color: '#2563eb',
+  lineWidth: 2,
+  fillOpacity: 0.12,
+  fontSize: 12,
+}
 
-  switch (type) {
-    case 'horizontal-line':
-      return { id, type, style: defaultStyle, price, label: `$${price.toFixed(2)}` }
-    case 'vertical-line':
-      return { id, type, style: defaultStyle, time }
-    case 'trend-line':
-    case 'ray':
-      return { id, type, style: defaultStyle, startTime: time, startPrice: price, endTime: time + 86400 * 30, endPrice: price * 1.05 }
-    case 'rectangle':
-    case 'ellipse':
-      return { id, type, style: { ...defaultStyle, fillOpacity: 0.2 }, startTime: time, startPrice: price, endTime: time + 86400 * 30, endPrice: price * 0.95 }
-    case 'fibonacci':
-      return { id, type, style: defaultStyle, startTime: time, startPrice: price, endTime: time + 86400 * 60, endPrice: price * 0.8, levels: [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] }
-    case 'text':
-      return { id, type, style: { ...defaultStyle, fontSize: 14 }, time, price, text: 'Note', anchor: 'left' }
-    case 'arrow':
-      return { id, type, style: defaultStyle, startTime: time, startPrice: price, endTime: time + 86400 * 15, endPrice: price * 1.03 }
-    default:
-      return { id, type: 'horizontal-line', style: defaultStyle, price }
-  }
+/** Ids are minted here; the geometry module stays pure and has no clock. */
+function newAnnotationId(): string {
+  return `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
 }
 
 interface ChartingPageProps {
@@ -327,6 +335,36 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   })
   const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
 
+  /**
+   * The drawing tool in hand, or null for an ordinary pointer.
+   *
+   * Only a two-point tool is ever armed. A horizontal line, a vertical line
+   * and a text note are each fully described by the single point the reader
+   * right-clicked, so those still commit immediately from the context menu
+   * -- arming them would ask for a drag that carries no information.
+   */
+  const [activeTool, setActiveTool] = useState<AnnotationType | null>(null)
+
+  /**
+   * Undo history for the ACTIVE panel's marks.
+   *
+   * There was none: `grep -rniE "undo|redo"` over this file and all of
+   * `components/charting` returned nothing, so the only way back from a
+   * misplaced mark was "Clear All Annotations", which takes every other mark
+   * on the panel with it.
+   *
+   * `panels` stays the single source of truth for what is drawn; this holds
+   * snapshots beside it. The invariant -- that `present(history)` equals the
+   * active panel's annotations -- is maintained by routing every mutation
+   * through `setAnnotations` below, and restored by `historyReset` whenever
+   * the panel or its symbol changes.
+   */
+  const [history, setHistory] = useState(() =>
+    createHistory<Annotation[]>(
+      initialState.panels.find(p => p.id === initialState.activePanel)?.annotations ?? [],
+    ),
+  )
+
   // Line context menu state for formatting lines
   const [lineContextMenu, setLineContextMenu] = useState<LineContextMenuState>({
     visible: false,
@@ -508,32 +546,145 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     setContextMenu(prev => ({ ...prev, visible: false }))
   }, [])
 
+  /**
+   * The ONE way the active panel's marks change.
+   *
+   * Every path -- drawing, deleting, clearing -- goes through here, which is
+   * what keeps the undo history and the drawn marks from drifting apart. A
+   * second writer that skipped this would leave Ctrl+Z restoring a state the
+   * chart was never in.
+   */
+  const setAnnotations = useCallback((next: Annotation[]) => {
+    updatePanel(activePanel, { annotations: next })
+    setHistory(h => historyCommit(h, next))
+  }, [activePanel, updatePanel])
+
+  /**
+   * Pick a tool from the context menu.
+   *
+   * A one-point mark commits where it was right-clicked, because that click
+   * is the whole gesture. A two-point mark instead ARMS the tool: the reader
+   * then drags on the chart and the mark is built from the two points they
+   * actually indicated. Before this, a two-point mark was stamped at the
+   * click with its far end derived by arithmetic -- every trend line thirty
+   * days long and up exactly 5%, with no way to drag it afterwards.
+   */
   const addAnnotation = useCallback((type: AnnotationType) => {
+    if (isTwoPointTool(type)) {
+      setActiveTool(type)
+      closeContextMenu()
+      return
+    }
+
     const panel = panels.find(p => p.id === activePanel)
     if (!panel) return
 
-    const newAnnotation: Annotation = createAnnotation(type, contextMenu.chartX, contextMenu.chartY)
-
-    updatePanel(activePanel, {
-      annotations: [...panel.annotations, newAnnotation]
-    })
+    const at = { time: contextMenu.chartX, price: contextMenu.chartY }
+    const created = annotationFromPoints(type, at, at, NEW_ANNOTATION_STYLE, newAnnotationId())
+    if (created) setAnnotations([...panel.annotations, created])
     closeContextMenu()
-  }, [activePanel, panels, contextMenu])
+  }, [activePanel, panels, contextMenu, setAnnotations, closeContextMenu])
+
+  /** A two-point tool finished its drag; the mark is already built. */
+  const handleAnnotationDraw = useCallback((annotation: Annotation) => {
+    const panel = panels.find(p => p.id === activePanel)
+    if (!panel) return
+    setAnnotations([...panel.annotations, annotation])
+    /*
+     * One mark per selection, then back to the pointer.
+     *
+     * A tool that stayed armed turns the next pan into another mark, and
+     * because a drawing suppresses panning there is no feedback that the
+     * chart has stopped responding the way it did a moment ago.
+     */
+    setActiveTool(null)
+  }, [activePanel, panels, setAnnotations])
 
   const deleteAnnotation = useCallback((annotationId: string) => {
     const panel = panels.find(p => p.id === activePanel)
     if (!panel) return
 
-    updatePanel(activePanel, {
-      annotations: panel.annotations.filter(a => a.id !== annotationId)
-    })
+    setAnnotations(panel.annotations.filter(a => a.id !== annotationId))
     setSelectedAnnotation(null)
-  }, [activePanel, panels])
+  }, [activePanel, panels, setAnnotations])
 
   const clearAllAnnotations = useCallback(() => {
-    updatePanel(activePanel, { annotations: [] })
+    setAnnotations([])
     closeContextMenu()
-  }, [activePanel])
+  }, [setAnnotations, closeContextMenu])
+
+  const undoAnnotations = useCallback(() => {
+    setHistory(h => {
+      if (!historyCanUndo(h)) return h
+      const back = historyUndo(h)
+      updatePanel(activePanel, { annotations: historyPresent(back) })
+      return back
+    })
+    setSelectedAnnotation(null)
+  }, [activePanel, updatePanel])
+
+  const redoAnnotations = useCallback(() => {
+    setHistory(h => {
+      if (!historyCanRedo(h)) return h
+      const forward = historyRedo(h)
+      updatePanel(activePanel, { annotations: historyPresent(forward) })
+      return forward
+    })
+  }, [activePanel, updatePanel])
+
+  /**
+   * A change of panel or symbol starts a new undo context.
+   *
+   * Without this, Ctrl+Z after switching the panel to another asset would
+   * restore the PREVIOUS asset's marks onto this one -- a cross-asset trend
+   * line that looks like analysis and is not. `historyReset` replaces the
+   * present without recording a step and drops any pending redo.
+   *
+   * The guard on `lastContextRef` is what lets `panels` stay in the
+   * dependency list honestly: the effect re-runs on every mark drawn, and
+   * without the key comparison it would reset the history each time and
+   * undo would never do anything.
+   */
+  const lastContextRef = useRef<string>('')
+  useEffect(() => {
+    const panel = panels.find(p => p.id === activePanel)
+    const key = `${activePanel}:${panel?.symbol ?? ''}`
+    if (key === lastContextRef.current) return
+    lastContextRef.current = key
+    setHistory(historyReset<Annotation[]>(panel?.annotations ?? []))
+    setActiveTool(null)
+  }, [activePanel, panels])
+
+  /* Ctrl/Cmd+Z to undo, with Shift to redo; Escape puts the tool down. */
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveTool(null)
+        return
+      }
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return
+      /*
+       * Never steal the shortcut from a field being typed in. The page
+       * carries a symbol search and the note editor, where Ctrl+Z means undo
+       * the TEXT -- and taking it would silently remove a chart mark instead,
+       * somewhere the reader is not looking.
+       */
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      e.preventDefault()
+      if (e.shiftKey) redoAnnotations()
+      else undoAnnotations()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [undoAnnotations, redoAnnotations])
 
   // Line context menu handlers
   const handleLineContextMenu = useCallback((e: React.MouseEvent, symbol: string, isMainSymbol: boolean) => {
@@ -1273,7 +1424,52 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
       {/* Main Chart Area */}
       <div className="flex-1 flex overflow-hidden" onClick={() => { closeContextMenu(); closeLineContextMenu(); }}>
         {/* Chart Canvas */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden relative">
+          {/*
+            * An armed tool changes what a press does: it draws instead of
+            * panning. That has to be visible, or the chart simply stops
+            * responding the way it did a moment ago with nothing on the page
+            * to explain it. The strip also carries the two controls that are
+            * otherwise keyboard-only.
+            */}
+          {(activeTool || historyCanUndo(history) || historyCanRedo(history)) && (
+            <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-gray-200/80 bg-white/95 px-2 py-1 shadow-sm backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
+              {activeTool && (
+                <>
+                  <span className="pl-1 text-[11px] font-medium text-gray-700 dark:text-gray-200">
+                    Drag to draw{' '}
+                    {(annotationTools.find(t => t.type === activeTool)?.label ?? activeTool).toLowerCase()}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTool(null)}
+                    className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
+                </>
+              )}
+              <button
+                type="button"
+                onClick={undoAnnotations}
+                disabled={!historyCanUndo(history)}
+                title="Undo (Ctrl+Z)"
+                className="rounded-full p-1 text-gray-500 enabled:hover:bg-gray-100 enabled:hover:text-gray-900 disabled:opacity-30 dark:text-gray-400 dark:enabled:hover:bg-white/10 dark:enabled:hover:text-white"
+              >
+                <Undo2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={redoAnnotations}
+                disabled={!historyCanRedo(history)}
+                title="Redo (Ctrl+Shift+Z)"
+                className="rounded-full p-1 text-gray-500 enabled:hover:bg-gray-100 enabled:hover:text-gray-900 disabled:opacity-30 dark:text-gray-400 dark:enabled:hover:bg-white/10 dark:enabled:hover:text-white"
+              >
+                <Redo2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           {viewMode === 'single' ? (
             <div className="h-full bg-white dark:bg-gray-800">
               {currentPanel.symbol ? (
@@ -1293,6 +1489,9 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                   onContextMenu={handleChartContextMenu}
                   onLineContextMenu={handleLineContextMenu}
                   onLineClick={handleLineClick}
+                  activeTool={activeTool}
+                  annotationStyle={NEW_ANNOTATION_STYLE}
+                  onAnnotationDraw={handleAnnotationDraw}
                 />
               ) : (
                 <div className="h-full flex items-center justify-center">
@@ -1335,6 +1534,13 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                       onContextMenu={panel.id === activePanel ? handleChartContextMenu : undefined}
                       onLineContextMenu={panel.id === activePanel ? handleLineContextMenu : undefined}
                       onLineClick={panel.id === activePanel ? handleLineClick : undefined}
+                      /* Drawing follows the active panel, exactly as the
+                         handlers above already do -- the context menu that
+                         arms a tool is only offered there, so an inactive
+                         panel can never be mid-drawing. */
+                      activeTool={panel.id === activePanel ? activeTool : null}
+                      annotationStyle={NEW_ANNOTATION_STYLE}
+                      onAnnotationDraw={panel.id === activePanel ? handleAnnotationDraw : undefined}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center">
