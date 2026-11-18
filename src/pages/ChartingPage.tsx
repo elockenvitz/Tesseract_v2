@@ -12,7 +12,30 @@ import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ProChart, ChartType, TimeFrame, IndicatorType, CustomDateRange } from '../components/charting'
-import { useAuth } from '../contexts/AuthContext'
+/*
+ * `hooks/useAuth`, NOT `contexts/AuthContext`.
+ *
+ * There are two useAuth implementations in this codebase and only one of them
+ * works at runtime:
+ *
+ *   hooks/useAuth.ts        a standalone hook; reads the Supabase session
+ *                           directly. No provider, no context. 255 call sites.
+ *   contexts/AuthContext    a React context whose useAuth THROWS
+ *                           'useAuth must be used within an AuthProvider'
+ *                           when no provider is above it.
+ *
+ * `<AuthProvider>` is rendered NOWHERE in this application -- App.tsx mounts
+ * QueryClient, Theme, Toast, Capture, Organization and CoverageRelevance, and
+ * no AuthProvider. So the context version throws on its first render, always.
+ *
+ * This file imported the context version, which crashed the whole Charting
+ * route the moment it was opened in production. `hooks/useAuth` returns a
+ * superset of the same shape, so `{ user }` is unchanged.
+ *
+ * Enforced by src/pages/__tests__/charting-auth-context.test.tsx, which also
+ * checks the general invariant rather than just this one file.
+ */
+import { useAuth } from '../hooks/useAuth'
 import { useOrganization } from '../contexts/OrganizationContext'
 import {
   chartingWorkspaceKey,
