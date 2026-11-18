@@ -37,10 +37,24 @@ describe('the readout', () => {
   })
 
   it('omits volume rather than printing zero when the feed sent none', () => {
-    /* A zero share count claims nothing traded. "This feed does not carry
-       volume" is a different statement, and printing 0 makes the wrong one. */
-    const { container } = render(<OhlcReadout bar={{ ...bar, volume: 0 }} interval="1d" />)
-    expect(container.textContent).not.toMatch(/\bV\b/)
+    /*
+     * A zero share count claims nothing traded. "This feed does not carry
+     * volume" is a different statement, and printing 0 makes the wrong one.
+     *
+     * Counted, not pattern-matched. The first version of this assertion was
+     * `not.toMatch(/\bV\b/)` and it could never fail: the fields run
+     * together in `textContent` as "...C 355.40V 0", so the V follows a
+     * digit and there is no word boundary in front of it to match. It read
+     * green with the guard deliberately removed.
+     */
+    const labels = (c: HTMLElement) =>
+      [...c.querySelectorAll('span')].map(s => s.textContent).filter(t => t === 'V')
+
+    const { container: without } = render(<OhlcReadout bar={{ ...bar, volume: 0 }} interval="1d" />)
+    expect(labels(without), 'volume was printed for a bar that has none').toHaveLength(0)
+
+    const { container: with_ } = render(<OhlcReadout bar={bar} interval="1d" />)
+    expect(labels(with_), 'volume was not printed for a bar that has it').toHaveLength(1)
   })
 
   it('attaches no currency symbol', () => {
