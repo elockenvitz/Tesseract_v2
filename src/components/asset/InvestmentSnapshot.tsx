@@ -81,10 +81,11 @@ import { FrameworkScale, WeightBar, money, bigMoney } from '../portfolio-v2/Port
    header carries the roster, and this page was the second copy. */
 import { type CoverageRecord } from '../coverage/CoverageDisplay'
 import { EXPOSURE_ANCHOR_ID } from '../../lib/asset-workspace/strip-targets'
+import { buildValuation } from '../../lib/asset-workspace/valuation'
+import { ValuationLadder } from './ValuationLadder'
 /* The bear/bull arithmetic only — the big conclusion CARD is gone; its figures
    now sit inline in Our view, and its absences are gap chips rather than a
    130px empty hero. The helper stays exported for the phone shell. */
-import { conclusionFigures } from './InvestmentConclusion'
 /*
  * The workspace resolver. Pure, deterministic, and fed only from facts this
  * component already fetched — it issues no query of its own and decides no
@@ -129,6 +130,16 @@ export interface SnapshotAsset {
   id: string
   symbol?: string | null
   company_name?: string | null
+  /**
+   * The asset's quoting currency, for the valuation's prices.
+   *
+   * Optional, and an absent one is handled rather than defaulted: a price
+   * whose currency is unknown renders as a bare number. Guessing USD is how
+   * a London pence figure becomes `$2,847.50`, which is wrong about the
+   * currency and wrong by a hundredfold at once, with nothing on screen to
+   * notice. `lib/market-data/currency` holds the rule.
+   */
+  currency?: string | null
 }
 
 export interface InvestmentSnapshotProps {
@@ -450,6 +461,28 @@ export function InvestmentSnapshot({
 
   const quotePrice = currentQuote?.price != null && currentQuote.price > 0 ? currentQuote.price : null
 
+  /*
+   * The ladder as a valuation: every rung, its weight, and what the weights
+   * add up to when they are a distribution.
+   *
+   * Built from `data.rungs` rather than `data.ladder`, because `ladder` drops
+   * exactly the cases worth saying something about -- a single recorded level,
+   * or rungs whose horizons disagree. `buildValuation` is pure and decides
+   * for itself whether an expected value is honest here.
+   *
+   * ── This hook must stay ABOVE the `isLoading` return ──────────────────
+   *
+   * It was first written beside the block that renders it, 540 lines below,
+   * which is past the early return: the loading render ran two `useMemo`s and
+   * the loaded render ran three, so React threw "Rendered more hooks than
+   * during the previous render" and the Overview went blank the moment the
+   * query resolved. `snapshot-hook-order.test.ts` is what caught it.
+   */
+  const valuation = useMemo(
+    () => buildValuation(data.rungs, quotePrice ?? data.spot),
+    [data.rungs, quotePrice, data.spot],
+  )
+
   if (isLoading) return <SnapshotSkeleton />
 
   /* ------------------------------------------------------------- belief */
@@ -514,8 +547,14 @@ export function InvestmentSnapshot({
      states "N of M" and this page no longer repeats it. */
   const yourRatingDiffers = !!myRating && (!dominant || myRating.rating_value !== dominant.value)
 
-  /* Bear/bull arithmetic, inline — no longer a 130px card that says "Not set". */
-  const figures = conclusionFigures({ target: data.target, spot: quotePrice ?? data.spot, ladder: data.ladder })
+  /*
+   * `conclusionFigures` is no longer read here.
+   *
+   * It supplied the bear/bull/skew line, which `ValuationLadder` supersedes:
+   * every rung with its weight, rather than the two ends and a ratio standing
+   * in for the shape between them. It stays exported from
+   * `InvestmentConclusion` because the mobile Snapshot still reads it.
+   */
   /* `variantRow` went with the single-row-per-section model. Every section
      now renders every view it has, so nothing is pulled out by hand. */
 
@@ -978,11 +1017,11 @@ export function InvestmentSnapshot({
    * answer the same question (where do we stand against what we think it is
    * worth), so they share a block and each absence compresses to one line.
    */
-  /* A bear/bull pair, or a drawable ladder: either is something the strip's
+  /* Any rung at all, or a drawable ladder: either is something the strip's
      single target number cannot express. Neither means the whole band is
      just a rule across an empty strip. */
   const spreadWorthShowing =
-    (figures.bear != null && figures.bull != null)
+    valuation.scenarios.length > 0
     || (data.ladder?.valid === true && data.spot != null)
 
   const exposureValuation = (
@@ -1004,22 +1043,35 @@ export function InvestmentSnapshot({
         print "Target $180.00 · −26.17%" again at its foot, two hundred pixels
         below — the same two numbers, read from the same field.
 
-        What is NOT in the strip, and is worth the room, is the SPREAD: where
-        the bear and bull cases sit around that one number, and how the spot
-        falls against the ladder. A single target says what we think it is
-        worth; the spread says how sure we are. So the spread stays and the
-        point estimate goes.
+        What is NOT in the strip, and is worth the room, is the DISTRIBUTION:
+        where each case sits around that one number, how likely the analyst
+        thought it was, and what the weights come to. A single target says
+        what we think it is worth; the distribution says how sure we are. So
+        the distribution stays and the point estimate goes.
+
+        ── Why this is no longer one line of text ─────────────────────────
+
+        It used to read `bear $205 · bull $450 · skew 2.1:1`: the middle of
+        the distribution missing, the weights missing, and a 50/50 bear/bull
+        indistinguishable from AAPL's real 12/62. Those are different
+        investments with the same bear and the same bull.
+
+        `skew` goes with it. A bear/bull ratio was a stand-in for the shape of
+        the distribution, built when the weights were unavailable; the weights
+        are the thing it approximated, and keeping both would put two answers
+        to one question side by side.
       */}
       {(spreadWorthShowing || data.target == null) && (
         <div className="mt-4 border-t border-gray-200/70 pt-3 dark:border-white/[0.07]">
-          {data.target == null && (
+          {data.target == null && valuation.scenarios.length === 0 && (
             <GapChip label="No price target set" onClick={() => onOpenSubPage('research')} />
           )}
-          {figures.bear != null && figures.bull != null && (
-            <div className="text-xs text-gray-500">
-              bear {money(figures.bear)} · bull {money(figures.bull)}
-              {figures.skew != null ? ` · skew ${figures.skew.toFixed(1)}:1` : ''}
-            </div>
+          {valuation.scenarios.length > 0 && (
+            <ValuationLadder
+              valuation={valuation}
+              currency={asset.currency ?? null}
+              onOpenResearch={() => onOpenSubPage('research')}
+            />
           )}
           {data.ladder?.valid && data.spot != null && (
             <div className="mt-3"><FrameworkScale ladder={data.ladder} spot={data.spot} /></div>

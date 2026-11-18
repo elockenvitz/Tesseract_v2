@@ -61,6 +61,14 @@ const WORKSPACE: AssetWorkspaceData = {
     ],
     updatedAt: daysAgo(30), valid: true, reason: '',
   } as never,
+  /* The same three rungs the ladder carries: the valuation reads `rungs`,
+     which is the unnarrowed list, so a fixture setting only `ladder` would
+     leave the Overview's valuation block empty. */
+  rungs: [
+    { id: 'c-bear', name: 'Bear', price: 150 },
+    { id: 'c-base', name: 'Base', price: 195 },
+    { id: 'c-bull', name: 'Bull', price: 230 },
+  ] as never,
   target: 230, targetStanding: null, positions: [], liveIdeas: [], decisions: [],
 }
 
