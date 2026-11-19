@@ -31,6 +31,7 @@ import type { MarketDataProviderId } from './contracts'
 import { clearReferenceCache } from './routed-quote'
 import { clearSymbolCache } from './eodhd-symbol'
 import { clearChartingWorkspaces } from '../charting/workspace-state'
+import { clearRecentInstruments } from '../charting/recent-instruments'
 
 export const EODHD_FUNCTION = 'eodhd-market-data'
 
@@ -180,6 +181,15 @@ export interface ProviderCacheDeps {
    * symbols and comparisons in memory.
    */
   clearWorkspaces: () => void
+  /**
+   * The Charting symbol box's recents list.
+   *
+   * Keyed by principal like the workspace, but PERSISTED, so unlike the
+   * others it outlives the tab as well as the sign-out. That is the whole
+   * reason it has to be swept here: an in-memory map at least dies with the
+   * page, and this one does not.
+   */
+  clearRecents: () => void
 }
 
 /**
@@ -194,6 +204,7 @@ export function clearProviderCaches(deps: ProviderCacheDeps = DEFAULT_CACHE_DEPS
   deps.clearCharts()
   deps.clearReference()
   deps.clearWorkspaces()
+  deps.clearRecents()
 }
 
 const DEFAULT_CACHE_DEPS: ProviderCacheDeps = {
@@ -203,6 +214,7 @@ const DEFAULT_CACHE_DEPS: ProviderCacheDeps = {
     clearSymbolCache()
   },
   clearWorkspaces: () => clearChartingWorkspaces(),
+  clearRecents: () => clearRecentInstruments(),
 }
 
 /**

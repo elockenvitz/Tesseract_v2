@@ -162,9 +162,10 @@ describe('the principal change empties the map', () => {
       clearCharts: () => calls.push('charts'),
       clearReference: () => calls.push('reference'),
       clearWorkspaces: () => calls.push('workspaces'),
+      clearRecents: () => calls.push('recents'),
     })
     expect(calls).toContain('workspaces')
-    expect(calls).toHaveLength(3)
+    expect(calls).toHaveLength(4)
   })
 })
 

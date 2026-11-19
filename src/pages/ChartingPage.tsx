@@ -43,6 +43,11 @@ import {
   writeChartingWorkspace,
 } from '../lib/charting/workspace-state'
 import {
+  readRecentInstruments,
+  recordRecentInstrument,
+  type RecentInstrument,
+} from '../lib/charting/recent-instruments'
+import {
   Annotation,
   AnnotationType,
   DEFAULT_ANNOTATION_STYLE,
@@ -327,6 +332,15 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   const workspaceKey = chartingWorkspaceKey(user?.id, currentOrgId, workspaceId)
 
   /*
+   * Read on the principal, not once on mount: an organization switch has to
+   * swap the list, and reading it before `user` resolves would cache the
+   * signed-out key's (empty) list for the rest of the session.
+   */
+  useEffect(() => {
+    setRecents(readRecentInstruments(user?.id, currentOrgId))
+  }, [user?.id, currentOrgId])
+
+  /*
    * Restored, not reset.
    *
    * This page is unmounted outright whenever another tab becomes active, so
@@ -342,6 +356,13 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   const [addedSymbols, setAddedSymbols] = useState<Set<string>>(new Set())
 
   const [searchQuery, setSearchQuery] = useState('')
+  /*
+   * The recents panel opens on FOCUS with an empty box, so focus has to be
+   * state rather than a CSS `:focus-within` — the panel has to survive the
+   * click that lands on one of its own rows.
+   */
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [recents, setRecents] = useState<RecentInstrument[]>([])
   const [viewMode, setViewMode] = useState<ViewMode>(initialState.viewMode)
   // The chart is the surface; on a phone the toolbar has to yield to it.
   const isMobileViewport = useIsMobile()
@@ -852,6 +873,18 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   const selectAsset = (asset: { id: string; symbol: string; company_name: string }) => {
     updatePanel(activePanel, { symbol: asset.symbol, companyName: asset.company_name })
     setSearchQuery('')
+    setSearchFocused(false)
+    /*
+     * Recorded here because this is the ONE funnel every chart symbol
+     * passes through — the typed search, a recents click, and a symbol
+     * opened from elsewhere all land on it. Recording at the dropdown's
+     * click handler instead would have missed the other routes in.
+     */
+    setRecents(recordRecentInstrument(user?.id, currentOrgId, {
+      id: asset.id,
+      symbol: asset.symbol,
+      companyName: asset.company_name,
+    }))
   }
 
   const addCompareSymbol = (asset: { id: string; symbol: string; company_name: string }) => {
@@ -967,8 +1000,46 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                 placeholder="Search symbol..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+                /*
+                 * Closed on a DELAY, because a row's click fires after the
+                 * input's blur. Closing immediately would unmount the row
+                 * under the pointer and swallow the selection.
+                 */
+                onBlur={() => window.setTimeout(() => setSearchFocused(false), 150)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setSearchFocused(false) }}
                 className="pl-10 pr-4 py-1.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600 dark:text-white dark:bg-gray-800"
               />
+              {/*
+                Recents, offered only when the box is focused and EMPTY.
+                Once a query is typed the results below take the panel over,
+                so the two can never both be open and disagree.
+              */}
+              {searchFocused && !searchQuery && recents.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-64 overflow-auto dark:border-gray-700 dark:bg-gray-800">
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                    Recent
+                  </div>
+                  {recents.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => selectAsset({
+                        id: item.id,
+                        symbol: item.symbol,
+                        company_name: item.companyName ?? '',
+                      })}
+                      className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between dark:hover:bg-gray-700"
+                    >
+                      <span className="font-medium text-gray-900 dark:text-white">{item.symbol}</span>
+                      {item.companyName && (
+                        <span className="text-xs text-gray-500 truncate ml-2 dark:text-gray-400">
+                          {item.companyName}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* Search Results Dropdown */}
               {searchQuery && searchResults.length > 0 && (
                 <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-64 overflow-auto dark:border-gray-700 dark:bg-gray-800">
