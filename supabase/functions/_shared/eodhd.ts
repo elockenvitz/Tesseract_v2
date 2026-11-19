@@ -89,6 +89,23 @@ export interface PriceBar {
   volume: number | null
 }
 
+/**
+ * A share split, in this product's vocabulary rather than EODHD's.
+ *
+ * EODHD publishes the ratio as a single string, `"7.000000/1.000000"`. That
+ * string stops here, like every other vendor field name: `contracts.ts` says
+ * a vendor's shape must not reach the browser, and a consumer that has to
+ * parse `"7.000000/1.000000"` is coupled to the vendor whether it says so or
+ * not. The numerator and denominator cross the wire as numbers.
+ */
+export interface CorporateSplit {
+  /** Ex-date, `YYYY-MM-DD`. The first session quoted post-split. */
+  date: string
+  /** New shares per old share, as a pair. A 7:1 is 7 and 1. */
+  numerator: number
+  denominator: number
+}
+
 export interface IntradayBar extends PriceBar {
   /**
    * The instant the bar OPENS, ISO 8601 UTC.
@@ -614,6 +631,83 @@ export function exchangeSuffix(symbol: string): string | null {
 }
 
 /* ───────────────────────────── operations ─────────────────────────────── */
+
+/**
+ * The split ratios EODHD publishes for an instrument.
+ *
+ * ── Why this endpoint and not `adjusted_close` ───────────────────────────
+ *
+ * The `eod` response carries an `adjusted_close` beside the raw one, and the
+ * obvious shortcut is to divide one by the other and call the quotient a
+ * split factor. It is not one. EODHD's adjusted close is adjusted for
+ * DIVIDENDS as well as splits, so the quotient is a split factor multiplied
+ * by every dividend since the bar -- and the two cannot be separated from a
+ * single number. Using it would scale every historical price by a figure
+ * nobody published, which is exactly the fabricated corporate action this
+ * product must never draw.
+ *
+ * `splits` publishes the real ratios. A ratio this function cannot read is
+ * DROPPED rather than defaulted to 1:1, because a factor of 1 is a claim
+ * that a split had no effect and would silently leave the cliff in place
+ * under a label saying it had been handled.
+ */
+export async function fetchSplits(
+  symbol: string,
+  from: string,
+  to: string,
+  deps: EodhdFetchDeps,
+): Promise<AdapterResult<Retrieved<CorporateSplit[]>>> {
+  const now = (deps.now ?? (() => new Date()))()
+  const res = await eodhdGet(`splits/${encodeURIComponent(symbol)}`, { from, to }, deps)
+  if (!res.ok) return res
+
+  return {
+    ok: true,
+    data: {
+      value: toCorporateSplits(res.data),
+      source: { provider: EODHD_PROVIDER, feed: 'splits', via: 'live', delivery: 'eod' },
+      observedAt: now.toISOString(),
+    },
+  }
+}
+
+interface RawSplitRow {
+  date?: unknown
+  split?: unknown
+}
+
+/**
+ * EODHD's split rows in this product's vocabulary.
+ *
+ * An empty list is a legitimate answer: most instruments have never split.
+ * It is NOT an error, and must not be reported as one -- a caller that
+ * treated "no splits" as a failure would fall back to an unadjusted series
+ * for every ordinary stock.
+ */
+export function toCorporateSplits(raw: unknown): CorporateSplit[] {
+  if (!Array.isArray(raw)) return []
+  const out: CorporateSplit[] = []
+
+  for (const row of raw as RawSplitRow[]) {
+    const date = typeof row?.date === 'string' ? row.date.slice(0, 10) : null
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    if (typeof row?.split !== 'string') continue
+
+    const [left, right] = row.split.split('/')
+    const numerator = Number(left)
+    const denominator = Number(right)
+    if (!Number.isFinite(numerator) || numerator <= 0) continue
+    if (!Number.isFinite(denominator) || denominator <= 0) continue
+    // 1:1 is not a split. Carrying it would hand the client a boundary with
+    // no step across it to measure.
+    if (numerator === denominator) continue
+
+    out.push({ date, numerator, denominator })
+  }
+
+  out.sort((a, b) => a.date.localeCompare(b.date))
+  return out
+}
 
 export async function fetchDailyBars(
   symbol: string,

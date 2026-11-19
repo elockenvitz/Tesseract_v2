@@ -13,6 +13,19 @@ export class ChartTransform {
     this.view = view
   }
 
+  /**
+   * The time window currently on screen.
+   *
+   * The price scale already auto-scales to exactly this window (see the
+   * `autoScalePrice` effect in `ProChart`, which filters bars to
+   * `startTime..endTime` before taking a range). Anything else that scales
+   * itself to the data -- volume, most obviously -- has to ask the same
+   * question, and had no way to.
+   */
+  get visibleTimeRange(): { startTime: number; endTime: number } {
+    return { startTime: this.view.startTime, endTime: this.view.endTime }
+  }
+
   // Get the drawable area (excluding margins)
   get chartArea(): { x: number; y: number; width: number; height: number } {
     return {

@@ -1,5 +1,6 @@
 import { OHLC, ChartTheme, ChartType, ChartDimensions } from './types'
-import { ChartTransform, getTimeGridInterval, generateFutureTimePoints } from './transform'
+import { ChartTransform } from './transform'
+import { calendarGridTimes } from '../../../lib/charting/time-axis'
 import {
   IndicatorValue,
   MACDValue,
@@ -43,6 +44,37 @@ export class ChartRenderer {
     this.devicePixelRatio = devicePixelRatio
   }
 
+  /**
+   * Confine drawing to the main chart's own rectangle.
+   *
+   * Nothing in this renderer used to clip. A series is plotted by mapping a
+   * price through `priceToY`, and that mapping does not stop at the edge of
+   * the plot: pan the view vertically and the price line is simply drawn
+   * wherever the arithmetic puts it, which is on top of the MACD pane, the
+   * RSI pane and every other plot below.
+   *
+   * The study panes have their own scales, so a price line crossing them is
+   * not merely untidy -- it reads as a value on a scale it has nothing to do
+   * with. Every method that plots DATA calls this; the grid, the axes and
+   * the crosshair deliberately do not, because they are chrome and are drawn
+   * to the edges on purpose.
+   *
+   * Must be called after `ctx.save()` and before the path, so the matching
+   * `ctx.restore()` lifts the clip again.
+   */
+  private clipToPlot() {
+    const area = this.transform.chartArea
+    const dpr = this.devicePixelRatio
+    this.ctx.beginPath()
+    this.ctx.rect(
+      area.x * dpr,
+      area.y * dpr,
+      area.width * dpr,
+      area.height * dpr
+    )
+    this.ctx.clip()
+  }
+
   // Clear the entire canvas
   clear() {
     const dims = this.transform.getDimensions()
@@ -71,15 +103,16 @@ export class ChartRenderer {
       ctx.stroke()
     }
 
-    // Vertical grid lines (time intervals)
-    const timeRange = view.endTime - view.startTime
-    const timeInterval = getTimeGridInterval(timeRange)
-
-    // Find first grid line time
-    const firstGridTime = Math.ceil(view.startTime / timeInterval) * timeInterval
-
-    // Draw time grid lines including future
-    for (let time = firstGridTime; time <= view.endTime; time += timeInterval) {
+    /*
+     * Vertical grid lines, on the SAME times the axis labels.
+     *
+     * They used to disagree: the grid walked `getTimeGridInterval`, a fixed
+     * range-to-interval table, while the labels walked calendar boundaries.
+     * On the default 1M view that produced one unlabelled line down the
+     * middle of the canvas, which reads as a rendering fault rather than as a
+     * date. One source for both, so a line always has a label under it.
+     */
+    for (const time of calendarGridTimes(view.startTime, view.endTime)) {
       const x = this.transform.timeToX(time) * dpr
       if (x >= area.x * dpr && x <= (area.x + area.width) * dpr) {
         ctx.beginPath()
@@ -151,10 +184,14 @@ export class ChartRenderer {
     ctx.textBaseline = 'top'
 
     const timeRange = view.endTime - view.startTime
-    const dayInSeconds = 86400
 
-    // Generate calendar-aligned time labels
-    const gridTimes = this.getCalendarAlignedGridTimes(view.startTime, view.endTime, timeRange)
+    /*
+     * Chosen by how many labels land in the window, not by a range table.
+     * The table asked which UNIT the window was, and a one-month window is a
+     * month -- so it labelled the one month boundary inside it and left
+     * thirty days of price under a single word. See `lib/charting/time-axis`.
+     */
+    const gridTimes = calendarGridTimes(view.startTime, view.endTime)
 
     for (const time of gridTimes) {
       const x = this.transform.timeToX(time) * dpr
@@ -167,61 +204,14 @@ export class ChartRenderer {
     ctx.restore()
   }
 
-  // Get calendar-aligned grid times (years align to Jan 1, months to 1st, etc.)
-  private getCalendarAlignedGridTimes(startTime: number, endTime: number, timeRange: number): number[] {
-    const times: number[] = []
-    const dayInSeconds = 86400
-    const startDate = new Date(startTime * 1000)
-    const endDate = new Date(endTime * 1000)
-
-    // More than 2 years - show year boundaries
-    if (timeRange >= dayInSeconds * 730) {
-      let year = startDate.getFullYear()
-      while (true) {
-        const yearStart = new Date(year, 0, 1).getTime() / 1000 // Jan 1st
-        if (yearStart > endTime) break
-        if (yearStart >= startTime) {
-          times.push(yearStart)
-        }
-        year++
-      }
-    }
-    // 6 months to 2 years - show quarter or month boundaries
-    else if (timeRange >= dayInSeconds * 180) {
-      let date = new Date(startDate.getFullYear(), startDate.getMonth(), 1)
-      const monthInterval = timeRange >= dayInSeconds * 365 ? 3 : 1 // Quarterly or monthly
-      while (date.getTime() / 1000 <= endTime) {
-        const time = date.getTime() / 1000
-        if (time >= startTime) {
-          times.push(time)
-        }
-        date.setMonth(date.getMonth() + monthInterval)
-      }
-    }
-    // 1-6 months - show month boundaries
-    else if (timeRange >= dayInSeconds * 30) {
-      let date = new Date(startDate.getFullYear(), startDate.getMonth(), 1)
-      while (date.getTime() / 1000 <= endTime) {
-        const time = date.getTime() / 1000
-        if (time >= startTime) {
-          times.push(time)
-        }
-        date.setMonth(date.getMonth() + 1)
-      }
-    }
-    // Less than 1 month - use regular interval-based approach
-    else {
-      const timeInterval = getTimeGridInterval(timeRange)
-      let time = Math.ceil(startTime / timeInterval) * timeInterval
-      while (time <= endTime) {
-        times.push(time)
-        time += timeInterval
-      }
-    }
-
-    return times
-  }
-
+  /*
+   * `getCalendarAlignedGridTimes` was here. It is deleted rather than left
+   * unused: it is the range-to-unit table that starved the axis, and an
+   * unused private method with the right-sounding name is the obvious thing
+   * for a later change to call again. `calendarGridTimes` replaces it, keeps
+   * the calendar alignment that was its good idea, and chooses by label count
+   * instead of by unit.
+   */
   // Draw candlestick chart
   drawCandlesticks(data: OHLC[]) {
     const ctx = this.ctx
@@ -229,6 +219,7 @@ export class ChartRenderer {
     const barWidth = this.transform.getBarWidth(data.length) * dpr
 
     ctx.save()
+    this.clipToPlot()
 
     for (const bar of data) {
       const { x, yOpen, yClose, yHigh, yLow } = this.transform.getPixelBounds(bar)
@@ -265,6 +256,7 @@ export class ChartRenderer {
     const barWidth = this.transform.getBarWidth(data.length) * dpr
 
     ctx.save()
+    this.clipToPlot()
     ctx.lineWidth = 1.5 * dpr
 
     for (const bar of data) {
@@ -304,6 +296,7 @@ export class ChartRenderer {
     const dpr = this.devicePixelRatio
 
     ctx.save()
+    this.clipToPlot()
     ctx.strokeStyle = color || this.theme.lineColor
     ctx.lineWidth = (lineWidth || 2) * dpr
     ctx.lineJoin = 'round'
@@ -339,6 +332,7 @@ export class ChartRenderer {
     const strokeColor = color || this.theme.areaBorder
 
     ctx.save()
+    this.clipToPlot()
 
     // Draw filled area
     ctx.beginPath()
@@ -391,16 +385,41 @@ export class ChartRenderer {
     const dpr = this.devicePixelRatio
     const barWidth = this.transform.getBarWidth(data.length) * dpr
 
-    // Find max volume
+    /*
+     * Scale to the volume ON SCREEN, not to the whole series.
+     *
+     * A split multiplies historical volume by the split factor, which is
+     * arithmetically right and visually ruinous: AAPL's 2013 bar carries
+     * 450,356,622 x 28 = 12,609,985,416 against a 2026 bar's 29,756,060,
+     * a ratio of 424. Taking the max over every bar ever loaded therefore
+     * draws every modern bar at under a quarter of one percent of the
+     * pane -- a flat grey line under a chart that is otherwise correct.
+     *
+     * Zooming did not help, because the divisor never changed. The price
+     * axis has always auto-scaled to the visible window; volume simply
+     * never asked. This is that asymmetry removed, and it changes no
+     * underlying value: the bar heights are still proportional to volume,
+     * against a denominator the reader can actually see.
+     */
+    const { startTime, endTime } = this.transform.visibleTimeRange
     let maxVolume = 0
     for (const bar of data) {
-      if (bar.volume && bar.volume > maxVolume) {
-        maxVolume = bar.volume
+      if (!bar.volume) continue
+      if (bar.time < startTime || bar.time > endTime) continue
+      if (bar.volume > maxVolume) maxVolume = bar.volume
+    }
+    /* Nothing in view with a volume: fall back to the series max rather
+       than return, so a pane that is merely scrolled past its data keeps
+       its geometry instead of collapsing. */
+    if (maxVolume === 0) {
+      for (const bar of data) {
+        if (bar.volume && bar.volume > maxVolume) maxVolume = bar.volume
       }
     }
     if (maxVolume === 0) return
 
     ctx.save()
+    this.clipToPlot()
 
     const volumeAreaHeight = area.height * volumeHeight
     const volumeAreaTop = area.y + area.height - volumeAreaHeight
@@ -410,7 +429,10 @@ export class ChartRenderer {
 
       const x = this.transform.timeToX(bar.time) * dpr
       const isUp = bar.close >= bar.open
-      const height = (bar.volume / maxVolume) * volumeAreaHeight * dpr
+      /* A bar at the edge of the window can exceed the visible maximum.
+         Clamp rather than let it draw up through the price pane. */
+      const scaled = (bar.volume / maxVolume) * volumeAreaHeight * dpr
+      const height = Math.min(scaled, volumeAreaHeight * dpr)
       const y = (volumeAreaTop + volumeAreaHeight) * dpr - height
 
       ctx.fillStyle = isUp ? this.theme.volumeUp : this.theme.volumeDown
@@ -421,7 +443,19 @@ export class ChartRenderer {
   }
 
   // Draw crosshair
-  drawCrosshair(mouseX: number, mouseY: number, currentPrice: number | null) {
+  /**
+   * @param timeLabel What to print on the time axis, when the caller knows
+   *   better than the raw cursor position does.
+   *
+   *   It used to always print `formatTime(xToTime(mouseX), true)` -- the
+   *   continuous timestamp under the pixel, with a clock time forced on.
+   *   On a daily series that reads "Nov 3, 2026, 06:09 PM", and there is no
+   *   06:09 PM bar; the day's single bar is being labelled with the moment
+   *   the cursor happened to sit at. The caller passes the HOVERED BAR's
+   *   own timestamp, formatted at the bar's precision, so the label names
+   *   something that exists.
+   */
+  drawCrosshair(mouseX: number, mouseY: number, currentPrice: number | null, timeLabel?: string) {
     const ctx = this.ctx
     const area = this.transform.chartArea
     const dims = this.transform.getDimensions()
@@ -472,11 +506,10 @@ export class ChartRenderer {
     ctx.fillText(priceLabel, labelX + labelWidth / 2, mouseY * dpr)
 
     // Draw time label on X axis
-    const time = this.transform.xToTime(mouseX)
-    const timeLabel = ChartTransform.formatTime(time, true)
+    const label = timeLabel ?? ChartTransform.formatTime(this.transform.xToTime(mouseX), true)
 
     ctx.fillStyle = '#6b7280'
-    const timeLabelWidth = ctx.measureText(timeLabel).width + 16 * dpr
+    const timeLabelWidth = ctx.measureText(label).width + 16 * dpr
     const timeLabelHeight = 18 * dpr
     const timeLabelX = mouseX * dpr - timeLabelWidth / 2
     const timeLabelY = (area.y + area.height) * dpr
@@ -486,13 +519,13 @@ export class ChartRenderer {
     ctx.font = `${10 * dpr}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(timeLabel, mouseX * dpr, timeLabelY + timeLabelHeight / 2)
+    ctx.fillText(label, mouseX * dpr, timeLabelY + timeLabelHeight / 2)
 
     ctx.restore()
   }
 
   // Main render function
-  render(data: OHLC[], chartType: ChartType, showVolume: boolean = false, crosshair?: { x: number; y: number }) {
+  render(data: OHLC[], chartType: ChartType, showVolume: boolean = false, crosshair?: { x: number; y: number; timeLabel?: string }) {
     this.clear()
     this.drawGrid(data)
 
@@ -523,7 +556,7 @@ export class ChartRenderer {
 
     // Draw crosshair if provided
     if (crosshair) {
-      this.drawCrosshair(crosshair.x, crosshair.y, null)
+      this.drawCrosshair(crosshair.x, crosshair.y, null, crosshair.timeLabel)
     }
   }
 
@@ -551,6 +584,7 @@ export class ChartRenderer {
     if (validPoints.length < 2) return
 
     ctx.save()
+    this.clipToPlot()
     ctx.strokeStyle = color
     ctx.lineWidth = lineWidth * dpr
     ctx.lineJoin = 'round'
@@ -597,6 +631,7 @@ export class ChartRenderer {
     if (validPoints.length < 2) return
 
     ctx.save()
+    this.clipToPlot()
 
     // Draw fill between upper and lower bands
     ctx.beginPath()
@@ -704,6 +739,7 @@ export class ChartRenderer {
     const step = Math.max(1, Math.floor(visibleData.length / targetDots))
 
     ctx.save()
+    this.clipToPlot()
     ctx.fillStyle = color
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 1.5 * dpr
@@ -745,7 +781,7 @@ export class ChartRenderer {
     chartType: ChartType,
     showVolume: boolean = false,
     mainIndicators: IndicatorRenderConfig[] = [],
-    crosshair?: { x: number; y: number },
+    crosshair?: { x: number; y: number; timeLabel?: string },
     mainSymbolStyle?: { color?: string; lineWidth?: number; lineStyle?: LineStyle }
   ) {
     this.clear()
@@ -781,7 +817,7 @@ export class ChartRenderer {
 
     // Draw crosshair if provided
     if (crosshair) {
-      this.drawCrosshair(crosshair.x, crosshair.y, null)
+      this.drawCrosshair(crosshair.x, crosshair.y, null, crosshair.timeLabel)
     }
   }
 }

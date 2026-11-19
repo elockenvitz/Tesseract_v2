@@ -33,18 +33,37 @@
  */
 import { describe, it, expect } from 'vitest'
 import { QueryClient } from '@tanstack/react-query'
-import { ASSET_WORKSPACE_KEY, invalidateAssetWorkspace } from '../useAssetWorkspace'
+import {
+  ASSET_WORKSPACE_KEY,
+  ASSET_PRICE_HISTORY_KEY,
+  invalidateAssetWorkspace,
+} from '../useAssetWorkspace'
 
 /**
- * The key as the hook actually builds it:
- * `[prefix, assetId, symbol, days, orgId]`.
+ * The workspace key as the hook actually builds it:
+ * `[prefix, assetId, symbol, orgId]`.
+ *
+ * `days` used to be a segment here, at index 3. It left when price history
+ * moved to its own cache entry, because it was the only read that ever varied
+ * with it: keying the other seven on it made a shallow consumer and a deep one
+ * on the same asset fetch everything twice.
  */
-const key = (assetId: string, symbol: string | null, days: number, orgId: string) =>
-  [ASSET_WORKSPACE_KEY, assetId, symbol, days, orgId]
+const key = (assetId: string, symbol: string | null, orgId: string) =>
+  [ASSET_WORKSPACE_KEY, assetId, symbol, orgId]
+
+/**
+ * Price history, which is where history depth lives now:
+ * `[prefix, symbol, days]`.
+ *
+ * The shallow/deep pair this file has always exercised is still exercised --
+ * it simply belongs to this key rather than the workspace key.
+ */
+const priceKey = (symbol: string | null, days: number) =>
+  [ASSET_PRICE_HISTORY_KEY, symbol, days]
 
 function seeded() {
   const qc = new QueryClient({ defaultOptions: { queries: { staleTime: 60_000 } } })
-  qc.setQueryData(key('a-1', 'AAPL', 12, 'org-1'), { sections: ['stale'] })
+  qc.setQueryData(key('a-1', 'AAPL', 'org-1'), { sections: ['stale'] })
   return qc
 }
 
@@ -54,11 +73,11 @@ const isStale = (qc: QueryClient, k: unknown[]) =>
 describe('a write marks the pane stale', () => {
   it('invalidates the entry the pane is actually holding', () => {
     const qc = seeded()
-    expect(isStale(qc, key('a-1', 'AAPL', 12, 'org-1'))).toBe(false)
+    expect(isStale(qc, key('a-1', 'AAPL', 'org-1'))).toBe(false)
 
     invalidateAssetWorkspace(qc)
 
-    expect(isStale(qc, key('a-1', 'AAPL', 12, 'org-1'))).toBe(true)
+    expect(isStale(qc, key('a-1', 'AAPL', 'org-1'))).toBe(true)
   })
 
   it('reaches every variant of the same asset, not just one', () => {
@@ -71,17 +90,29 @@ describe('a write marks the pane stale', () => {
      * whichever variant was actually on screen.
      */
     const qc = seeded()
-    qc.setQueryData(key('a-1', 'AAPL', 400, 'org-1'), { sections: ['deep'] })
-    qc.setQueryData(key('a-2', 'MSFT', 12, 'org-1'), { sections: ['other'] })
+    qc.setQueryData(key('a-2', 'MSFT', 'org-1'), { sections: ['other'] })
+    /* The shallow and the deep price window the reader can be holding at once:
+       the pane opened shallow, the same asset opened again with `deepHistory`
+       for a chart. */
+    qc.setQueryData(priceKey('AAPL', 12), [{ date: '2026-01-01', close: 1 }])
+    qc.setQueryData(priceKey('AAPL', 400), [{ date: '2026-01-01', close: 1 }])
 
     invalidateAssetWorkspace(qc)
 
-    expect(isStale(qc, key('a-1', 'AAPL', 12, 'org-1'))).toBe(true)
-    expect(isStale(qc, key('a-1', 'AAPL', 400, 'org-1'))).toBe(true)
+    expect(isStale(qc, key('a-1', 'AAPL', 'org-1'))).toBe(true)
     /* Another asset too, and that is accepted deliberately: the cost is one
        refetch of a pane that is usually not mounted, and the alternative is
        each of the ten writers knowing this key's shape. */
-    expect(isStale(qc, key('a-2', 'MSFT', 12, 'org-1'))).toBe(true)
+    expect(isStale(qc, key('a-2', 'MSFT', 'org-1'))).toBe(true)
+
+    /*
+     * BOTH price windows. This is the assertion that would have caught
+     * splitting price history out and forgetting to invalidate it -- the one
+     * call every writer already makes has to keep reaching all of it, or the
+     * split would have silently narrowed what "invalidate the workspace" means.
+     */
+    expect(isStale(qc, priceKey('AAPL', 12))).toBe(true)
+    expect(isStale(qc, priceKey('AAPL', 400))).toBe(true)
   })
 
   it('leaves the other surfaces\' caches alone', () => {

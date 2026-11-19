@@ -1,17 +1,31 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useIsMobile } from '../hooks/useMediaQuery'
-import { useQuery } from '@tanstack/react-query'
+/*
+  ChevronDown, the plain TrendingUp, BarChart3, CandlestickChart, Activity,
+  DollarSign, BarChart2, PieChart and Percent went with the Metric,
+  Indicators, Compare and chart-type controls they decorated.
+
+  `TrendingUp as TrendIcon` STAYS: the drawing tools use it for Trend Line.
+  tsc reports the plain import and the alias separately, so the unused-import
+  list named `TrendingUp` while `TrendIcon` was still live two hundred lines
+  below. Dropping both left the module throwing at import time.
+*/
 import {
-  LineChart, Search, Plus, ChevronDown, TrendingUp, TrendingDown,
-  BarChart3, CandlestickChart, Activity, Layers, Settings, Maximize2,
+  LineChart, Search, Plus, TrendingDown,
+  Layers, Settings, Maximize2,
   Download, Share2, Star, Clock, Grid3X3, LayoutGrid, Calendar, X,
-  DollarSign, BarChart2, PieChart, Percent, TrendingUp as TrendIcon,
+  TrendingUp as TrendIcon,
   Minus, ArrowRight, Square, Circle, Type, Trash2, Undo2, Redo2
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ProChart, ChartType, TimeFrame, IndicatorType, CustomDateRange } from '../components/charting'
+import { InstrumentHeader } from '../components/charting/workspace/InstrumentHeader'
+import type { SeriesMeta } from '../components/charting/workspace/series-meta'
+import { DrawingPalette } from '../components/charting/workspace/DrawingPalette'
+import { AnnotationInspector } from '../components/charting/workspace/AnnotationInspector'
+import { armedCaption, toolForKey } from '../components/charting/workspace/drawing-tools'
 /*
  * `hooks/useAuth`, NOT `contexts/AuthContext`.
  *
@@ -42,6 +56,27 @@ import {
   readChartingWorkspace,
   writeChartingWorkspace,
 } from '../lib/charting/workspace-state'
+import { useInstrumentSearch } from '../hooks/useInstrumentSearch'
+import {
+  recordRecentInstrument,
+  type RecentInstrument,
+} from '../lib/charting/recent-instruments'
+import { useRecentInstruments } from '../hooks/useRecentInstruments'
+import {
+  initialPlots, migrateToPlots, plotReducer, derivePlotSpecs, deriveOverlays,
+  deriveComparisons, volumeVisible, type PanelPlots, type PlotAction,
+  deriveDisplayType, deriveScaleMode, deriveIndexBase,
+} from '../lib/charting/plot-model'
+import { ChartSetupPanel } from '../components/charting/workspace/ChartSetupPanel'
+import {
+  CHARTING_WORKSPACE_CODEC,
+  type ChartPanel,
+  type ChartingWorkspace,
+  type DisplayMode,
+  type LineStyleOption,
+  type MetricType,
+  type ViewMode,
+} from '../lib/charting/workspace-codec'
 import {
   Annotation,
   AnnotationType,
@@ -62,42 +97,39 @@ import {
   undo as historyUndo,
 } from '../lib/charting/annotation-history'
 
-// Metric types for charting
-type MetricType = 'price' | 'volume' | 'market_cap' | 'pe_ratio' | 'eps' | 'revenue' | 'dividend_yield'
-
-// Display modes for comparison
-type DisplayMode = 'absolute' | 'indexed' | 'relative'
 
 // Default index base value
 const DEFAULT_INDEX_BASE = 100
 
-// Colors for comparison symbols (different from main chart's blue)
-const COMPARISON_COLORS = [
-  '#dc2626', // red
-  '#16a34a', // green
-  '#9333ea', // purple
-  '#ea580c', // orange
-  '#0891b2', // cyan
-  '#be185d', // pink
-  '#854d0e', // amber
-  '#6366f1', // indigo
-]
+/*
+  `COMPARISON_COLORS` went with `addCompareSymbol`. Chart Setup takes its
+  palette from `SERIES_COLORS` in the model, so a colour is assigned by the
+  same rule wherever a series is added, and a freed colour is reused rather
+  than the list drifting.
+*/
 
-const displayModeOptions: { value: DisplayMode; label: string; description: string }[] = [
-  { value: 'absolute', label: 'Absolute', description: 'Show actual stock prices' },
-  { value: 'indexed', label: 'Indexed', description: 'All stocks start at 100' },
-  { value: 'relative', label: '% Change', description: 'Show % change from start (0%)' },
-]
+/*
+  `displayModeOptions` and `metricOptions` were here, feeding the Compare
+  and Metric dropdowns. Both dropdowns are gone: the display mode is now a
+  property of the price plot, chosen in Chart Setup beside the axis it
+  governs.
 
-const metricOptions: { value: MetricType; label: string; icon: any; description: string }[] = [
-  { value: 'price', label: 'Price', icon: DollarSign, description: 'Stock price (OHLC)' },
-  { value: 'volume', label: 'Volume', icon: BarChart2, description: 'Trading volume' },
-  { value: 'market_cap', label: 'Market Cap', icon: PieChart, description: 'Market capitalization' },
-  { value: 'pe_ratio', label: 'P/E Ratio', icon: Percent, description: 'Price to earnings ratio' },
-  { value: 'eps', label: 'EPS', icon: TrendIcon, description: 'Earnings per share' },
-  { value: 'revenue', label: 'Revenue', icon: BarChart2, description: 'Quarterly revenue' },
-  { value: 'dividend_yield', label: 'Div Yield', icon: Percent, description: 'Dividend yield %' },
-]
+  The metric selector is gone WITHOUT a replacement, deliberately, and it
+  is worth saying why rather than quietly dropping it.
+
+  It offered Price, Volume, Market Cap, P/E, EPS, Revenue and Dividend
+  Yield. `panel.metric` is WRITTEN in three places, always as 'price', and
+  READ in none -- not by the renderer, not by the data layer, not even for
+  a label. Choosing "Revenue" stored a string nothing consumed and left the
+  price chart exactly as it was.
+
+  So this was never a working control, and rebuilding it in Chart Setup
+  would have carried the same false promise to a new location. Charting
+  alternate metrics is real work -- different series, units and provenance
+  per metric -- and belongs in its own change.
+
+  The field stays on the panel type so stored workspaces still parse.
+*/
 
 // Annotation tool options for context menu
 const annotationTools: { type: AnnotationType; label: string; icon: any }[] = [
@@ -150,37 +182,12 @@ interface ChartingPageProps {
   workspaceId?: string
 }
 
-type ViewMode = 'single' | 'grid'
-
-interface ChartPanel {
-  id: string
-  symbol: string
-  companyName?: string
-  chartType: ChartType
-  timeFrame: TimeFrame
-  customRange?: CustomDateRange
-  indicators: string[]
-  metric: MetricType
-  annotations: Annotation[]
-  // Track selected frequency for highlighting
-  selectedFreq?: {
-    frequencyKey: string
-    interval: string
-    isIntraday: boolean
-  }
-  // Main symbol styling
-  mainSymbolStyle?: {
-    color?: string
-    lineWidth?: number
-    lineStyle?: LineStyleOption
-  }
-  // Comparison symbols
-  compareSymbols?: { symbol: string; companyName?: string; color?: string; lineWidth?: number; lineStyle?: LineStyleOption }[]
-  // Display mode: absolute prices, indexed, or relative to first symbol
-  displayMode?: DisplayMode
-  // Base value for indexed mode (default 100)
-  indexBase?: number
-}
+/*
+ * `ViewMode`, `ChartPanel` and `ChartingWorkspace` moved to
+ * `lib/charting/workspace-codec`, together with the codec that restores
+ * them from storage. The codec is defined over these types, and a `.tsx`
+ * file cannot export it without breaking Fast Refresh.
+ */
 
 // Context menu state
 interface ContextMenuState {
@@ -200,8 +207,6 @@ interface LineContextMenuState {
   isMainSymbol: boolean
 }
 
-// Line style type (matching renderer)
-type LineStyleOption = 'solid' | 'dashed' | 'dotted'
 
 const LINE_COLORS = [
   { value: '#dc2626', label: 'Red' },
@@ -220,6 +225,43 @@ const LINE_STYLES: { value: LineStyleOption; label: string }[] = [
   { value: 'dashed', label: 'Dashed' },
   { value: 'dotted', label: 'Dotted' },
 ]
+
+/**
+ * Available bar width below which the secondary controls collapse into the
+ * Analysis panel.
+ *
+ * The right-hand group is 1063px intrinsic and the symbol search side is
+ * ~192px, so the bar needs about 1255px to lay out flat. 1280 is the first
+ * round number above that, which means the collapse happens just BEFORE the
+ * overflow rather than during it.
+ */
+export const TOOLBAR_COMPACT_PX = 1280
+
+/**
+ * Below this, the eight timeframe buttons also collapse to a select.
+ *
+ * With the secondary controls already in the Analysis panel the bar is
+ * search + timeframe pill + chart type + Analysis, roughly 192 + 492 + 132 +
+ * 110 = 926px of content. 960 is where that stops fitting.
+ */
+export const TOOLBAR_TIGHT_PX = 960
+
+/**
+ * Below this, the instrument block drops its provenance chips.
+ *
+ * Measured on the integrated build at 390px of toolbar: the left group
+ * wants 603px and is given 358, so it overflowed by 245. The chips --
+ * "262 bars · 1wk", the provider, the freshness -- are about 230 of that
+ * 603, and the company name truncates to absorb the rest.
+ *
+ * 720 rather than `TOOLBAR_TIGHT_PX`: at 768 and at 960 the full block
+ * still FITS, and a chip that fits is not worth hiding. 600 was the first
+ * measured width that overflowed (by 35px), so the threshold sits just
+ * above it.
+ *
+ * The basis chip is deliberately not included. See `InstrumentHeader`.
+ */
+export const TOOLBAR_META_PX = 720
 
 // Frequency/Interval configuration
 type FrequencyType =
@@ -287,20 +329,6 @@ function parseIntervalToDays(interval: string): number {
 }
 
 
-/**
- * What survives a tab switch.
- *
- * Held outside React by `lib/charting/workspace-state`, because
- * `renderTabContent` mounts only the active tab and therefore unmounts this
- * page entirely when you move to Overview. These are the fields a person
- * chose and would have to choose again.
- */
-interface ChartingWorkspace {
-  panels: ChartPanel[]
-  activePanel: string
-  viewMode: ViewMode
-}
-
 // Get fresh default state, used only when nothing was stored for this tab.
 function getDefaultChartingState(): ChartingWorkspace {
   return {
@@ -327,6 +355,84 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   const workspaceKey = chartingWorkspaceKey(user?.id, currentOrgId, workspaceId)
 
   /*
+   * Re-checked against live authorization, not merely read off disk. The
+   * stored list was authorized when it was WRITTEN; access can be withdrawn
+   * afterwards, and localStorage would never know. See
+   * `useRecentInstruments` -- it fails closed.
+   *
+   * `recordedRecents` holds what this session has just selected, so a pick
+   * appears in the list immediately instead of waiting for the next
+   * validation round trip.
+   */
+  /*
+   * Declared HERE, immediately before the derivation that reads it.
+   *
+   * It first sat with the other `useState` calls further down, which put it
+   * in the temporal dead zone of the `const recents = ...` line above --
+   * "Cannot access 'recordedRecents' before initialization", thrown on every
+   * render of the page. A `const` is not hoisted the way a `var` is, and the
+   * charting route test caught it. This codebase has shipped that exact
+   * error in banner code before; keeping the declaration adjacent to its
+   * only consumer is what stops it recurring.
+   *
+   * Null rather than [] so "nothing recorded yet" stays distinguishable
+   * from "recorded, and the result was empty".
+   */
+  const [recordedRecents, setRecordedRecents] = useState<RecentInstrument[] | null>(null)
+
+  /*
+   * ── The toolbar measures ITSELF, not the window ─────────────────────────
+   *
+   * Measured at a 1920px viewport, the right-hand control group is 1063px
+   * intrinsic: timeframe pill 492, chart type 132, metric 90, indicators
+   * 105, compare 100, view mode 68, add 28, plus gaps. Below roughly 1250px
+   * of available bar it has nowhere to go and overflows.
+   *
+   * The breakpoints are driven by a `ResizeObserver` on the bar rather than
+   * by a media query because this page is a TAB inside a workspace. A
+   * viewport query cannot see a sidebar opening or a split pane narrowing
+   * the tab, so it would keep the wide layout in a container that no longer
+   * fits -- which is the defect being fixed, not a smaller version of it.
+   */
+  const [toolbarWidth, setToolbarWidth] = useState(0)
+  const toolbarRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = toolbarRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) setToolbarWidth(entry.contentRect.width)
+    })
+    ro.observe(el)
+    setToolbarWidth(el.getBoundingClientRect().width)
+    return () => ro.disconnect()
+  }, [])
+
+  /*
+   * Zero means "not measured yet". Treating it as narrow would flash the
+   * collapsed toolbar on every mount before the observer's first callback,
+   * which is the same class of layout jump this work exists to remove.
+   */
+  const compactControls = toolbarWidth > 0 && toolbarWidth < TOOLBAR_COMPACT_PX
+  const compactTimeframe = toolbarWidth > 0 && toolbarWidth < TOOLBAR_TIGHT_PX
+  const denseInstrument = toolbarWidth > 0 && toolbarWidth < TOOLBAR_META_PX
+  const [showChartSetup, setShowChartSetup] = useState(false)
+
+  /*
+   * There is deliberately NO effect closing this at wide widths any more.
+   *
+   * It used to close itself whenever the toolbar was wide enough to show
+   * the secondary controls inline, because the flag then meant "the
+   * overflow popover is open" and a popover with nothing in it would have
+   * lit the button for no reason.
+   *
+   * The flag now means "the Analysis panel is open", and that panel is the
+   * only route to Add Plot and Add Series. Closing it on a wide screen
+   * made the button do nothing at exactly the sizes an analyst works at.
+   */
+  const { recents: authorizedRecents } = useRecentInstruments(user?.id, currentOrgId)
+  const recents = recordedRecents ?? authorizedRecents
+
+  /*
    * Restored, not reset.
    *
    * This page is unmounted outright whenever another tab becomes active, so
@@ -335,25 +441,28 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
    * first is the whole fix for that.
    */
   const [initialState] = useState<ChartingWorkspace>(
-    () => readChartingWorkspace<ChartingWorkspace>(workspaceKey) ?? getDefaultChartingState(),
+    () => readChartingWorkspace<ChartingWorkspace>(workspaceKey, CHARTING_WORKSPACE_CODEC)
+      ?? getDefaultChartingState(),
   )
 
   // Track symbols that have been added via initialSymbol to avoid duplicates
   const [addedSymbols, setAddedSymbols] = useState<Set<string>>(new Set())
 
   const [searchQuery, setSearchQuery] = useState('')
+  /*
+   * The recents panel opens on FOCUS with an empty box, so focus has to be
+   * state rather than a CSS `:focus-within` — the panel has to survive the
+   * click that lands on one of its own rows.
+   */
+  const [searchFocused, setSearchFocused] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>(initialState.viewMode)
   // The chart is the surface; on a phone the toolbar has to yield to it.
   const isMobileViewport = useIsMobile()
   const [panels, setPanels] = useState<ChartPanel[]>(initialState.panels)
   const [activePanel, setActivePanel] = useState(initialState.activePanel)
-  const [showIndicatorMenu, setShowIndicatorMenu] = useState(false)
   const [showFreqPicker, setShowFreqPicker] = useState(false)
   const [showCustomDatePicker, setShowCustomDatePicker] = useState(false)
-  const [showMetricMenu, setShowMetricMenu] = useState(false)
-  const [showCompareMenu, setShowCompareMenu] = useState(false)
   const [compareSearchQuery, setCompareSearchQuery] = useState('')
-  const [showDisplayModeMenu, setShowDisplayModeMenu] = useState(false)
 
   /*
    * Persist on every change, so an unmount needs no warning.
@@ -369,7 +478,11 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
    * a transient, not a choice.
    */
   useEffect(() => {
-    writeChartingWorkspace<ChartingWorkspace>(workspaceKey, { panels, activePanel, viewMode })
+    writeChartingWorkspace<ChartingWorkspace>(
+      workspaceKey,
+      { panels, activePanel, viewMode },
+      CHARTING_WORKSPACE_CODEC,
+    )
   }, [workspaceKey, panels, activePanel, viewMode])
 
   // Context menu state for right-click annotations
@@ -381,6 +494,13 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     chartY: 0
   })
   const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
+  /*
+   * What the chart last drew: last close, bar count, interval, feed, basis.
+   * Reported up by ProChart because only the fetch knows it. Cleared when
+   * the symbol changes, so the header cannot show one instrument's price
+   * beside another instrument's name while the new series loads.
+   */
+  const [seriesMeta, setSeriesMeta] = useState<SeriesMeta | null>(null)
 
   /**
    * The drawing tool in hand, or null for an ordinary pointer.
@@ -444,11 +564,14 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     const fetchAssetAndAddPanel = async () => {
       let companyName = ''
       try {
-        const { data } = await supabase
+        /* The generated Supabase types do not describe `assets`, so an
+           unannotated destructure infers `never`. Same cast as the recents
+           authorization path uses, for the same reason. */
+        const { data } = (await supabase
           .from('assets')
           .select('company_name')
           .eq('symbol', initialSymbol)
-          .single()
+          .single()) as { data: { company_name: string | null } | null }
         if (data) {
           companyName = data.company_name || ''
         }
@@ -499,61 +622,36 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     fetchAssetAndAddPanel()
   }, [initialSymbol, addedSymbols])
 
-  // Search assets
-  const { data: searchResults = [] } = useQuery({
-    queryKey: ['asset-search', searchQuery],
-    queryFn: async () => {
-      if (!searchQuery || searchQuery.length < 1) return []
-      const { data, error } = await supabase
-        .from('assets')
-        .select('id, symbol, company_name')
-        .or(`symbol.ilike.%${searchQuery}%,company_name.ilike.%${searchQuery}%`)
-        .limit(10)
-      if (error) throw error
-      return data || []
-    },
-    enabled: searchQuery.length >= 1
-  })
+  /*
+   * Debounced, rank-ordered, and fetched so the exact ticker is actually in
+   * the result set. The previous query ranked by arrival order and let the
+   * DATABASE apply the limit, so "CAT" offered Zoom Video Communi-CAT-ions
+   * above Caterpillar and "V" put Visa fifth. See `useInstrumentSearch`.
+   */
+  const { results: searchResults } = useInstrumentSearch(searchQuery)
 
-  // Search assets for comparison
-  const { data: compareSearchResults = [] } = useQuery({
-    queryKey: ['asset-compare-search', compareSearchQuery],
-    queryFn: async () => {
-      if (!compareSearchQuery || compareSearchQuery.length < 1) return []
-      const { data, error } = await supabase
-        .from('assets')
-        .select('id, symbol, company_name')
-        .or(`symbol.ilike.%${compareSearchQuery}%,company_name.ilike.%${compareSearchQuery}%`)
-        .limit(10)
-      if (error) throw error
-      return data || []
-    },
-    enabled: compareSearchQuery.length >= 1
-  })
+  /*
+   * The comparison picker had the identical defect and now shares the
+   * identical fix. Two copies of this query is how they drifted apart in
+   * the first place.
+   */
+  const { results: compareSearchResults } = useInstrumentSearch(compareSearchQuery)
 
   const timeFrames: TimeFrame[] = ['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'ALL']
 
-  const chartTypes: { value: ChartType; label: string; icon: any }[] = [
-    { value: 'line', label: 'Line', icon: LineChart },
-    { value: 'candlestick', label: 'Candlestick', icon: CandlestickChart },
-    { value: 'bar', label: 'Bar', icon: BarChart3 },
-    { value: 'area', label: 'Area', icon: Activity }
-  ]
 
-  const indicators = [
-    { id: 'sma', name: 'SMA', category: 'Moving Averages' },
-    { id: 'ema', name: 'EMA', category: 'Moving Averages' },
-    { id: 'bollinger', name: 'Bollinger Bands', category: 'Moving Averages' },
-    { id: 'rsi', name: 'RSI', category: 'Oscillators' },
-    { id: 'macd', name: 'MACD', category: 'Oscillators' },
-    { id: 'stochastic', name: 'Stochastic', category: 'Oscillators' },
-    { id: 'volume', name: 'Volume', category: 'Volume' },
-    { id: 'obv', name: 'OBV', category: 'Volume' },
-    { id: 'vwap', name: 'VWAP', category: 'Volume' },
-    { id: 'atr', name: 'ATR', category: 'Volatility' },
-    { id: 'adx', name: 'ADX', category: 'Trend' },
-    { id: 'ichimoku', name: 'Ichimoku Cloud', category: 'Trend' }
-  ]
+  /*
+    The `chartTypes` and `indicators` arrays lived here, feeding the two
+    toolbar dropdowns. Chart Setup takes its lists from the model instead
+    (`OVERLAY_INDICATORS`, `STUDY_INDICATORS`), so the menu cannot offer
+    something the reducer would refuse.
+
+    Those two lists are exactly the engine's ten `IndicatorType` members,
+    so nothing the old dropdown could draw has been lost. The one entry
+    that IS gone is Ichimoku Cloud: the dropdown offered it, the engine has
+    never implemented it, and selecting it ticked a bullet and changed no
+    pixels.
+  */
 
   const updatePanel = useCallback((panelId: string, updates: Partial<ChartPanel>) => {
     setPanels(prev => prev.map(p => p.id === panelId ? { ...p, ...updates } : p))
@@ -755,6 +853,38 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
         deleteAnnotation(selectedAnnotation)
         return
       }
+      /*
+       * A bare letter arms a tool, the way every professional chart does.
+       *
+       * Guarded three ways, in this order. No modifier, because Ctrl+S is the
+       * browser's and Alt+H may be the operating system's. No typing target,
+       * because the page carries a symbol search and an `H` typed into it
+       * must stay an `H` -- the same guard the undo shortcut below already
+       * applies, for the same reason. And no unknown key, so the handler
+       * passes everything it does not claim straight through.
+       */
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.length === 1) {
+        const typing = e.target as HTMLElement | null
+        if (
+          typing &&
+          (typing.tagName === 'INPUT' ||
+            typing.tagName === 'TEXTAREA' ||
+            typing.isContentEditable)
+        ) {
+          return
+        }
+        const tool = toolForKey(e.key)
+        if (tool) {
+          e.preventDefault()
+          setActiveTool(tool.type)
+          /* Picking up a tool drops the selection: the next press is going to
+             draw, not move what was selected, and leaving a mark lit would
+             say otherwise. */
+          if (tool.type) setSelectedAnnotation(null)
+          return
+        }
+      }
+
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return
       /*
        * Never steal the shortcut from a field being typed in. The page
@@ -850,54 +980,48 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   }
 
   const selectAsset = (asset: { id: string; symbol: string; company_name: string }) => {
-    updatePanel(activePanel, { symbol: asset.symbol, companyName: asset.company_name })
+    const panel = panels.find(p => p.id === activePanel)
+    /*
+     * Changing the instrument moves the PRIMARY series and leaves the rest
+     * of the arrangement alone. An analyst who built four plots and then
+     * looked at a different name did not ask for their plots back.
+     */
+    const nextPlots = panel?.plots
+      ? plotReducer(panel.plots, {
+          type: 'setPrimarySymbol',
+          symbol: asset.symbol,
+          assetId: asset.id,
+          companyName: asset.company_name,
+        })
+      : undefined
+    updatePanel(activePanel, {
+      symbol: asset.symbol,
+      companyName: asset.company_name,
+      assetId: asset.id,
+      ...(nextPlots ? { plots: nextPlots } : {}),
+    })
     setSearchQuery('')
+    setSearchFocused(false)
+    /*
+     * Recorded here because this is the ONE funnel every chart symbol
+     * passes through — the typed search, a recents click, and a symbol
+     * opened from elsewhere all land on it. Recording at the dropdown's
+     * click handler instead would have missed the other routes in.
+     */
+    setRecordedRecents(recordRecentInstrument(user?.id, currentOrgId, {
+      id: asset.id,
+      symbol: asset.symbol,
+      companyName: asset.company_name,
+    }))
   }
 
-  const addCompareSymbol = (asset: { id: string; symbol: string; company_name: string }) => {
-    const panel = panels.find(p => p.id === activePanel)
-    if (!panel) return
-
-    // Don't add if it's the main symbol or already in comparison
-    if (asset.symbol === panel.symbol) return
-    if (panel.compareSymbols?.some(s => s.symbol === asset.symbol)) return
-
-    const usedColors = panel.compareSymbols?.map(s => s.color) || []
-    const nextColor = COMPARISON_COLORS.find(c => !usedColors.includes(c)) || COMPARISON_COLORS[0]
-
-    updatePanel(activePanel, {
-      compareSymbols: [
-        ...(panel.compareSymbols || []),
-        { symbol: asset.symbol, companyName: asset.company_name, color: nextColor }
-      ]
-    })
-    setCompareSearchQuery('')
-  }
-
-  const removeCompareSymbol = (symbol: string) => {
-    const panel = panels.find(p => p.id === activePanel)
-    if (!panel) return
-
-    updatePanel(activePanel, {
-      compareSymbols: panel.compareSymbols?.filter(s => s.symbol !== symbol) || []
-    })
-  }
-
-  const setDisplayMode = (mode: DisplayMode) => {
-    updatePanel(activePanel, { displayMode: mode })
-    setShowDisplayModeMenu(false)
-  }
-
-  const toggleIndicator = (indicatorId: string) => {
-    const panel = panels.find(p => p.id === activePanel)
-    if (!panel) return
-
-    const newIndicators = panel.indicators.includes(indicatorId)
-      ? panel.indicators.filter(i => i !== indicatorId)
-      : [...panel.indicators, indicatorId]
-
-    updatePanel(activePanel, { indicators: newIndicators })
-  }
+  /*
+    `addCompareSymbol` is gone with the Compare dropdown that called it.
+    Adding a security is now `handleAddInstrumentToPlot`, which puts it on
+    a NAMED plot rather than into a panel-wide list -- that is the whole
+    point of the plot model, and it is why the two could not simply share
+    one function.
+  */
 
   const applyFrequencySelection = (frequencyKey: string, intervalStr: string, isIntraday: boolean) => {
     const freqConfig = isIntraday
@@ -953,13 +1077,166 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
 
   const currentPanel = panels.find(p => p.id === activePanel) || panels[0]
 
+  /*
+   * The plot arrangement for the active panel.
+   *
+   * Built from the symbol when the panel has none -- a workspace stored
+   * before plots existed, or a panel that has only just been given an
+   * instrument. `useMemo` rather than state: the panel IS the state, and a
+   * second copy here would be a second answer to what is on the chart.
+   */
+  const plotState: PanelPlots = useMemo(() => {
+    if (currentPanel?.plots) return currentPanel.plots
+    return initialPlots(
+      currentPanel?.symbol || '',
+      currentPanel?.assetId ?? null,
+      currentPanel?.companyName ?? null,
+    )
+  }, [currentPanel?.plots, currentPanel?.symbol, currentPanel?.assetId, currentPanel?.companyName])
+
+  const dispatchPlot = useCallback((action: PlotAction) => {
+    if (!currentPanel) return
+    const base = currentPanel.plots ?? initialPlots(
+      currentPanel.symbol || '',
+      currentPanel.assetId ?? null,
+      currentPanel.companyName ?? null,
+    )
+    updatePanel(currentPanel.id, { plots: plotReducer(base, action) })
+  }, [currentPanel, updatePanel])
+
+  /**
+   * "Remove from Chart" on a comparison line's context menu.
+   *
+   * Has to know which model it is editing. Once a panel carries plots the
+   * renderer reads its comparisons from THERE, so filtering the legacy
+   * `compareSymbols` array would leave the line on screen -- the button
+   * would look like it worked and change nothing.
+   *
+   * Declared HERE, below `currentPanel` and `dispatchPlot`, not up with the
+   * other handlers. `const` bindings are in the temporal dead zone until
+   * their initialiser runs, and a hook body reads them at render, not at
+   * call time -- so placing this above `currentPanel` threw
+   * "Cannot access 'currentPanel' before initialization" and took the whole
+   * page to the error boundary. Typecheck and build both passed.
+   */
+  const removeComparisonSeries = useCallback((symbol: string) => {
+    if (!currentPanel) return
+    if (!currentPanel.plots) {
+      updatePanel(currentPanel.id, {
+        compareSymbols: currentPanel.compareSymbols?.filter(s => s.symbol !== symbol) || [],
+      })
+      return
+    }
+    for (const plot of currentPanel.plots.plots) {
+      const hit = plot.series.find(
+        s => s.type === 'instrument' && !s.primary && s.symbol === symbol)
+      if (hit) {
+        dispatchPlot({ type: 'removeSeries', seriesId: hit.id })
+        return
+      }
+    }
+  }, [currentPanel, dispatchPlot, updatePanel])
+
+  /* What the renderer is handed. Hidden things are already gone from these. */
+  const derivedPlotSpecs = useMemo(() => derivePlotSpecs(plotState), [plotState])
+  const derivedOverlays = useMemo(() => deriveOverlays(plotState), [plotState])
+  const derivedComparisons = useMemo(() => deriveComparisons(plotState), [plotState])
+  const derivedShowVolume = useMemo(() => volumeVisible(plotState), [plotState])
+  const derivedDisplayType = useMemo(() => deriveDisplayType(plotState), [plotState])
+  const derivedScaleMode = useMemo(() => deriveScaleMode(plotState), [plotState])
+  const derivedIndexBase = useMemo(() => deriveIndexBase(plotState), [plotState])
+
+  /*
+   * The plot model owns the chart only once the panel actually carries one.
+   * Until then the legacy `indicators`/`compareSymbols` path renders, so a
+   * stored workspace from before this change opens exactly as it did.
+   */
+  const usePlotModel = !!currentPanel?.plots
+
+  /*
+   * Add Series, for a security.
+   *
+   * The plot is remembered rather than guessed, because the panel can ask
+   * from any price plot and "the selected one" changes under you as soon as
+   * the search box takes focus.
+   */
+  const [addSeriesPlotId, setAddSeriesPlotId] = useState<string | null>(null)
+  const handleAddInstrumentToPlot = useCallback((plotId: string) => {
+    setCompareSearchQuery('')
+    setAddSeriesPlotId(plotId)
+  }, [])
+
+  const addInstrumentToPlot = useCallback((asset: { id: string; symbol: string; company_name: string | null }) => {
+    if (!addSeriesPlotId) return
+    dispatchPlot({
+      type: 'addInstrument',
+      plotId: addSeriesPlotId,
+      symbol: asset.symbol,
+      assetId: asset.id,
+      companyName: asset.company_name,
+    })
+    setAddSeriesPlotId(null)
+    setCompareSearchQuery('')
+  }, [addSeriesPlotId, dispatchPlot])
+
+  /*
+   * Opening the Analysis panel on a panel that has no arrangement yet gives
+   * it one. Done here rather than on mount so a workspace that never opens
+   * the panel is never rewritten, and the legacy render path stays exact.
+   */
+  const openChartSetup = useCallback(() => {
+    if (currentPanel && !currentPanel.plots) {
+      /* Carry the chart they are looking at into the model, rather than
+         resetting to price and volume the moment the panel is opened. */
+      updatePanel(currentPanel.id, {
+        plots: migrateToPlots(
+          currentPanel.symbol || '',
+          currentPanel.assetId ?? null,
+          currentPanel.companyName ?? null,
+          {
+            indicators: currentPanel.indicators,
+            compareSymbols: currentPanel.compareSymbols,
+            /* The toolbar controls these replaced. Without carrying them a
+               reader looking at indexed candles got absolute lines back the
+               first time they opened the panel. */
+            chartType: currentPanel.chartType,
+            displayMode: currentPanel.displayMode,
+            indexBase: currentPanel.indexBase,
+          },
+        ),
+      })
+    }
+    setShowChartSetup(true)
+  }, [currentPanel, updatePanel])
+
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden dark:bg-gray-800">
       {/* Header Toolbar */}
       <div className="bg-gray-50 border-b border-gray-200 px-2 sm:px-4 py-2 dark:border-gray-700 dark:bg-gray-900">
-        <div className="flex flex-wrap items-center justify-between gap-y-2">
+        {/*
+          The command bar's row must be decided by the VIEWPORT, never by
+          data that arrives later.
+
+          Measured before this change, at 1920px with AAPL loaded: hiding the
+          instrument meta block -- 264px of "301 bars · 1mo · eodhd · just
+          now · split-adjusted" -- moved the timeframe controls UP 42px, from
+          a second row onto the search row. So the controls sat beside the
+          search box while the chart loaded and jumped down a row the moment
+          the meta arrived. The basis badge alone changes width again between
+          "raw" (with its warning icon) and "split-adjusted", so even a
+          reserved placeholder would not have held the line.
+
+          `min-w-0 flex-1` lets the left group SHRINK instead of pushing, and
+          `shrink-0` keeps the controls at their natural width. The two stay
+          on one row until the controls alone no longer fit, which depends
+          on the window and not on whether a fetch has returned.
+        */}
+        <div
+          ref={toolbarRef}
+          className="relative flex flex-wrap items-center justify-between gap-y-2"
+        >
           {/* Left: Symbol Search & Info */}
-          <div className="flex items-center space-x-4">
+          <div className="flex min-w-0 flex-1 items-center space-x-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -967,8 +1244,49 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                 placeholder="Search symbol..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-1.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600 dark:text-white dark:bg-gray-800"
+                onFocus={() => setSearchFocused(true)}
+                /*
+                 * Closed on a DELAY, because a row's click fires after the
+                 * input's blur. Closing immediately would unmount the row
+                 * under the pointer and swallow the selection.
+                 */
+                onBlur={() => window.setTimeout(() => setSearchFocused(false), 150)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setSearchFocused(false) }}
+                /* Gives up width before any control does: a narrower box
+                   still accepts a ticker, whereas a wrapped toolbar moves
+                   every button. */
+                className={`pl-10 pr-4 py-1.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600 dark:text-white dark:bg-gray-800 ${compactTimeframe ? 'w-32' : 'w-48'}`}
               />
+              {/*
+                Recents, offered only when the box is focused and EMPTY.
+                Once a query is typed the results below take the panel over,
+                so the two can never both be open and disagree.
+              */}
+              {searchFocused && !searchQuery && recents.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-64 overflow-auto dark:border-gray-700 dark:bg-gray-800">
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                    Recent
+                  </div>
+                  {recents.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => selectAsset({
+                        id: item.id,
+                        symbol: item.symbol,
+                        company_name: item.companyName ?? '',
+                      })}
+                      className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between dark:hover:bg-gray-700"
+                    >
+                      <span className="font-medium text-gray-900 dark:text-white">{item.symbol}</span>
+                      {item.companyName && (
+                        <span className="text-xs text-gray-500 truncate ml-2 dark:text-gray-400">
+                          {item.companyName}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* Search Results Dropdown */}
               {searchQuery && searchResults.length > 0 && (
                 <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-64 overflow-auto dark:border-gray-700 dark:bg-gray-800">
@@ -987,18 +1305,60 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             </div>
 
             {currentPanel.symbol && (
-              <div className="flex items-center space-x-3">
-                <span className="text-lg font-bold text-gray-900 dark:text-white">{currentPanel.symbol}</span>
-                <span className="text-sm text-gray-500 dark:text-gray-400">{currentPanel.companyName}</span>
-              </div>
+              <InstrumentHeader
+                symbol={currentPanel.symbol}
+                companyName={currentPanel.companyName}
+                meta={seriesMeta}
+                dense={denseInstrument}
+              />
             )}
           </div>
 
-          {/* Right: Time Frame + Chart Type & Actions */}
-          <div className="flex items-center space-x-2">
+          {/*
+            Right: Time Frame + Chart Type & Actions.
+
+            At the tight breakpoint the group is allowed to WRAP. Search +
+            timeframe select + chart type + Analysis is about 448px and a
+            390px phone gives the bar 358 -- measured as 85px of overflow
+            before this. A second row on a phone is legible; 85 pixels
+            hanging off the side is not.
+
+            `shrink-0` on the wide branch is #327's: it is what stops the
+            controls being pushed onto a second row the moment the
+            instrument meta arrives and widens the left group. It is
+            deliberately NOT on the wrapping branch, where a second row is
+            the intended outcome rather than the defect.
+          */}
+          <div className={compactTimeframe
+            ? 'flex min-w-0 flex-wrap items-center gap-2'
+            : 'flex shrink-0 items-center space-x-2'}>
             {/* Time Frame Selector */}
           <div className="flex items-center space-x-1 bg-gray-200 rounded-lg p-1">
-            {timeFrames.map((tf) => (
+            {/*
+              Eight buttons at 492px, 46% of the whole right-hand group and
+              its single largest item. Below `TOOLBAR_TIGHT_PX` they collapse
+              to a native select -- about 80px -- which keeps every timeframe
+              reachable in one tap instead of hiding seven of them.
+
+              A select rather than another popover because this is the
+              control a touch reader uses most, and the platform picker is
+              the one thing on this bar that is already thumb-sized.
+            */}
+            {compactTimeframe ? (
+              <select
+                aria-label="Time frame"
+                value={currentPanel.selectedFreq ? '' : currentPanel.timeFrame}
+                onChange={(e) => updatePanel(activePanel, {
+                  timeFrame: e.target.value as TimeFrame,
+                  customRange: undefined,
+                  selectedFreq: undefined,
+                })}
+                className="rounded bg-transparent px-2 py-1 text-xs font-medium text-gray-700 focus:outline-none dark:text-gray-300"
+              >
+                {currentPanel.selectedFreq && <option value="">Custom</option>}
+                {timeFrames.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
+              </select>
+            ) : timeFrames.map((tf) => (
               <button
                 key={tf}
                 onClick={() => updatePanel(activePanel, { timeFrame: tf, customRange: undefined, selectedFreq: undefined })}
@@ -1212,239 +1572,24 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             </div>
           </div>
 
-            {/* Chart Type Selector */}
-            <div className="flex items-center space-x-1 bg-gray-200 rounded-lg p-1">
-              {chartTypes.map((ct) => {
-                const Icon = ct.icon
-                return (
-                  <button
-                    key={ct.value}
-                    onClick={() => updatePanel(activePanel, { chartType: ct.value })}
-                    title={ct.label}
-                    className={`p-1.5 rounded transition-colors ${
-                      currentPanel.chartType === ct.value
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-300 dark:hover:text-white dark:text-gray-400'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                  </button>
-                )
-              })}
-            </div>
+            {/*
+              The chart-type selector is GONE from here.
 
-            {/* Metric Selector */}
-            <div className={isMobileViewport ? "hidden" : "relative"}>
-              <button
-                onClick={() => setShowMetricMenu(!showMetricMenu)}
-                className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                  showMetricMenu ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
-                }`}
-              >
-                {(() => {
-                  const metric = metricOptions.find(m => m.value === currentPanel.metric)
-                  const Icon = metric?.icon || DollarSign
-                  return <Icon className="w-4 h-4" />
-                })()}
-                <span>{metricOptions.find(m => m.value === currentPanel.metric)?.label || 'Price'}</span>
-                <ChevronDown className="w-3 h-3" />
-              </button>
+              Four icon buttons held about 132px of the command bar
+              permanently, for a control most readers set once. It now lives
+              in Chart Setup beside the series it draws -- which is also
+              where it belongs, since it describes that series rather than
+              the panel.
 
-              {showMetricMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowMetricMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-xl z-50 dark:border-gray-700 dark:bg-gray-800">
-                    <div className="p-2">
-                      <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1 dark:text-gray-400">Select Metric</div>
-                      {metricOptions.map((metric) => {
-                        const Icon = metric.icon
-                        const isSelected = currentPanel.metric === metric.value
-                        return (
-                          <button
-                            key={metric.value}
-                            onClick={() => {
-                              updatePanel(activePanel, { metric: metric.value })
-                              setShowMetricMenu(false)
-                            }}
-                            className={`w-full flex items-center space-x-3 px-3 py-2 rounded-md transition-colors ${
-                              isSelected ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-100 text-gray-700 dark:hover:bg-gray-700 dark:text-gray-300'
-                            }`}
-                          >
-                            <Icon className="w-4 h-4" />
-                            <div className="text-left">
-                              <div className="text-sm font-medium">{metric.label}</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-400">{metric.description}</div>
-                            </div>
-                            {isSelected && <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full" />}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+              What remains in this group is LAYOUT only: single/grid and add
+              panel. Those are panel-level commands with nowhere better to
+              be, and they are two icons rather than a menu.
+            */}
+            <div className={compactControls
+              ? `absolute right-0 top-full z-50 mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-700 dark:bg-gray-800 ${showChartSetup ? '' : 'hidden'}`
+              : 'flex items-center space-x-2'}>
 
-            {/* Indicators */}
-            <div className={isMobileViewport ? "hidden" : "relative"}>
-              <button
-                onClick={() => setShowIndicatorMenu(!showIndicatorMenu)}
-                className="flex items-center space-x-1 px-3 py-1.5 bg-gray-200 text-gray-600 hover:text-gray-900 rounded-lg text-sm transition-colors dark:hover:text-white dark:text-gray-400"
-              >
-                <Layers className="w-4 h-4" />
-                <span>Indicators</span>
-                {currentPanel.indicators.length > 0 && (
-                  <span className="bg-blue-600 text-white text-xs px-1.5 rounded-full">
-                    {currentPanel.indicators.length}
-                  </span>
-                )}
-              </button>
 
-              {showIndicatorMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowIndicatorMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-80 overflow-auto dark:border-gray-700 dark:bg-gray-800">
-                    {['Moving Averages', 'Oscillators', 'Volume', 'Volatility', 'Trend'].map((category) => (
-                      <div key={category}>
-                        <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide bg-gray-50 dark:text-gray-400 dark:bg-gray-900">
-                          {category}
-                        </div>
-                        {indicators.filter(i => i.category === category).map((indicator) => (
-                          <button
-                            key={indicator.id}
-                            onClick={() => toggleIndicator(indicator.id)}
-                            className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between dark:hover:bg-gray-700"
-                          >
-                            <span className="text-sm text-gray-700 dark:text-gray-300">{indicator.name}</span>
-                            {currentPanel.indicators.includes(indicator.id) && (
-                              <span className="w-2 h-2 bg-blue-500 rounded-full" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Compare Symbols */}
-            <div className={isMobileViewport ? "hidden" : "relative"}>
-              <button
-                onClick={() => setShowCompareMenu(!showCompareMenu)}
-                className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                  showCompareMenu || (currentPanel.compareSymbols?.length || 0) > 0
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-600 hover:text-gray-900 dark:hover:text-white dark:text-gray-400'
-                }`}
-              >
-                <TrendingUp className="w-4 h-4" />
-                <span>Compare</span>
-                {(currentPanel.compareSymbols?.length || 0) > 0 && (
-                  <span className="bg-white/20 text-white text-xs px-1.5 rounded-full">
-                    {currentPanel.compareSymbols?.length}
-                  </span>
-                )}
-              </button>
-
-              {showCompareMenu && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowCompareMenu(false)} />
-                  <div className="absolute right-0 top-full mt-1 w-72 bg-white border border-gray-200 rounded-lg shadow-xl z-50 dark:border-gray-700 dark:bg-gray-800">
-                    <div className="p-3 border-b border-gray-100 dark:border-gray-800">
-                      <div className="relative">
-                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                          type="text"
-                          placeholder="Add symbol to compare..."
-                          value={compareSearchQuery}
-                          onChange={(e) => setCompareSearchQuery(e.target.value)}
-                          className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900"
-                          autoFocus
-                        />
-                      </div>
-                      {compareSearchQuery && compareSearchResults.length > 0 && (
-                        <div className="mt-2 max-h-40 overflow-auto border border-gray-200 rounded-lg dark:border-gray-700">
-                          {compareSearchResults.map((asset: any) => (
-                            <button
-                              key={asset.id}
-                              onClick={() => addCompareSymbol(asset)}
-                              disabled={asset.symbol === currentPanel.symbol || currentPanel.compareSymbols?.some(s => s.symbol === asset.symbol)}
-                              className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed dark:hover:bg-gray-700"
-                            >
-                              <span className="font-medium text-gray-900 dark:text-white">{asset.symbol}</span>
-                              <span className="text-xs text-gray-500 truncate ml-2 dark:text-gray-400">{asset.company_name}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Current comparisons */}
-                    {currentPanel.compareSymbols && currentPanel.compareSymbols.length > 0 && (
-                      <div className="p-2">
-                        <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1 dark:text-gray-400">Comparing</div>
-                        {currentPanel.compareSymbols.map((s) => (
-                          <div
-                            key={s.symbol}
-                            className="flex items-center justify-between px-2 py-1.5 hover:bg-gray-50 rounded dark:hover:bg-gray-800"
-                          >
-                            <div className="flex items-center space-x-2">
-                              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{s.symbol}</span>
-                              <span className="text-xs text-gray-400">{s.companyName}</span>
-                            </div>
-                            <button
-                              onClick={() => removeCompareSymbol(s.symbol)}
-                              className="text-gray-400 hover:text-red-500 p-1"
-                            >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Display Mode */}
-                    <div className="p-2 border-t border-gray-100 dark:border-gray-800">
-                      <div className="text-xs font-medium text-gray-500 uppercase px-2 py-1 dark:text-gray-400">Display Mode</div>
-                      <div className="flex gap-1 px-2">
-                        {displayModeOptions.map((mode) => (
-                          <button
-                            key={mode.value}
-                            onClick={() => setDisplayMode(mode.value)}
-                            className={`flex-1 px-2 py-1.5 text-xs font-medium rounded transition-colors ${
-                              currentPanel.displayMode === mode.value
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:bg-gray-800'
-                            }`}
-                            title={mode.description}
-                          >
-                            {mode.label}
-                          </button>
-                        ))}
-                      </div>
-                      {/* Index base input - shown when Indexed mode is selected */}
-                      {currentPanel.displayMode === 'indexed' && (
-                        <div className="mt-2 px-2">
-                          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                            <span>Index to:</span>
-                            <input
-                              type="number"
-                              value={currentPanel.indexBase || DEFAULT_INDEX_BASE}
-                              onChange={(e) => updatePanel(activePanel, { indexBase: Number(e.target.value) || DEFAULT_INDEX_BASE })}
-                              className="w-20 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600"
-                              min="1"
-                              step="1"
-                            />
-                            <span className="text-gray-400">at start</span>
-                          </label>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
 
             {/* View Mode Toggle */}
             <div className="flex items-center space-x-1 bg-gray-200 rounded-lg p-1">
@@ -1480,6 +1625,38 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             >
               <Plus className="w-4 h-4" />
             </button>
+            </div>
+
+            {/*
+              The one control that REPLACES the group rather than joining it.
+              Rendered only when the group is collapsed, so a wide toolbar is
+              unchanged and nothing is hidden behind a menu that had room to
+              be shown.
+            */}
+            {/*
+              Always present now, at every width.
+
+              It used to appear only when the toolbar collapsed, because it
+              opened a popover holding the controls the bar had no room for.
+              It now opens the Analysis panel -- the place those controls
+              live -- so hiding it on a wide screen would hide the only way
+              to reach Add Plot and Add Series.
+            */}
+            {(
+              <button
+                onClick={() => (showChartSetup ? setShowChartSetup(false) : openChartSetup())}
+                title="Chart Setup"
+                aria-expanded={showChartSetup}
+                className={`flex shrink-0 items-center space-x-1 rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                  showChartSetup
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                <span className="hidden sm:inline">Chart Setup</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1516,6 +1693,25 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
 
       {/* Main Chart Area */}
       <div className="flex-1 flex overflow-hidden" onClick={() => { closeContextMenu(); closeLineContextMenu(); }}>
+        {/*
+          The drawing tools, stated.
+          Every tool here already worked and was reachable only by
+          right-clicking empty canvas, which nothing on the page mentioned.
+          See `workspace/drawing-tools.ts`.
+        */}
+        <DrawingPalette
+          activeTool={activeTool}
+          onSelectTool={type => {
+            setActiveTool(type)
+            if (type) setSelectedAnnotation(null)
+          }}
+          onUndo={undoAnnotations}
+          onRedo={redoAnnotations}
+          canUndo={historyCanUndo(history)}
+          canRedo={historyCanRedo(history)}
+          onClearAll={clearAllAnnotations}
+          markCount={currentPanel.annotations.length}
+        />
         {/* Chart Canvas */}
         <div className="flex-1 overflow-hidden relative">
           {/*
@@ -1525,87 +1721,72 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             * to explain it. The strip also carries the two controls that are
             * otherwise keyboard-only.
             */}
-          {(activeTool || selectedAnnotation || historyCanUndo(history) || historyCanRedo(history)) && (
-            <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-gray-200/80 bg-white/95 px-2 py-1 shadow-sm backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
-              {/*
-                * The selection has to be stated somewhere.
-                *
-                * `AnnotationRenderer` draws no selection outline and no
-                * handles -- that needs the canvas render loop, which this
-                * change does not touch -- so without this line the reader
-                * would have picked up a mark with nothing to show it. The
-                * drag itself is the other feedback.
-                */}
-              {!activeTool && selectedAnnotation && (
-                <>
-                  <span className="pl-1 text-[11px] font-medium text-gray-700 dark:text-gray-200">
-                    {(annotationTools.find(
-                      t => t.type === currentPanel.annotations.find(a => a.id === selectedAnnotation)?.type,
-                    )?.label ?? 'Mark')}{' '}
-                    selected
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => deleteAnnotation(selectedAnnotation)}
-                    className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-rose-50 hover:text-rose-600 dark:text-gray-400 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
-                  >
-                    Delete
-                  </button>
-                  <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
-                </>
-              )}
-              {activeTool && (
-                <>
-                  <span className="pl-1 text-[11px] font-medium text-gray-700 dark:text-gray-200">
-                    Drag to draw{' '}
-                    {(annotationTools.find(t => t.type === activeTool)?.label ?? activeTool).toLowerCase()}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTool(null)}
-                    className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
-                  >
-                    Cancel
-                  </button>
-                  <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
-                </>
-              )}
+          {/*
+            * Reduced to the one thing the rail cannot say.
+            *
+            * Undo, redo and the selection used to live here. Undo and redo
+            * are on the palette now, where they sit beside the tools they
+            * reverse; the selection is in the inspector, which can state the
+            * mark's anchors rather than just its name. What is left is the
+            * instruction, and it has to be HERE rather than on the button:
+            * the reader is looking at the canvas, which is where their next
+            * press has to land.
+            *
+            * `armedCaption` is used rather than a sentence built here,
+            * because the sentence differs by tool. "Drag to draw horizontal
+            * line" was wrong -- a horizontal line is placed by a click, and
+            * dragging to make one produces nothing at all.
+            */}
+          {activeTool && (
+            <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-gray-200/80 bg-white/95 px-3 py-1 shadow-sm backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
+              <span className="text-[11px] font-medium text-gray-700 dark:text-gray-200">
+                {armedCaption(activeTool)}
+              </span>
               <button
                 type="button"
-                onClick={undoAnnotations}
-                disabled={!historyCanUndo(history)}
-                title="Undo (Ctrl+Z)"
-                className="rounded-full p-1 text-gray-500 enabled:hover:bg-gray-100 enabled:hover:text-gray-900 disabled:opacity-30 dark:text-gray-400 dark:enabled:hover:bg-white/10 dark:enabled:hover:text-white"
+                onClick={() => setActiveTool(null)}
+                className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
               >
-                <Undo2 className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={redoAnnotations}
-                disabled={!historyCanRedo(history)}
-                title="Redo (Ctrl+Shift+Z)"
-                className="rounded-full p-1 text-gray-500 enabled:hover:bg-gray-100 enabled:hover:text-gray-900 disabled:opacity-30 dark:text-gray-400 dark:enabled:hover:bg-white/10 dark:enabled:hover:text-white"
-              >
-                <Redo2 className="h-3.5 w-3.5" />
+                Cancel · Esc
               </button>
             </div>
           )}
           {viewMode === 'single' ? (
-            <div className="h-full bg-white dark:bg-gray-800">
+            /*
+              The Analysis panel sits BESIDE the canvas, not over it. A
+              floating panel would cover the right price axis, which is the
+              column a reader checks while changing what is drawn.
+
+              `min-w-0` on the chart side is what lets it actually give the
+              width back when the panel closes: without it the canvas keeps
+              its measured width and the freed space becomes a gap.
+            */
+            <div className="relative flex h-full bg-white dark:bg-gray-800">
+            <div className="min-w-0 flex-1">
               {currentPanel.symbol ? (
                 <ProChart
                   symbol={currentPanel.symbol}
-                  chartType={currentPanel.chartType}
+                  chartType={usePlotModel ? derivedDisplayType : currentPanel.chartType}
                   timeFrame={currentPanel.timeFrame}
                   customRange={currentPanel.customRange}
-                  showVolume={currentPanel.indicators.includes('volume')}
-                  indicators={currentPanel.indicators.filter(i => i !== 'volume') as IndicatorType[]}
+                  showVolume={usePlotModel ? derivedShowVolume : currentPanel.indicators.includes('volume')}
+                  indicators={usePlotModel
+                    ? (derivedOverlays.map(s => s.kind) as IndicatorType[])
+                    : currentPanel.indicators.filter(i => i !== 'volume') as IndicatorType[]}
+                  plotSpecs={usePlotModel ? derivedPlotSpecs : undefined}
                   annotations={currentPanel.annotations}
-                  compareSymbols={currentPanel.compareSymbols}
-                  displayMode={currentPanel.displayMode}
-                  indexBase={currentPanel.indexBase}
+                  compareSymbols={usePlotModel
+                    ? derivedComparisons.map(s => ({
+                        symbol: s.symbol,
+                        companyName: s.companyName ?? undefined,
+                        color: s.color,
+                      }))
+                    : currentPanel.compareSymbols}
+                  displayMode={usePlotModel ? derivedScaleMode : currentPanel.displayMode}
+                  indexBase={usePlotModel ? derivedIndexBase : currentPanel.indexBase}
                   selectedLine={selectedLine}
                   mainSymbolStyle={currentPanel.mainSymbolStyle}
+                  onSeriesMeta={setSeriesMeta}
                   onContextMenu={handleChartContextMenu}
                   onLineContextMenu={handleLineContextMenu}
                   onLineClick={handleLineClick}
@@ -1627,6 +1808,46 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                   </div>
                 </div>
               )}
+            </div>
+            {/*
+              Add Series search. Anchored over the panel rather than the
+              canvas: the reader's attention is in the tree, and covering
+              the chart to choose a comparison hides the thing being
+              compared against.
+            */}
+            {addSeriesPlotId && (
+              <div className="absolute right-72 top-16 z-50 w-72 rounded-lg border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                <input
+                  autoFocus
+                  value={compareSearchQuery}
+                  onChange={e => setCompareSearchQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Escape') setAddSeriesPlotId(null) }}
+                  placeholder="Add security to plot…"
+                  aria-label="Add security to plot"
+                  className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                />
+                <div className="mt-1 max-h-64 overflow-y-auto">
+                  {compareSearchResults.map(asset => (
+                    <button
+                      key={asset.id}
+                      onClick={() => addInstrumentToPlot(asset)}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-blue-50 dark:hover:bg-gray-700"
+                    >
+                      <span className="font-semibold text-gray-900 dark:text-white">{asset.symbol}</span>
+                      <span className="truncate text-xs text-gray-500">{asset.company_name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {showChartSetup && currentPanel.symbol && (
+              <ChartSetupPanel
+                state={plotState}
+                dispatch={dispatchPlot}
+                onAddInstrument={handleAddInstrumentToPlot}
+                onClose={() => setShowChartSetup(false)}
+              />
+            )}
             </div>
           ) : (
             <div className="h-full grid grid-cols-2 gap-px bg-gray-200">
@@ -1681,6 +1902,17 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             </div>
           )}
         </div>
+        {/*
+          The inspector, which takes no width until a mark is picked up.
+          It edits through `commitAnnotationChange`, the same undoable path a
+          drag ends on, so a colour change is one Ctrl+Z like everything else.
+        */}
+        <AnnotationInspector
+          annotation={currentPanel.annotations.find(a => a.id === selectedAnnotation) ?? null}
+          onChange={commitAnnotationChange}
+          onDelete={deleteAnnotation}
+          onClose={() => setSelectedAnnotation(null)}
+        />
       </div>
 
       {/* Right-Click Context Menu for Annotations */}
@@ -1846,7 +2078,7 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
               <div className="px-3 py-2 border-t border-gray-100 dark:border-gray-800">
                 <button
                   onClick={() => {
-                    removeCompareSymbol(lineContextMenu.symbol)
+                    removeComparisonSeries(lineContextMenu.symbol)
                     closeLineContextMenu()
                   }}
                   className="w-full py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded transition-colors"

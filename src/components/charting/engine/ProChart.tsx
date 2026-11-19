@@ -10,11 +10,25 @@ import {
 } from './types'
 import { ChartTransform } from './transform'
 import { ChartRenderer, IndicatorRenderConfig, LineStyle } from './renderer'
-import { SubPanelRenderer, SubPanelData } from './SubPanelRenderer'
+import { SubPanelRenderer, SubPanelData, RenderPlot } from './SubPanelRenderer'
+
+/** One plot as the page describes it. Mirrors `DerivedPlotSpec`. */
+export interface ChartPlotSpec {
+  id: string
+  kind: 'price' | 'volume' | 'study'
+  title: string
+  heightRatio: number
+  indicators: Array<{ id: string; kind: string; period: number | null; color: string }>
+}
 import { chartDataService, timeframeToParams, CandlestickData } from '../../../lib/chartData'
 import { useMarketDataEntitlement } from '../../../lib/market-data/provider-routing'
 import { failureMessage } from '../../../lib/market-data/eodhd-series'
 import type { AdapterFailure } from '../../../lib/market-data/contracts'
+import { type SeriesMeta } from '../workspace/series-meta'
+import type { SeriesBasis } from '../../../lib/chartData'
+import { OhlcReadout } from '../workspace/OhlcReadout'
+import { formatBarTime } from '../../../lib/charting/bar-format'
+import { barAtTime, reachForInterval, secondsForInterval } from '../../../lib/charting/bar-at-time'
 import {
   calculateSMA,
   calculateEMA,
@@ -45,7 +59,8 @@ import {
  * replaces is what that costs: it derived the second point of every mark by
  * arithmetic, so every trend line was 30 days long and rose exactly 5%.
  */
-import { beginGesture, completeDraw } from '../../../lib/charting/drawing-gesture'
+import { beginGesture, completeDraw, type PanAxis } from '../../../lib/charting/drawing-gesture'
+import { clampPriceWindow } from '../../../lib/charting/pan-bounds'
 import {
   moveAnnotation,
   reshapeAnnotation,
@@ -135,6 +150,18 @@ interface ProChartProps {
   showVolume?: boolean
   theme?: ChartTheme
   indicators?: IndicatorType[]
+  /**
+   * Explicit plots, when the page is driving the chart from the plot model.
+   *
+   * When present this REPLACES the pane layout that `indicators` implies:
+   * the panes, their order, their heights and what is in each one come from
+   * the analyst's arrangement rather than from which indicator names happen
+   * to be in the list. `indicators` still supplies the price-plot overlays.
+   *
+   * Absent, the chart behaves exactly as before -- the grid view and any
+   * other caller that has not been moved over are unaffected.
+   */
+  plotSpecs?: ChartPlotSpec[]
   events?: ChartEvent[]
   annotations?: Annotation[]
   compareSymbols?: CompareSymbol[]
@@ -176,6 +203,20 @@ interface ProChartProps {
    */
   onAnnotationSelect?: (id: string | null) => void
   /**
+   * What was drawn, reported to whoever owns the page furniture.
+   *
+   * The chart is the only thing that knows the last close, how many bars
+   * came back, which feed answered and on what adjustment basis -- and none
+   * of it was leaving this component, so the page above could show a symbol
+   * and a company name and nothing else. A reader could not tell a live
+   * series from a three-day-old cached one.
+   *
+   * Reported rather than lifted: the fetch belongs here, beside the view
+   * state it initialises, and moving it out to share four facts would be a
+   * much larger change for a much smaller reason.
+   */
+  onSeriesMeta?: (meta: SeriesMeta) => void
+  /**
    * A mark is being dragged. Fires on every frame of the drag, so the mark
    * follows the cursor.
    *
@@ -211,6 +252,7 @@ export function ProChart({
   showVolume = false,
   theme = defaultLightTheme,
   indicators = [],
+  plotSpecs,
   events = [],
   annotations = [],
   compareSymbols = [],
@@ -227,7 +269,8 @@ export function ProChart({
   onAnnotationDraw,
   onAnnotationSelect,
   onAnnotationChange,
-  onAnnotationCommit
+  onAnnotationCommit,
+  onSeriesMeta
 }: ProChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -253,6 +296,8 @@ export function ProChart({
 
   // Track the current interval for loading more data
   const [currentInterval, setCurrentInterval] = useState<string>('1d')
+  /** The bar the cursor is over, shown as O/H/L/C/V over the canvas. */
+  const [hoveredBar, setHoveredBar] = useState<OHLC | null>(null)
 
   // Separate indicators into main chart overlays and sub-panels
   const mainChartIndicators: IndicatorType[] = useMemo(() =>
@@ -367,10 +412,57 @@ export function ProChart({
     return { main, subPanels }
   }, [data, mainChartIndicators, subPanelIndicators])
 
+  /**
+   * The analyst's plots, calculated with THEIR parameters.
+   *
+   * The period comes from the series, not from the hardcoded 14 that the
+   * name used to imply, which is the whole reason two RSIs at different
+   * periods can now exist. `calculateIndicator`-level functions are reused
+   * unchanged: only which arguments they get has moved.
+   */
+  const renderPlots: RenderPlot[] = useMemo(() => {
+    if (!plotSpecs || data.length === 0) return []
+    return plotSpecs
+      .filter(spec => spec.kind !== 'volume')
+      .map(spec => ({
+        id: spec.id,
+        title: spec.title,
+        heightRatio: spec.heightRatio,
+        reserveSpace: true,
+        series: spec.indicators.map(ind => {
+          const period = ind.period ?? undefined
+          const data_ = (() => {
+            switch (ind.kind) {
+              case 'rsi': return calculateRSI(data, period ?? 14)
+              case 'macd': return calculateMACD(data, 12, 26, 9)
+              case 'stochastic': return calculateStochastic(data, period ?? 14, 3)
+              case 'atr': return calculateATR(data, period ?? 14)
+              case 'obv': return calculateOBV(data)
+              case 'adx': return calculateADX(data, period ?? 14)
+              default: return [] as ReturnType<typeof calculateRSI>
+            }
+          })()
+          const label = ind.period == null
+            ? ind.kind.toUpperCase()
+            : `${ind.kind.toUpperCase()} ${ind.period}`
+          return { id: ind.id, kind: ind.kind, label, color: ind.color, data: data_ }
+        }),
+      }))
+  }, [plotSpecs, data])
+
   // Interaction state
   const [isDragging, setIsDragging] = useState(false)
   const [dragMode, setDragMode] = useState<'pan' | 'zoom-price' | 'zoom-time'>('pan')
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0, viewStart: 0, viewEnd: 0, minPrice: 0, maxPrice: 0 })
+  const [dragStart, setDragStart] = useState<{
+    x: number; y: number; viewStart: number; viewEnd: number
+    minPrice: number; maxPrice: number; panAxis: PanAxis
+    /* The price extent of what was on screen when the drag began, so a
+       vertical pan can be stopped before the data leaves the frame. */
+    dataMin: number; dataMax: number
+  }>({
+    x: 0, y: 0, viewStart: 0, viewEnd: 0, minPrice: 0, maxPrice: 0,
+    panAxis: 'both', dataMin: NaN, dataMax: NaN
+  })
   const [crosshair, setCrosshair] = useState<{ x: number; y: number } | null>(null)
   const [cursorStyle, setCursorStyle] = useState('crosshair')
   const [hoveredLine, setHoveredLine] = useState<string | null>(null) // symbol of hovered line
@@ -445,6 +537,26 @@ export function ProChart({
         // Both branches report a reason now. The custom-range one matters
         // most: the Charting frequency picker reaches the provider through it.
         let failure: AdapterFailure | undefined
+        /*
+         * The adjustment basis of the series that actually arrived, measured
+         * by `chartData` from the provider's own corporate actions. It is
+         * read off the result rather than looked up from the provider's name
+         * because the name was WRONG: Yahoo's chart series is split-adjusted
+         * and the old provider table called it raw, so the header stated
+         * "raw prices · not split-adjusted" over an adjusted series.
+         */
+        let basis: SeriesBasis = { basis: 'unknown', splits: [], adjustedHere: false, evidence: 'not measured' }
+        /*
+         * When the provider answered, in unix milliseconds. 0 until one does.
+         *
+         * Kept separate from the last bar's timestamp because they are
+         * different quantities: a bar is stamped at the opening of the period
+         * it covers, so a monthly bar says the first of the month and reading
+         * age off it called a current chart 18 days old. A cache hit carries
+         * the moment the cached answer was observed, so a stale series still
+         * reads stale.
+         */
+        let observedAt = 0
 
         if (timeFrame === 'CUSTOM' && customRange) {
           // Use custom date range
@@ -460,6 +572,8 @@ export function ProChart({
           )
           rawData = custom.candles
           failure = custom.failure
+          basis = custom.basis
+          observedAt = custom.observedAt
         } else {
           // Use preset timeframe
           const params = timeframeToParams[timeFrame] || { interval: '1d', range: '1mo' }
@@ -474,6 +588,8 @@ export function ProChart({
           })
           rawData = result.candles
           failure = result.failure
+          basis = result.basis
+          observedAt = result.observedAt
         }
 
         if (rawData.length === 0) {
@@ -492,6 +608,28 @@ export function ProChart({
         } else {
           const ohlcData = convertToOHLC(rawData)
           setData(ohlcData)
+
+          /*
+           * The basis is measured from the delivered series, not named after
+           * the feed. See `basis` above and `normaliseYahooSeries`.
+           */
+          const lastBar = ohlcData[ohlcData.length - 1]
+          const prevBar = ohlcData[ohlcData.length - 2]
+          onSeriesMeta?.({
+            symbol: symbol.toUpperCase(),
+            last: lastBar ? lastBar.close : null,
+            previous: prevBar ? prevBar.close : null,
+            lastBarTime: lastBar ? lastBar.time : null,
+            // When the provider answered, which is what "how old is this"
+            // asks. The bar time above is a period boundary, not an age.
+            observedAt: observedAt > 0 ? Math.floor(observedAt / 1000) : null,
+            bars: ohlcData.length,
+            interval,
+            provider: marketDataProvider,
+            adjustment: basis.basis,
+            adjustmentEvidence: basis.evidence,
+            splits: basis.splits.length,
+          })
 
           // Calculate initial view
           const timeRange = ChartTransform.calculateTimeRange(ohlcData)
@@ -797,11 +935,22 @@ export function ProChart({
 
   // Calculate main chart height based on sub-panels
   const mainChartHeightRatio = useMemo(() => {
+    /*
+     * Driven by the plots when there are plots: their heights are the
+     * analyst's, so the price plot gets whatever they have not claimed.
+     * Still capped, because a price plot squeezed to nothing is not a
+     * chart, and the Analysis panel's own slider is clamped to match.
+     */
+    if (plotSpecs) {
+      if (renderPlots.length === 0) return 1
+      const claimed = renderPlots.reduce((a, p) => a + Math.max(0.06, p.heightRatio), 0)
+      return Math.max(0.3, 1 - Math.min(0.6, claimed))
+    }
     if (indicatorData.subPanels.length === 0) return 1
     // Reserve space for sub-panels (each takes ~15% max, limit to 45% total)
     const subPanelRatio = Math.min(0.45, indicatorData.subPanels.length * 0.15)
     return 1 - subPanelRatio
-  }, [indicatorData.subPanels.length])
+  }, [indicatorData.subPanels.length, plotSpecs, renderPlots])
 
   // Initialize canvas and renderer
   useEffect(() => {
@@ -864,7 +1013,18 @@ export function ProChart({
       chartType,
       showVolume,
       [...indicatorData.main, ...comparisonLines],
-      crosshair || undefined,
+      /*
+       * The time label names the hovered BAR, not the pixel. The renderer's
+       * own fallback prints `xToTime(mouseX)` with a clock time forced on,
+       * which on a daily series reads "Nov 3, 2026, 06:09 PM" -- a moment
+       * that is not in the data, attached to a bar that covers the session.
+       */
+      crosshair
+        ? {
+            ...crosshair,
+            timeLabel: hoveredBar ? formatBarTime(hoveredBar.time, currentInterval) : undefined,
+          }
+        : undefined,
       mainSymbolStyle
     )
 
@@ -875,17 +1035,29 @@ export function ProChart({
       annotationRendererRef.current.render(events, annotations)
     }
 
-    // Render sub-panels
-    if (subPanelRendererRef.current && indicatorData.subPanels.length > 0) {
+    // Render the panes below the price plot
+    if (subPanelRendererRef.current) {
       subPanelRendererRef.current.setTheme(theme)
       subPanelRendererRef.current.setMainTransform(transformRef.current)
-
       const mainChartBottom = dimensions.height * mainChartHeightRatio
-      subPanelRendererRef.current.renderSubPanels(
-        indicatorData.subPanels,
-        mainChartBottom,
-        dimensions.height
-      )
+
+      /*
+       * The plot model wins when the page supplies one. The two paths are
+       * exclusive on purpose: running both would draw the same indicator
+       * twice, once where the analyst put it and once where its name says
+       * it belongs.
+       */
+      if (plotSpecs) {
+        if (renderPlots.length > 0) {
+          subPanelRendererRef.current.renderPlots(renderPlots, mainChartBottom, dimensions.height)
+        }
+      } else if (indicatorData.subPanels.length > 0) {
+        subPanelRendererRef.current.renderSubPanels(
+          indicatorData.subPanels,
+          mainChartBottom,
+          dimensions.height
+        )
+      }
     }
 
     // Draw selection dots on the selected line
@@ -902,7 +1074,10 @@ export function ProChart({
         }
       }
     }
-  }, [data, view, dimensions, chartType, showVolume, theme, crosshair, indicatorData, mainChartHeightRatio, events, annotations, transformedData, comparisonLines, selectedLine, symbol, compareSymbols, mainSymbolStyle])
+    /* `hoveredBar` and `currentInterval` are here because the crosshair's
+       time label is derived from them: without them the canvas keeps the
+       label of whichever bar was hovered when this last ran. */
+  }, [data, view, dimensions, chartType, showVolume, theme, crosshair, indicatorData, mainChartHeightRatio, events, annotations, transformedData, comparisonLines, selectedLine, symbol, compareSymbols, mainSymbolStyle, hoveredBar, currentInterval])
 
   // Auto-scale price when view changes
   useEffect(() => {
@@ -1024,6 +1199,37 @@ export function ProChart({
   }, [view.startTime, view.endTime, data, isLoadingMore, isLoading, symbol, currentInterval])
 
   // Mouse handlers
+  /**
+   * The price extent of everything drawn in the current time window.
+   *
+   * Same filter and same source as the `autoScalePrice` effect -- the
+   * TRANSFORMED series, so indexed and percentage modes are measured on the
+   * numbers actually plotted rather than on raw prices -- and comparisons
+   * are included, because a comparison is on the price plot's own scale and
+   * dragging it out of frame is the same loss.
+   *
+   * Declared above `handleMouseDown` so it exists when that callback's
+   * dependency array is evaluated at render.
+   */
+  const visiblePriceExtent = useCallback(() => {
+    const inWindow = (d: { time: number }) =>
+      d.time >= view.startTime && d.time <= view.endTime
+    let lo = Infinity
+    let hi = -Infinity
+    const consider = (rows: { time: number; low?: number; high?: number; close: number }[]) => {
+      for (const d of rows) {
+        if (!inWindow(d)) continue
+        const l = d.low ?? d.close
+        const h = d.high ?? d.close
+        if (l < lo) lo = l
+        if (h > hi) hi = h
+      }
+    }
+    consider(transformedData.main)
+    transformedData.compare.forEach(rows => consider(rows))
+    return { dataMin: lo, dataMax: hi }
+  }, [transformedData, view.startTime, view.endTime])
+
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect || !transformRef.current) return
@@ -1044,7 +1250,15 @@ export function ProChart({
       at: { x, y },
       chartArea: area,
       dimensions: dims,
-      activeTool
+      activeTool,
+      /*
+       * `dims` is the MAIN chart -- the transform is built from
+       * `mainChartDimensions`, whose height is only
+       * `dimensions.height * mainChartHeightRatio`. The study panes are
+       * drawn in the rest of the canvas, so the full canvas height is what
+       * says where the plotted stack actually ends.
+       */
+      stackBottom: dimensions.height
     })
 
     if (gesture.kind === 'none') return
@@ -1099,9 +1313,13 @@ export function ProChart({
       viewStart: view.startTime,
       viewEnd: view.endTime,
       minPrice: view.minPrice,
-      maxPrice: view.maxPrice
+      maxPrice: view.maxPrice,
+      /* Captured at press time, not read at move time: which pane the drag
+         STARTED in is what decides whether it may touch the price range. */
+      panAxis: gesture.kind === 'pan' ? gesture.axis : 'both',
+      ...visiblePriceExtent()
     })
-  }, [view, activeTool, annotations, onAnnotationSelect])
+  }, [view, activeTool, annotations, onAnnotationSelect, dimensions.height, visiblePriceExtent])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -1137,13 +1355,21 @@ export function ProChart({
         y >= area.y && y <= area.y + area.height) {
       setCrosshair({ x, y })
 
+      const time = transformRef.current.xToTime(x)
       if (onCrosshairMove) {
-        const price = transformRef.current.yToPrice(y)
-        const time = transformRef.current.xToTime(x)
-        onCrosshairMove(price, time)
+        onCrosshairMove(transformRef.current.yToPrice(y), time)
       }
+      /*
+       * Nearest bar, capped at one bar's reach, so panning into the empty
+       * canvas past the last bar clears the readout instead of pinning it
+       * to the final bar and asserting the cursor is over something it is
+       * nowhere near. `barAtTime` binary-searches: this runs on every
+       * mousemove, and the ALL view is thousands of bars.
+       */
+      setHoveredBar(barAtTime(data, time, reachForInterval(secondsForInterval(currentInterval))))
     } else {
       setCrosshair(null)
+      setHoveredBar(null)
       if (onCrosshairMove) {
         onCrosshairMove(null, null)
       }
@@ -1160,14 +1386,25 @@ export function ProChart({
         const timeDelta = -(dx / area.width) * timeRange
 
         const priceRange = dragStart.maxPrice - dragStart.minPrice
-        const priceDelta = (dy / area.height) * priceRange
+        /* A drag that began in a study pane pans time only: its `dy` is in
+           that pane's own units, and spending it on the price range would
+           move a plot the reader was not dragging. */
+        const priceDelta =
+          dragStart.panAxis === 'time' ? 0 : (dy / area.height) * priceRange
+
+        /* Stopped before the bars leave the frame, so a drag cannot strand
+           the reader on a blank chart. Shifts only -- never resizes. */
+        const priced = clampPriceWindow(
+          { min: dragStart.minPrice + priceDelta, max: dragStart.maxPrice + priceDelta },
+          { min: dragStart.dataMin, max: dragStart.dataMax }
+        )
 
         setView(v => ({
           ...v,
           startTime: dragStart.viewStart + timeDelta,
           endTime: dragStart.viewEnd + timeDelta,
-          minPrice: dragStart.minPrice + priceDelta,
-          maxPrice: dragStart.maxPrice + priceDelta,
+          minPrice: priced.min,
+          maxPrice: priced.max,
           autoScalePrice: false
         }))
       } else if (dragMode === 'zoom-price') {
@@ -1211,7 +1448,11 @@ export function ProChart({
         }
       }
     }
-  }, [isDragging, dragStart, dragMode, onCrosshairMove])
+    /* `data` and `currentInterval` are dependencies now: without them this
+       handler closes over the bars of whichever series was loaded when it
+       was last built, and the readout would report the previous symbol's
+       prices after a symbol change. */
+  }, [isDragging, dragStart, dragMode, onCrosshairMove, data, currentInterval])
 
   /**
    * Recompute the mark being dragged, from the press rather than the frame.
@@ -1439,14 +1680,23 @@ export function ProChart({
         const timeRange = dragStart.viewEnd - dragStart.viewStart
         const timeDelta = -(dx / area.width) * timeRange
         const priceRange = dragStart.maxPrice - dragStart.minPrice
-        const priceDelta = (dy / area.height) * priceRange
+        /* Same rule as the canvas handler: a pane drag owns time only. */
+        const priceDelta =
+          dragStart.panAxis === 'time' ? 0 : (dy / area.height) * priceRange
+
+        /* Stopped before the bars leave the frame, so a drag cannot strand
+           the reader on a blank chart. Shifts only -- never resizes. */
+        const priced = clampPriceWindow(
+          { min: dragStart.minPrice + priceDelta, max: dragStart.maxPrice + priceDelta },
+          { min: dragStart.dataMin, max: dragStart.dataMax }
+        )
 
         setView(v => ({
           ...v,
           startTime: dragStart.viewStart + timeDelta,
           endTime: dragStart.viewEnd + timeDelta,
-          minPrice: dragStart.minPrice + priceDelta,
-          maxPrice: dragStart.maxPrice + priceDelta,
+          minPrice: priced.min,
+          maxPrice: priced.max,
           autoScalePrice: false
         }))
       } else if (dragMode === 'zoom-price') {
@@ -1605,8 +1855,30 @@ export function ProChart({
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
-      {/* Zoom controls */}
-      <div className="absolute top-2 right-2 z-10 flex items-center space-x-1">
+      {/*
+        The bar under the cursor, in numbers. Rendered here rather than in
+        the page because the series and the crosshair both live in this
+        component, and because it is positioned against this container --
+        moving it up would mean lifting the whole data set to show five
+        values.
+      */}
+      <OhlcReadout bar={hoveredBar} interval={currentInterval} />
+
+      {/*
+        Zoom controls, clear of the price axis.
+
+        They used to sit at `right-2`, directly over the right-hand price
+        scale -- the column a reader checks constantly while zooming, and
+        the one the crosshair writes its price label into. Three opaque
+        buttons on top of it hid the numbers at exactly the moment they
+        were being read.
+
+        Now inset from the right by more than the price axis is wide, so
+        they sit over plot background with the whole scale legible beside
+        them. Not top-LEFT either: that is where the series legend goes,
+        and a legend grows with every comparison added.
+      */}
+      <div className="absolute top-2 right-[72px] z-10 flex items-center space-x-1">
         <button
           onClick={zoomIn}
           className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-400"
