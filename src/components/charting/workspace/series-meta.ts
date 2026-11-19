@@ -11,21 +11,21 @@
  *
  * ── The adjustment basis, which is not a detail ───────────────────────────
  *
- * `chartData.ts` maps Yahoo's `indicators.quote[0].close`, which is the RAW
- * close. It never reads `indicators.adjclose`. So the series is not adjusted
- * for splits, and on a long window that is not a nuance -- it is a chart
- * that states things that did not happen. AAPL on the ALL view falls from
- * about 650 to about 93 in 2014 and from about 410 to about 103 in 2020:
- * the 7:1 and the 4:1 split, drawn as two catastrophic declines. An analyst
- * who draws a trend line across either is measuring a fiction.
+ * A raw series draws a stock split as a price collapse. AAPL's 7:1 in 2014
+ * and 4:1 in 2020 appear as falls from about 650 to 93 and from about 410 to
+ * 103, and an analyst who draws a trend line across either is measuring a
+ * fiction.
  *
- * Correcting the series is a market-data change -- the open, high and low
- * must be scaled by the same split factor as the close, and Yahoo's
- * `adjclose` adjusts for dividends too, so pairing it with a raw open would
- * corrupt every candle. That is its own piece of work.
+ * The basis therefore travels WITH the series, measured from the provider's
+ * own corporate actions by `lib/market-data/price-adjustment.ts` and set in
+ * `lib/chartData.ts`. This module does not decide it; it states it, beside
+ * the prices, and warns when the basis is one that can mislead.
  *
- * What this module does is refuse to let the surface stay silent about it.
- * A series whose basis is `raw` says so, and says it where the prices are.
+ * An earlier version of this file decided the basis from a table keyed by
+ * provider name, and that table was wrong: it declared Yahoo `raw` when
+ * Yahoo's chart series is in fact split-adjusted, so the header warned every
+ * reader about a hazard that was not there while saying nothing useful about
+ * the feed that does have it. A name is a guess. The series is the evidence.
  */
 
 /** What a provider did to the bars before it sent them. */
@@ -55,6 +55,16 @@ export interface SeriesMeta {
   /** Which feed answered. */
   provider: string
   adjustment: Adjustment
+  /**
+   * What the basis conclusion rests on, in one phrase.
+   *
+   * Carried so a reader who wants to know WHY the chart claims to be
+   * split-adjusted can be shown the measurement instead of being asked to
+   * trust the badge. Never rendered as a price.
+   */
+  adjustmentEvidence?: string
+  /** How many corporate actions fall inside the drawn window. */
+  splits?: number
 }
 
 export interface ChangeReading {
@@ -121,30 +131,17 @@ export function adjustmentIsHazardous(adjustment: Adjustment): boolean {
   return adjustment === 'raw' || adjustment === 'unknown'
 }
 
-/**
- * What the named feed's candle path actually returns, as of this change.
+/*
+ * `adjustmentForProvider` was here, and it is deliberately gone.
  *
- * Read from the two mapping sites rather than assumed:
+ * It mapped a provider's NAME to an adjustment basis, and it got Yahoo
+ * wrong -- returning 'raw' for a series that is split-adjusted, which put a
+ * hazard warning on the one feed that does not have the hazard. The basis
+ * now arrives on the series, measured from the provider's published
+ * corporate actions. See `lib/market-data/price-adjustment.ts`
+ * (`detectSplitBasis`) and `lib/chartData.ts` (`normaliseYahooSeries`).
  *
- *   yahoo   `lib/chartData.ts` maps `indicators.quote[0].close`. The
- *           response also carries `indicators.adjclose`, and nothing reads
- *           it. Raw.
- *   eodhd   `lib/market-data/eodhd-series.ts` `toCandles` maps `bar.close`.
- *           The `eod` endpoint also returns `adjusted_close`, and
- *           `eodhd-adapter.ts` already declares `barAdjustment: 'raw'` for
- *           exactly this reason. Raw.
- *
- * An unrecognised provider is 'unknown', NOT 'raw'. Guessing 'raw' for a
- * feed nobody has checked would put a specific, confident claim on screen
- * that no one verified -- and 'unknown' is flagged to the reader just the
- * same, so nothing is lost by being honest about not knowing.
+ * Nothing should reintroduce a provider-to-basis table. If a feed's basis
+ * cannot be measured, `unknown` is the honest answer and it is flagged to
+ * the reader exactly as `raw` is.
  */
-export function adjustmentForProvider(provider: string): Adjustment {
-  switch (provider.toLowerCase()) {
-    case 'yahoo':
-    case 'eodhd':
-      return 'raw'
-    default:
-      return 'unknown'
-  }
-}

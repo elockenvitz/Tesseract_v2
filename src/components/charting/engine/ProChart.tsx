@@ -15,7 +15,8 @@ import { chartDataService, timeframeToParams, CandlestickData } from '../../../l
 import { useMarketDataEntitlement } from '../../../lib/market-data/provider-routing'
 import { failureMessage } from '../../../lib/market-data/eodhd-series'
 import type { AdapterFailure } from '../../../lib/market-data/contracts'
-import { adjustmentForProvider, type SeriesMeta } from '../workspace/series-meta'
+import { type SeriesMeta } from '../workspace/series-meta'
+import type { SeriesBasis } from '../../../lib/chartData'
 import { OhlcReadout } from '../workspace/OhlcReadout'
 import { formatBarTime } from '../../../lib/charting/bar-format'
 import { barAtTime, reachForInterval, secondsForInterval } from '../../../lib/charting/bar-at-time'
@@ -466,6 +467,15 @@ export function ProChart({
         // Both branches report a reason now. The custom-range one matters
         // most: the Charting frequency picker reaches the provider through it.
         let failure: AdapterFailure | undefined
+        /*
+         * The adjustment basis of the series that actually arrived, measured
+         * by `chartData` from the provider's own corporate actions. It is
+         * read off the result rather than looked up from the provider's name
+         * because the name was WRONG: Yahoo's chart series is split-adjusted
+         * and the old provider table called it raw, so the header stated
+         * "raw prices · not split-adjusted" over an adjusted series.
+         */
+        let basis: SeriesBasis = { basis: 'unknown', splits: [], adjustedHere: false, evidence: 'not measured' }
 
         if (timeFrame === 'CUSTOM' && customRange) {
           // Use custom date range
@@ -481,6 +491,7 @@ export function ProChart({
           )
           rawData = custom.candles
           failure = custom.failure
+          basis = custom.basis
         } else {
           // Use preset timeframe
           const params = timeframeToParams[timeFrame] || { interval: '1d', range: '1mo' }
@@ -495,6 +506,7 @@ export function ProChart({
           })
           rawData = result.candles
           failure = result.failure
+          basis = result.basis
         }
 
         if (rawData.length === 0) {
@@ -515,12 +527,8 @@ export function ProChart({
           setData(ohlcData)
 
           /*
-           * The basis comes from the provider, not from a literal here.
-           * Both feeds currently map a RAW close and ignore the adjusted
-           * one they also return, which is why a stock split draws as a
-           * step change in the line. `adjustmentForProvider` names the two
-           * mapping sites it read that from, so the claim can be rechecked
-           * when either changes.
+           * The basis is measured from the delivered series, not named after
+           * the feed. See `basis` above and `normaliseYahooSeries`.
            */
           const lastBar = ohlcData[ohlcData.length - 1]
           const prevBar = ohlcData[ohlcData.length - 2]
@@ -532,7 +540,9 @@ export function ProChart({
             bars: ohlcData.length,
             interval,
             provider: marketDataProvider,
-            adjustment: adjustmentForProvider(marketDataProvider),
+            adjustment: basis.basis,
+            adjustmentEvidence: basis.evidence,
+            splits: basis.splits.length,
           })
 
           // Calculate initial view

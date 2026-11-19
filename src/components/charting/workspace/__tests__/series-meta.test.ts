@@ -11,8 +11,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   readChange, freshnessLabel, adjustmentLabel, adjustmentIsHazardous,
-  adjustmentForProvider, type SeriesMeta,
+  type SeriesMeta,
 } from '../series-meta'
+// The whole module, so the last test can assert what it does NOT export.
+import * as meta from '../series-meta'
 
 const base: SeriesMeta = {
   symbol: 'AAPL',
@@ -119,24 +121,32 @@ describe('the adjustment basis is stated, and raw is flagged', () => {
     }
   })
 
-  it('both live feeds are raw, because both map the unadjusted close', () => {
-    /* Checked against the mapping sites, not assumed: `chartData.ts` reads
-       `indicators.quote[0].close` and `eodhd-series.ts` reads `bar.close`.
-       Both responses also carry an adjusted close that nothing reads. */
-    expect(adjustmentForProvider('yahoo')).toBe('raw')
-    expect(adjustmentForProvider('eodhd')).toBe('raw')
-    expect(adjustmentForProvider('EODHD')).toBe('raw')
-  })
-
-  it('an unchecked feed is unknown, not raw', () => {
-    /* The tempting default is 'raw', since both current feeds are. It would
-       put a specific claim on screen for a mapping nobody has read. */
-    expect(adjustmentForProvider('polygon')).toBe('unknown')
-    expect(adjustmentForProvider('')).toBe('unknown')
-  })
-
   it('an unknown basis is flagged to the reader just as raw is', () => {
-    // So choosing honesty above costs the reader nothing.
-    expect(adjustmentIsHazardous(adjustmentForProvider('polygon'))).toBe(true)
+    // So answering 'unknown' when nothing can be measured costs the reader
+    // nothing: an unmeasurable series is warned about either way.
+    expect(adjustmentIsHazardous('unknown')).toBe(true)
+  })
+
+  it('this module does not decide the basis from a provider’s name', () => {
+    /*
+     * ── The defect this guards ─────────────────────────────────────────
+     *
+     * This module used to export `adjustmentForProvider`, mapping a feed's
+     * NAME to a basis. It returned 'raw' for yahoo. Yahoo's chart series is
+     * split-adjusted -- measured against the live endpoint on 2026-11-18,
+     * AAPL's closes run 23.06 to 23.42 straight through a 7:1 split -- so
+     * the header warned "raw prices · not split-adjusted" over an adjusted
+     * series, and the feed that IS raw was described identically.
+     *
+     * The basis now arrives on the series, measured from the provider's
+     * published corporate actions. A name cannot be evidence, so nothing
+     * here may turn one into a basis again.
+     */
+    const exported = Object.keys(meta)
+    expect(exported).not.toContain('adjustmentForProvider')
+    for (const name of exported) {
+      expect(name, `${name} looks like a provider-to-basis table`)
+        .not.toMatch(/ForProvider$|ByProvider$/)
+    }
   })
 })

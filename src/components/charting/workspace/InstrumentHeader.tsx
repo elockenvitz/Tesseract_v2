@@ -81,10 +81,16 @@ export function InstrumentHeader({ symbol, companyName, meta: incoming }: Instru
                 ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'
                 : 'bg-gray-100 text-gray-500 dark:bg-white/5 dark:text-gray-400',
             )}
+            /*
+             * The hazard explains itself; an adjusted series shows what the
+             * conclusion was measured from. A reader who wants to know why
+             * the chart claims to be split-adjusted gets the measurement
+             * rather than being asked to trust the badge.
+             */
             title={
               adjustmentIsHazardous(meta.adjustment)
                 ? 'Prices are as traded on the day. A stock split appears as a step change in the line, not as a market move.'
-                : undefined
+                : meta.adjustmentEvidence
             }
           >
             {adjustmentIsHazardous(meta.adjustment) && (

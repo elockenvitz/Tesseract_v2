@@ -11,6 +11,13 @@
  */
 import { supabase } from './supabase'
 import type { AdapterFailure, BarInterval, MarketDataProviderId } from './market-data/contracts'
+import {
+  applySplitAdjustment,
+  detectSplitBasis,
+  parseYahooSplits,
+  type PriceBasis,
+  type SplitEvent,
+} from './market-data/price-adjustment'
 
 export interface CandlestickData {
   time: string // YYYY-MM-DD format for daily, or unix timestamp
@@ -33,6 +40,122 @@ export interface ChartDataRequest {
    * re-decides on every request and answers an unentitled caller with a 403.
    */
   provider?: MarketDataProviderId
+}
+
+/**
+ * The adjustment basis a delivered series is on, and how that was decided.
+ *
+ * Carried beside the candles rather than looked up from the provider's name,
+ * because a name is a guess and this is a measurement. See
+ * `normaliseYahooSeries` below.
+ */
+export interface SeriesBasis {
+  basis: PriceBasis
+  /** The corporate actions inside the window, as the provider published them. */
+  splits: SplitEvent[]
+  /** Whether this code divided the prices, or the provider arrived adjusted. */
+  adjustedHere: boolean
+  /** One phrase naming what the conclusion rests on. */
+  evidence: string
+}
+
+/**
+ * What the Yahoo path does to a series before returning it.
+ *
+ * ── The finding that made this necessary ─────────────────────────────────
+ *
+ * Yahoo's `indicators.quote[0].close` is ALREADY split-adjusted. Measured
+ * against the live endpoint on 2026-11-18: AAPL's daily closes run 23.06 on
+ * 2014-06-06 to 23.42 on 2014-06-09, straight through a 7:1 split. The
+ * provider table this code used to consult said `raw`, so the header stated
+ * "raw prices · not split-adjusted" over an adjusted series. Both the label
+ * and the reasoning behind it were wrong.
+ *
+ * So the basis is read off the series itself. When the window straddles a
+ * split, the step in the closes answers the question outright. When it does
+ * not, there is nothing to measure and the provider default stands -- and
+ * that default is now a figure someone checked rather than assumed.
+ *
+ * If a window ever does arrive raw, it is adjusted here with the provider's
+ * own published factors, and the basis then reports the series as delivered,
+ * not as received.
+ */
+function normaliseYahooSeries(
+  payload: unknown,
+  candles: CandlestickData[],
+): { candles: CandlestickData[]; basis: SeriesBasis } {
+  const splits = parseYahooSplits(payload)
+  const reading = detectSplitBasis(candles, splits)
+
+  if (reading.basis === 'raw') {
+    return {
+      candles: applySplitAdjustment(candles, splits),
+      basis: {
+        basis: 'split_adjusted',
+        splits,
+        adjustedHere: true,
+        evidence: `restated in current shares from the provider's own ratios (${reading.evidence})`,
+      },
+    }
+  }
+
+  if (reading.basis === 'split_adjusted') {
+    return { candles, basis: { basis: 'split_adjusted', splits, adjustedHere: false, evidence: reading.evidence } }
+  }
+
+  /*
+   * Nothing in the window to measure across. Yahoo's chart series is
+   * split-adjusted -- verified above against the live endpoint across both
+   * AAPL splits -- so that is what a window with no split in it is on too.
+   *
+   * This is the one place a provider's name still decides anything, and it
+   * is bounded: any window that CAN be measured is measured, so the day
+   * Yahoo changes what it sends, every long window says so.
+   */
+  return {
+    candles,
+    basis: {
+      basis: 'split_adjusted',
+      splits,
+      adjustedHere: false,
+      evidence: `no split in this window; Yahoo's chart series is split-adjusted (verified 2026-11-18)`,
+    },
+  }
+}
+
+/**
+ * EODHD's basis, which this code cannot change.
+ *
+ * `supabase/functions/_shared/eodhd.ts` maps the RAW `close` and deliberately
+ * does not forward `adjusted_close`, and the function returns no corporate
+ * actions at all. So the browser has neither an adjusted series nor the
+ * factors to build one, and a split-adjusted EODHD series is not available
+ * rather than merely unimplemented.
+ *
+ * That is stated as `raw` and flagged, never silently relabelled.
+ * `adjustmentIsHazardous` makes the header warn on it. Lifting this needs
+ * the edge function to forward either the ratios or `adjusted_close`, which
+ * is a deploy and therefore a separate, approved change.
+ */
+const EODHD_BASIS: SeriesBasis = {
+  basis: 'raw',
+  splits: [],
+  adjustedHere: false,
+  evidence: 'EODHD sends raw closes and no corporate actions, so no adjustment can be applied here',
+}
+
+/**
+ * The basis for a series that never arrived.
+ *
+ * `unknown`, not a provider default: an empty or failed series has no basis,
+ * and `adjustmentIsHazardous` flags `unknown` so nothing presents it as a
+ * checked one.
+ */
+const UNKNOWN_BASIS: SeriesBasis = {
+  basis: 'unknown',
+  splits: [],
+  adjustedHere: false,
+  evidence: 'no series was delivered',
 }
 
 /**
@@ -213,8 +336,30 @@ function parseYahooChart(
   return result
 }
 
+/**
+ * One Yahoo window, fetched, parsed and put on a stated basis.
+ *
+ * EVERY Yahoo candle path goes through here. That is the point: a preset
+ * range and the history panned in behind it must be on the same basis, or
+ * the series has a join in it that nothing on screen marks -- which is
+ * worse than a short series, because it looks like a price move. The same
+ * reasoning is already written down for the EODHD path in
+ * `fetchEodhdWindowResult`.
+ */
+async function yahooSeries(params: {
+  symbol: string
+  interval: string
+  range?: string
+  period1?: number
+  period2?: number
+}): Promise<{ candles: CandlestickData[]; basis: SeriesBasis }> {
+  const payload = await fetchYahooChart(params)
+  if (!payload) return { candles: [], basis: UNKNOWN_BASIS }
+  return normaliseYahooSeries(payload, parseYahooChart(payload, params.interval))
+}
+
 class ChartDataService {
-  private cache: Map<string, { data: CandlestickData[]; timestamp: number }> = new Map()
+  private cache: Map<string, { data: CandlestickData[]; basis: SeriesBasis; timestamp: number }> = new Map()
   private readonly CACHE_TTL = 60 * 1000 // 1 minute cache for chart data
 
   /**
@@ -229,7 +374,12 @@ class ChartDataService {
    */
   async getChartDataResult(
     request: ChartDataRequest,
-  ): Promise<{ candles: CandlestickData[]; failure?: AdapterFailure; provider: MarketDataProviderId }> {
+  ): Promise<{
+    candles: CandlestickData[]
+    failure?: AdapterFailure
+    provider: MarketDataProviderId
+    basis: SeriesBasis
+  }> {
     /*
      * The provider is part of the cache key.
      *
@@ -246,7 +396,10 @@ class ChartDataService {
     // Check cache
     const cached = this.cache.get(cacheKey)
     if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-      return { candles: cached.data, provider }
+      // The basis is cached WITH the candles. Recomputing it on a hit, or
+      // defaulting it, would let a cached series be described by a basis
+      // that was not measured from it.
+      return { candles: cached.data, provider, basis: cached.basis }
     }
 
     try {
@@ -266,23 +419,24 @@ class ChartDataService {
       if (provider === 'eodhd') {
         const result = await this.fetchFromEodhdResult(request)
         if (result.candles.length > 0) {
-          this.cache.set(cacheKey, { data: result.candles, timestamp: Date.now() })
+          this.cache.set(cacheKey, { data: result.candles, basis: EODHD_BASIS, timestamp: Date.now() })
         }
-        return { ...result, provider }
+        return { ...result, provider, basis: EODHD_BASIS }
       }
 
-      const data = await this.fetchFromYahooFinance(request)
-      if (data.length > 0) {
-        this.cache.set(cacheKey, { data, timestamp: Date.now() })
+      const { candles, basis } = await this.fetchFromYahooFinance(request)
+      if (candles.length > 0) {
+        this.cache.set(cacheKey, { data: candles, basis, timestamp: Date.now() })
       }
-      return { candles: data, provider }
+      return { candles, provider, basis }
     } catch (error) {
       console.error('Failed to fetch chart data:', error)
       // This provider's own stale answer, never another provider's.
-      if (cached) return { candles: cached.data, provider }
+      if (cached) return { candles: cached.data, provider, basis: cached.basis }
       return {
         candles: [],
         provider,
+        basis: UNKNOWN_BASIS,
         failure: { kind: 'unavailable', detail: 'The chart data request did not complete.' },
       }
     }
@@ -413,13 +567,13 @@ class ChartDataService {
     return { candles }
   }
 
-  private async fetchFromYahooFinance(request: ChartDataRequest): Promise<CandlestickData[]> {
+  private async fetchFromYahooFinance(
+    request: ChartDataRequest,
+  ): Promise<{ candles: CandlestickData[]; basis: SeriesBasis }> {
     const interval = intervalMap[request.interval] || '1d'
     const range = rangeMap[request.range] || '1mo'
 
-    const data = await fetchYahooChart({ symbol: request.symbol, interval, range })
-    if (!data) return []
-    return parseYahooChart(data, interval)
+    return yahooSeries({ symbol: request.symbol, interval, range })
   }
 
   clearCache() {
@@ -450,9 +604,9 @@ class ChartDataService {
 
     const intervalParam = intervalMap[interval] || '1d'
 
-    const data = await fetchYahooChart({ symbol, interval: intervalParam, period1, period2 })
-    if (!data) return []
-    return parseYahooChart(data, intervalParam)
+    // Through `yahooSeries` so panned-in history is on the same basis as the
+    // series it is being prepended to.
+    return (await yahooSeries({ symbol, interval: intervalParam, period1, period2 })).candles
   }
 
   /**
@@ -470,11 +624,55 @@ class ChartDataService {
     endDate: Date,
     interval: string,
     provider: MarketDataProviderId = 'yahoo'
-  ): Promise<{ candles: CandlestickData[]; failure?: AdapterFailure }> {
+  ): Promise<{ candles: CandlestickData[]; failure?: AdapterFailure; basis: SeriesBasis }> {
     if (provider === 'eodhd') {
-      return this.fetchEodhdWindowResult(symbol, interval, startDate, endDate)
+      return { ...(await this.fetchEodhdWindowResult(symbol, interval, startDate, endDate)), basis: EODHD_BASIS }
     }
-    return { candles: await this.getCustomRangeData(symbol, startDate, endDate, interval, provider) }
+
+    /*
+     * The frequency picker reaches the provider through here, so this path
+     * needs its own measured basis rather than inheriting the preset path's.
+     * A window the user chose is exactly the one most likely to straddle a
+     * split -- and most likely to be read as a trend.
+     */
+    const intervalParam = intervalMap[interval] || '1d'
+    const window = this.yahooWindowFor(startDate, endDate, intervalParam)
+    const ranged = window.range
+      ? await yahooSeries({ symbol, interval: intervalParam, range: window.range })
+      : { candles: [], basis: UNKNOWN_BASIS }
+    if (ranged.candles.length > 0) return ranged
+
+    return yahooSeries({ symbol, interval: intervalParam, period1: window.period1, period2: window.period2 })
+  }
+
+  /**
+   * A date window narrowed to what Yahoo publishes for the bar size, as both
+   * a range preset and an exact period pair.
+   *
+   * Pulled out of `getCustomRangeData` so the basis-carrying path above and
+   * the candles-only one below cannot drift apart on which window they ask
+   * for -- two paths computing the same window separately is how one of them
+   * ends up asking for a different series than the caller believes.
+   */
+  private yahooWindowFor(
+    startDate: Date,
+    endDate: Date,
+    intervalParam: string,
+  ): { range: string | null; period1: number; period2: number } {
+    let days = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
+
+    const maxDays = intradayMaxDays[intervalParam]
+    let adjustedStartDate = startDate
+    if (maxDays && days > maxDays) {
+      adjustedStartDate = new Date(endDate.getTime() - maxDays * 24 * 60 * 60 * 1000)
+      days = maxDays
+    }
+
+    return {
+      range: daysToRange(days),
+      period1: Math.floor(adjustedStartDate.getTime() / 1000),
+      period2: Math.floor(endDate.getTime() / 1000),
+    }
   }
 
   // Fetch data for a custom date range
@@ -490,33 +688,16 @@ class ChartDataService {
     }
 
     const intervalParam = intervalMap[interval] || '1d'
-
-    // Calculate days
-    let days = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24))
-
-    // Check if intraday interval exceeds Yahoo's data limits
-    const maxDays = intradayMaxDays[intervalParam]
-    let adjustedStartDate = startDate
-    if (maxDays && days > maxDays) {
-      adjustedStartDate = new Date(endDate.getTime() - maxDays * 24 * 60 * 60 * 1000)
-      days = maxDays
-    }
-
-    const period1 = Math.floor(adjustedStartDate.getTime() / 1000)
-    const period2 = Math.floor(endDate.getTime() / 1000)
-    const rangeParam = daysToRange(days)
-
+    const { range, period1, period2 } = this.yahooWindowFor(startDate, endDate, intervalParam)
 
     // Try range-based first (more reliable for standard ranges), then
     // fall back to period-based for exact date windows.
-    if (rangeParam) {
-      const rangeData = await fetchYahooChart({ symbol, interval: intervalParam, range: rangeParam })
-      const rangeParsed = rangeData ? parseYahooChart(rangeData, intervalParam) : []
-      if (rangeParsed.length > 0) return rangeParsed
+    if (range) {
+      const ranged = await yahooSeries({ symbol, interval: intervalParam, range })
+      if (ranged.candles.length > 0) return ranged.candles
     }
 
-    const periodData = await fetchYahooChart({ symbol, interval: intervalParam, period1, period2 })
-    return periodData ? parseYahooChart(periodData, intervalParam) : []
+    return (await yahooSeries({ symbol, interval: intervalParam, period1, period2 })).candles
   }
 }
 
