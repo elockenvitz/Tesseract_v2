@@ -40,6 +40,10 @@ function fakeCtx() {
     rects,
     fillStyle: '',
     save() {}, restore() {}, beginPath() {}, stroke() {}, fill() {},
+    /* The renderer clips every data series to the plot rectangle so a
+       panned price line cannot be drawn over the study panes. The stub
+       has to model that call even though these assertions ignore it. */
+    rect() {}, clip() {},
     moveTo() {}, lineTo() {}, closePath() {}, setLineDash() {},
     fillRect(x: number, y: number, w: number, h: number) {
       rects.push({ x, y, w, h })

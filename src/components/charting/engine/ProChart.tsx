@@ -59,7 +59,8 @@ import {
  * replaces is what that costs: it derived the second point of every mark by
  * arithmetic, so every trend line was 30 days long and rose exactly 5%.
  */
-import { beginGesture, completeDraw } from '../../../lib/charting/drawing-gesture'
+import { beginGesture, completeDraw, type PanAxis } from '../../../lib/charting/drawing-gesture'
+import { clampPriceWindow } from '../../../lib/charting/pan-bounds'
 import {
   moveAnnotation,
   reshapeAnnotation,
@@ -452,7 +453,16 @@ export function ProChart({
   // Interaction state
   const [isDragging, setIsDragging] = useState(false)
   const [dragMode, setDragMode] = useState<'pan' | 'zoom-price' | 'zoom-time'>('pan')
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0, viewStart: 0, viewEnd: 0, minPrice: 0, maxPrice: 0 })
+  const [dragStart, setDragStart] = useState<{
+    x: number; y: number; viewStart: number; viewEnd: number
+    minPrice: number; maxPrice: number; panAxis: PanAxis
+    /* The price extent of what was on screen when the drag began, so a
+       vertical pan can be stopped before the data leaves the frame. */
+    dataMin: number; dataMax: number
+  }>({
+    x: 0, y: 0, viewStart: 0, viewEnd: 0, minPrice: 0, maxPrice: 0,
+    panAxis: 'both', dataMin: NaN, dataMax: NaN
+  })
   const [crosshair, setCrosshair] = useState<{ x: number; y: number } | null>(null)
   const [cursorStyle, setCursorStyle] = useState('crosshair')
   const [hoveredLine, setHoveredLine] = useState<string | null>(null) // symbol of hovered line
@@ -1189,6 +1199,37 @@ export function ProChart({
   }, [view.startTime, view.endTime, data, isLoadingMore, isLoading, symbol, currentInterval])
 
   // Mouse handlers
+  /**
+   * The price extent of everything drawn in the current time window.
+   *
+   * Same filter and same source as the `autoScalePrice` effect -- the
+   * TRANSFORMED series, so indexed and percentage modes are measured on the
+   * numbers actually plotted rather than on raw prices -- and comparisons
+   * are included, because a comparison is on the price plot's own scale and
+   * dragging it out of frame is the same loss.
+   *
+   * Declared above `handleMouseDown` so it exists when that callback's
+   * dependency array is evaluated at render.
+   */
+  const visiblePriceExtent = useCallback(() => {
+    const inWindow = (d: { time: number }) =>
+      d.time >= view.startTime && d.time <= view.endTime
+    let lo = Infinity
+    let hi = -Infinity
+    const consider = (rows: { time: number; low?: number; high?: number; close: number }[]) => {
+      for (const d of rows) {
+        if (!inWindow(d)) continue
+        const l = d.low ?? d.close
+        const h = d.high ?? d.close
+        if (l < lo) lo = l
+        if (h > hi) hi = h
+      }
+    }
+    consider(transformedData.main)
+    transformedData.compare.forEach(rows => consider(rows))
+    return { dataMin: lo, dataMax: hi }
+  }, [transformedData, view.startTime, view.endTime])
+
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect || !transformRef.current) return
@@ -1209,7 +1250,15 @@ export function ProChart({
       at: { x, y },
       chartArea: area,
       dimensions: dims,
-      activeTool
+      activeTool,
+      /*
+       * `dims` is the MAIN chart -- the transform is built from
+       * `mainChartDimensions`, whose height is only
+       * `dimensions.height * mainChartHeightRatio`. The study panes are
+       * drawn in the rest of the canvas, so the full canvas height is what
+       * says where the plotted stack actually ends.
+       */
+      stackBottom: dimensions.height
     })
 
     if (gesture.kind === 'none') return
@@ -1264,9 +1313,13 @@ export function ProChart({
       viewStart: view.startTime,
       viewEnd: view.endTime,
       minPrice: view.minPrice,
-      maxPrice: view.maxPrice
+      maxPrice: view.maxPrice,
+      /* Captured at press time, not read at move time: which pane the drag
+         STARTED in is what decides whether it may touch the price range. */
+      panAxis: gesture.kind === 'pan' ? gesture.axis : 'both',
+      ...visiblePriceExtent()
     })
-  }, [view, activeTool, annotations, onAnnotationSelect])
+  }, [view, activeTool, annotations, onAnnotationSelect, dimensions.height, visiblePriceExtent])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -1333,14 +1386,25 @@ export function ProChart({
         const timeDelta = -(dx / area.width) * timeRange
 
         const priceRange = dragStart.maxPrice - dragStart.minPrice
-        const priceDelta = (dy / area.height) * priceRange
+        /* A drag that began in a study pane pans time only: its `dy` is in
+           that pane's own units, and spending it on the price range would
+           move a plot the reader was not dragging. */
+        const priceDelta =
+          dragStart.panAxis === 'time' ? 0 : (dy / area.height) * priceRange
+
+        /* Stopped before the bars leave the frame, so a drag cannot strand
+           the reader on a blank chart. Shifts only -- never resizes. */
+        const priced = clampPriceWindow(
+          { min: dragStart.minPrice + priceDelta, max: dragStart.maxPrice + priceDelta },
+          { min: dragStart.dataMin, max: dragStart.dataMax }
+        )
 
         setView(v => ({
           ...v,
           startTime: dragStart.viewStart + timeDelta,
           endTime: dragStart.viewEnd + timeDelta,
-          minPrice: dragStart.minPrice + priceDelta,
-          maxPrice: dragStart.maxPrice + priceDelta,
+          minPrice: priced.min,
+          maxPrice: priced.max,
           autoScalePrice: false
         }))
       } else if (dragMode === 'zoom-price') {
@@ -1616,14 +1680,23 @@ export function ProChart({
         const timeRange = dragStart.viewEnd - dragStart.viewStart
         const timeDelta = -(dx / area.width) * timeRange
         const priceRange = dragStart.maxPrice - dragStart.minPrice
-        const priceDelta = (dy / area.height) * priceRange
+        /* Same rule as the canvas handler: a pane drag owns time only. */
+        const priceDelta =
+          dragStart.panAxis === 'time' ? 0 : (dy / area.height) * priceRange
+
+        /* Stopped before the bars leave the frame, so a drag cannot strand
+           the reader on a blank chart. Shifts only -- never resizes. */
+        const priced = clampPriceWindow(
+          { min: dragStart.minPrice + priceDelta, max: dragStart.maxPrice + priceDelta },
+          { min: dragStart.dataMin, max: dragStart.dataMax }
+        )
 
         setView(v => ({
           ...v,
           startTime: dragStart.viewStart + timeDelta,
           endTime: dragStart.viewEnd + timeDelta,
-          minPrice: dragStart.minPrice + priceDelta,
-          maxPrice: dragStart.maxPrice + priceDelta,
+          minPrice: priced.min,
+          maxPrice: priced.max,
           autoScalePrice: false
         }))
       } else if (dragMode === 'zoom-price') {
