@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useIsMobile } from '../hooks/useMediaQuery'
-import { useQuery } from '@tanstack/react-query'
 import {
   LineChart, Search, Plus, ChevronDown, TrendingUp, TrendingDown,
   BarChart3, CandlestickChart, Activity, Layers, Settings, Maximize2,
@@ -47,6 +46,12 @@ import {
   readChartingWorkspace,
   writeChartingWorkspace,
 } from '../lib/charting/workspace-state'
+import { useInstrumentSearch } from '../hooks/useInstrumentSearch'
+import {
+  recordRecentInstrument,
+  type RecentInstrument,
+} from '../lib/charting/recent-instruments'
+import { useRecentInstruments } from '../hooks/useRecentInstruments'
 import {
   CHARTING_WORKSPACE_CODEC,
   type ChartPanel,
@@ -203,6 +208,26 @@ const LINE_STYLES: { value: LineStyleOption; label: string }[] = [
   { value: 'dotted', label: 'Dotted' },
 ]
 
+/**
+ * Available bar width below which the secondary controls collapse into the
+ * Analysis panel.
+ *
+ * The right-hand group is 1063px intrinsic and the symbol search side is
+ * ~192px, so the bar needs about 1255px to lay out flat. 1280 is the first
+ * round number above that, which means the collapse happens just BEFORE the
+ * overflow rather than during it.
+ */
+export const TOOLBAR_COMPACT_PX = 1280
+
+/**
+ * Below this, the eight timeframe buttons also collapse to a select.
+ *
+ * With the secondary controls already in the Analysis panel the bar is
+ * search + timeframe pill + chart type + Analysis, roughly 192 + 492 + 132 +
+ * 110 = 926px of content. 960 is where that stops fitting.
+ */
+export const TOOLBAR_TIGHT_PX = 960
+
 // Frequency/Interval configuration
 type FrequencyType =
   | '1min' | '3min' | '5min' | '10min' | '15min' | '30min' | '60min' | '120min' | '240min'
@@ -295,6 +320,76 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   const workspaceKey = chartingWorkspaceKey(user?.id, currentOrgId, workspaceId)
 
   /*
+   * Re-checked against live authorization, not merely read off disk. The
+   * stored list was authorized when it was WRITTEN; access can be withdrawn
+   * afterwards, and localStorage would never know. See
+   * `useRecentInstruments` -- it fails closed.
+   *
+   * `recordedRecents` holds what this session has just selected, so a pick
+   * appears in the list immediately instead of waiting for the next
+   * validation round trip.
+   */
+  /*
+   * Declared HERE, immediately before the derivation that reads it.
+   *
+   * It first sat with the other `useState` calls further down, which put it
+   * in the temporal dead zone of the `const recents = ...` line above --
+   * "Cannot access 'recordedRecents' before initialization", thrown on every
+   * render of the page. A `const` is not hoisted the way a `var` is, and the
+   * charting route test caught it. This codebase has shipped that exact
+   * error in banner code before; keeping the declaration adjacent to its
+   * only consumer is what stops it recurring.
+   *
+   * Null rather than [] so "nothing recorded yet" stays distinguishable
+   * from "recorded, and the result was empty".
+   */
+  const [recordedRecents, setRecordedRecents] = useState<RecentInstrument[] | null>(null)
+
+  /*
+   * ── The toolbar measures ITSELF, not the window ─────────────────────────
+   *
+   * Measured at a 1920px viewport, the right-hand control group is 1063px
+   * intrinsic: timeframe pill 492, chart type 132, metric 90, indicators
+   * 105, compare 100, view mode 68, add 28, plus gaps. Below roughly 1250px
+   * of available bar it has nowhere to go and overflows.
+   *
+   * The breakpoints are driven by a `ResizeObserver` on the bar rather than
+   * by a media query because this page is a TAB inside a workspace. A
+   * viewport query cannot see a sidebar opening or a split pane narrowing
+   * the tab, so it would keep the wide layout in a container that no longer
+   * fits -- which is the defect being fixed, not a smaller version of it.
+   */
+  const [toolbarWidth, setToolbarWidth] = useState(0)
+  const toolbarRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const el = toolbarRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) setToolbarWidth(entry.contentRect.width)
+    })
+    ro.observe(el)
+    setToolbarWidth(el.getBoundingClientRect().width)
+    return () => ro.disconnect()
+  }, [])
+
+  /*
+   * Zero means "not measured yet". Treating it as narrow would flash the
+   * collapsed toolbar on every mount before the observer's first callback,
+   * which is the same class of layout jump this work exists to remove.
+   */
+  const compactControls = toolbarWidth > 0 && toolbarWidth < TOOLBAR_COMPACT_PX
+  const compactTimeframe = toolbarWidth > 0 && toolbarWidth < TOOLBAR_TIGHT_PX
+  const [showAnalysisPanel, setShowAnalysisPanel] = useState(false)
+
+  /* Reopening at a width that shows the controls inline would leave the
+     panel flag set and the Analysis button lit with nothing behind it. */
+  useEffect(() => {
+    if (!compactControls && showAnalysisPanel) setShowAnalysisPanel(false)
+  }, [compactControls, showAnalysisPanel])
+  const { recents: authorizedRecents } = useRecentInstruments(user?.id, currentOrgId)
+  const recents = recordedRecents ?? authorizedRecents
+
+  /*
    * Restored, not reset.
    *
    * This page is unmounted outright whenever another tab becomes active, so
@@ -311,6 +406,12 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   const [addedSymbols, setAddedSymbols] = useState<Set<string>>(new Set())
 
   const [searchQuery, setSearchQuery] = useState('')
+  /*
+   * The recents panel opens on FOCUS with an empty box, so focus has to be
+   * state rather than a CSS `:focus-within` — the panel has to survive the
+   * click that lands on one of its own rows.
+   */
+  const [searchFocused, setSearchFocused] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>(initialState.viewMode)
   // The chart is the surface; on a phone the toolbar has to yield to it.
   const isMobileViewport = useIsMobile()
@@ -479,39 +580,23 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     fetchAssetAndAddPanel()
   }, [initialSymbol, addedSymbols])
 
-  // Search assets
-  const { data: searchResults = [] } = useQuery({
-    queryKey: ['asset-search', searchQuery],
-    queryFn: async () => {
-      if (!searchQuery || searchQuery.length < 1) return []
-      const { data, error } = await supabase
-        .from('assets')
-        .select('id, symbol, company_name')
-        .or(`symbol.ilike.%${searchQuery}%,company_name.ilike.%${searchQuery}%`)
-        .limit(10)
-      if (error) throw error
-      return data || []
-    },
-    enabled: searchQuery.length >= 1
-  })
+  /*
+   * Debounced, rank-ordered, and fetched so the exact ticker is actually in
+   * the result set. The previous query ranked by arrival order and let the
+   * DATABASE apply the limit, so "CAT" offered Zoom Video Communi-CAT-ions
+   * above Caterpillar and "V" put Visa fifth. See `useInstrumentSearch`.
+   */
+  const { results: searchResults } = useInstrumentSearch(searchQuery)
 
-  // Search assets for comparison
-  const { data: compareSearchResults = [] } = useQuery({
-    queryKey: ['asset-compare-search', compareSearchQuery],
-    queryFn: async () => {
-      if (!compareSearchQuery || compareSearchQuery.length < 1) return []
-      const { data, error } = await supabase
-        .from('assets')
-        .select('id, symbol, company_name')
-        .or(`symbol.ilike.%${compareSearchQuery}%,company_name.ilike.%${compareSearchQuery}%`)
-        .limit(10)
-      if (error) throw error
-      return data || []
-    },
-    enabled: compareSearchQuery.length >= 1
-  })
+  /*
+   * The comparison picker had the identical defect and now shares the
+   * identical fix. Two copies of this query is how they drifted apart in
+   * the first place.
+   */
+  const { results: compareSearchResults } = useInstrumentSearch(compareSearchQuery)
 
   const timeFrames: TimeFrame[] = ['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'ALL']
+
 
   const chartTypes: { value: ChartType; label: string; icon: any }[] = [
     { value: 'line', label: 'Line', icon: LineChart },
@@ -864,6 +949,18 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   const selectAsset = (asset: { id: string; symbol: string; company_name: string }) => {
     updatePanel(activePanel, { symbol: asset.symbol, companyName: asset.company_name })
     setSearchQuery('')
+    setSearchFocused(false)
+    /*
+     * Recorded here because this is the ONE funnel every chart symbol
+     * passes through — the typed search, a recents click, and a symbol
+     * opened from elsewhere all land on it. Recording at the dropdown's
+     * click handler instead would have missed the other routes in.
+     */
+    setRecordedRecents(recordRecentInstrument(user?.id, currentOrgId, {
+      id: asset.id,
+      symbol: asset.symbol,
+      companyName: asset.company_name,
+    }))
   }
 
   const addCompareSymbol = (asset: { id: string; symbol: string; company_name: string }) => {
@@ -987,7 +1084,10 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
           on one row until the controls alone no longer fit, which depends
           on the window and not on whether a fetch has returned.
         */}
-        <div className="flex flex-wrap items-center justify-between gap-y-2">
+        <div
+          ref={toolbarRef}
+          className="relative flex flex-wrap items-center justify-between gap-y-2"
+        >
           {/* Left: Symbol Search & Info */}
           <div className="flex min-w-0 flex-1 items-center space-x-4">
             <div className="relative">
@@ -997,8 +1097,49 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                 placeholder="Search symbol..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-4 py-1.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600 dark:text-white dark:bg-gray-800"
+                onFocus={() => setSearchFocused(true)}
+                /*
+                 * Closed on a DELAY, because a row's click fires after the
+                 * input's blur. Closing immediately would unmount the row
+                 * under the pointer and swallow the selection.
+                 */
+                onBlur={() => window.setTimeout(() => setSearchFocused(false), 150)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setSearchFocused(false) }}
+                /* Gives up width before any control does: a narrower box
+                   still accepts a ticker, whereas a wrapped toolbar moves
+                   every button. */
+                className={`pl-10 pr-4 py-1.5 bg-white border border-gray-300 rounded-lg text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:border-gray-600 dark:text-white dark:bg-gray-800 ${compactTimeframe ? 'w-32' : 'w-48'}`}
               />
+              {/*
+                Recents, offered only when the box is focused and EMPTY.
+                Once a query is typed the results below take the panel over,
+                so the two can never both be open and disagree.
+              */}
+              {searchFocused && !searchQuery && recents.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-64 overflow-auto dark:border-gray-700 dark:bg-gray-800">
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-gray-400">
+                    Recent
+                  </div>
+                  {recents.map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => selectAsset({
+                        id: item.id,
+                        symbol: item.symbol,
+                        company_name: item.companyName ?? '',
+                      })}
+                      className="w-full px-3 py-2 text-left hover:bg-gray-100 transition-colors flex items-center justify-between dark:hover:bg-gray-700"
+                    >
+                      <span className="font-medium text-gray-900 dark:text-white">{item.symbol}</span>
+                      {item.companyName && (
+                        <span className="text-xs text-gray-500 truncate ml-2 dark:text-gray-400">
+                          {item.companyName}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* Search Results Dropdown */}
               {searchQuery && searchResults.length > 0 && (
                 <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 max-h-64 overflow-auto dark:border-gray-700 dark:bg-gray-800">
@@ -1025,11 +1166,51 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             )}
           </div>
 
-          {/* Right: Time Frame + Chart Type & Actions */}
-          <div className="flex shrink-0 items-center space-x-2">
+          {/*
+            Right: Time Frame + Chart Type & Actions.
+
+            At the tight breakpoint the group is allowed to WRAP. Search +
+            timeframe select + chart type + Analysis is about 448px and a
+            390px phone gives the bar 358 -- measured as 85px of overflow
+            before this. A second row on a phone is legible; 85 pixels
+            hanging off the side is not.
+
+            `shrink-0` on the wide branch is #327's: it is what stops the
+            controls being pushed onto a second row the moment the
+            instrument meta arrives and widens the left group. It is
+            deliberately NOT on the wrapping branch, where a second row is
+            the intended outcome rather than the defect.
+          */}
+          <div className={compactTimeframe
+            ? 'flex min-w-0 flex-wrap items-center gap-2'
+            : 'flex shrink-0 items-center space-x-2'}>
             {/* Time Frame Selector */}
           <div className="flex items-center space-x-1 bg-gray-200 rounded-lg p-1">
-            {timeFrames.map((tf) => (
+            {/*
+              Eight buttons at 492px, 46% of the whole right-hand group and
+              its single largest item. Below `TOOLBAR_TIGHT_PX` they collapse
+              to a native select -- about 80px -- which keeps every timeframe
+              reachable in one tap instead of hiding seven of them.
+
+              A select rather than another popover because this is the
+              control a touch reader uses most, and the platform picker is
+              the one thing on this bar that is already thumb-sized.
+            */}
+            {compactTimeframe ? (
+              <select
+                aria-label="Time frame"
+                value={currentPanel.selectedFreq ? '' : currentPanel.timeFrame}
+                onChange={(e) => updatePanel(activePanel, {
+                  timeFrame: e.target.value as TimeFrame,
+                  customRange: undefined,
+                  selectedFreq: undefined,
+                })}
+                className="rounded bg-transparent px-2 py-1 text-xs font-medium text-gray-700 focus:outline-none dark:text-gray-300"
+              >
+                {currentPanel.selectedFreq && <option value="">Custom</option>}
+                {timeFrames.map((tf) => <option key={tf} value={tf}>{tf}</option>)}
+              </select>
+            ) : timeFrames.map((tf) => (
               <button
                 key={tf}
                 onClick={() => updatePanel(activePanel, { timeFrame: tf, customRange: undefined, selectedFreq: undefined })}
@@ -1264,6 +1445,20 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
               })}
             </div>
 
+            {/*
+              Secondary controls: metric, indicators, compare, view mode, add
+              panel. Measured at 1920px they are 90 + 105 + 100 + 68 + 28 plus
+              gaps -- about 430 of the right group's 1063px.
+
+              Below `TOOLBAR_COMPACT_PX` this same markup stops being a row
+              and becomes a panel under the Analysis button. It is ONE copy
+              either way: rendering a second set inside a popover would mean
+              two elements owning the same dropdown state, which is how a menu
+              ends up open in one place and shut in the other.
+            */}
+            <div className={compactControls
+              ? `absolute right-0 top-full z-50 mt-1 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-700 dark:bg-gray-800 ${showAnalysisPanel ? '' : 'hidden'}`
+              : 'flex items-center space-x-2'}>
             {/* Metric Selector */}
             <div className={isMobileViewport ? "hidden" : "relative"}>
               <button
@@ -1511,6 +1706,28 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             >
               <Plus className="w-4 h-4" />
             </button>
+            </div>
+
+            {/*
+              The one control that REPLACES the group rather than joining it.
+              Rendered only when the group is collapsed, so a wide toolbar is
+              unchanged and nothing is hidden behind a menu that had room to
+              be shown.
+            */}
+            {compactControls && (
+              <button
+                onClick={() => setShowAnalysisPanel(!showAnalysisPanel)}
+                title="Analysis controls"
+                className={`flex shrink-0 items-center space-x-1 rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                  showAnalysisPanel
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                <span className="hidden sm:inline">Analysis</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
