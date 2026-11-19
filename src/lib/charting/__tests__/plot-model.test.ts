@@ -14,6 +14,7 @@ import {
   initialPlots, migrateToPlots, plotReducer, pricePlot, findPlot, findSeries,
   derivePlotSpecs, deriveOverlays, deriveComparisons, volumeVisible,
   seriesLabel, nextColor, SERIES_COLORS, __resetIdCounter,
+  deriveDisplayType, deriveScaleMode, deriveIndexBase,
   type PanelPlots,
 } from '../plot-model'
 
@@ -300,5 +301,124 @@ describe('colour assignment', () => {
     expect(nextColor([])).toBe(SERIES_COLORS[0])
     expect(nextColor([SERIES_COLORS[0]])).toBe(SERIES_COLORS[1])
     expect(nextColor([SERIES_COLORS[1]])).toBe(SERIES_COLORS[0])
+  })
+})
+
+/*
+ * Display type and scale mode moved here OUT of the top toolbar. The
+ * renderer still takes them as flat props, so these derivations are the
+ * seam -- if one returns the wrong thing the control looks dead.
+ */
+describe('display type, now a property of the primary series', () => {
+  it('defaults to line', () => {
+    expect(deriveDisplayType(state)).toBe('line')
+  })
+
+  it('follows the primary series', () => {
+    const primary = pricePlot(state)!.series[0]
+    const next = plotReducer(state, {
+      type: 'setSeriesDisplayType', seriesId: primary.id, displayType: 'candlestick',
+    })
+    expect(deriveDisplayType(next)).toBe('candlestick')
+  })
+
+  /*
+   * A comparison is always drawn as a line, so setting a type on one must
+   * not change how the PRIMARY instrument is drawn.
+   *
+   * The comparison is put FIRST in the array deliberately. Appended after
+   * the primary, a derivation that simply takes the first instrument it
+   * finds still returns the right answer, and this test passes while the
+   * rule it names is absent.
+   */
+  it('reads the primary, not merely the first instrument', () => {
+    const priceId = pricePlot(state)!.id
+    let next = plotReducer(state, {
+      type: 'addInstrument', plotId: priceId,
+      symbol: 'MSFT', assetId: 'a2', companyName: 'Microsoft',
+    })
+    const compare = pricePlot(next)!.series.find(s => s.type === 'instrument' && !s.primary)!
+    next = plotReducer(next, {
+      type: 'setSeriesDisplayType', seriesId: compare.id, displayType: 'bar',
+    })
+    const primary = pricePlot(next)!.series.find(s => s.type === 'instrument' && s.primary)!
+    next = plotReducer(next, {
+      type: 'setSeriesDisplayType', seriesId: primary.id, displayType: 'candlestick',
+    })
+
+    /* Reorder so the comparison sits ahead of the primary. */
+    next = {
+      ...next,
+      plots: next.plots.map(p => p.id === priceId
+        ? { ...p, series: [...p.series].reverse() }
+        : p),
+    }
+    expect(pricePlot(next)!.series[0].id).toBe(compare.id)
+    expect(deriveDisplayType(next)).toBe('candlestick')
+  })
+})
+
+describe('scale mode, now a property of the price plot', () => {
+  it('defaults to absolute at 100', () => {
+    expect(deriveScaleMode(state)).toBe('absolute')
+    expect(deriveIndexBase(state)).toBe(100)
+  })
+
+  it('follows the price plot', () => {
+    const next = plotReducer(state, {
+      type: 'setPlotScaleMode', plotId: pricePlot(state)!.id, scaleMode: 'relative',
+    })
+    expect(deriveScaleMode(next)).toBe('relative')
+  })
+
+  /* A study plot's scale is decided by its indicators' own units -- RSI is
+     0-100 whatever an analyst picks -- so the action must not take. */
+  it('refuses a scale mode on a study plot', () => {
+    let next = plotReducer(state, { type: 'addPlot' })
+    const studyId = next.plots.at(-1)!.id
+    next = plotReducer(next, {
+      type: 'setPlotScaleMode', plotId: studyId, scaleMode: 'indexed',
+    })
+    expect(findPlot(next, studyId)!.scaleMode).toBeUndefined()
+  })
+
+  it('accepts a positive index base', () => {
+    const next = plotReducer(state, {
+      type: 'setPlotIndexBase', plotId: pricePlot(state)!.id, indexBase: 1000,
+    })
+    expect(deriveIndexBase(next)).toBe(1000)
+  })
+
+  /* Zero divides every point by nothing and draws an empty plot; a
+     negative base inverts every series without saying so. */
+  it.each([0, -50, Number.NaN])('refuses a base of %s', base => {
+    const next = plotReducer(state, {
+      type: 'setPlotIndexBase', plotId: pricePlot(state)!.id, indexBase: base,
+    })
+    expect(deriveIndexBase(next)).toBe(100)
+  })
+})
+
+describe('migration carries the toolbar settings it replaced', () => {
+  it('keeps candles, indexed scale and a custom base', () => {
+    const migrated = migrateToPlots('AAPL', 'a1', 'Apple', {
+      indicators: [], compareSymbols: [],
+      chartType: 'candlestick', displayMode: 'indexed', indexBase: 50,
+    })
+    expect(deriveDisplayType(migrated)).toBe('candlestick')
+    expect(deriveScaleMode(migrated)).toBe('indexed')
+    expect(deriveIndexBase(migrated)).toBe(50)
+  })
+
+  /* A stored workspace can carry anything. An unknown value must fall back
+     rather than reach the renderer as a chart type it cannot draw. */
+  it('falls back on an unrecognised stored value', () => {
+    const migrated = migrateToPlots('AAPL', 'a1', 'Apple', {
+      indicators: [], compareSymbols: [],
+      chartType: 'heikin-ashi', displayMode: 'log', indexBase: 0,
+    })
+    expect(deriveDisplayType(migrated)).toBe('line')
+    expect(deriveScaleMode(migrated)).toBe('absolute')
+    expect(deriveIndexBase(migrated)).toBe(100)
   })
 })

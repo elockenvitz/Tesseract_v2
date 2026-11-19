@@ -1,26 +1,38 @@
 /**
- * The Analysis / Objects panel: everything on the chart, as a tree you can
- * act on.
+ * Chart Setup: everything on the chart, as a tree you can act on.
  *
- * ── Why this replaces the toolbar dropdowns ──────────────────────────────
+ * ── The name ─────────────────────────────────────────────────────────────
  *
- * The command bar used to carry Indicators, Compare, metric and plot
- * controls as separate menus. Each one could only describe the chart in its
- * own terms, so there was nowhere to express "this RSI, on that plot, at a
- * period of 50, hidden for the moment" -- and nowhere to SEE what was on the
- * chart without opening three menus and holding the answer in your head.
+ * Called Chart Setup, not Analysis. It manages what is DRAWN -- plots,
+ * series, studies, formatting. "Analysis" is reserved for research and ACT
+ * AI surfaces, which reason about an instrument rather than configure a
+ * canvas; using the word here would have spent it on a layout manager.
  *
- * A tree shows the whole arrangement at once, which is the thing a reader
- * actually wants when a chart has four plots on it.
+ * ── Why this replaced the toolbar dropdowns ──────────────────────────────
+ *
+ * The command bar used to carry Indicators, Compare, Metric and chart-type
+ * controls as separate menus. Each could only describe the chart in its own
+ * terms, so there was nowhere to express "this RSI, on that plot, at a
+ * period of 50, hidden for the moment" -- and nowhere to SEE what was on
+ * the chart without opening three menus and holding the answer in your
+ * head.
+ *
+ * Those menus are now gone rather than duplicated. Everything they did is
+ * reachable here, beside the object it affects.
  *
  * ── Every row acts on the model ──────────────────────────────────────────
  *
- * There are no decorative controls here. Each button dispatches a
- * `PlotAction` and the model decides whether it is allowed -- so the rules
- * live in one tested place rather than in the enabled state of a button.
- * Where an action cannot apply (removing the price plot, moving the primary
- * series) the control is not rendered at all, instead of rendered and
- * ignored.
+ * There are no decorative controls. Each button dispatches a `PlotAction`
+ * and the model decides whether it is allowed -- so the rules live in one
+ * tested place rather than in the enabled state of a button. Where an
+ * action cannot apply (removing the price plot, moving the primary series)
+ * the control is not rendered at all, instead of rendered and ignored.
+ *
+ * ── Drawings are NOT managed here ────────────────────────────────────────
+ *
+ * Selecting a drawing opens `AnnotationInspector`, which already owns that
+ * job. Re-implementing it in this tree would give a mark two editors that
+ * disagree about its style.
  */
 import { useState } from 'react'
 import { clsx } from 'clsx'
@@ -29,12 +41,12 @@ import {
 } from 'lucide-react'
 import {
   type PanelPlots, type PlotAction, type ChartPlot, type ChartSeries,
-  type IndicatorKind,
+  type IndicatorKind, type SeriesDisplayType, type PlotScaleMode,
   seriesLabel, isOverlay, SERIES_COLORS, OVERLAY_INDICATORS, STUDY_INDICATORS,
-  INDICATOR_DEFAULTS,
+  INDICATOR_DEFAULTS, DEFAULT_INDEX_BASE,
 } from '../../../lib/charting/plot-model'
 
-export interface AnalysisPanelProps {
+export interface ChartSetupPanelProps {
   state: PanelPlots
   dispatch: (action: PlotAction) => void
   /** Opens the instrument search so a comparison can be chosen by name. */
@@ -42,16 +54,30 @@ export interface AnalysisPanelProps {
   onClose: () => void
 }
 
+const DISPLAY_TYPES: readonly { value: SeriesDisplayType; label: string; short: string }[] = [
+  { value: 'line', label: 'Line', short: 'Line' },
+  { value: 'candlestick', label: 'Candlestick', short: 'Candle' },
+  { value: 'bar', label: 'Bar', short: 'Bar' },
+  { value: 'area', label: 'Area', short: 'Area' },
+]
+
+const SCALE_MODES: readonly { value: PlotScaleMode; label: string; description: string }[] = [
+  { value: 'absolute', label: 'Abs', description: 'Prices as they are' },
+  { value: 'indexed', label: 'Index', description: 'Every series restated to a common base' },
+  { value: 'relative', label: '% Chg', description: 'Percentage change from the first bar' },
+]
+
 const INDICATOR_LABEL: Record<IndicatorKind, string> = {
   sma: 'SMA', ema: 'EMA', bollinger: 'Bollinger Bands', vwap: 'VWAP',
   rsi: 'RSI', macd: 'MACD', stochastic: 'Stochastic',
   atr: 'ATR', obv: 'OBV', adx: 'ADX',
 }
 
-export function AnalysisPanel({ state, dispatch, onAddInstrument, onClose }: AnalysisPanelProps) {
+export function ChartSetupPanel({ state, dispatch, onAddInstrument, onClose }: ChartSetupPanelProps) {
   const [renaming, setRenaming] = useState<string | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
-  const [addingTo, setAddingTo] = useState<string | null>(null)
+  /** Which plot has its add menu open, and which of the two it is showing. */
+  const [addingTo, setAddingTo] = useState<{ plotId: string; mode: 'series' | 'study' } | null>(null)
 
   const selected = state.plots
     .flatMap(p => p.series.map(s => ({ plot: p, series: s })))
@@ -61,12 +87,12 @@ export function AnalysisPanel({ state, dispatch, onAddInstrument, onClose }: Ana
   return (
     <aside
       data-charting-analysis
-      aria-label="Analysis and objects"
+      aria-label="Chart setup"
       className="flex h-full w-72 shrink-0 flex-col border-l border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"
     >
       <header className="flex items-center justify-between border-b border-gray-200 px-3 py-2 dark:border-gray-700">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-          Analysis
+          Chart Setup
         </h2>
         <div className="flex items-center gap-1">
           <button
@@ -96,14 +122,17 @@ export function AnalysisPanel({ state, dispatch, onAddInstrument, onClose }: Ana
             selectedId={state.selectedId}
             renaming={renaming === plot.id}
             draftTitle={draftTitle}
-            addingTo={addingTo === plot.id}
+            addingMode={addingTo?.plotId === plot.id ? addingTo.mode : null}
             onDraftTitle={setDraftTitle}
             onStartRename={() => { setRenaming(plot.id); setDraftTitle(plot.title) }}
             onCommitRename={() => {
               dispatch({ type: 'renamePlot', plotId: plot.id, title: draftTitle })
               setRenaming(null)
             }}
-            onToggleAdd={() => setAddingTo(addingTo === plot.id ? null : plot.id)}
+            onToggleAdd={mode => setAddingTo(
+              addingTo?.plotId === plot.id && addingTo.mode === mode
+                ? null
+                : { plotId: plot.id, mode })}
             onAddInstrument={() => { setAddingTo(null); onAddInstrument(plot.id) }}
             dispatch={dispatch}
           />
@@ -128,17 +157,17 @@ interface PlotRowProps {
   selectedId: string | null
   renaming: boolean
   draftTitle: string
-  addingTo: boolean
+  addingMode: 'series' | 'study' | null
   onDraftTitle: (v: string) => void
   onStartRename: () => void
   onCommitRename: () => void
-  onToggleAdd: () => void
+  onToggleAdd: (mode: 'series' | 'study') => void
   onAddInstrument: () => void
   dispatch: (a: PlotAction) => void
 }
 
 function PlotRow({
-  plot, index, total, selectedId, renaming, draftTitle, addingTo,
+  plot, index, total, selectedId, renaming, draftTitle, addingMode,
   onDraftTitle, onStartRename, onCommitRename, onToggleAdd, onAddInstrument, dispatch,
 }: PlotRowProps) {
   /*
@@ -146,6 +175,14 @@ function PlotRow({
    * rest, so offering them would be offering a button that does nothing.
    */
   const offerable = plot.kind === 'price' ? OVERLAY_INDICATORS : STUDY_INDICATORS
+  /*
+   * Add Series and Add Study are separate actions, because they are
+   * separate ideas: a series is another INSTRUMENT to compare against, a
+   * study is a CALCULATION over one. Collapsing them into one "+" made the
+   * price plot offer four moving averages under a label that sounded like
+   * it meant securities.
+   */
+  const canAddSeries = plot.kind === 'price'
   const canRemove = plot.kind !== 'price'
   const canMoveUp = index > 0 && plot.kind !== 'price'
   const canMoveDown = index < total - 1 && plot.kind !== 'price'
@@ -207,8 +244,13 @@ function PlotRow({
               <ChevronDown className="h-3.5 w-3.5" />
             </button>
           )}
-          <button onClick={onToggleAdd} title="Add series to this plot" className="rounded p-0.5 text-gray-400 hover:text-gray-900 dark:hover:text-white">
-            <Plus className="h-3.5 w-3.5" />
+          {canAddSeries && (
+            <button onClick={() => onToggleAdd('series')} title="Add series to this plot" className="rounded px-1 py-0.5 text-[10px] font-medium text-gray-400 hover:text-gray-900 dark:hover:text-white">
+              Series
+            </button>
+          )}
+          <button onClick={() => onToggleAdd('study')} title="Add study to this plot" className="rounded px-1 py-0.5 text-[10px] font-medium text-gray-400 hover:text-gray-900 dark:hover:text-white">
+            Study
           </button>
           {/*
             No remove control on the price plot at all, rather than one that
@@ -222,16 +264,24 @@ function PlotRow({
         </div>
       </div>
 
-      {addingTo && (
+      {addingMode === 'series' && (
         <div className="mb-1 ml-6 rounded border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-800">
-          {plot.kind === 'price' && (
-            <button
-              onClick={onAddInstrument}
-              className="mb-1 w-full rounded bg-white px-2 py-1 text-left text-xs font-medium text-blue-700 hover:bg-blue-50 dark:bg-gray-900 dark:text-blue-300"
-            >
-              Add security…
-            </button>
-          )}
+          {/*
+            Compare lives here now. It was a toolbar dropdown of its own,
+            which meant adding MSFT to the price plot and adding SMA to the
+            price plot were two different gestures in two different places.
+          */}
+          <button
+            onClick={onAddInstrument}
+            className="w-full rounded bg-white px-2 py-1 text-left text-xs font-medium text-blue-700 hover:bg-blue-50 dark:bg-gray-900 dark:text-blue-300"
+          >
+            Search securities…
+          </button>
+        </div>
+      )}
+
+      {addingMode === 'study' && (
+        <div className="mb-1 ml-6 rounded border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-800">
           <div className="flex flex-wrap gap-1">
             {offerable.map(kind => (
               <button
@@ -247,7 +297,7 @@ function PlotRow({
       )}
 
       <div className="ml-6">
-        {plot.series.length === 0 && !addingTo && (
+        {plot.series.length === 0 && !addingMode && (
           /* An empty plot says so, rather than looking like a failed click. */
           <p className="px-2 py-1 text-[11px] italic text-gray-400">Empty — add a series</p>
         )}
@@ -333,6 +383,42 @@ function FormatSection({ selectedSeries, selectedPlot, dispatch }: {
 
       {selectedSeries && (
         <>
+          {/*
+            The chart-type selector, beside the series it draws.
+            It was four icon buttons sitting permanently in the command bar,
+            which is a lot of width for a control most readers set once.
+            Only the primary instrument offers it: a comparison is always a
+            line, because two sets of candles on one axis cannot be read.
+          */}
+          {selectedSeries.type === 'instrument' && selectedSeries.primary && (
+            <>
+              <label className="mb-1 block text-[11px] text-gray-500 dark:text-gray-400">Display</label>
+              <div className="mb-2 grid grid-cols-4 gap-1">
+                {DISPLAY_TYPES.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => dispatch({
+                      type: 'setSeriesDisplayType',
+                      seriesId: selectedSeries.id,
+                      displayType: opt.value,
+                    })}
+                    title={opt.label}
+                    aria-label={opt.label}
+                    aria-pressed={(selectedSeries.displayType ?? 'line') === opt.value}
+                    className={clsx(
+                      'rounded px-1 py-1 text-[10px]',
+                      (selectedSeries.displayType ?? 'line') === opt.value
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300',
+                    )}
+                  >
+                    {opt.short}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           <label className="mb-1 block text-[11px] text-gray-500 dark:text-gray-400">Colour</label>
           <div className="mb-2 flex flex-wrap gap-1">
             {SERIES_COLORS.map(c => (
@@ -387,22 +473,74 @@ function FormatSection({ selectedSeries, selectedPlot, dispatch }: {
       )}
 
       {!selectedSeries && selectedPlot && (
-        <label className="block text-[11px] text-gray-500 dark:text-gray-400">
-          Height
-          <input
-            type="range"
-            min={6}
-            max={85}
-            value={Math.round(selectedPlot.heightRatio * 100)}
-            onChange={e => dispatch({
-              type: 'resizePlot',
-              plotId: selectedPlot.id,
-              heightRatio: Number(e.target.value) / 100,
-            })}
-            aria-label="Plot height"
-            className="mt-1 w-full"
-          />
-        </label>
+        <>
+          <label className="block text-[11px] text-gray-500 dark:text-gray-400">
+            Height
+            <input
+              type="range"
+              min={6}
+              max={85}
+              value={Math.round(selectedPlot.heightRatio * 100)}
+              onChange={e => dispatch({
+                type: 'resizePlot',
+                plotId: selectedPlot.id,
+                heightRatio: Number(e.target.value) / 100,
+              })}
+              aria-label="Plot height"
+              className="mt-1 w-full"
+            />
+          </label>
+
+          {/*
+            The comparison scale, on the plot whose axis it governs. This
+            was a submenu inside the Compare dropdown, so it was only
+            reachable while adding a security -- which is the one moment an
+            analyst is not yet looking at the comparison they want to scale.
+          */}
+          {selectedPlot.kind === 'price' && (
+            <div className="mt-2">
+              <label className="mb-1 block text-[11px] text-gray-500 dark:text-gray-400">Scale</label>
+              <div className="grid grid-cols-3 gap-1">
+                {SCALE_MODES.map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => dispatch({
+                      type: 'setPlotScaleMode',
+                      plotId: selectedPlot.id,
+                      scaleMode: opt.value,
+                    })}
+                    title={opt.description}
+                    aria-pressed={(selectedPlot.scaleMode ?? 'absolute') === opt.value}
+                    className={clsx(
+                      'rounded px-1 py-1 text-[10px]',
+                      (selectedPlot.scaleMode ?? 'absolute') === opt.value
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300',
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {(selectedPlot.scaleMode ?? 'absolute') === 'indexed' && (
+                <label className="mt-2 block text-[11px] text-gray-500 dark:text-gray-400">
+                  Index base
+                  <input
+                    type="number"
+                    min={1}
+                    value={selectedPlot.indexBase ?? DEFAULT_INDEX_BASE}
+                    onChange={e => dispatch({
+                      type: 'setPlotIndexBase',
+                      plotId: selectedPlot.id,
+                      indexBase: Number(e.target.value),
+                    })}
+                    className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                  />
+                </label>
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   )

@@ -70,6 +70,14 @@ export const INDICATOR_DEFAULTS: Record<IndicatorKind, { period: number | null; 
 
 export type PlotKind = 'price' | 'volume' | 'study'
 
+/** How a price series is drawn. Mirrors the engine's `ChartType`. */
+export type SeriesDisplayType = 'line' | 'candlestick' | 'bar' | 'area'
+
+/** How several instruments on one plot are made comparable. */
+export type PlotScaleMode = 'absolute' | 'indexed' | 'relative'
+
+export const DEFAULT_INDEX_BASE = 100
+
 export interface InstrumentSeries {
   id: string
   type: 'instrument'
@@ -81,6 +89,16 @@ export interface InstrumentSeries {
   primary: boolean
   color: string
   visible: boolean
+  /**
+   * Candles, a line, bars or an area.
+   *
+   * On the SERIES rather than the panel, because it describes how this
+   * instrument is drawn. Only the primary one is honoured today -- a
+   * comparison is always a line, since candles for two instruments on one
+   * axis cannot be told apart -- but storing it per series is what lets the
+   * selector live beside the series it affects instead of in the toolbar.
+   */
+  displayType?: SeriesDisplayType
 }
 
 export interface IndicatorSeries {
@@ -102,6 +120,17 @@ export interface ChartPlot {
   heightRatio: number
   visible: boolean
   series: ChartSeries[]
+  /**
+   * How this plot's instruments are made comparable, for a price plot.
+   *
+   * A plot property rather than a panel one: it is a statement about the
+   * AXIS, and only a plot carrying more than one instrument has anything
+   * to decide. `absolute` plots the prices as they are, `indexed` restates
+   * each series to a common base, `relative` to percentage change.
+   */
+  scaleMode?: PlotScaleMode
+  /** The common starting value for `indexed`. */
+  indexBase?: number
 }
 
 export interface PanelPlots {
@@ -181,7 +210,11 @@ export function initialPlots(symbol: string, assetId: string | null, companyName
   return {
     selectedId: null,
     plots: [
-      { id: newId('plot'), kind: 'price', title: 'Price', heightRatio: 0.6, visible: true, series: [price] },
+      {
+        id: newId('plot'), kind: 'price', title: 'Price', heightRatio: 0.6,
+        visible: true, series: [price],
+        scaleMode: 'absolute', indexBase: DEFAULT_INDEX_BASE,
+      },
       { id: newId('plot'), kind: 'volume', title: 'Volume', heightRatio: 0.18, visible: true, series: [] },
     ],
   }
@@ -209,9 +242,26 @@ export function migrateToPlots(
   legacy: {
     indicators?: readonly string[]
     compareSymbols?: readonly { symbol: string; companyName?: string; color?: string }[]
+    /* Carried from the toolbar controls this replaced, so an analyst who
+       was looking at candles indexed to 100 still is. */
+    chartType?: string
+    displayMode?: string
+    indexBase?: number
   },
 ): PanelPlots {
   const base = initialPlots(symbol, assetId, companyName)
+  const DISPLAY_TYPES: readonly string[] = ['line', 'candlestick', 'bar', 'area']
+  const SCALE_MODES: readonly string[] = ['absolute', 'indexed', 'relative']
+  if (legacy.chartType && DISPLAY_TYPES.includes(legacy.chartType)) {
+    const primary = base.plots[0].series[0]
+    if (primary.type === 'instrument') primary.displayType = legacy.chartType as SeriesDisplayType
+  }
+  if (legacy.displayMode && SCALE_MODES.includes(legacy.displayMode)) {
+    base.plots[0].scaleMode = legacy.displayMode as PlotScaleMode
+  }
+  if (typeof legacy.indexBase === 'number' && legacy.indexBase > 0) {
+    base.plots[0].indexBase = legacy.indexBase
+  }
   const names = (legacy.indicators ?? []).map(n => n.toLowerCase())
   const known = new Set<string>([...OVERLAY_INDICATORS, ...STUDY_INDICATORS])
 
@@ -279,6 +329,9 @@ export type PlotAction =
   | { type: 'setSeriesColor'; seriesId: string; color: string }
   | { type: 'setIndicatorPeriod'; seriesId: string; period: number }
   | { type: 'moveSeries'; seriesId: string; toPlotId: string }
+  | { type: 'setSeriesDisplayType'; seriesId: string; displayType: SeriesDisplayType }
+  | { type: 'setPlotScaleMode'; plotId: string; scaleMode: PlotScaleMode }
+  | { type: 'setPlotIndexBase'; plotId: string; indexBase: number }
   | { type: 'select'; id: string | null }
   | { type: 'setPrimarySymbol'; symbol: string; assetId: string | null; companyName: string | null }
 
@@ -458,6 +511,42 @@ export function plotReducer(state: PanelPlots, action: PlotAction): PanelPlots {
       }
     }
 
+    case 'setSeriesDisplayType':
+      return {
+        ...state,
+        plots: state.plots.map(p => ({
+          ...p,
+          series: p.series.map(s =>
+            s.id === action.seriesId && s.type === 'instrument'
+              ? { ...s, displayType: action.displayType }
+              : s),
+        })),
+      }
+
+    case 'setPlotScaleMode': {
+      const plot = findPlot(state, action.plotId)
+      /* Only a price plot has instruments to make comparable. A study
+         plot's scale is decided by its indicators' own units. */
+      if (!plot || plot.kind !== 'price') return state
+      return {
+        ...state,
+        plots: state.plots.map(p =>
+          p.id === action.plotId ? { ...p, scaleMode: action.scaleMode } : p),
+      }
+    }
+
+    case 'setPlotIndexBase': {
+      const base = Number(action.indexBase)
+      /* A base of zero divides every point by nothing and draws an empty
+         plot; a negative one inverts every series silently. */
+      if (!Number.isFinite(base) || base <= 0) return state
+      return {
+        ...state,
+        plots: state.plots.map(p =>
+          p.id === action.plotId ? { ...p, indexBase: base } : p),
+      }
+    }
+
     case 'select':
       return { ...state, selectedId: action.id }
 
@@ -530,6 +619,23 @@ export function deriveComparisons(state: PanelPlots): InstrumentSeries[] {
   if (!price || !price.visible) return []
   return price.series.filter(
     (s): s is InstrumentSeries => s.type === 'instrument' && !s.primary && s.visible)
+}
+
+/** How the primary instrument is drawn, for the renderer's `chartType`. */
+export function deriveDisplayType(state: PanelPlots): SeriesDisplayType {
+  const price = pricePlot(state)
+  const primary = price?.series.find(
+    (s): s is InstrumentSeries => s.type === 'instrument' && s.primary)
+  return primary?.displayType ?? 'line'
+}
+
+/** The price plot's comparison mode, for the renderer's `displayMode`. */
+export function deriveScaleMode(state: PanelPlots): PlotScaleMode {
+  return pricePlot(state)?.scaleMode ?? 'absolute'
+}
+
+export function deriveIndexBase(state: PanelPlots): number {
+  return pricePlot(state)?.indexBase ?? DEFAULT_INDEX_BASE
 }
 
 export function volumeVisible(state: PanelPlots): boolean {
