@@ -51,6 +51,37 @@ vi.mock('@sentry/react', () => ({ withScope: vi.fn(), captureException: vi.fn() 
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
+    /**
+     * `mark_pilot_progress`, with the semantics the migration gives it.
+     *
+     * The writes no longer go through `.update()`, so the double has to model
+     * the FUNCTION or it would be testing nothing. Faithfully: one statement,
+     * merge onto whatever the row holds NOW, set-once, return the merged
+     * document. The configured delay still applies, so the out-of-order
+     * interleave this file exists to exercise is unchanged — what changes is
+     * that the merge reads the row at write time rather than taking a caller's
+     * picture of it.
+     */
+    rpc: async (fn: string, args: Record<string, unknown>) => {
+      if (fn !== 'mark_pilot_progress') return { data: null, error: null }
+      const delay = db.delays.shift() ?? 0
+      await new Promise(r => setTimeout(r, delay))
+      if (db.failNext) {
+        db.failNext = false
+        return { data: null, error: { message: 'write rejected' } }
+      }
+      const row = db.users.find(r => r.id === db.userId)
+      if (!row) return { data: null, error: null }
+      const current = (row.pilot_progress ?? {}) as Row
+      const k = args.p_key as string
+      // Set-once: an existing key keeps the value it already has.
+      const merged: Row = k in current
+        ? { ...current }
+        : { ...current, [k]: args.p_value as string }
+      row.pilot_progress = merged
+      db.landed.push({ ...merged })
+      return { data: merged, error: null }
+    },
     from: () => {
       const filters: Array<[string, unknown]> = []
       let update: Row | null = null
