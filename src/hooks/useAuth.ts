@@ -442,6 +442,22 @@ export function useAuth() {
       const { TabStateManager } = await import('../lib/tabStateManager')
       TabStateManager.clearAll()
     } catch {}
+    /*
+     * The chart recents are the only chart state written to DISK, so they
+     * are the only one that outlives the page. They are already partitioned
+     * `userId:orgId`, which is what stops another account reading them --
+     * this is the hygiene half.
+     *
+     * It is cleared HERE rather than relying on the `clearProviderCaches`
+     * wiring in `useSessionUserId`, because that handler only exists while
+     * a chart component is mounted. Signing out from a surface that never
+     * mounted one would never have reached it. The in-memory caches it
+     * clears die with the page regardless; a localStorage list does not.
+     */
+    try {
+      const { clearRecentInstruments } = await import('../lib/charting/recent-instruments')
+      clearRecentInstruments()
+    } catch {}
     setIsRecoverySession(false)
     const { error } = await supabase.auth.signOut()
     return { error }
