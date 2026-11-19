@@ -55,6 +55,49 @@ export function isOverlay(kind: IndicatorKind): boolean {
  * lie for both. They are listed with `period: null` and edited through
  * their own fields rather than pretending to a single number.
  */
+/**
+ * What each study IS, for the browser that offers them.
+ *
+ * Every entry here is a study the engine actually draws. The catalogue is
+ * derived from `IndicatorKind`, so a study cannot be advertised without a
+ * renderer behind it -- the old toolbar menu listed Ichimoku Cloud for
+ * months and selecting it ticked a bullet and changed nothing.
+ *
+ * `category` groups them for scanning; `blurb` says what the study is for
+ * in one line, because "ADX" tells a reader nothing they did not know.
+ */
+export interface StudyInfo {
+  kind: IndicatorKind
+  name: string
+  category: 'Trend' | 'Momentum' | 'Volatility' | 'Volume'
+  blurb: string
+  /** Where the model will let it go. Shown so placement is never a surprise. */
+  placement: 'price' | 'own'
+}
+
+export const STUDY_CATALOG: readonly StudyInfo[] = [
+  { kind: 'sma', name: 'Simple Moving Average', category: 'Trend', placement: 'price',
+    blurb: 'Average close over N bars. The plainest trend line.' },
+  { kind: 'ema', name: 'Exponential Moving Average', category: 'Trend', placement: 'price',
+    blurb: 'Weighted to recent bars, so it turns sooner than an SMA.' },
+  { kind: 'bollinger', name: 'Bollinger Bands', category: 'Volatility', placement: 'price',
+    blurb: 'Two standard deviations either side of a moving average.' },
+  { kind: 'vwap', name: 'VWAP', category: 'Volume', placement: 'price',
+    blurb: 'Volume-weighted average price. A common execution benchmark.' },
+  { kind: 'rsi', name: 'Relative Strength Index', category: 'Momentum', placement: 'own',
+    blurb: 'Momentum on a 0-100 scale. Conventionally 30 and 70 are the bands.' },
+  { kind: 'macd', name: 'MACD', category: 'Momentum', placement: 'own',
+    blurb: 'Two moving averages converging and diverging, with a histogram.' },
+  { kind: 'stochastic', name: 'Stochastic Oscillator', category: 'Momentum', placement: 'own',
+    blurb: 'Where the close sits within its recent high-low range.' },
+  { kind: 'atr', name: 'Average True Range', category: 'Volatility', placement: 'own',
+    blurb: 'Typical bar range. Often used to size a position or a stop.' },
+  { kind: 'obv', name: 'On-Balance Volume', category: 'Volume', placement: 'own',
+    blurb: 'Running total of volume signed by the day’s direction.' },
+  { kind: 'adx', name: 'Average Directional Index', category: 'Trend', placement: 'own',
+    blurb: 'How strong a trend is, without saying which way it goes.' },
+]
+
 export const INDICATOR_DEFAULTS: Record<IndicatorKind, { period: number | null; label: (p: number | null) => string }> = {
   sma: { period: 20, label: p => `SMA ${p}` },
   ema: { period: 20, label: p => `EMA ${p}` },
@@ -329,6 +372,15 @@ export type PlotAction =
   | { type: 'setSeriesColor'; seriesId: string; color: string }
   | { type: 'setIndicatorPeriod'; seriesId: string; period: number }
   | { type: 'moveSeries'; seriesId: string; toPlotId: string }
+  /**
+   * Make a plot and put a study on it, as ONE action.
+   *
+   * Not `addPlot` then `addIndicator`: the page's dispatcher derives the
+   * next state from the panel it closed over, so two dispatches in one
+   * handler both read the state as it was and the second discards the
+   * first. A study that needs its own pane has to arrive atomically.
+   */
+  | { type: 'addStudyPlot'; kind: IndicatorKind }
   | { type: 'setSeriesDisplayType'; seriesId: string; displayType: SeriesDisplayType }
   | { type: 'setPlotScaleMode'; plotId: string; scaleMode: PlotScaleMode }
   | { type: 'setPlotIndexBase'; plotId: string; indexBase: number }
@@ -357,6 +409,23 @@ export function plotReducer(state: PanelPlots, action: PlotAction): PanelPlots {
         series: [],
       }
       return { ...state, plots: [...state.plots, plot], selectedId: plot.id }
+    }
+
+    case 'addStudyPlot': {
+      /* Only for studies that need their own scale; an overlay belongs on
+         the price plot and making it a pane would be a different chart. */
+      if (isOverlay(action.kind)) return state
+      const n = state.plots.filter(p => p.kind === 'study').length + 1
+      const series = createIndicatorSeries(action.kind, SERIES_COLORS[0])
+      const plot: ChartPlot = {
+        id: newId('plot'),
+        kind: 'study',
+        title: `Plot ${n}`,
+        heightRatio: 0.15,
+        visible: true,
+        series: [series],
+      }
+      return { ...state, plots: [...state.plots, plot], selectedId: series.id }
     }
 
     case 'removePlot': {
@@ -417,7 +486,9 @@ export function plotReducer(state: PanelPlots, action: PlotAction): PanelPlots {
        */
       const wantsPrice = isOverlay(action.kind)
       if (wantsPrice && plot.kind !== 'price') return state
-      if (!wantsPrice && plot.kind === 'price') return state
+      /* A STUDY plot, not merely a non-price one: the volume plot is also
+         non-price, and an oscillator put there would never be drawn. */
+      if (!wantsPrice && plot.kind !== 'study') return state
       const used = plot.series.map(s => s.color)
       const series = createIndicatorSeries(action.kind, nextColor(used))
       return {
@@ -499,7 +570,11 @@ export function plotReducer(state: PanelPlots, action: PlotAction): PanelPlots {
       if (s.type === 'indicator') {
         const wantsPrice = isOverlay(s.kind)
         if (wantsPrice && target.kind !== 'price') return state
-        if (!wantsPrice && target.kind === 'price') return state
+        /* A study needs a STUDY plot, not merely a non-price one. The
+           volume plot is non-price and carries no series of its own --
+           volume is drawn from the bars -- so `!== 'price'` let an RSI be
+           moved into the volume pane, where nothing would draw it. */
+        if (!wantsPrice && target.kind !== 'study') return state
       }
       return {
         ...state,

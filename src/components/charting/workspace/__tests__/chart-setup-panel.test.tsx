@@ -57,6 +57,28 @@ const model = () => JSON.parse(screen.getByTestId('model').textContent || '{}')
 const tree = () => document.querySelector('[data-charting-plot-tree]') as HTMLElement
 const plotRow = (title: string) => within(tree()).getByText(title).closest('div')!
 const seriesRow = (label: string) => within(tree()).getByText(label).closest('div')!
+const quick = () => document.querySelector('[data-charting-quick-actions]') as HTMLElement
+const props = () => document.querySelector('[data-charting-properties]') as HTMLElement
+const browser = () => document.querySelector('[data-charting-study-browser]') as HTMLElement
+
+/**
+ * Open a row's "…" menu and click one of its items.
+ *
+ * Move, reorder, hide and remove all moved behind one menu per row, because
+ * six 11px hover icons in a row were indistinguishable. Driving the menu
+ * here keeps every test that used to click an icon honest about what a
+ * reader now has to do.
+ */
+const viaMenu = (row: HTMLElement, item: string | RegExp) => {
+  fireEvent.click(within(row).getByRole('button', { name: /options$/ }))
+  fireEvent.click(screen.getByRole('menuitem', { name: item }))
+}
+
+/** Open the study browser from Quick actions and pick a study by name. */
+const addStudy = (name: string | RegExp) => {
+  fireEvent.click(within(quick()).getByText('Add Study'))
+  fireEvent.click(within(browser()).getByText(name))
+}
 
 describe('the tree shows the arrangement', () => {
   it('lists the price and volume plots with the charted instrument under price', () => {
@@ -66,68 +88,128 @@ describe('the tree shows the arrangement', () => {
     expect(within(tree()).getByText('AAPL')).toBeTruthy()
   })
 
-  it('says an empty plot is empty rather than looking like a failed click', () => {
+  it('says an empty plot is empty, and offers the way out of being empty', () => {
     render(<Harness />)
-    expect(screen.getAllByText(/Empty/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Nothing on this plot yet/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Add a study').length).toBeGreaterThan(0)
   })
 })
 
-describe('Add Plot', () => {
-  it('adds a plot that persists with no series in it', () => {
+/*
+ * Quick actions. The brief after #335 was that Compare had become
+ * undiscoverable: it was reachable only by hovering a plot row until an
+ * unlabelled icon appeared. These three must be present and named.
+ */
+describe('Quick actions', () => {
+  it('shows Compare, Add Study and Add Plot by name', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByTitle('Add plot'))
+    expect(within(quick()).getByText('Compare')).toBeTruthy()
+    expect(within(quick()).getByText('Add Study')).toBeTruthy()
+    expect(within(quick()).getByText('Add Plot')).toBeTruthy()
+  })
+
+  it('Compare opens instrument search against the price plot', () => {
+    render(<Harness />)
+    fireEvent.click(within(quick()).getByText('Compare'))
+    expect(model().lastPlot).toBe(model().plots[0].id ?? model().lastPlot)
+    expect(model().lastPlot).toBeTruthy()
+  })
+
+  it('Add Plot adds a plot that persists with no series in it', () => {
+    render(<Harness />)
+    fireEvent.click(within(quick()).getByText('Add Plot'))
     const m = model()
     expect(m.plots).toHaveLength(3)
     expect(m.plots[2].series).toEqual([])
   })
 })
 
-describe('Add Indicator', () => {
-  it('puts RSI on a study plot and it appears in the tree', () => {
+describe('the study browser', () => {
+  it('describes a study rather than printing an acronym', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByTitle('Add plot'))
-    fireEvent.click(within(plotRow('Plot 1')).getByTitle('Add study to this plot'))
-    fireEvent.click(screen.getByText('RSI'))
-    expect(model().plots[2].series).toEqual([
-      expect.objectContaining({ label: 'rsi:14' }),
-    ])
+    fireEvent.click(within(quick()).getByText('Add Study'))
+    expect(within(browser()).getByText('Relative Strength Index')).toBeTruthy()
+    expect(within(browser()).getByText(/0-100 scale/)).toBeTruthy()
   })
 
-  it('offers only price-compatible indicators on the price plot', () => {
+  it('filters by name, category and description', () => {
     render(<Harness />)
-    fireEvent.click(within(plotRow('Price')).getByTitle('Add study to this plot'))
-    expect(screen.getByText('SMA')).toBeTruthy()
-    /* RSI must not be offered where the model would refuse it: a button
-       that is ignored is worse than one that is absent. */
-    expect(screen.queryByText('RSI')).toBeNull()
+    fireEvent.click(within(quick()).getByText('Add Study'))
+    fireEvent.change(within(browser()).getByLabelText('Search studies'), {
+      target: { value: 'momentum' },
+    })
+    expect(within(browser()).getByText('Relative Strength Index')).toBeTruthy()
+    expect(within(browser()).queryByText('Simple Moving Average')).toBeNull()
   })
 
-  it('overlays SMA on the price plot', () => {
+  it('says so rather than showing an empty list', () => {
     render(<Harness />)
-    fireEvent.click(within(plotRow('Price')).getByTitle('Add study to this plot'))
-    fireEvent.click(screen.getByText('SMA'))
+    fireEvent.click(within(quick()).getByText('Add Study'))
+    fireEvent.change(within(browser()).getByLabelText('Search studies'), {
+      target: { value: 'ichimoku' },
+    })
+    expect(within(browser()).getByText(/No study matches/)).toBeTruthy()
+  })
+
+  /*
+   * Only what the engine draws. The old toolbar menu advertised Ichimoku
+   * Cloud for months and selecting it changed nothing.
+   */
+  it('offers only studies the engine implements', () => {
+    render(<Harness />)
+    fireEvent.click(within(quick()).getByText('Add Study'))
+    expect(within(browser()).queryByText(/Ichimoku/)).toBeNull()
+    expect(within(browser()).getAllByRole('button').length).toBeGreaterThanOrEqual(10)
+  })
+
+  it('overlays SMA onto the price plot and says so first', () => {
+    render(<Harness />)
+    fireEvent.click(within(quick()).getByText('Add Study'))
+    const row = within(browser()).getByText('Simple Moving Average').closest('button')!
+    expect(within(row).getByText('→ Price')).toBeTruthy()
+    fireEvent.click(row)
     expect(model().plots[0].series).toContainEqual(
       expect.objectContaining({ label: 'sma:20' }),
     )
   })
+
+  /*
+   * An oscillator cannot share the price axis, so picking one with no
+   * empty plot available must MAKE the plot. Two dispatches would race --
+   * each reads the state it closed over -- so this is one action.
+   */
+  it('creates a plot for a study that needs its own scale', () => {
+    render(<Harness />)
+    addStudy('Relative Strength Index')
+    const m = model()
+    expect(m.plots).toHaveLength(3)
+    expect(m.plots[2].series).toEqual([expect.objectContaining({ label: 'rsi:14' })])
+  })
+
+  it('fills an existing empty plot rather than making another', () => {
+    render(<Harness />)
+    fireEvent.click(within(quick()).getByText('Add Plot'))
+    addStudy('Relative Strength Index')
+    const m = model()
+    expect(m.plots).toHaveLength(3)
+    expect(m.plots[2].series).toEqual([expect.objectContaining({ label: 'rsi:14' })])
+  })
 })
 
-describe('Add Series for a security', () => {
+describe('Compare reaches the price plot', () => {
   it('asks the page to open instrument search, naming the plot', () => {
     render(<Harness />)
     fireEvent.click(within(plotRow('Price')).getByTitle('Add series to this plot'))
-    fireEvent.click(screen.getByText('Search securities…'))
     expect(model().lastPlot).toBeTruthy()
   })
 
   /*
-   * Add Series is the Compare dropdown's replacement, so it must exist
-   * exactly where a comparison can go -- the price plot -- and nowhere a
-   * second instrument would be nonsense.
+   * A second instrument on an oscillator pane is nonsense, so the control
+   * is absent there rather than present and refused.
    */
   it('does not offer Add Series on a study plot', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByTitle('Add plot'))
+    fireEvent.click(within(quick()).getByText('Add Plot'))
     expect(
       within(plotRow('Plot 1')).queryByTitle('Add series to this plot'),
     ).toBeNull()
@@ -152,10 +234,8 @@ describe('hide and show', () => {
 
   it('hides a series without removing it', () => {
     render(<Harness />)
-    fireEvent.click(within(plotRow('Price')).getByTitle('Add study to this plot'))
-    fireEvent.click(screen.getByText('SMA'))
-    const smaRow = seriesRow('SMA 20')
-    fireEvent.click(within(smaRow).getByTitle('Hide series'))
+    addStudy('Simple Moving Average')
+    fireEvent.click(within(seriesRow('SMA 20')).getByTitle('Hide series'))
     expect(model().plots[0].series).toContainEqual(
       expect.objectContaining({ label: 'sma:20', visible: false }),
     )
@@ -163,30 +243,37 @@ describe('hide and show', () => {
 })
 
 describe('remove', () => {
-  it('removes a study plot', () => {
+  it('removes a study plot from its menu', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByTitle('Add plot'))
-    fireEvent.click(within(plotRow('Plot 1')).getByTitle('Remove plot'))
+    fireEvent.click(within(quick()).getByText('Add Plot'))
+    viaMenu(plotRow('Plot 1'), 'Remove plot')
     expect(model().plots).toHaveLength(2)
   })
 
-  it('offers NO remove control on the price plot', () => {
+  it('offers NO remove entry on the price plot', () => {
     render(<Harness />)
-    expect(within(plotRow('Price')).queryByTitle('Remove plot')).toBeNull()
+    fireEvent.click(within(plotRow('Price')).getByRole('button', { name: /options$/ }))
+    expect(screen.queryByRole('menuitem', { name: 'Remove plot' })).toBeNull()
   })
 
-  it('offers NO remove control on the charted instrument', () => {
+  it('offers NO remove entry on the charted instrument', () => {
     render(<Harness />)
     const row = seriesRow('AAPL')
-    expect(within(row).queryByTitle('Remove series')).toBeNull()
+    const opts = within(row).queryByRole('button', { name: /options$/ })
+    /* The primary series cannot be removed or moved, so it has no menu at
+       all rather than a menu whose only entry is refused. */
+    if (opts) {
+      fireEvent.click(opts)
+      expect(screen.queryByRole('menuitem', { name: 'Remove' })).toBeNull()
+    }
   })
 })
 
 describe('rename and reorder', () => {
-  it('renames a plot', () => {
+  it('renames a plot from its menu', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByTitle('Add plot'))
-    fireEvent.click(within(plotRow('Plot 1')).getByTitle('Rename plot'))
+    fireEvent.click(within(quick()).getByText('Add Plot'))
+    viaMenu(plotRow('Plot 1'), 'Rename')
     fireEvent.change(screen.getByLabelText('Plot name'), { target: { value: 'Momentum' } })
     fireEvent.click(screen.getByTitle('Save name'))
     expect(model().plots[2].title).toBe('Momentum')
@@ -194,24 +281,57 @@ describe('rename and reorder', () => {
 
   it('reorders two study plots', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByTitle('Add plot'))
-    fireEvent.click(screen.getByTitle('Add plot'))
-    fireEvent.click(within(plotRow('Plot 2')).getByTitle('Move plot up'))
+    fireEvent.click(within(quick()).getByText('Add Plot'))
+    fireEvent.click(within(quick()).getByText('Add Plot'))
+    viaMenu(plotRow('Plot 2'), 'Move up')
     expect(model().plots.map((p: { title: string }) => p.title))
       .toEqual(['Price', 'Volume', 'Plot 2', 'Plot 1'])
   })
 
-  it('offers no move control on the price plot', () => {
+  it('offers no move entry on the price plot', () => {
     render(<Harness />)
-    expect(within(plotRow('Price')).queryByTitle('Move plot down')).toBeNull()
+    fireEvent.click(within(plotRow('Price')).getByRole('button', { name: /options$/ }))
+    expect(screen.queryByRole('menuitem', { name: 'Move down' })).toBeNull()
+  })
+})
+
+/*
+ * Move to Plot. The brief asked for it to be reachable through a
+ * contextual menu, and for the menu to offer only compatible plots -- an
+ * RSI cannot go on the price axis, so listing Price there would be a menu
+ * entry the reducer refuses.
+ */
+describe('Move to Plot', () => {
+  it('moves a study to another compatible plot', () => {
+    render(<Harness />)
+    addStudy('Relative Strength Index')
+    fireEvent.click(within(quick()).getByText('Add Plot'))
+    viaMenu(seriesRow('RSI 14'), 'Plot 2')
+    const m = model()
+    expect(m.plots[2].series).toEqual([])
+    expect(m.plots[3].series).toEqual([expect.objectContaining({ label: 'rsi:14' })])
+  })
+
+  it('does not offer the price plot to an oscillator', () => {
+    render(<Harness />)
+    addStudy('Relative Strength Index')
+    fireEvent.click(within(seriesRow('RSI 14')).getByRole('button', { name: /options$/ }))
+    expect(screen.queryByRole('menuitem', { name: 'Price' })).toBeNull()
+  })
+
+  it('does not offer a study plot to an overlay', () => {
+    render(<Harness />)
+    addStudy('Simple Moving Average')
+    fireEvent.click(within(quick()).getByText('Add Plot'))
+    fireEvent.click(within(seriesRow('SMA 20')).getByRole('button', { name: /options$/ }))
+    expect(screen.queryByRole('menuitem', { name: 'Plot 1' })).toBeNull()
   })
 })
 
 describe('formatting the selected object', () => {
   it('changes a series colour', () => {
     render(<Harness />)
-    fireEvent.click(within(plotRow('Price')).getByTitle('Add study to this plot'))
-    fireEvent.click(screen.getByText('SMA'))
+    addStudy('Simple Moving Average')
     const before = model().plots[0].series.at(-1).color
     fireEvent.click(screen.getByLabelText('Colour #7c3aed'))
     const after = model().plots[0].series.at(-1).color
@@ -221,9 +341,7 @@ describe('formatting the selected object', () => {
 
   it('edits an indicator period and the label follows', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByTitle('Add plot'))
-    fireEvent.click(within(plotRow('Plot 1')).getByTitle('Add study to this plot'))
-    fireEvent.click(screen.getByText('RSI'))
+    addStudy('Relative Strength Index')
     fireEvent.change(screen.getByLabelText(/Period/), { target: { value: '50' } })
     expect(model().plots[2].series[0].label).toBe('rsi:50')
     expect(within(tree()).getByText('RSI 50')).toBeTruthy()
@@ -231,18 +349,32 @@ describe('formatting the selected object', () => {
 
   it('offers no period box for MACD, which has three', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByTitle('Add plot'))
-    fireEvent.click(within(plotRow('Plot 1')).getByTitle('Add study to this plot'))
-    fireEvent.click(screen.getByText('MACD'))
+    addStudy('MACD')
     expect(screen.queryByLabelText(/Period/)).toBeNull()
     expect(screen.getByText(/fixed periods/)).toBeTruthy()
   })
 
   it('resizes a plot', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByTitle('Add plot'))
+    fireEvent.click(within(quick()).getByText('Add Plot'))
     fireEvent.change(screen.getByLabelText('Plot height'), { target: { value: '40' } })
     expect(screen.getByLabelText('Plot height')).toHaveProperty('value', '40')
+  })
+
+  /*
+   * The properties area keeps its place when nothing is selected, instead
+   * of appearing on first click and shoving the tree upward.
+   */
+  it('says what to do when nothing is selected', () => {
+    render(<Harness />)
+    expect(within(props()).getByText(/Select a plot or series/)).toBeTruthy()
+  })
+
+  it('toggles visibility from the properties area', () => {
+    render(<Harness />)
+    fireEvent.click(within(tree()).getByText('AAPL'))
+    fireEvent.click(within(props()).getByLabelText('Visible'))
+    expect(model().plots[0].series[0].visible).toBe(false)
   })
 })
 
@@ -269,8 +401,7 @@ describe('the chart-type selector that replaced the toolbar buttons', () => {
      control on one would be offering a setting that is ignored. */
   it('does not offer it on an indicator series', () => {
     render(<Harness />)
-    fireEvent.click(within(plotRow('Price')).getByTitle('Add study to this plot'))
-    fireEvent.click(screen.getByText('SMA'))
+    addStudy('Simple Moving Average')
     expect(screen.queryByLabelText('Candlestick')).toBeNull()
   })
 })
@@ -304,7 +435,7 @@ describe('the scale mode that replaced the Compare submenu', () => {
 
   it('is not offered on a study plot, whose scale its indicators decide', () => {
     render(<Harness />)
-    fireEvent.click(screen.getByTitle('Add plot'))
+    fireEvent.click(within(quick()).getByText('Add Plot'))
     fireEvent.click(within(plotRow('Plot 1')).getByText('Plot 1'))
     expect(screen.queryByText('% Chg')).toBeNull()
   })
