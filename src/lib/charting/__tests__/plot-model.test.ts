@@ -399,6 +399,45 @@ describe('scale mode, now a property of the price plot', () => {
   })
 })
 
+/*
+ * The volume plot is non-price AND carries no series of its own -- volume
+ * is drawn from the bars themselves. Every compatibility check that asked
+ * "is this plot not the price plot?" therefore treated it as free space
+ * for an oscillator, which would never have been drawn.
+ */
+describe('the volume plot is not a study plot', () => {
+  const volumeId = () => state.plots.find(p => p.kind === 'volume')!.id
+
+  it('refuses a study added to it', () => {
+    const next = plotReducer(state, { type: 'addIndicator', plotId: volumeId(), kind: 'rsi' })
+    expect(findPlot(next, volumeId())!.series).toEqual([])
+  })
+
+  it('refuses a study moved into it', () => {
+    let next = plotReducer(state, { type: 'addStudyPlot', kind: 'rsi' })
+    const rsi = next.plots.at(-1)!.series[0]
+    next = plotReducer(next, { type: 'moveSeries', seriesId: rsi.id, toPlotId: volumeId() })
+    expect(findPlot(next, volumeId())!.series).toEqual([])
+    expect(next.plots.at(-1)!.series).toHaveLength(1)
+  })
+})
+
+describe('addStudyPlot arrives atomically', () => {
+  it('creates the plot and the study in one action', () => {
+    const next = plotReducer(state, { type: 'addStudyPlot', kind: 'rsi' })
+    expect(next.plots).toHaveLength(3)
+    expect(next.plots[2].series).toHaveLength(1)
+    expect(seriesLabel(next.plots[2].series[0])).toBe('RSI 14')
+  })
+
+  /* An overlay belongs on the price plot; giving it a pane would be a
+     different chart, so the action refuses rather than guessing. */
+  it('refuses an overlay, which has a plot already', () => {
+    const next = plotReducer(state, { type: 'addStudyPlot', kind: 'sma' })
+    expect(next.plots).toHaveLength(2)
+  })
+})
+
 describe('migration carries the toolbar settings it replaced', () => {
   it('keeps candles, indexed scale and a custom base', () => {
     const migrated = migrateToPlots('AAPL', 'a1', 'Apple', {
