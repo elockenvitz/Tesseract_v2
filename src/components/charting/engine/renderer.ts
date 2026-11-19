@@ -391,11 +391,35 @@ export class ChartRenderer {
     const dpr = this.devicePixelRatio
     const barWidth = this.transform.getBarWidth(data.length) * dpr
 
-    // Find max volume
+    /*
+     * Scale to the volume ON SCREEN, not to the whole series.
+     *
+     * A split multiplies historical volume by the split factor, which is
+     * arithmetically right and visually ruinous: AAPL's 2013 bar carries
+     * 450,356,622 x 28 = 12,609,985,416 against a 2026 bar's 29,756,060,
+     * a ratio of 424. Taking the max over every bar ever loaded therefore
+     * draws every modern bar at under a quarter of one percent of the
+     * pane -- a flat grey line under a chart that is otherwise correct.
+     *
+     * Zooming did not help, because the divisor never changed. The price
+     * axis has always auto-scaled to the visible window; volume simply
+     * never asked. This is that asymmetry removed, and it changes no
+     * underlying value: the bar heights are still proportional to volume,
+     * against a denominator the reader can actually see.
+     */
+    const { startTime, endTime } = this.transform.visibleTimeRange
     let maxVolume = 0
     for (const bar of data) {
-      if (bar.volume && bar.volume > maxVolume) {
-        maxVolume = bar.volume
+      if (!bar.volume) continue
+      if (bar.time < startTime || bar.time > endTime) continue
+      if (bar.volume > maxVolume) maxVolume = bar.volume
+    }
+    /* Nothing in view with a volume: fall back to the series max rather
+       than return, so a pane that is merely scrolled past its data keeps
+       its geometry instead of collapsing. */
+    if (maxVolume === 0) {
+      for (const bar of data) {
+        if (bar.volume && bar.volume > maxVolume) maxVolume = bar.volume
       }
     }
     if (maxVolume === 0) return
@@ -410,7 +434,10 @@ export class ChartRenderer {
 
       const x = this.transform.timeToX(bar.time) * dpr
       const isUp = bar.close >= bar.open
-      const height = (bar.volume / maxVolume) * volumeAreaHeight * dpr
+      /* A bar at the edge of the window can exceed the visible maximum.
+         Clamp rather than let it draw up through the price pane. */
+      const scaled = (bar.volume / maxVolume) * volumeAreaHeight * dpr
+      const height = Math.min(scaled, volumeAreaHeight * dpr)
       const y = (volumeAreaTop + volumeAreaHeight) * dpr - height
 
       ctx.fillStyle = isUp ? this.theme.volumeUp : this.theme.volumeDown
