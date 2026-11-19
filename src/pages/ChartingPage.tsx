@@ -228,6 +228,23 @@ export const TOOLBAR_COMPACT_PX = 1280
  */
 export const TOOLBAR_TIGHT_PX = 960
 
+/**
+ * Below this, the instrument block drops its provenance chips.
+ *
+ * Measured on the integrated build at 390px of toolbar: the left group
+ * wants 603px and is given 358, so it overflowed by 245. The chips --
+ * "262 bars · 1wk", the provider, the freshness -- are about 230 of that
+ * 603, and the company name truncates to absorb the rest.
+ *
+ * 720 rather than `TOOLBAR_TIGHT_PX`: at 768 and at 960 the full block
+ * still FITS, and a chip that fits is not worth hiding. 600 was the first
+ * measured width that overflowed (by 35px), so the threshold sits just
+ * above it.
+ *
+ * The basis chip is deliberately not included. See `InstrumentHeader`.
+ */
+export const TOOLBAR_META_PX = 720
+
 // Frequency/Interval configuration
 type FrequencyType =
   | '1min' | '3min' | '5min' | '10min' | '15min' | '30min' | '60min' | '120min' | '240min'
@@ -379,6 +396,7 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
    */
   const compactControls = toolbarWidth > 0 && toolbarWidth < TOOLBAR_COMPACT_PX
   const compactTimeframe = toolbarWidth > 0 && toolbarWidth < TOOLBAR_TIGHT_PX
+  const denseInstrument = toolbarWidth > 0 && toolbarWidth < TOOLBAR_META_PX
   const [showAnalysisPanel, setShowAnalysisPanel] = useState(false)
 
   /* Reopening at a width that shows the controls inline would leave the
@@ -1162,6 +1180,7 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                 symbol={currentPanel.symbol}
                 companyName={currentPanel.companyName}
                 meta={seriesMeta}
+                dense={denseInstrument}
               />
             )}
           </div>
