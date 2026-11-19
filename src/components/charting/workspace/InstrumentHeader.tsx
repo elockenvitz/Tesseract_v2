@@ -35,7 +35,7 @@ export function InstrumentHeader({ symbol, companyName, meta: incoming }: Instru
 
   return (
     <div data-charting-instrument className="flex min-w-0 items-center gap-3">
-      <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-white">{symbol}</span>
+      <span className="shrink-0 text-lg font-bold tracking-tight text-gray-900 dark:text-white">{symbol}</span>
       {companyName && (
         <span className="truncate text-sm text-gray-500 dark:text-gray-400">{companyName}</span>
       )}
@@ -61,8 +61,15 @@ export function InstrumentHeader({ symbol, companyName, meta: incoming }: Instru
         </>
       )}
 
+      {/*
+        `shrink-0` below: when the row runs short of space the COMPANY NAME
+        gives way, never this block. It carries the freshness and the basis,
+        and the basis is the label that stops a reader taking a raw series'
+        split for a market move. The thing that can mislead is the last
+        thing to be squeezed out, not the first.
+      */}
       {meta && (
-        <span className="hidden items-center gap-2 text-[11px] text-gray-400 lg:flex">
+        <span className="hidden shrink-0 items-center gap-2 text-[11px] text-gray-400 lg:flex">
           <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
           <span>{meta.bars} bars · {meta.interval}</span>
           <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
