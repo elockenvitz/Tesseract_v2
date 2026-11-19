@@ -969,9 +969,27 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     <div className="h-full flex flex-col bg-white overflow-hidden dark:bg-gray-800">
       {/* Header Toolbar */}
       <div className="bg-gray-50 border-b border-gray-200 px-2 sm:px-4 py-2 dark:border-gray-700 dark:bg-gray-900">
+        {/*
+          The command bar's row must be decided by the VIEWPORT, never by
+          data that arrives later.
+
+          Measured before this change, at 1920px with AAPL loaded: hiding the
+          instrument meta block -- 264px of "301 bars · 1mo · eodhd · just
+          now · split-adjusted" -- moved the timeframe controls UP 42px, from
+          a second row onto the search row. So the controls sat beside the
+          search box while the chart loaded and jumped down a row the moment
+          the meta arrived. The basis badge alone changes width again between
+          "raw" (with its warning icon) and "split-adjusted", so even a
+          reserved placeholder would not have held the line.
+
+          `min-w-0 flex-1` lets the left group SHRINK instead of pushing, and
+          `shrink-0` keeps the controls at their natural width. The two stay
+          on one row until the controls alone no longer fit, which depends
+          on the window and not on whether a fetch has returned.
+        */}
         <div className="flex flex-wrap items-center justify-between gap-y-2">
           {/* Left: Symbol Search & Info */}
-          <div className="flex items-center space-x-4">
+          <div className="flex min-w-0 flex-1 items-center space-x-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -1008,7 +1026,7 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
           </div>
 
           {/* Right: Time Frame + Chart Type & Actions */}
-          <div className="flex items-center space-x-2">
+          <div className="flex shrink-0 items-center space-x-2">
             {/* Time Frame Selector */}
           <div className="flex items-center space-x-1 bg-gray-200 rounded-lg p-1">
             {timeFrames.map((tf) => (
