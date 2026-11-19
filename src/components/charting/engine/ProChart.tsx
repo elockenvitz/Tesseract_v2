@@ -10,7 +10,16 @@ import {
 } from './types'
 import { ChartTransform } from './transform'
 import { ChartRenderer, IndicatorRenderConfig, LineStyle } from './renderer'
-import { SubPanelRenderer, SubPanelData } from './SubPanelRenderer'
+import { SubPanelRenderer, SubPanelData, RenderPlot } from './SubPanelRenderer'
+
+/** One plot as the page describes it. Mirrors `DerivedPlotSpec`. */
+export interface ChartPlotSpec {
+  id: string
+  kind: 'price' | 'volume' | 'study'
+  title: string
+  heightRatio: number
+  indicators: Array<{ id: string; kind: string; period: number | null; color: string }>
+}
 import { chartDataService, timeframeToParams, CandlestickData } from '../../../lib/chartData'
 import { useMarketDataEntitlement } from '../../../lib/market-data/provider-routing'
 import { failureMessage } from '../../../lib/market-data/eodhd-series'
@@ -140,6 +149,18 @@ interface ProChartProps {
   showVolume?: boolean
   theme?: ChartTheme
   indicators?: IndicatorType[]
+  /**
+   * Explicit plots, when the page is driving the chart from the plot model.
+   *
+   * When present this REPLACES the pane layout that `indicators` implies:
+   * the panes, their order, their heights and what is in each one come from
+   * the analyst's arrangement rather than from which indicator names happen
+   * to be in the list. `indicators` still supplies the price-plot overlays.
+   *
+   * Absent, the chart behaves exactly as before -- the grid view and any
+   * other caller that has not been moved over are unaffected.
+   */
+  plotSpecs?: ChartPlotSpec[]
   events?: ChartEvent[]
   annotations?: Annotation[]
   compareSymbols?: CompareSymbol[]
@@ -230,6 +251,7 @@ export function ProChart({
   showVolume = false,
   theme = defaultLightTheme,
   indicators = [],
+  plotSpecs,
   events = [],
   annotations = [],
   compareSymbols = [],
@@ -388,6 +410,44 @@ export function ProChart({
 
     return { main, subPanels }
   }, [data, mainChartIndicators, subPanelIndicators])
+
+  /**
+   * The analyst's plots, calculated with THEIR parameters.
+   *
+   * The period comes from the series, not from the hardcoded 14 that the
+   * name used to imply, which is the whole reason two RSIs at different
+   * periods can now exist. `calculateIndicator`-level functions are reused
+   * unchanged: only which arguments they get has moved.
+   */
+  const renderPlots: RenderPlot[] = useMemo(() => {
+    if (!plotSpecs || data.length === 0) return []
+    return plotSpecs
+      .filter(spec => spec.kind !== 'volume')
+      .map(spec => ({
+        id: spec.id,
+        title: spec.title,
+        heightRatio: spec.heightRatio,
+        reserveSpace: true,
+        series: spec.indicators.map(ind => {
+          const period = ind.period ?? undefined
+          const data_ = (() => {
+            switch (ind.kind) {
+              case 'rsi': return calculateRSI(data, period ?? 14)
+              case 'macd': return calculateMACD(data, 12, 26, 9)
+              case 'stochastic': return calculateStochastic(data, period ?? 14, 3)
+              case 'atr': return calculateATR(data, period ?? 14)
+              case 'obv': return calculateOBV(data)
+              case 'adx': return calculateADX(data, period ?? 14)
+              default: return [] as ReturnType<typeof calculateRSI>
+            }
+          })()
+          const label = ind.period == null
+            ? ind.kind.toUpperCase()
+            : `${ind.kind.toUpperCase()} ${ind.period}`
+          return { id: ind.id, kind: ind.kind, label, color: ind.color, data: data_ }
+        }),
+      }))
+  }, [plotSpecs, data])
 
   // Interaction state
   const [isDragging, setIsDragging] = useState(false)
@@ -865,11 +925,22 @@ export function ProChart({
 
   // Calculate main chart height based on sub-panels
   const mainChartHeightRatio = useMemo(() => {
+    /*
+     * Driven by the plots when there are plots: their heights are the
+     * analyst's, so the price plot gets whatever they have not claimed.
+     * Still capped, because a price plot squeezed to nothing is not a
+     * chart, and the Analysis panel's own slider is clamped to match.
+     */
+    if (plotSpecs) {
+      if (renderPlots.length === 0) return 1
+      const claimed = renderPlots.reduce((a, p) => a + Math.max(0.06, p.heightRatio), 0)
+      return Math.max(0.3, 1 - Math.min(0.6, claimed))
+    }
     if (indicatorData.subPanels.length === 0) return 1
     // Reserve space for sub-panels (each takes ~15% max, limit to 45% total)
     const subPanelRatio = Math.min(0.45, indicatorData.subPanels.length * 0.15)
     return 1 - subPanelRatio
-  }, [indicatorData.subPanels.length])
+  }, [indicatorData.subPanels.length, plotSpecs, renderPlots])
 
   // Initialize canvas and renderer
   useEffect(() => {
@@ -954,17 +1025,29 @@ export function ProChart({
       annotationRendererRef.current.render(events, annotations)
     }
 
-    // Render sub-panels
-    if (subPanelRendererRef.current && indicatorData.subPanels.length > 0) {
+    // Render the panes below the price plot
+    if (subPanelRendererRef.current) {
       subPanelRendererRef.current.setTheme(theme)
       subPanelRendererRef.current.setMainTransform(transformRef.current)
-
       const mainChartBottom = dimensions.height * mainChartHeightRatio
-      subPanelRendererRef.current.renderSubPanels(
-        indicatorData.subPanels,
-        mainChartBottom,
-        dimensions.height
-      )
+
+      /*
+       * The plot model wins when the page supplies one. The two paths are
+       * exclusive on purpose: running both would draw the same indicator
+       * twice, once where the analyst put it and once where its name says
+       * it belongs.
+       */
+      if (plotSpecs) {
+        if (renderPlots.length > 0) {
+          subPanelRendererRef.current.renderPlots(renderPlots, mainChartBottom, dimensions.height)
+        }
+      } else if (indicatorData.subPanels.length > 0) {
+        subPanelRendererRef.current.renderSubPanels(
+          indicatorData.subPanels,
+          mainChartBottom,
+          dimensions.height
+        )
+      }
     }
 
     // Draw selection dots on the selected line
@@ -1708,8 +1791,21 @@ export function ProChart({
       */}
       <OhlcReadout bar={hoveredBar} interval={currentInterval} />
 
-      {/* Zoom controls */}
-      <div className="absolute top-2 right-2 z-10 flex items-center space-x-1">
+      {/*
+        Zoom controls, clear of the price axis.
+
+        They used to sit at `right-2`, directly over the right-hand price
+        scale -- the column a reader checks constantly while zooming, and
+        the one the crosshair writes its price label into. Three opaque
+        buttons on top of it hid the numbers at exactly the moment they
+        were being read.
+
+        Now inset from the right by more than the price axis is wide, so
+        they sit over plot background with the whole scale legible beside
+        them. Not top-LEFT either: that is where the series legend goes,
+        and a legend grows with every comparison added.
+      */}
+      <div className="absolute top-2 right-[72px] z-10 flex items-center space-x-1">
         <button
           onClick={zoomIn}
           className="p-1.5 bg-white/90 hover:bg-white border border-gray-200 rounded text-gray-600 hover:text-gray-900 transition-colors dark:hover:text-white dark:border-gray-700 dark:hover:bg-gray-800 dark:text-gray-400"

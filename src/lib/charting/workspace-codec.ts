@@ -32,6 +32,7 @@
 import type { Annotation } from '../../components/charting/engine/annotations'
 import type { ChartType, CustomDateRange, TimeFrame } from '../../components/charting'
 import type { WorkspaceCodec } from './workspace-state'
+import type { PanelPlots, ChartPlot } from './plot-model'
 
 /** Metric types for charting. */
 export type MetricType = 'price' | 'volume' | 'market_cap' | 'pe_ratio' | 'eps' | 'revenue' | 'dividend_yield'
@@ -49,6 +50,15 @@ export interface ChartPanel {
   id: string
   symbol: string
   companyName?: string
+  /**
+   * The asset row's id, where the instrument was chosen from search.
+   *
+   * Identity is the id, never the ticker: FB has belonged to two different
+   * companies, and the recents work already turned on this distinction.
+   * Optional because a panel restored from an older workspace has only the
+   * ticker it was stored with.
+   */
+  assetId?: string | null
   chartType: ChartType
   timeFrame: TimeFrame
   customRange?: CustomDateRange
@@ -69,6 +79,15 @@ export interface ChartPanel {
   }
   // Comparison symbols
   compareSymbols?: { symbol: string; companyName?: string; color?: string; lineWidth?: number; lineStyle?: LineStyleOption }[]
+  /**
+   * The analyst's plot arrangement, when they have one.
+   *
+   * Optional because a workspace stored before plots existed has none, and
+   * must still open. `plots` is the source of truth where it is present;
+   * `indicators` and `compareSymbols` above remain for the grid view and
+   * for reading those older stored panels.
+   */
+  plots?: PanelPlots
   // Display mode: absolute prices, indexed, or relative to first symbol
   displayMode?: DisplayMode
   // Base value for indexed mode (default 100)
@@ -147,6 +166,41 @@ function revivePanel(raw: unknown): ChartPanel | null {
      */
     indicators: Array.isArray(panel.indicators) ? panel.indicators : [],
     annotations: Array.isArray(panel.annotations) ? panel.annotations : [],
+    plots: revivePlots(panel.plots),
+  }
+}
+
+/**
+ * A stored plot arrangement, or undefined.
+ *
+ * Anything that is not recognisably a plot list is DROPPED rather than
+ * patched. A half-revived arrangement would render a chart the analyst did
+ * not build, which is worse than the default they would recognise -- and
+ * the page rebuilds the default from the symbol in that case.
+ */
+function revivePlots(raw: unknown): PanelPlots | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const candidate = raw as { plots?: unknown; selectedId?: unknown }
+  if (!Array.isArray(candidate.plots) || candidate.plots.length === 0) return undefined
+  const plots = candidate.plots.filter((p): p is ChartPlot => {
+    if (!p || typeof p !== 'object') return false
+    const plot = p as Record<string, unknown>
+    return typeof plot.id === 'string'
+      && typeof plot.title === 'string'
+      && typeof plot.kind === 'string'
+      && Array.isArray(plot.series)
+  })
+  /* The price plot carries the time axis and the drawings. An arrangement
+     that lost it is not repairable here. */
+  if (plots.length === 0 || !plots.some(p => p.kind === 'price')) return undefined
+  return {
+    plots: plots.map(p => ({
+      ...p,
+      heightRatio: typeof p.heightRatio === 'number' && Number.isFinite(p.heightRatio) ? p.heightRatio : 0.15,
+      visible: p.visible !== false,
+      series: p.series.filter(s => s && typeof s === 'object' && typeof s.id === 'string'),
+    })),
+    selectedId: typeof candidate.selectedId === 'string' ? candidate.selectedId : null,
   }
 }
 
