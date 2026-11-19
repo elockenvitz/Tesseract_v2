@@ -178,6 +178,35 @@ export function recordRecentInstrument(
 }
 
 /**
+ * Replace the stored list outright.
+ *
+ * Exists for the authorization re-check in `hooks/useRecentInstruments`,
+ * which prunes entries the caller may no longer read. It takes the list it
+ * is given rather than merging, because pruning is a REMOVAL and a merge
+ * would put the revoked entries straight back.
+ *
+ * It applies the same coercion and cap as a read, so a caller cannot write a
+ * malformed or over-long list that a later read would then have to survive.
+ */
+export function writeRecentInstruments(
+  userId: string | null | undefined,
+  orgId: string | null | undefined,
+  instruments: RecentInstrument[],
+): RecentInstrument[] {
+  const out: RecentInstrument[] = []
+  const seen = new Set<string>()
+  for (const entry of instruments) {
+    const row = coerce(entry)
+    if (!row || seen.has(row.id)) continue
+    seen.add(row.id)
+    out.push(row)
+    if (out.length >= RECENTS_LIMIT) break
+  }
+  safeWrite(recentInstrumentsKey(userId, orgId), JSON.stringify(out))
+  return out
+}
+
+/**
  * Drop every stored list, for every principal.
  *
  * Wired into `clearProviderCaches` beside `clearChartingWorkspaces`. It

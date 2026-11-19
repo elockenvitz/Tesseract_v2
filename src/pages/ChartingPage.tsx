@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useIsMobile } from '../hooks/useMediaQuery'
-import { useQuery } from '@tanstack/react-query'
 import {
   LineChart, Search, Plus, ChevronDown, TrendingUp, TrendingDown,
   BarChart3, CandlestickChart, Activity, Layers, Settings, Maximize2,
@@ -44,10 +43,10 @@ import {
 } from '../lib/charting/workspace-state'
 import { useInstrumentSearch } from '../hooks/useInstrumentSearch'
 import {
-  readRecentInstruments,
   recordRecentInstrument,
   type RecentInstrument,
 } from '../lib/charting/recent-instruments'
+import { useRecentInstruments } from '../hooks/useRecentInstruments'
 import {
   Annotation,
   AnnotationType,
@@ -333,13 +332,32 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   const workspaceKey = chartingWorkspaceKey(user?.id, currentOrgId, workspaceId)
 
   /*
-   * Read on the principal, not once on mount: an organization switch has to
-   * swap the list, and reading it before `user` resolves would cache the
-   * signed-out key's (empty) list for the rest of the session.
+   * Re-checked against live authorization, not merely read off disk. The
+   * stored list was authorized when it was WRITTEN; access can be withdrawn
+   * afterwards, and localStorage would never know. See
+   * `useRecentInstruments` -- it fails closed.
+   *
+   * `recordedRecents` holds what this session has just selected, so a pick
+   * appears in the list immediately instead of waiting for the next
+   * validation round trip.
    */
-  useEffect(() => {
-    setRecents(readRecentInstruments(user?.id, currentOrgId))
-  }, [user?.id, currentOrgId])
+  /*
+   * Declared HERE, immediately before the derivation that reads it.
+   *
+   * It first sat with the other `useState` calls further down, which put it
+   * in the temporal dead zone of the `const recents = ...` line above --
+   * "Cannot access 'recordedRecents' before initialization", thrown on every
+   * render of the page. A `const` is not hoisted the way a `var` is, and the
+   * charting route test caught it. This codebase has shipped that exact
+   * error in banner code before; keeping the declaration adjacent to its
+   * only consumer is what stops it recurring.
+   *
+   * Null rather than [] so "nothing recorded yet" stays distinguishable
+   * from "recorded, and the result was empty".
+   */
+  const [recordedRecents, setRecordedRecents] = useState<RecentInstrument[] | null>(null)
+  const { recents: authorizedRecents } = useRecentInstruments(user?.id, currentOrgId)
+  const recents = recordedRecents ?? authorizedRecents
 
   /*
    * Restored, not reset.
@@ -363,7 +381,6 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
    * click that lands on one of its own rows.
    */
   const [searchFocused, setSearchFocused] = useState(false)
-  const [recents, setRecents] = useState<RecentInstrument[]>([])
   const [viewMode, setViewMode] = useState<ViewMode>(initialState.viewMode)
   // The chart is the surface; on a phone the toolbar has to yield to it.
   const isMobileViewport = useIsMobile()
@@ -864,7 +881,7 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
      * opened from elsewhere all land on it. Recording at the dropdown's
      * click handler instead would have missed the other routes in.
      */
-    setRecents(recordRecentInstrument(user?.id, currentOrgId, {
+    setRecordedRecents(recordRecentInstrument(user?.id, currentOrgId, {
       id: asset.id,
       symbol: asset.symbol,
       companyName: asset.company_name,
