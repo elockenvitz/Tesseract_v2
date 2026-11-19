@@ -42,6 +42,7 @@ import {
   readChartingWorkspace,
   writeChartingWorkspace,
 } from '../lib/charting/workspace-state'
+import { useInstrumentSearch } from '../hooks/useInstrumentSearch'
 import {
   readRecentInstruments,
   recordRecentInstrument,
@@ -520,37 +521,20 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     fetchAssetAndAddPanel()
   }, [initialSymbol, addedSymbols])
 
-  // Search assets
-  const { data: searchResults = [] } = useQuery({
-    queryKey: ['asset-search', searchQuery],
-    queryFn: async () => {
-      if (!searchQuery || searchQuery.length < 1) return []
-      const { data, error } = await supabase
-        .from('assets')
-        .select('id, symbol, company_name')
-        .or(`symbol.ilike.%${searchQuery}%,company_name.ilike.%${searchQuery}%`)
-        .limit(10)
-      if (error) throw error
-      return data || []
-    },
-    enabled: searchQuery.length >= 1
-  })
+  /*
+   * Debounced, rank-ordered, and fetched so the exact ticker is actually in
+   * the result set. The previous query ranked by arrival order and let the
+   * DATABASE apply the limit, so "CAT" offered Zoom Video Communi-CAT-ions
+   * above Caterpillar and "V" put Visa fifth. See `useInstrumentSearch`.
+   */
+  const { results: searchResults } = useInstrumentSearch(searchQuery)
 
-  // Search assets for comparison
-  const { data: compareSearchResults = [] } = useQuery({
-    queryKey: ['asset-compare-search', compareSearchQuery],
-    queryFn: async () => {
-      if (!compareSearchQuery || compareSearchQuery.length < 1) return []
-      const { data, error } = await supabase
-        .from('assets')
-        .select('id, symbol, company_name')
-        .or(`symbol.ilike.%${compareSearchQuery}%,company_name.ilike.%${compareSearchQuery}%`)
-        .limit(10)
-      if (error) throw error
-      return data || []
-    },
-    enabled: compareSearchQuery.length >= 1
-  })
+  /*
+   * The comparison picker had the identical defect and now shares the
+   * identical fix. Two copies of this query is how they drifted apart in
+   * the first place.
+   */
+  const { results: compareSearchResults } = useInstrumentSearch(compareSearchQuery)
 
   const timeFrames: TimeFrame[] = ['1D', '1W', '1M', '3M', '6M', '1Y', '5Y', 'ALL']
 
