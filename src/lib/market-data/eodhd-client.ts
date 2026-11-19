@@ -123,6 +123,38 @@ export function eodhdBars(args: {
   })
 }
 
+/** A split ratio as the market-data function states it. */
+export interface EodhdSplit {
+  /** Ex-date, `YYYY-MM-DD`. */
+  date: string
+  numerator: number
+  denominator: number
+}
+
+/**
+ * The split ratios inside a window, so a raw series can be restated in
+ * current shares.
+ *
+ * ── This degrades, on purpose ────────────────────────────────────────────
+ *
+ * The `splits` operation is NEW. A deployment running the previous function
+ * answers it with a 400 "Unknown op", and `asResult` turns that into an
+ * ordinary failure. Callers must treat a failure here as "no factors
+ * available" and leave the series raw and badged raw -- NOT as an error that
+ * blanks the chart, and never as a reason to invent a factor.
+ *
+ * That is what makes this safe to merge before it is deployed: until the
+ * function ships, every caller sees exactly today's behaviour.
+ */
+export function eodhdSplits(args: { symbol: string; from: string; to: string }) {
+  return call<EodhdEnvelope<EodhdSplit[]>>({
+    op: 'splits',
+    symbol: args.symbol,
+    from: args.from,
+    to: args.to,
+  })
+}
+
 /** The venues the subscription can address. Used for symbol discovery. */
 export function eodhdExchanges() {
   return call<ExchangeRecord[]>({ op: 'exchanges' })

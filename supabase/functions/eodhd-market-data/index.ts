@@ -41,6 +41,7 @@ import {
   fetchExchanges,
   fetchIntradayBars,
   fetchLatestQuote,
+  fetchSplits,
   searchSymbols,
   type BarInterval,
   type EodhdFetchDeps,
@@ -58,7 +59,14 @@ const json = (body: unknown, status = 200) =>
     headers: { ...CORS, 'Content-Type': 'application/json' },
   })
 
-type Operation = 'entitlement' | 'exchanges' | 'resolve' | 'reference' | 'latest' | 'bars'
+type Operation =
+  | 'entitlement' | 'exchanges' | 'resolve' | 'reference' | 'latest' | 'bars'
+  /**
+   * The split ratios for an instrument, so the client can restate a raw
+   * series in current shares. Same entitlement gate as every other data
+   * operation: it is provider data, and it is paid for.
+   */
+  | 'splits'
 
 interface RequestBody {
   op?: unknown
@@ -307,6 +315,23 @@ Deno.serve(async req => {
         const fromUnix = Math.floor(Date.parse(`${body.from}T00:00:00Z`) / 1000)
         const toUnix = Math.floor(Date.parse(`${body.to}T23:59:59Z`) / 1000)
         return json(await fetchIntradayBars(symbol, interval, fromUnix, toUnix, deps))
+      }
+
+      case 'splits': {
+        /*
+         * The corporate actions behind the drawn window, so a raw series can
+         * be restated in current shares. Without this the client has prices
+         * and no factors, and a stock split draws as a price collapse.
+         *
+         * Reached only after the same entitlement decision as `bars` above;
+         * it sits inside the same switch for exactly that reason.
+         */
+        const symbol = typeof body.symbol === 'string' ? body.symbol.trim() : ''
+        if (!symbol) return json({ error: 'symbol is required' }, 400)
+        if (!isIsoDate(body.from) || !isIsoDate(body.to)) {
+          return json({ error: 'from and to must be YYYY-MM-DD' }, 400)
+        }
+        return json(await fetchSplits(symbol, body.from, body.to, deps))
       }
 
       default:

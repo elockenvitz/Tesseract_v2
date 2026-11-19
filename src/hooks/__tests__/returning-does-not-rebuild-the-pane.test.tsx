@@ -68,8 +68,19 @@ vi.mock('../../contexts/OrganizationContext', () => ({
 
 import { useAssetWorkspace, ASSET_WORKSPACE_KEY } from '../useAssetWorkspace'
 
-/** The key as the hook builds it: `[prefix, assetId, symbol, days, orgId]`. */
-const key = (days: number) => [ASSET_WORKSPACE_KEY, 'a-1', 'AAPL', days, ORG]
+/**
+ * The key as the hook builds it: `[prefix, assetId, symbol, orgId]`.
+ *
+ * `days` used to sit at index 3. It was removed because only one of the
+ * workspace's reads ever varied with it -- the `price_history_cache` window --
+ * and keying all of them on it meant a shallow consumer and a deep one mounted
+ * on the same asset fetched everything twice. Price history now has its own
+ * key, ASSET_PRICE_HISTORY_KEY.
+ *
+ * What this helper protects is unchanged: nothing in this key is pane state, so
+ * a remount lands on its own entry instead of missing it and refetching.
+ */
+const key = () => [ASSET_WORKSPACE_KEY, 'a-1', 'AAPL', ORG]
 
 let client: QueryClient
 const wrap = ({ children }: { children: ReactNode }) => (
@@ -127,7 +138,7 @@ describe('the second visit', () => {
     const populated = client.getQueryCache().getAll()
       .filter(q => q.queryKey[0] === ASSET_WORKSPACE_KEY)
     expect(populated).toHaveLength(1)
-    expect(populated[0].queryKey).toEqual(key(populated[0].queryKey[3] as number))
+    expect(populated[0].queryKey).toEqual(key())
 
     unmount()
     mount()
@@ -260,7 +271,9 @@ describe('what the retention must not hand back', () => {
        not served the second one's rows either. */
     const orgs = client.getQueryCache().getAll()
       .filter(q => q.queryKey[0] === ASSET_WORKSPACE_KEY)
-      .map(q => q.queryKey[4])
+      /* Index 3: the organisation is the last segment now that `days` has
+         left the key. See the `key` helper at the top of this file. */
+      .map(q => q.queryKey[3])
     expect(new Set(orgs)).toEqual(new Set([ORG, 'org-b']))
   })
 
