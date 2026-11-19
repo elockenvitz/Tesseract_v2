@@ -13,6 +13,7 @@ import { exploreVisualFor } from '../../lib/mobile/explore-visual'
 import { CATEGORY_LABEL } from '../../lib/mobile/feed-categories'
 import { useGalleryCloses, useYearRanges } from '../../hooks/useTileCloses'
 import { useDesktopExplore } from '../../hooks/useDesktopExplore'
+import { useScrollWindow } from '../../hooks/useScrollWindow'
 import type { ExploreOpen } from '../../lib/desktop-ideas/explore-open'
 import type { ComposedExploreItem, ExploreItem } from '../../lib/mobile/explore-item'
 
@@ -230,16 +231,45 @@ export function IdeasExploreBrowse({ resolve, onOpen, selectedKey = null }: {
   /* Every tile's price in ONE batched read. The per-tile alternative is one
      request per card, each resolving on its own schedule and reflowing its
      card when it lands — measured on the Ideas field at 56 tiles. */
-  const closes = useGalleryCloses(useMemo(() => shown.map(o => o.item.symbol), [shown]))
+  /*
+   * Only the part of the field the reader has reached.
+   *
+   * Measured cold on a 142-tile Dashboard: every symbol went into the
+   * batched read, which chunks at five per request, so the sparklines and
+   * year ranges together cost 60 `price_history_cache` requests while NINE
+   * tiles were on screen.
+   *
+   * Nothing is unmounted -- see `useScrollWindow` for why virtualization
+   * was measured and rejected. Every tile keeps its place and its height;
+   * only the symbol list grows, and it grows monotonically so
+   * `useGalleryCloses`'s `placeholderData` keeps drawn sparklines on screen
+   * while the larger request is in flight.
+   */
+  const scrollWindow = useScrollWindow(shown.length)
+  /*
+   * Attached to the gallery host that already exists rather than adding a
+   * second ref to the same element. That element is never unmounted or
+   * replaced -- only its width changes -- which is the same fact the scroll
+   * anchoring above relies on.
+   */
+  const attachWindow = scrollWindow.containerRef
+  useEffect(() => { attachWindow(host.current) }, [attachWindow])
+  const windowedSymbols = useMemo(
+    () => shown.slice(0, scrollWindow.count).map(o => o.item.symbol),
+    [shown, scrollWindow.count],
+  )
+
+  const closes = useGalleryCloses(windowedSymbols)
 
   /* The trailing year, for the scenario cards only: a year is twice the
      sparkline window, so asking the whole field for one multiplies the
      requests for a figure a handful of tiles draw. */
   const yearRanges = useYearRanges(useMemo(
     () => shown
+      .slice(0, scrollWindow.count)
       .filter(o => exploreVisualFor(o.item)?.kind === 'scenario_range')
       .map(o => o.item.symbol),
-    [shown],
+    [shown, scrollWindow.count],
   ))
 
   /*
