@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useIsMobile } from '../hooks/useMediaQuery'
 import {
   LineChart, Search, Plus, ChevronDown, TrendingUp, TrendingDown,
@@ -52,6 +52,11 @@ import {
   type RecentInstrument,
 } from '../lib/charting/recent-instruments'
 import { useRecentInstruments } from '../hooks/useRecentInstruments'
+import {
+  initialPlots, migrateToPlots, plotReducer, derivePlotSpecs, deriveOverlays,
+  deriveComparisons, volumeVisible, type PanelPlots, type PlotAction,
+} from '../lib/charting/plot-model'
+import { AnalysisPanel } from '../components/charting/workspace/AnalysisPanel'
 import {
   CHARTING_WORKSPACE_CODEC,
   type ChartPanel,
@@ -399,11 +404,18 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   const denseInstrument = toolbarWidth > 0 && toolbarWidth < TOOLBAR_META_PX
   const [showAnalysisPanel, setShowAnalysisPanel] = useState(false)
 
-  /* Reopening at a width that shows the controls inline would leave the
-     panel flag set and the Analysis button lit with nothing behind it. */
-  useEffect(() => {
-    if (!compactControls && showAnalysisPanel) setShowAnalysisPanel(false)
-  }, [compactControls, showAnalysisPanel])
+  /*
+   * There is deliberately NO effect closing this at wide widths any more.
+   *
+   * It used to close itself whenever the toolbar was wide enough to show
+   * the secondary controls inline, because the flag then meant "the
+   * overflow popover is open" and a popover with nothing in it would have
+   * lit the button for no reason.
+   *
+   * The flag now means "the Analysis panel is open", and that panel is the
+   * only route to Add Plot and Add Series. Closing it on a wide screen
+   * made the button do nothing at exactly the sizes an analyst works at.
+   */
   const { recents: authorizedRecents } = useRecentInstruments(user?.id, currentOrgId)
   const recents = recordedRecents ?? authorizedRecents
 
@@ -543,11 +555,14 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     const fetchAssetAndAddPanel = async () => {
       let companyName = ''
       try {
-        const { data } = await supabase
+        /* The generated Supabase types do not describe `assets`, so an
+           unannotated destructure infers `never`. Same cast as the recents
+           authorization path uses, for the same reason. */
+        const { data } = (await supabase
           .from('assets')
           .select('company_name')
           .eq('symbol', initialSymbol)
-          .single()
+          .single()) as { data: { company_name: string | null } | null }
         if (data) {
           companyName = data.company_name || ''
         }
@@ -965,7 +980,26 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   }
 
   const selectAsset = (asset: { id: string; symbol: string; company_name: string }) => {
-    updatePanel(activePanel, { symbol: asset.symbol, companyName: asset.company_name })
+    const panel = panels.find(p => p.id === activePanel)
+    /*
+     * Changing the instrument moves the PRIMARY series and leaves the rest
+     * of the arrangement alone. An analyst who built four plots and then
+     * looked at a different name did not ask for their plots back.
+     */
+    const nextPlots = panel?.plots
+      ? plotReducer(panel.plots, {
+          type: 'setPrimarySymbol',
+          symbol: asset.symbol,
+          assetId: asset.id,
+          companyName: asset.company_name,
+        })
+      : undefined
+    updatePanel(activePanel, {
+      symbol: asset.symbol,
+      companyName: asset.company_name,
+      assetId: asset.id,
+      ...(nextPlots ? { plots: nextPlots } : {}),
+    })
     setSearchQuery('')
     setSearchFocused(false)
     /*
@@ -1079,6 +1113,93 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
   }
 
   const currentPanel = panels.find(p => p.id === activePanel) || panels[0]
+
+  /*
+   * The plot arrangement for the active panel.
+   *
+   * Built from the symbol when the panel has none -- a workspace stored
+   * before plots existed, or a panel that has only just been given an
+   * instrument. `useMemo` rather than state: the panel IS the state, and a
+   * second copy here would be a second answer to what is on the chart.
+   */
+  const plotState: PanelPlots = useMemo(() => {
+    if (currentPanel?.plots) return currentPanel.plots
+    return initialPlots(
+      currentPanel?.symbol || '',
+      currentPanel?.assetId ?? null,
+      currentPanel?.companyName ?? null,
+    )
+  }, [currentPanel?.plots, currentPanel?.symbol, currentPanel?.assetId, currentPanel?.companyName])
+
+  const dispatchPlot = useCallback((action: PlotAction) => {
+    if (!currentPanel) return
+    const base = currentPanel.plots ?? initialPlots(
+      currentPanel.symbol || '',
+      currentPanel.assetId ?? null,
+      currentPanel.companyName ?? null,
+    )
+    updatePanel(currentPanel.id, { plots: plotReducer(base, action) })
+  }, [currentPanel, updatePanel])
+
+  /* What the renderer is handed. Hidden things are already gone from these. */
+  const derivedPlotSpecs = useMemo(() => derivePlotSpecs(plotState), [plotState])
+  const derivedOverlays = useMemo(() => deriveOverlays(plotState), [plotState])
+  const derivedComparisons = useMemo(() => deriveComparisons(plotState), [plotState])
+  const derivedShowVolume = useMemo(() => volumeVisible(plotState), [plotState])
+
+  /*
+   * The plot model owns the chart only once the panel actually carries one.
+   * Until then the legacy `indicators`/`compareSymbols` path renders, so a
+   * stored workspace from before this change opens exactly as it did.
+   */
+  const usePlotModel = !!currentPanel?.plots
+
+  /*
+   * Add Series, for a security.
+   *
+   * The plot is remembered rather than guessed, because the panel can ask
+   * from any price plot and "the selected one" changes under you as soon as
+   * the search box takes focus.
+   */
+  const [addSeriesPlotId, setAddSeriesPlotId] = useState<string | null>(null)
+  const handleAddInstrumentToPlot = useCallback((plotId: string) => {
+    setCompareSearchQuery('')
+    setAddSeriesPlotId(plotId)
+  }, [])
+
+  const addInstrumentToPlot = useCallback((asset: { id: string; symbol: string; company_name: string | null }) => {
+    if (!addSeriesPlotId) return
+    dispatchPlot({
+      type: 'addInstrument',
+      plotId: addSeriesPlotId,
+      symbol: asset.symbol,
+      assetId: asset.id,
+      companyName: asset.company_name,
+    })
+    setAddSeriesPlotId(null)
+    setCompareSearchQuery('')
+  }, [addSeriesPlotId, dispatchPlot])
+
+  /*
+   * Opening the Analysis panel on a panel that has no arrangement yet gives
+   * it one. Done here rather than on mount so a workspace that never opens
+   * the panel is never rewritten, and the legacy render path stays exact.
+   */
+  const openAnalysisPanel = useCallback(() => {
+    if (currentPanel && !currentPanel.plots) {
+      /* Carry the chart they are looking at into the model, rather than
+         resetting to price and volume the moment the panel is opened. */
+      updatePanel(currentPanel.id, {
+        plots: migrateToPlots(
+          currentPanel.symbol || '',
+          currentPanel.assetId ?? null,
+          currentPanel.companyName ?? null,
+          { indicators: currentPanel.indicators, compareSymbols: currentPanel.compareSymbols },
+        ),
+      })
+    }
+    setShowAnalysisPanel(true)
+  }, [currentPanel, updatePanel])
 
   return (
     <div className="h-full flex flex-col bg-white overflow-hidden dark:bg-gray-800">
@@ -1733,9 +1854,18 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
               unchanged and nothing is hidden behind a menu that had room to
               be shown.
             */}
-            {compactControls && (
+            {/*
+              Always present now, at every width.
+
+              It used to appear only when the toolbar collapsed, because it
+              opened a popover holding the controls the bar had no room for.
+              It now opens the Analysis panel -- the place those controls
+              live -- so hiding it on a wide screen would hide the only way
+              to reach Add Plot and Add Series.
+            */}
+            {(
               <button
-                onClick={() => setShowAnalysisPanel(!showAnalysisPanel)}
+                onClick={() => (showAnalysisPanel ? setShowAnalysisPanel(false) : openAnalysisPanel())}
                 title="Analysis controls"
                 className={`flex shrink-0 items-center space-x-1 rounded-lg px-3 py-1.5 text-sm transition-colors ${
                   showAnalysisPanel
@@ -1842,17 +1972,36 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             </div>
           )}
           {viewMode === 'single' ? (
-            <div className="h-full bg-white dark:bg-gray-800">
+            /*
+              The Analysis panel sits BESIDE the canvas, not over it. A
+              floating panel would cover the right price axis, which is the
+              column a reader checks while changing what is drawn.
+
+              `min-w-0` on the chart side is what lets it actually give the
+              width back when the panel closes: without it the canvas keeps
+              its measured width and the freed space becomes a gap.
+            */
+            <div className="relative flex h-full bg-white dark:bg-gray-800">
+            <div className="min-w-0 flex-1">
               {currentPanel.symbol ? (
                 <ProChart
                   symbol={currentPanel.symbol}
                   chartType={currentPanel.chartType}
                   timeFrame={currentPanel.timeFrame}
                   customRange={currentPanel.customRange}
-                  showVolume={currentPanel.indicators.includes('volume')}
-                  indicators={currentPanel.indicators.filter(i => i !== 'volume') as IndicatorType[]}
+                  showVolume={usePlotModel ? derivedShowVolume : currentPanel.indicators.includes('volume')}
+                  indicators={usePlotModel
+                    ? (derivedOverlays.map(s => s.kind) as IndicatorType[])
+                    : currentPanel.indicators.filter(i => i !== 'volume') as IndicatorType[]}
+                  plotSpecs={usePlotModel ? derivedPlotSpecs : undefined}
                   annotations={currentPanel.annotations}
-                  compareSymbols={currentPanel.compareSymbols}
+                  compareSymbols={usePlotModel
+                    ? derivedComparisons.map(s => ({
+                        symbol: s.symbol,
+                        companyName: s.companyName ?? undefined,
+                        color: s.color,
+                      }))
+                    : currentPanel.compareSymbols}
                   displayMode={currentPanel.displayMode}
                   indexBase={currentPanel.indexBase}
                   selectedLine={selectedLine}
@@ -1879,6 +2028,46 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                   </div>
                 </div>
               )}
+            </div>
+            {/*
+              Add Series search. Anchored over the panel rather than the
+              canvas: the reader's attention is in the tree, and covering
+              the chart to choose a comparison hides the thing being
+              compared against.
+            */}
+            {addSeriesPlotId && (
+              <div className="absolute right-72 top-16 z-50 w-72 rounded-lg border border-gray-200 bg-white p-2 shadow-xl dark:border-gray-700 dark:bg-gray-800">
+                <input
+                  autoFocus
+                  value={compareSearchQuery}
+                  onChange={e => setCompareSearchQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Escape') setAddSeriesPlotId(null) }}
+                  placeholder="Add security to plot…"
+                  aria-label="Add security to plot"
+                  className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                />
+                <div className="mt-1 max-h-64 overflow-y-auto">
+                  {compareSearchResults.map(asset => (
+                    <button
+                      key={asset.id}
+                      onClick={() => addInstrumentToPlot(asset)}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-blue-50 dark:hover:bg-gray-700"
+                    >
+                      <span className="font-semibold text-gray-900 dark:text-white">{asset.symbol}</span>
+                      <span className="truncate text-xs text-gray-500">{asset.company_name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {showAnalysisPanel && currentPanel.symbol && (
+              <AnalysisPanel
+                state={plotState}
+                dispatch={dispatchPlot}
+                onAddInstrument={handleAddInstrumentToPlot}
+                onClose={() => setShowAnalysisPanel(false)}
+              />
+            )}
             </div>
           ) : (
             <div className="h-full grid grid-cols-2 gap-px bg-gray-200">
