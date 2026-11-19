@@ -50,7 +50,21 @@ const PRIMARY_SURFACES = [
     id: 'today',
     title: 'Dashboard',
     type: 'today',
-    description: 'What deserves attention, and what to explore',
+    /*
+     * Halved, and matched to the surface it opens.
+     *
+     * "What deserves attention, and what to explore" was the only
+     * description in the Go-to row long enough to wrap onto three lines,
+     * which made the Dashboard card taller than the four beside it and put
+     * a ragged step in a row that is otherwise level. Its neighbours run two
+     * or three words each: "Pending decisions", "Accepted trades",
+     * "Simulation & sizing", "Decision review".
+     *
+     * The shorter text is not invented for the card. It is the subtitle the
+     * Dashboard already shows in its own header, so the door and the room
+     * now say the same thing.
+     */
+    description: 'What deserves attention',
     icon: Lightbulb,
     gradient: 'from-purple-100 to-pink-100',
     iconColor: 'text-purple-600'

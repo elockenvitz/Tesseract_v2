@@ -942,7 +942,15 @@ describe('one Dashboard, five lenses', () => {
     const blankCode = blank.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
     expect(blankCode).not.toMatch(/type: 'ideas'/)
     expect(blankCode).toMatch(/type: 'today'/)
-    expect(blankCode).toContain('What deserves attention, and what to explore')
+    /*
+     * The description was HALVED, not removed, and the assertion follows it
+     * rather than being deleted. What this guards is that the row still
+     * describes the feed it opens -- the full sentence was three lines on a
+     * card whose neighbours are one, and the Dashboard's own header already
+     * said the shorter thing.
+     */
+    expect(blankCode).toContain('What deserves attention')
+    expect(blankCode).not.toContain('and what to explore')
 
     /* The phone was already right, and stays asserted so it cannot drift back:
        its `ideas` surface is registered so a restored tab renders, and is
