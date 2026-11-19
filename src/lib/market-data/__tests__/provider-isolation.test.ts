@@ -16,6 +16,10 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { quoteQueryKey } from '../polling'
 import {
+  readRecentInstruments,
+  recordRecentInstrument,
+} from '../../charting/recent-instruments'
+import {
   clearProviderCaches,
   marketDataEntitlementKey,
   readEntitlementAnswer,
@@ -110,8 +114,20 @@ describe('no cache can serve one account the other account\'s licensed data', ()
       // workspace stopped living in component state. Asserted by exact list
       // so a dependency cannot be added and then left uncalled.
       clearWorkspaces: () => cleared.push('workspaces'),
+      // The symbol box's recents list joined this clear when it became the
+      // first of these to be PERSISTED: the others die with the page, and
+      // that one would otherwise outlive the sign-out on disk.
+      clearRecents: () => cleared.push('recents'),
     })
-    expect(cleared.sort()).toEqual(['charts', 'reference', 'workspaces'])
+    expect(cleared.sort()).toEqual(['charts', 'recents', 'reference', 'workspaces'])
+  })
+
+  it('actually empties the recents list, not just calls something', () => {
+    recordRecentInstrument('user-a', 'org-a', { id: 'id-1', symbol: 'AAPL' })
+    expect(readRecentInstruments('user-a', 'org-a')).toHaveLength(1)
+    clearProviderCaches()
+    expect(readRecentInstruments('user-a', 'org-a'), 'the recents list survived')
+      .toEqual([])
   })
 
   it('actually empties the reference and symbol caches, not just calls something', () => {
