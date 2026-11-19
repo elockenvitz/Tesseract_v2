@@ -16,6 +16,7 @@ const meta: SeriesMeta = {
   last: 355.4,
   previous: 350,
   lastBarTime: Math.floor(Date.now() / 1000) - 3600,
+  observedAt: Math.floor(Date.now() / 1000) - 3600,
   bars: 23,
   interval: '1d',
   provider: 'yahoo',
@@ -79,5 +80,51 @@ describe('the instrument header', () => {
     )
     expect(container.textContent).toContain('355.40')
     expect(container.textContent).not.toContain('%')
+  })
+
+  describe('freshness comes from the observation, not the bar', () => {
+    /*
+     * `freshnessLabel` is correct on its own; what this pins is which
+     * argument the HEADER hands it. Testing the function alone left the
+     * wiring unguarded, and the wiring is where the defect lived: the header
+     * passed `lastBarTime`, a bucket boundary, so a current monthly chart
+     * announced itself as "18 days ago".
+     *
+     * The two fields are given deliberately divergent values so only one of
+     * them can produce each label.
+     */
+    const monthly: SeriesMeta = {
+      ...meta,
+      interval: '1mo',
+      // The first of the month, eighteen days back: what a monthly bar carries.
+      lastBarTime: Math.floor(Date.now() / 1000) - 18 * 86_400,
+      // The provider answered seconds ago.
+      observedAt: Math.floor(Date.now() / 1000) - 10,
+    }
+
+    it('a current monthly series does not claim to be eighteen days old', () => {
+      const { container } = render(<InstrumentHeader symbol="AAPL" meta={monthly} />)
+      expect(container.textContent).toContain('just now')
+      expect(container.textContent).not.toContain('18 days ago')
+    })
+
+    it('a stale answer is still reported stale, whatever the bar says', () => {
+      // The inverse, so this cannot be satisfied by always printing "just now".
+      const stale: SeriesMeta = {
+        ...monthly,
+        lastBarTime: Math.floor(Date.now() / 1000) - 60,
+        observedAt: Math.floor(Date.now() / 1000) - 3 * 86_400,
+      }
+      const { container } = render(<InstrumentHeader symbol="AAPL" meta={stale} />)
+      expect(container.textContent).toContain('3 days ago')
+      expect(container.textContent).not.toContain('just now')
+    })
+
+    it('says it does not know rather than inventing an age', () => {
+      const { container } = render(
+        <InstrumentHeader symbol="AAPL" meta={{ ...monthly, observedAt: null }} />,
+      )
+      expect(container.textContent).toContain('no data')
+    })
   })
 })

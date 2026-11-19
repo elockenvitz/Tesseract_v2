@@ -378,6 +378,22 @@ class ChartDataService {
     failure?: AdapterFailure
     provider: MarketDataProviderId
     basis: SeriesBasis
+    /**
+     * Unix MILLISECONDS at which the provider actually answered.
+     *
+     * This is the series' age, and it is not the last bar's timestamp. A bar
+     * is stamped at the START of the period it covers, so on a monthly series
+     * the newest bar carries the first of the month: reading freshness off it
+     * told the reader a perfectly current chart was "18 days ago". A bucket
+     * boundary is not an observation time, and the two only coincide on an
+     * intraday series.
+     *
+     * A cache hit returns the moment the CACHED answer was observed, not the
+     * moment it was read back. That is the whole point — a one-minute-old
+     * cached series should say so rather than claim to be new, and the
+     * cached-on-error branch returns an answer that may be far older still.
+     */
+    observedAt: number
   }> {
     /*
      * The provider is part of the cache key.
@@ -398,7 +414,7 @@ class ChartDataService {
       // The basis is cached WITH the candles. Recomputing it on a hit, or
       // defaulting it, would let a cached series be described by a basis
       // that was not measured from it.
-      return { candles: cached.data, provider, basis: cached.basis }
+      return { candles: cached.data, provider, basis: cached.basis, observedAt: cached.timestamp }
     }
 
     try {
@@ -415,28 +431,42 @@ class ChartDataService {
        * contains the provider, so it can only return this same provider's
        * own earlier answer.
        */
+      // One instant for the whole answer: the moment this provider replied.
+      // Read once so the value stored in the cache and the value returned to
+      // the caller cannot drift apart by the cost of the store.
+      const observedAt = Date.now()
+
       if (provider === 'eodhd') {
         const result = await this.fetchFromEodhdResult(request)
         if (result.candles.length > 0) {
-          this.cache.set(cacheKey, { data: result.candles, basis: result.basis, timestamp: Date.now() })
+          this.cache.set(cacheKey, { data: result.candles, basis: result.basis, timestamp: observedAt })
         }
-        return { ...result, provider }
+        return { ...result, provider, observedAt }
       }
 
       const { candles, basis } = await this.fetchFromYahooFinance(request)
       if (candles.length > 0) {
-        this.cache.set(cacheKey, { data: candles, basis, timestamp: Date.now() })
+        this.cache.set(cacheKey, { data: candles, basis, timestamp: observedAt })
       }
-      return { candles, provider, basis }
+      return { candles, provider, basis, observedAt }
     } catch (error) {
       console.error('Failed to fetch chart data:', error)
-      // This provider's own stale answer, never another provider's.
-      if (cached) return { candles: cached.data, provider, basis: cached.basis }
+      /*
+       * This provider's own stale answer, never another provider's -- and it
+       * is reported with the age it actually has. Stamping this `Date.now()`
+       * would present a failed refresh as a fresh series, which is the exact
+       * reading the header exists to prevent.
+       */
+      if (cached) {
+        return { candles: cached.data, provider, basis: cached.basis, observedAt: cached.timestamp }
+      }
       return {
         candles: [],
         provider,
         basis: UNKNOWN_BASIS,
         failure: { kind: 'unavailable', detail: 'The chart data request did not complete.' },
+        // Nothing was observed, so there is no observation time to state.
+        observedAt: 0,
       }
     }
   }
@@ -700,9 +730,24 @@ class ChartDataService {
     endDate: Date,
     interval: string,
     provider: MarketDataProviderId = 'yahoo'
-  ): Promise<{ candles: CandlestickData[]; failure?: AdapterFailure; basis: SeriesBasis }> {
+  ): Promise<{
+    candles: CandlestickData[]
+    failure?: AdapterFailure
+    basis: SeriesBasis
+    /**
+     * Unix milliseconds at which the provider answered. See
+     * `getChartDataResult` for why this is not the last bar's timestamp.
+     *
+     * This path is uncached -- every call is a live fetch -- so the instant
+     * is simply "now, once the reply is in". It is stamped AFTER the await
+     * rather than before, so a slow reply is reported with the age it has
+     * when the reader sees it, not the age it had when we asked.
+     */
+    observedAt: number
+  }> {
     if (provider === 'eodhd') {
-      return this.fetchEodhdWindowResult(symbol, interval, startDate, endDate)
+      const eodhd = await this.fetchEodhdWindowResult(symbol, interval, startDate, endDate)
+      return { ...eodhd, observedAt: Date.now() }
     }
 
     /*
@@ -716,9 +761,12 @@ class ChartDataService {
     const ranged = window.range
       ? await yahooSeries({ symbol, interval: intervalParam, range: window.range })
       : { candles: [], basis: UNKNOWN_BASIS }
-    if (ranged.candles.length > 0) return ranged
+    if (ranged.candles.length > 0) return { ...ranged, observedAt: Date.now() }
 
-    return yahooSeries({ symbol, interval: intervalParam, period1: window.period1, period2: window.period2 })
+    const exact = await yahooSeries({
+      symbol, interval: intervalParam, period1: window.period1, period2: window.period2,
+    })
+    return { ...exact, observedAt: Date.now() }
   }
 
   /**

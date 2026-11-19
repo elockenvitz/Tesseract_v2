@@ -476,6 +476,17 @@ export function ProChart({
          * "raw prices · not split-adjusted" over an adjusted series.
          */
         let basis: SeriesBasis = { basis: 'unknown', splits: [], adjustedHere: false, evidence: 'not measured' }
+        /*
+         * When the provider answered, in unix milliseconds. 0 until one does.
+         *
+         * Kept separate from the last bar's timestamp because they are
+         * different quantities: a bar is stamped at the opening of the period
+         * it covers, so a monthly bar says the first of the month and reading
+         * age off it called a current chart 18 days old. A cache hit carries
+         * the moment the cached answer was observed, so a stale series still
+         * reads stale.
+         */
+        let observedAt = 0
 
         if (timeFrame === 'CUSTOM' && customRange) {
           // Use custom date range
@@ -492,6 +503,7 @@ export function ProChart({
           rawData = custom.candles
           failure = custom.failure
           basis = custom.basis
+          observedAt = custom.observedAt
         } else {
           // Use preset timeframe
           const params = timeframeToParams[timeFrame] || { interval: '1d', range: '1mo' }
@@ -507,6 +519,7 @@ export function ProChart({
           rawData = result.candles
           failure = result.failure
           basis = result.basis
+          observedAt = result.observedAt
         }
 
         if (rawData.length === 0) {
@@ -537,6 +550,9 @@ export function ProChart({
             last: lastBar ? lastBar.close : null,
             previous: prevBar ? prevBar.close : null,
             lastBarTime: lastBar ? lastBar.time : null,
+            // When the provider answered, which is what "how old is this"
+            // asks. The bar time above is a period boundary, not an age.
+            observedAt: observedAt > 0 ? Math.floor(observedAt / 1000) : null,
             bars: ohlcData.length,
             interval,
             provider: marketDataProvider,

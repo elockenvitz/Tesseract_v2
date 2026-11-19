@@ -21,6 +21,7 @@ const base: SeriesMeta = {
   last: 100,
   previous: 80,
   lastBarTime: 1_760_000_000,
+  observedAt: 1_760_000_000,
   bars: 30,
   interval: '1d',
   provider: 'yahoo',
@@ -74,10 +75,10 @@ describe('the change is computed, or it is withheld', () => {
   })
 })
 
-describe('freshness says how old, coarsely', () => {
+describe('freshness says how old the DATA is, coarsely', () => {
   const now = 1_760_000_000_000 // ms
 
-  it('a bar from a minute ago is now', () => {
+  it('an answer from a minute ago is now', () => {
     expect(freshnessLabel(now / 1000 - 30, now)).toBe('just now')
   })
 
@@ -88,15 +89,64 @@ describe('freshness says how old, coarsely', () => {
     expect(freshnessLabel(now / 1000 - 86_400 * 4, now)).toBe('4 days ago')
   })
 
-  it('a missing bar time is reported as missing, not as fresh', () => {
+  it('a missing observation is reported as missing, not as fresh', () => {
     /* The dangerous default: treating null as 0 seconds old, which labels a
        series with no data "just now". */
     expect(freshnessLabel(null, now)).toBe('no data')
     expect(freshnessLabel(Number.NaN, now)).toBe('no data')
   })
 
-  it('a bar timestamped in the future does not read as negative', () => {
+  it('an unobserved series (0) is not the epoch, it is unknown', () => {
+    /*
+     * `getChartDataResult` returns `observedAt: 0` when nothing was observed.
+     * Taken as a timestamp that is 1 January 1970, and the header would have
+     * announced the chart as about twenty thousand days old rather than
+     * saying it does not know.
+     */
+    expect(freshnessLabel(0, now)).toBe('no data')
+  })
+
+  it('an answer timestamped in the future does not read as negative', () => {
     expect(freshnessLabel(now / 1000 + 600, now)).toBe('just now')
+  })
+})
+
+describe('freshness is NOT read off the last bar', () => {
+  /*
+   * THE DEFECT THIS PINS.
+   *
+   * The header took `meta.lastBarTime`, and a bar is stamped at the START of
+   * the period it covers. On a monthly series the newest bar carries the
+   * first of the month, so on the 19th a perfectly current chart announced
+   * itself as "18 days ago" -- and the error grew with the bar size, which
+   * is backwards: a coarse interval is the one a reader can least check by
+   * eye.
+   *
+   * These two cases are the same instant in the same series. Only the
+   * argument differs, and that is the whole fix.
+   */
+  const nowMs = Date.parse('2026-11-19T15:00:00Z')
+  const monthlyBarOpensAt = Date.parse('2026-11-01T00:00:00Z') / 1000
+  const providerAnsweredAt = Date.parse('2026-11-19T14:59:00Z') / 1000
+
+  it('the monthly bucket boundary is the figure that read 18 days old', () => {
+    // Not an assertion about what the header SHOULD say -- it is the proof
+    // that the old argument produced the reported label.
+    expect(freshnessLabel(monthlyBarOpensAt, nowMs)).toBe('18 days ago')
+  })
+
+  it('the observation time says the chart is current, which it is', () => {
+    expect(freshnessLabel(providerAnsweredAt, nowMs)).toBe('just now')
+  })
+
+  it('a cached answer still reads as old, so staleness is not hidden', () => {
+    /*
+     * The other half. Stamping a cache hit `Date.now()` would make every
+     * stale series look new -- the opposite failure, and the one that
+     * actually costs money.
+     */
+    const observedTwoHoursAgo = nowMs / 1000 - 7200
+    expect(freshnessLabel(observedTwoHoursAgo, nowMs)).toBe('2h ago')
   })
 })
 

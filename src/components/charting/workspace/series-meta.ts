@@ -46,8 +46,25 @@ export interface SeriesMeta {
   last: number | null
   /** The close before it, so a change can be computed honestly. */
   previous: number | null
-  /** Unix seconds of the last bar. */
+  /**
+   * Unix seconds of the last bar -- the START of the period it covers.
+   *
+   * NOT a freshness timestamp, and the distinction is the whole reason
+   * `observedAt` exists below. A bar is stamped at the opening of its
+   * bucket, so on a monthly series the newest bar carries the first of the
+   * month. Measuring age from it reported a perfectly current chart as
+   * "18 days ago" on the 19th, and the label got worse the coarser the
+   * interval and the more current the data.
+   */
   lastBarTime: number | null
+  /**
+   * Unix seconds at which the provider answered: the series' actual age.
+   *
+   * Null when nothing was observed, which is stated as not knowing rather
+   * than as an age of zero. A cache hit carries the moment the CACHED answer
+   * was observed, so a stale series reads stale instead of reading new.
+   */
+  observedAt: number | null
   /** How many bars were drawn. */
   bars: number
   /** The bar size, as the provider was asked for it. */
@@ -94,15 +111,31 @@ export function readChange(meta: SeriesMeta): ChangeReading | null {
 }
 
 /**
- * How old the last bar is, in words.
+ * How old the DATA is, in words.
  *
- * Deliberately coarse. A cache can be minutes or days behind, and the
- * difference a reader needs is "this is now" against "this is not now" --
- * not a figure precise enough to be mistaken for a timestamp.
+ * ── The defect this signature exists to prevent ──────────────────────────
+ *
+ * This took the last BAR's timestamp, and a bar is stamped at the start of
+ * the period it covers. On a monthly series the newest bar carries the first
+ * of the month, so on the 19th the header read "18 days ago" above a chart
+ * that was entirely current -- and the error grew with the bar size, which
+ * is backwards: the coarser intervals are the ones a reader is least able to
+ * check by eye.
+ *
+ * A calendar bucket boundary is not an observation time. They coincide only
+ * on an intraday series, which is why this was not obvious.
+ *
+ * So the argument is the moment the PROVIDER ANSWERED. That is the question
+ * "how old is this" actually asks, it is correct at every bar size, and it
+ * is the one quantity that can distinguish a live fetch from a cached one.
+ *
+ * Deliberately coarse. The difference a reader needs is "this is now"
+ * against "this is not now", not a figure precise enough to be mistaken for
+ * a timestamp.
  */
-export function freshnessLabel(lastBarTime: number | null, now: number = Date.now()): string {
-  if (lastBarTime == null || !Number.isFinite(lastBarTime)) return 'no data'
-  const ageSeconds = Math.max(0, now / 1000 - lastBarTime)
+export function freshnessLabel(observedAt: number | null, now: number = Date.now()): string {
+  if (observedAt == null || !Number.isFinite(observedAt) || observedAt <= 0) return 'no data'
+  const ageSeconds = Math.max(0, now / 1000 - observedAt)
   if (ageSeconds < 120) return 'just now'
   if (ageSeconds < 3600) return `${Math.floor(ageSeconds / 60)}m ago`
   if (ageSeconds < 86_400) return `${Math.floor(ageSeconds / 3600)}h ago`

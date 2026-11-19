@@ -67,7 +67,13 @@ export function InstrumentHeader({ symbol, companyName, meta: incoming }: Instru
           <span>{meta.bars} bars · {meta.interval}</span>
           <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
           <span>{meta.provider}</span>
-          <span>{freshnessLabel(meta.lastBarTime)}</span>
+          {/*
+            `observedAt`, never `lastBarTime`. The bar carries the opening of
+            the period it covers, so on a monthly series it is the first of
+            the month and the header announced an 18-day-old chart that was
+            current. See `freshnessLabel`.
+          */}
+          <span>{freshnessLabel(meta.observedAt)}</span>
           {/*
             The basis, beside the prices rather than behind a tooltip.
             A raw series on a long window draws a stock split as a collapse,
