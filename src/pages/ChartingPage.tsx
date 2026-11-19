@@ -12,6 +12,11 @@ import { supabase } from '../lib/supabase'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { ProChart, ChartType, TimeFrame, IndicatorType, CustomDateRange } from '../components/charting'
+import { InstrumentHeader } from '../components/charting/workspace/InstrumentHeader'
+import type { SeriesMeta } from '../components/charting/workspace/series-meta'
+import { DrawingPalette } from '../components/charting/workspace/DrawingPalette'
+import { AnnotationInspector } from '../components/charting/workspace/AnnotationInspector'
+import { armedCaption, toolForKey } from '../components/charting/workspace/drawing-tools'
 /*
  * `hooks/useAuth`, NOT `contexts/AuthContext`.
  *
@@ -43,6 +48,15 @@ import {
   writeChartingWorkspace,
 } from '../lib/charting/workspace-state'
 import {
+  CHARTING_WORKSPACE_CODEC,
+  type ChartPanel,
+  type ChartingWorkspace,
+  type DisplayMode,
+  type LineStyleOption,
+  type MetricType,
+  type ViewMode,
+} from '../lib/charting/workspace-codec'
+import {
   Annotation,
   AnnotationType,
   DEFAULT_ANNOTATION_STYLE,
@@ -62,11 +76,6 @@ import {
   undo as historyUndo,
 } from '../lib/charting/annotation-history'
 
-// Metric types for charting
-type MetricType = 'price' | 'volume' | 'market_cap' | 'pe_ratio' | 'eps' | 'revenue' | 'dividend_yield'
-
-// Display modes for comparison
-type DisplayMode = 'absolute' | 'indexed' | 'relative'
 
 // Default index base value
 const DEFAULT_INDEX_BASE = 100
@@ -150,37 +159,12 @@ interface ChartingPageProps {
   workspaceId?: string
 }
 
-type ViewMode = 'single' | 'grid'
-
-interface ChartPanel {
-  id: string
-  symbol: string
-  companyName?: string
-  chartType: ChartType
-  timeFrame: TimeFrame
-  customRange?: CustomDateRange
-  indicators: string[]
-  metric: MetricType
-  annotations: Annotation[]
-  // Track selected frequency for highlighting
-  selectedFreq?: {
-    frequencyKey: string
-    interval: string
-    isIntraday: boolean
-  }
-  // Main symbol styling
-  mainSymbolStyle?: {
-    color?: string
-    lineWidth?: number
-    lineStyle?: LineStyleOption
-  }
-  // Comparison symbols
-  compareSymbols?: { symbol: string; companyName?: string; color?: string; lineWidth?: number; lineStyle?: LineStyleOption }[]
-  // Display mode: absolute prices, indexed, or relative to first symbol
-  displayMode?: DisplayMode
-  // Base value for indexed mode (default 100)
-  indexBase?: number
-}
+/*
+ * `ViewMode`, `ChartPanel` and `ChartingWorkspace` moved to
+ * `lib/charting/workspace-codec`, together with the codec that restores
+ * them from storage. The codec is defined over these types, and a `.tsx`
+ * file cannot export it without breaking Fast Refresh.
+ */
 
 // Context menu state
 interface ContextMenuState {
@@ -200,8 +184,6 @@ interface LineContextMenuState {
   isMainSymbol: boolean
 }
 
-// Line style type (matching renderer)
-type LineStyleOption = 'solid' | 'dashed' | 'dotted'
 
 const LINE_COLORS = [
   { value: '#dc2626', label: 'Red' },
@@ -287,20 +269,6 @@ function parseIntervalToDays(interval: string): number {
 }
 
 
-/**
- * What survives a tab switch.
- *
- * Held outside React by `lib/charting/workspace-state`, because
- * `renderTabContent` mounts only the active tab and therefore unmounts this
- * page entirely when you move to Overview. These are the fields a person
- * chose and would have to choose again.
- */
-interface ChartingWorkspace {
-  panels: ChartPanel[]
-  activePanel: string
-  viewMode: ViewMode
-}
-
 // Get fresh default state, used only when nothing was stored for this tab.
 function getDefaultChartingState(): ChartingWorkspace {
   return {
@@ -335,7 +303,8 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
    * first is the whole fix for that.
    */
   const [initialState] = useState<ChartingWorkspace>(
-    () => readChartingWorkspace<ChartingWorkspace>(workspaceKey) ?? getDefaultChartingState(),
+    () => readChartingWorkspace<ChartingWorkspace>(workspaceKey, CHARTING_WORKSPACE_CODEC)
+      ?? getDefaultChartingState(),
   )
 
   // Track symbols that have been added via initialSymbol to avoid duplicates
@@ -369,7 +338,11 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
    * a transient, not a choice.
    */
   useEffect(() => {
-    writeChartingWorkspace<ChartingWorkspace>(workspaceKey, { panels, activePanel, viewMode })
+    writeChartingWorkspace<ChartingWorkspace>(
+      workspaceKey,
+      { panels, activePanel, viewMode },
+      CHARTING_WORKSPACE_CODEC,
+    )
   }, [workspaceKey, panels, activePanel, viewMode])
 
   // Context menu state for right-click annotations
@@ -381,6 +354,13 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
     chartY: 0
   })
   const [selectedAnnotation, setSelectedAnnotation] = useState<string | null>(null)
+  /*
+   * What the chart last drew: last close, bar count, interval, feed, basis.
+   * Reported up by ProChart because only the fetch knows it. Cleared when
+   * the symbol changes, so the header cannot show one instrument's price
+   * beside another instrument's name while the new series loads.
+   */
+  const [seriesMeta, setSeriesMeta] = useState<SeriesMeta | null>(null)
 
   /**
    * The drawing tool in hand, or null for an ordinary pointer.
@@ -755,6 +735,38 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
         deleteAnnotation(selectedAnnotation)
         return
       }
+      /*
+       * A bare letter arms a tool, the way every professional chart does.
+       *
+       * Guarded three ways, in this order. No modifier, because Ctrl+S is the
+       * browser's and Alt+H may be the operating system's. No typing target,
+       * because the page carries a symbol search and an `H` typed into it
+       * must stay an `H` -- the same guard the undo shortcut below already
+       * applies, for the same reason. And no unknown key, so the handler
+       * passes everything it does not claim straight through.
+       */
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.length === 1) {
+        const typing = e.target as HTMLElement | null
+        if (
+          typing &&
+          (typing.tagName === 'INPUT' ||
+            typing.tagName === 'TEXTAREA' ||
+            typing.isContentEditable)
+        ) {
+          return
+        }
+        const tool = toolForKey(e.key)
+        if (tool) {
+          e.preventDefault()
+          setActiveTool(tool.type)
+          /* Picking up a tool drops the selection: the next press is going to
+             draw, not move what was selected, and leaving a mark lit would
+             say otherwise. */
+          if (tool.type) setSelectedAnnotation(null)
+          return
+        }
+      }
+
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return
       /*
        * Never steal the shortcut from a field being typed in. The page
@@ -987,10 +999,11 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             </div>
 
             {currentPanel.symbol && (
-              <div className="flex items-center space-x-3">
-                <span className="text-lg font-bold text-gray-900 dark:text-white">{currentPanel.symbol}</span>
-                <span className="text-sm text-gray-500 dark:text-gray-400">{currentPanel.companyName}</span>
-              </div>
+              <InstrumentHeader
+                symbol={currentPanel.symbol}
+                companyName={currentPanel.companyName}
+                meta={seriesMeta}
+              />
             )}
           </div>
 
@@ -1516,6 +1529,25 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
 
       {/* Main Chart Area */}
       <div className="flex-1 flex overflow-hidden" onClick={() => { closeContextMenu(); closeLineContextMenu(); }}>
+        {/*
+          The drawing tools, stated.
+          Every tool here already worked and was reachable only by
+          right-clicking empty canvas, which nothing on the page mentioned.
+          See `workspace/drawing-tools.ts`.
+        */}
+        <DrawingPalette
+          activeTool={activeTool}
+          onSelectTool={type => {
+            setActiveTool(type)
+            if (type) setSelectedAnnotation(null)
+          }}
+          onUndo={undoAnnotations}
+          onRedo={redoAnnotations}
+          canUndo={historyCanUndo(history)}
+          canRedo={historyCanRedo(history)}
+          onClearAll={clearAllAnnotations}
+          markCount={currentPanel.annotations.length}
+        />
         {/* Chart Canvas */}
         <div className="flex-1 overflow-hidden relative">
           {/*
@@ -1525,68 +1557,33 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             * to explain it. The strip also carries the two controls that are
             * otherwise keyboard-only.
             */}
-          {(activeTool || selectedAnnotation || historyCanUndo(history) || historyCanRedo(history)) && (
-            <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-gray-200/80 bg-white/95 px-2 py-1 shadow-sm backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
-              {/*
-                * The selection has to be stated somewhere.
-                *
-                * `AnnotationRenderer` draws no selection outline and no
-                * handles -- that needs the canvas render loop, which this
-                * change does not touch -- so without this line the reader
-                * would have picked up a mark with nothing to show it. The
-                * drag itself is the other feedback.
-                */}
-              {!activeTool && selectedAnnotation && (
-                <>
-                  <span className="pl-1 text-[11px] font-medium text-gray-700 dark:text-gray-200">
-                    {(annotationTools.find(
-                      t => t.type === currentPanel.annotations.find(a => a.id === selectedAnnotation)?.type,
-                    )?.label ?? 'Mark')}{' '}
-                    selected
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => deleteAnnotation(selectedAnnotation)}
-                    className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-rose-50 hover:text-rose-600 dark:text-gray-400 dark:hover:bg-rose-500/10 dark:hover:text-rose-400"
-                  >
-                    Delete
-                  </button>
-                  <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
-                </>
-              )}
-              {activeTool && (
-                <>
-                  <span className="pl-1 text-[11px] font-medium text-gray-700 dark:text-gray-200">
-                    Drag to draw{' '}
-                    {(annotationTools.find(t => t.type === activeTool)?.label ?? activeTool).toLowerCase()}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTool(null)}
-                    className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
-                  >
-                    Cancel
-                  </button>
-                  <span className="h-3 w-px bg-gray-200 dark:bg-white/10" />
-                </>
-              )}
+          {/*
+            * Reduced to the one thing the rail cannot say.
+            *
+            * Undo, redo and the selection used to live here. Undo and redo
+            * are on the palette now, where they sit beside the tools they
+            * reverse; the selection is in the inspector, which can state the
+            * mark's anchors rather than just its name. What is left is the
+            * instruction, and it has to be HERE rather than on the button:
+            * the reader is looking at the canvas, which is where their next
+            * press has to land.
+            *
+            * `armedCaption` is used rather than a sentence built here,
+            * because the sentence differs by tool. "Drag to draw horizontal
+            * line" was wrong -- a horizontal line is placed by a click, and
+            * dragging to make one produces nothing at all.
+            */}
+          {activeTool && (
+            <div className="absolute top-2 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-gray-200/80 bg-white/95 px-3 py-1 shadow-sm backdrop-blur dark:border-white/10 dark:bg-gray-900/95">
+              <span className="text-[11px] font-medium text-gray-700 dark:text-gray-200">
+                {armedCaption(activeTool)}
+              </span>
               <button
                 type="button"
-                onClick={undoAnnotations}
-                disabled={!historyCanUndo(history)}
-                title="Undo (Ctrl+Z)"
-                className="rounded-full p-1 text-gray-500 enabled:hover:bg-gray-100 enabled:hover:text-gray-900 disabled:opacity-30 dark:text-gray-400 dark:enabled:hover:bg-white/10 dark:enabled:hover:text-white"
+                onClick={() => setActiveTool(null)}
+                className="rounded-full px-2 py-0.5 text-[11px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-white"
               >
-                <Undo2 className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={redoAnnotations}
-                disabled={!historyCanRedo(history)}
-                title="Redo (Ctrl+Shift+Z)"
-                className="rounded-full p-1 text-gray-500 enabled:hover:bg-gray-100 enabled:hover:text-gray-900 disabled:opacity-30 dark:text-gray-400 dark:enabled:hover:bg-white/10 dark:enabled:hover:text-white"
-              >
-                <Redo2 className="h-3.5 w-3.5" />
+                Cancel · Esc
               </button>
             </div>
           )}
@@ -1606,6 +1603,7 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
                   indexBase={currentPanel.indexBase}
                   selectedLine={selectedLine}
                   mainSymbolStyle={currentPanel.mainSymbolStyle}
+                  onSeriesMeta={setSeriesMeta}
                   onContextMenu={handleChartContextMenu}
                   onLineContextMenu={handleLineContextMenu}
                   onLineClick={handleLineClick}
@@ -1681,6 +1679,17 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
             </div>
           )}
         </div>
+        {/*
+          The inspector, which takes no width until a mark is picked up.
+          It edits through `commitAnnotationChange`, the same undoable path a
+          drag ends on, so a colour change is one Ctrl+Z like everything else.
+        */}
+        <AnnotationInspector
+          annotation={currentPanel.annotations.find(a => a.id === selectedAnnotation) ?? null}
+          onChange={commitAnnotationChange}
+          onDelete={deleteAnnotation}
+          onClose={() => setSelectedAnnotation(null)}
+        />
       </div>
 
       {/* Right-Click Context Menu for Annotations */}

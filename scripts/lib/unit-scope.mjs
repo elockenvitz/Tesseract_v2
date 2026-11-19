@@ -408,6 +408,16 @@ export const GATED_DIRS = [
    * Gated on arrival.
    */
   'src/lib/charting/__tests__',
+  /*
+   * The drawing palette's own contract: that every tool the engine can build
+   * is offered, that no two claim a key, that a one-point tool's instruction
+   * says click rather than drag, and that the inspector never attaches a
+   * currency the chart surface was never given. Gated because all four fail
+   * silently -- a tool that quietly stops being listed looks exactly like a
+   * tool that was never built, which is the state this whole surface was
+   * found in. Gated on arrival.
+   */
+  'src/components/charting/workspace/__tests__',
   // What a file type means, what a size reads as, and what the repository
   // refuses to store. Desktop and mobile both import these, so a drift here
   // is two surfaces disagreeing about the same file. Gated on arrival.

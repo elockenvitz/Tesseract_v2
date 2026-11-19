@@ -182,7 +182,21 @@ describe('the Charting page is wired to it', () => {
      * getDefaultChartingState()`. Defaulting first and restoring afterwards
      * would flash the empty chart and refetch before the real symbol landed.
      */
-    expect(page).toMatch(/readChartingWorkspace<[^>]*>\(workspaceKey\)\s*\?\?\s*getDefaultChartingState\(\)/)
+    expect(page).toMatch(
+      /readChartingWorkspace<[^>]*>\(workspaceKey,\s*CHARTING_WORKSPACE_CODEC\)\s*\?\?\s*getDefaultChartingState\(\)/,
+    )
+  })
+
+  it('reads through the codec, so a reload restores and not just a tab switch', () => {
+    /*
+     * Without a codec the store is memory-only by design, and a reload
+     * returns "No Symbol Selected". The codec argument is what makes the
+     * durable layer apply -- see `workspace-durability.test.ts` for the
+     * behaviour and `pages/__tests__/charting-workspace-codec.test.ts` for
+     * the codec itself.
+     */
+    expect(page).toMatch(/readChartingWorkspace<[^>]*>\(\s*workspaceKey,\s*CHARTING_WORKSPACE_CODEC/)
+    expect(page).toMatch(/CHARTING_WORKSPACE_CODEC,?\s*\)/)
   })
 
   it('writes on change rather than at unmount', () => {
@@ -206,7 +220,7 @@ describe('the Charting page is wired to it', () => {
   it('does not persist transient menu state', () => {
     // A reopened tab showing the indicator menu already open would be
     // restoring a transient, not a choice.
-    const effect = /writeChartingWorkspace<[^>]*>\(workspaceKey, \{([^}]*)\}\)/.exec(page)?.[1] ?? ''
+    const effect = /writeChartingWorkspace<[^>]*>\(\s*workspaceKey,\s*\{([^}]*)\}/.exec(page)?.[1] ?? ''
     expect(effect, 'the persisted payload was not found').not.toBe('')
     expect(effect).not.toMatch(/show[A-Z]/)
     expect(effect).not.toMatch(/searchQuery|contextMenu/)
