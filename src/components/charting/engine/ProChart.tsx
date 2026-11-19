@@ -59,7 +59,7 @@ import {
  * replaces is what that costs: it derived the second point of every mark by
  * arithmetic, so every trend line was 30 days long and rose exactly 5%.
  */
-import { beginGesture, completeDraw } from '../../../lib/charting/drawing-gesture'
+import { beginGesture, completeDraw, type PanAxis } from '../../../lib/charting/drawing-gesture'
 import {
   moveAnnotation,
   reshapeAnnotation,
@@ -452,7 +452,10 @@ export function ProChart({
   // Interaction state
   const [isDragging, setIsDragging] = useState(false)
   const [dragMode, setDragMode] = useState<'pan' | 'zoom-price' | 'zoom-time'>('pan')
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0, viewStart: 0, viewEnd: 0, minPrice: 0, maxPrice: 0 })
+  const [dragStart, setDragStart] = useState<{
+    x: number; y: number; viewStart: number; viewEnd: number
+    minPrice: number; maxPrice: number; panAxis: PanAxis
+  }>({ x: 0, y: 0, viewStart: 0, viewEnd: 0, minPrice: 0, maxPrice: 0, panAxis: 'both' })
   const [crosshair, setCrosshair] = useState<{ x: number; y: number } | null>(null)
   const [cursorStyle, setCursorStyle] = useState('crosshair')
   const [hoveredLine, setHoveredLine] = useState<string | null>(null) // symbol of hovered line
@@ -1209,7 +1212,15 @@ export function ProChart({
       at: { x, y },
       chartArea: area,
       dimensions: dims,
-      activeTool
+      activeTool,
+      /*
+       * `dims` is the MAIN chart -- the transform is built from
+       * `mainChartDimensions`, whose height is only
+       * `dimensions.height * mainChartHeightRatio`. The study panes are
+       * drawn in the rest of the canvas, so the full canvas height is what
+       * says where the plotted stack actually ends.
+       */
+      stackBottom: dimensions.height
     })
 
     if (gesture.kind === 'none') return
@@ -1264,9 +1275,12 @@ export function ProChart({
       viewStart: view.startTime,
       viewEnd: view.endTime,
       minPrice: view.minPrice,
-      maxPrice: view.maxPrice
+      maxPrice: view.maxPrice,
+      /* Captured at press time, not read at move time: which pane the drag
+         STARTED in is what decides whether it may touch the price range. */
+      panAxis: gesture.kind === 'pan' ? gesture.axis : 'both'
     })
-  }, [view, activeTool, annotations, onAnnotationSelect])
+  }, [view, activeTool, annotations, onAnnotationSelect, dimensions.height])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -1333,7 +1347,11 @@ export function ProChart({
         const timeDelta = -(dx / area.width) * timeRange
 
         const priceRange = dragStart.maxPrice - dragStart.minPrice
-        const priceDelta = (dy / area.height) * priceRange
+        /* A drag that began in a study pane pans time only: its `dy` is in
+           that pane's own units, and spending it on the price range would
+           move a plot the reader was not dragging. */
+        const priceDelta =
+          dragStart.panAxis === 'time' ? 0 : (dy / area.height) * priceRange
 
         setView(v => ({
           ...v,
@@ -1616,7 +1634,9 @@ export function ProChart({
         const timeRange = dragStart.viewEnd - dragStart.viewStart
         const timeDelta = -(dx / area.width) * timeRange
         const priceRange = dragStart.maxPrice - dragStart.minPrice
-        const priceDelta = (dy / area.height) * priceRange
+        /* Same rule as the canvas handler: a pane drag owns time only. */
+        const priceDelta =
+          dragStart.panAxis === 'time' ? 0 : (dy / area.height) * priceRange
 
         setView(v => ({
           ...v,
