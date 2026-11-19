@@ -124,24 +124,23 @@ function normaliseYahooSeries(
 }
 
 /**
- * EODHD's basis, which this code cannot change.
+ * EODHD when its corporate actions are not available.
  *
- * `supabase/functions/_shared/eodhd.ts` maps the RAW `close` and deliberately
- * does not forward `adjusted_close`, and the function returns no corporate
- * actions at all. So the browser has neither an adjusted series nor the
- * factors to build one, and a split-adjusted EODHD series is not available
- * rather than merely unimplemented.
+ * `_shared/eodhd.ts` maps the RAW `close`, so without ratios the browser has
+ * no way to restate the series and a split draws as a collapse. That is
+ * reported as `raw` and flagged -- `adjustmentIsHazardous` makes the header
+ * warn on it -- never silently relabelled, and never patched with a factor
+ * inferred from the prices or borrowed from another feed.
  *
- * That is stated as `raw` and flagged, never silently relabelled.
- * `adjustmentIsHazardous` makes the header warn on it. Lifting this needs
- * the edge function to forward either the ratios or `adjusted_close`, which
- * is a deploy and therefore a separate, approved change.
+ * This is the state every EODHD chart is in until the `splits` operation
+ * added in this change is DEPLOYED. Until then the behaviour is exactly
+ * what it was.
  */
-const EODHD_BASIS: SeriesBasis = {
+const EODHD_RAW_BASIS: SeriesBasis = {
   basis: 'raw',
   splits: [],
   adjustedHere: false,
-  evidence: 'EODHD sends raw closes and no corporate actions, so no adjustment can be applied here',
+  evidence: 'EODHD published no corporate actions for this window, so no adjustment could be applied',
 }
 
 /**
@@ -419,9 +418,9 @@ class ChartDataService {
       if (provider === 'eodhd') {
         const result = await this.fetchFromEodhdResult(request)
         if (result.candles.length > 0) {
-          this.cache.set(cacheKey, { data: result.candles, basis: EODHD_BASIS, timestamp: Date.now() })
+          this.cache.set(cacheKey, { data: result.candles, basis: result.basis, timestamp: Date.now() })
         }
-        return { ...result, provider, basis: EODHD_BASIS }
+        return { ...result, provider }
       }
 
       const { candles, basis } = await this.fetchFromYahooFinance(request)
@@ -456,7 +455,7 @@ class ChartDataService {
    */
   private async fetchFromEodhdResult(
     request: ChartDataRequest,
-  ): Promise<{ candles: CandlestickData[]; failure?: AdapterFailure }> {
+  ): Promise<{ candles: CandlestickData[]; failure?: AdapterFailure; basis: SeriesBasis }> {
     const to = new Date()
     const from = new Date(to.getTime() - rangeToDays(request.range) * 86_400_000)
     return this.fetchEodhdWindowResult(request.symbol, request.interval, from, to)
@@ -475,7 +474,7 @@ class ChartDataService {
     uiInterval: ChartDataRequest['interval'] | string,
     from: Date,
     to: Date,
-  ): Promise<{ candles: CandlestickData[]; failure?: AdapterFailure }> {
+  ): Promise<{ candles: CandlestickData[]; failure?: AdapterFailure; basis: SeriesBasis }> {
     const { eodhdBars } = await import('./market-data/eodhd-client')
     const { toCandles, INTRADAY_MAX_SPAN_DAYS } = await import('./market-data/eodhd-series')
     const { resolveEodhdSymbol } = await import('./market-data/eodhd-symbol')
@@ -506,6 +505,7 @@ class ChartDataService {
       // rather than substituted, and named so the UI can say which it was.
       return {
         candles: [],
+        basis: UNKNOWN_BASIS,
         failure: {
           kind: 'not_supported',
           detail: `EODHD publishes no ${uiInterval} bar. Choose another interval.`,
@@ -525,7 +525,7 @@ class ChartDataService {
     // `AAPL` is not an EODHD symbol. Resolved through the provider's own
     // search, never built from `assets.exchange`.
     const resolved = await resolveEodhdSymbol(symbol)
-    if (!resolved.ok) return { candles: [], failure: resolved.failure }
+    if (!resolved.ok) return { candles: [], basis: UNKNOWN_BASIS, failure: resolved.failure }
 
     const res = await eodhdBars({
       symbol: resolved.symbol,
@@ -533,20 +533,34 @@ class ChartDataService {
       to: to.toISOString().slice(0, 10),
       interval,
     })
-    if (!res.ok) return { candles: [], failure: res.failure }
+    if (!res.ok) return { candles: [], basis: UNKNOWN_BASIS, failure: res.failure }
 
-    const baseCandles = toCandles((res.data.value ?? []) as never[])
-    if (baseCandles.length === 0) {
+    const rawCandles = toCandles((res.data.value ?? []) as never[])
+    if (rawCandles.length === 0) {
       // The symbol resolved and the window is empty. Distinct from an
       // unknown instrument, and the two read identically on a blank chart.
       return {
-        candles: baseCandles,
+        candles: rawCandles,
+        basis: UNKNOWN_BASIS,
         failure: {
           kind: 'no_data',
           detail: `EODHD published no ${interval} bars for ${resolved.symbol} in this window.`,
         },
       }
     }
+
+    /*
+     * ── Adjusted BEFORE resampling, which is not interchangeable ─────────
+     *
+     * EODHD publishes no weekly or monthly bar, so those are built here from
+     * daily ones. Adjusting afterwards cannot work: the monthly bucket that
+     * contains an ex-date would be assembled from a 645 open and a 93 close,
+     * and dividing that finished bar by any factor leaves the collapse
+     * inside it. Adjusting the daily bars first means the bucket is built
+     * from figures that are already on one basis.
+     */
+    const { basis, splits } = await this.eodhdBasisFor(resolved.symbol, start, to)
+    const baseCandles = splits.length > 0 ? applySplitAdjustment(rawCandles, splits) : rawCandles
 
     // Combined only when a base was substituted for an unpublished size.
     const candles = plan ? resampleCandles(baseCandles, plan.target) : baseCandles
@@ -558,13 +572,75 @@ class ChartDataService {
        */
       return {
         candles,
+        basis,
         failure: {
           kind: 'unavailable',
           detail: `EODHD ${interval} bars for ${resolved.symbol} carried no usable timestamps.`,
         },
       }
     }
-    return { candles }
+    return { candles, basis }
+  }
+
+  /**
+   * EODHD's corporate actions for a window, and the basis they permit.
+   *
+   * ── Why the window runs to today, not to the window's own end ────────
+   *
+   * A split AFTER the drawn window still changes what its prices mean. A
+   * 2013 window of AAPL shows prices near 500 because one share then is 28
+   * shares now; nothing inside that window is discontinuous, so asking only
+   * for splits inside it would return none and leave the series quoted in
+   * shares that no longer exist. The factors that matter are every split
+   * between the oldest bar and now.
+   *
+   * ── Why a failure here is not an error ───────────────────────────────
+   *
+   * The `splits` operation is new. A deployment running the previous
+   * function answers "Unknown op", and an entitlement or rate-limit refusal
+   * can happen at any time. Each of those means "no factors available", and
+   * the honest response to that is the series exactly as published, badged
+   * raw -- which is what the chart did before this existed. It is never a
+   * reason to blank the chart, and never a reason to infer a factor.
+   */
+  private async eodhdBasisFor(
+    resolvedSymbol: string,
+    from: Date,
+    to: Date,
+  ): Promise<{ basis: SeriesBasis; splits: SplitEvent[] }> {
+    const { eodhdSplits } = await import('./market-data/eodhd-client')
+
+    // To TODAY, not to `to`. See above.
+    const today = new Date(Math.max(to.getTime(), Date.now()))
+    const res = await eodhdSplits({
+      symbol: resolvedSymbol,
+      from: from.toISOString().slice(0, 10),
+      to: today.toISOString().slice(0, 10),
+    })
+
+    if (!res.ok) return { basis: EODHD_RAW_BASIS, splits: [] }
+
+    const splits: SplitEvent[] = (res.data.value ?? [])
+      .filter(s => Number.isFinite(s.numerator) && Number.isFinite(s.denominator)
+        && s.numerator > 0 && s.denominator > 0 && s.numerator !== s.denominator)
+      .map(s => ({
+        date: s.date,
+        factor: s.numerator / s.denominator,
+        ratio: `${s.numerator}:${s.denominator}`,
+      }))
+
+    return {
+      basis: {
+        basis: 'split_adjusted',
+        splits,
+        adjustedHere: splits.length > 0,
+        evidence: splits.length > 0
+          ? `restated in current shares from ${splits.length} published ratio(s): `
+            + splits.map(s => `${s.ratio} on ${s.date}`).join(', ')
+          : 'EODHD published no split for this instrument in or after this window',
+      },
+      splits,
+    }
   }
 
   private async fetchFromYahooFinance(
@@ -626,7 +702,7 @@ class ChartDataService {
     provider: MarketDataProviderId = 'yahoo'
   ): Promise<{ candles: CandlestickData[]; failure?: AdapterFailure; basis: SeriesBasis }> {
     if (provider === 'eodhd') {
-      return { ...(await this.fetchEodhdWindowResult(symbol, interval, startDate, endDate)), basis: EODHD_BASIS }
+      return this.fetchEodhdWindowResult(symbol, interval, startDate, endDate)
     }
 
     /*

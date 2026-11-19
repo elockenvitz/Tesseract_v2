@@ -19,7 +19,11 @@ vi.mock('../supabase', () => ({ supabase: { functions: { invoke: (...a: unknown[
 
 /** EODHD's transport, for the one test that needs that branch. */
 const eodhdBars = vi.fn()
-vi.mock('../market-data/eodhd-client', () => ({ eodhdBars: (...a: unknown[]) => eodhdBars(...a) }))
+const eodhdSplits = vi.fn()
+vi.mock('../market-data/eodhd-client', () => ({
+  eodhdBars: (...a: unknown[]) => eodhdBars(...a),
+  eodhdSplits: (...a: unknown[]) => eodhdSplits(...a),
+}))
 vi.mock('../market-data/eodhd-symbol', () => ({
   resolveEodhdSymbol: async () => ({ ok: true, symbol: 'AAPL.US' }),
 }))
@@ -63,8 +67,18 @@ function yahooPayload(dates: string[], closes: number[], splits?: Record<string,
 beforeEach(() => {
   invoke.mockReset()
   eodhdBars.mockReset()
+  eodhdSplits.mockReset()
   chartDataService.clearCache()
 })
+
+/** AAPL's real daily closes across the 7:1, as EODHD publishes them: raw. */
+const EODHD_RAW_BARS = {
+  ok: true,
+  data: { value: [
+    { date: '2014-06-06', open: 649.9, high: 651, low: 644.5, close: 645.57, volume: 49_900_000 },
+    { date: '2014-06-09', open: 92.7, high: 93.88, low: 91.75, close: 93.7, volume: 301_660_000 },
+  ] },
+}
 
 describe('a raw series reaching the chart', () => {
   /** AAPL's real published closes across the 7:1, unadjusted. */
@@ -195,22 +209,126 @@ describe('the cached answer', () => {
   })
 })
 
-describe('EODHD', () => {
-  it('is reported raw and flagged, because no adjustment can be applied to it', async () => {
+describe('EODHD, once its corporate actions are available', () => {
+  it('restates the raw series in current shares', async () => {
+    eodhdBars.mockResolvedValue(EODHD_RAW_BARS)
+    eodhdSplits.mockResolvedValue({
+      ok: true,
+      data: { value: [{ date: '2014-06-09', numerator: 7, denominator: 1 }] },
+    })
+
+    const { candles, basis } = await chartDataService.getChartDataResult({
+      symbol: 'AAPL', interval: '1d', range: '1y', provider: 'eodhd',
+    })
+
+    expect(basis.basis).toBe('split_adjusted')
+    expect(basis.adjustedHere).toBe(true)
+    expect(candles[0].close).toBeCloseTo(645.57 / 7, 6)
+    expect(candles[1].close).toBeCloseTo(93.7, 6)
+    expect(candles[0].volume).toBe(49_900_000 * 7)
+  })
+
+  it('asks for every split up to today, not only the ones inside the window', async () => {
     /*
-     * `supabase/functions/_shared/eodhd.ts` maps the RAW close and forwards
-     * no corporate actions, so the browser has neither an adjusted series
-     * nor the factors to build one. Stated as raw rather than relabelled:
-     * `adjustmentIsHazardous('raw')` is what makes the header warn.
-     *
-     * Lifting this needs the edge function to forward the ratios or
-     * `adjusted_close`, which is a deploy and a separate approved change.
+     * A split AFTER the drawn window still changes what its prices mean. A
+     * 2013 window of AAPL shows prices near 500 because one share then is 28
+     * shares now. Asking only for splits inside the window would find none
+     * and leave the series quoted in shares that no longer exist.
      */
-    eodhdBars.mockResolvedValue({
+    eodhdBars.mockResolvedValue(EODHD_RAW_BARS)
+    eodhdSplits.mockResolvedValue({ ok: true, data: { value: [] } })
+
+    await chartDataService.getChartDataResult({
+      symbol: 'AAPL', interval: '1d', range: '1y', provider: 'eodhd',
+    })
+
+    const asked = eodhdSplits.mock.calls[0][0] as { from: string; to: string }
+    const today = new Date().toISOString().slice(0, 10)
+    expect(asked.to).toBe(today)
+  })
+
+  it('adjusts the daily bars BEFORE they are combined into a monthly one', async () => {
+    /*
+     * EODHD publishes no monthly bar, so one is built here from dailies.
+     * Adjusting afterwards cannot work: the bucket holding the ex-date would
+     * be assembled from a 645 open and a 93 close, and dividing that
+     * finished bar by any factor leaves the collapse inside it.
+     *
+     * Both June bars belong to one monthly bucket, so a correctly ordered
+     * pipeline produces a bucket whose open and close are within a few
+     * percent of each other.
+     */
+    eodhdBars.mockResolvedValue(EODHD_RAW_BARS)
+    eodhdSplits.mockResolvedValue({
+      ok: true,
+      data: { value: [{ date: '2014-06-09', numerator: 7, denominator: 1 }] },
+    })
+
+    const { candles } = await chartDataService.getChartDataResult({
+      symbol: 'AAPL', interval: '1mo', range: '5y', provider: 'eodhd',
+    })
+
+    expect(candles.length).toBeGreaterThan(0)
+    const june = candles[0]
+    expect(june.close / june.open).toBeGreaterThan(0.9)
+    expect(june.close / june.open).toBeLessThan(1.1)
+  })
+})
+
+describe('EODHD when its corporate actions are not available', () => {
+  it('leaves the series exactly as published and badges it raw', async () => {
+    /*
+     * ── The degradation that makes this safe to merge undeployed ───────
+     *
+     * The `splits` operation is new. A deployment running the previous
+     * function answers it with "Unknown op". That must mean "no factors
+     * available" -- the series as published, badged raw, which is exactly
+     * what the chart did before any of this existed -- and never a blank
+     * chart, and never an inferred factor.
+     */
+    eodhdBars.mockResolvedValue(EODHD_RAW_BARS)
+    eodhdSplits.mockResolvedValue({ ok: false, failure: { kind: 'unavailable', detail: 'Unknown op' } })
+
+    const { candles, basis } = await chartDataService.getChartDataResult({
+      symbol: 'AAPL', interval: '1d', range: '1y', provider: 'eodhd',
+    })
+
+    expect(candles).toHaveLength(2)
+    expect(candles.map(c => c.close)).toEqual([645.57, 93.7])
+    expect(basis.basis).toBe('raw')
+    expect(basis.adjustedHere).toBe(false)
+    expect(basis.splits).toEqual([])
+  })
+
+  it('is never handed Yahoo’s split factors, because the bases are not comparable', async () => {
+    /*
+     * The tempting shortcut: EODHD's ratios are unavailable, Yahoo's are
+     * free, so borrow them. It would mean a series whose prices come from
+     * one feed and whose corporate actions come from another, under a
+     * provenance badge naming only the first. The two feeds also differ on
+     * venue and currency.
+     */
+    eodhdBars.mockResolvedValue(EODHD_RAW_BARS)
+    eodhdSplits.mockResolvedValue({ ok: false, failure: { kind: 'unavailable', detail: 'Unknown op' } })
+
+    const { basis } = await chartDataService.getChartDataResult({
+      symbol: 'AAPL', interval: '1d', range: '1y', provider: 'eodhd',
+    })
+
+    expect(basis.splits).toEqual([])
+    // Nothing reached the Yahoo transport at all.
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('refuses a ratio it cannot use rather than treating it as no-op', async () => {
+    // A 1:1 factor adjusts nothing while claiming a split was handled.
+    eodhdBars.mockResolvedValue(EODHD_RAW_BARS)
+    eodhdSplits.mockResolvedValue({
       ok: true,
       data: { value: [
-        { date: '2014-06-06', open: 649.9, high: 651, low: 644.5, close: 645.57, volume: 49_900_000 },
-        { date: '2014-06-09', open: 92.7, high: 93.88, low: 91.75, close: 93.7, volume: 301_660_000 },
+        { date: '2014-06-09', numerator: 1, denominator: 1 },
+        { date: '2014-06-09', numerator: 0, denominator: 1 },
+        { date: '2014-06-09', numerator: 7, denominator: 0 },
       ] },
     })
 
@@ -218,32 +336,7 @@ describe('EODHD', () => {
       symbol: 'AAPL', interval: '1d', range: '1y', provider: 'eodhd',
     })
 
-    expect(candles).toHaveLength(2)
-    expect(basis.basis).toBe('raw')
-    expect(basis.adjustedHere).toBe(false)
-    // Untouched: inventing a factor for a feed that published none is the
-    // fabrication this must never do.
-    expect(candles.map(c => c.close)).toEqual([645.57, 93.7])
-    expect(basis.evidence).toContain('no corporate actions')
-  })
-
-  it('is never handed Yahoo’s split factors, because the bases are not comparable', async () => {
-    /*
-     * The tempting shortcut: EODHD has no ratios, Yahoo does, so borrow
-     * them. It would mean a series whose prices come from one feed and whose
-     * corporate actions come from another, with the provenance badge naming
-     * only the first. The two feeds also differ on venue and currency.
-     */
-    eodhdBars.mockResolvedValue({
-      ok: true,
-      data: { value: [{ date: '2014-06-06', open: 649.9, high: 651, low: 644.5, close: 645.57, volume: 1 }] },
-    })
-
-    const { basis } = await chartDataService.getChartDataResult({
-      symbol: 'AAPL', interval: '1d', range: '1y', provider: 'eodhd',
-    })
-
     expect(basis.splits).toEqual([])
-    expect(invoke).not.toHaveBeenCalled()
+    expect(candles.map(c => c.close)).toEqual([645.57, 93.7])
   })
 })
