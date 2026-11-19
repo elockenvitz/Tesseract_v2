@@ -254,6 +254,22 @@ function decisionHandoff(
  */
 const CASE_MEASURE = 'max-w-none'
 
+/**
+ * The context panels whose content is a handful of FIGURES rather than a list.
+ *
+ * These are the ones that were each spending a full-width band on two to four
+ * values. Everything not named here holds a list whose length is unbounded --
+ * arrival, ideas, decisions, evidence on record -- and keeps the full column,
+ * because a long list beside a short one is what opened the holes that got the
+ * previous two-column pass reverted.
+ */
+const COMPACT_PANELS = new Set(['position', 'also', 'research-state'])
+
+/** The `key` a panel was created with, or '' for anything without one. */
+function keyOf(node: React.ReactNode): string {
+  return (node as { key?: string | null } | null)?.key ?? ''
+}
+
 /** Ideas is a separate object; this is the typed hop, not an embedded workspace. */
 function routeToIdea(ideaId: string, issue: string) {
   window.dispatchEvent(new CustomEvent('decision-engine-action', {
@@ -488,13 +504,36 @@ export function AssetWorkspacePane({
 
   /* ------------------------------------------------------------- sections */
 
+  /*
+   * One byline for the whole case, where there is only one.
+   *
+   * Every core section carries its own author and date, and the common case
+   * is one analyst writing them in one sitting — which rendered the same
+   * "Eric Lockenvitz · 11/20/2025" under each of three sections. Stated once
+   * beside "written 361d ago" it is the same fact in a third of the space;
+   * where sections genuinely differ it stays per-section and this is null, so
+   * nothing is flattened away.
+   */
+  const sharedByline = (() => {
+    if (core.length === 0) return null
+    const stamp = (s: typeof core[number]) =>
+      `${s.authorName ?? ''}|${new Date(s.updatedAt).toLocaleDateString()}`
+    const first = stamp(core[0])
+    if (!core.every(s => stamp(s) === first)) return null
+    const [author, date] = first.split('|')
+    return author ? `${author} · ${date}` : date
+  })()
+
   const theCase = (
     <DesktopSection
       key="case"
       id="the-case"
       title="The case"
       lead
-      meta={subject.daysSinceReview != null ? `written ${subject.daysSinceReview}d ago` : 'never written'}
+      meta={[
+        sharedByline,
+        subject.daysSinceReview != null ? `written ${subject.daysSinceReview}d ago` : 'never written',
+      ].filter(Boolean).join(' · ')}
       action={
         /*
          * The label says where it goes, because it goes somewhere.
@@ -530,25 +569,58 @@ export function AssetWorkspacePane({
         detail is on the page the button now opens.
       */}
       {core.length > 0 ? (
-        <div className="flex flex-col gap-4">
+        /*
+         * ── The label is a gutter, not a line of its own ──────────────────
+         *
+         * Measured on this pane at 1400px with AMZN open: three sections,
+         * each an eyebrow line, a one-line answer and a byline, stacked —
+         * ~75px apiece, ~230px in total, with every line of prose ending
+         * around x=530 in a column that runs to x=1375. Most of the panel
+         * was the space to the right of twelve words.
+         *
+         * Pairing the label with its answer recovers a line per section and
+         * puts the prose in the width that was already there. The label
+         * column is fixed so the answers align down the page: a reader
+         * comparing "what would break it" against "where we differ" is
+         * reading a column, not hunting for where each one starts.
+         *
+         * `md:` because at a narrow pane a 150px gutter plus a reading
+         * measure is not two columns, it is one column and a margin.
+         */
+        <div className="flex flex-col gap-3">
           {core.map(sec => (
-            <div key={sec.section}>
-              <div className={EYEBROW}>{SECTION_LABEL[sec.section] ?? sec.section}</div>
-              {sec.content ? (
-                <div className={clsx('mt-1', CASE_MEASURE)}>
-                  <SmartInputRenderer content={sec.content} density="reading" />
-                </div>
-              ) : (
-                <p className="mt-1 text-[15px] italic leading-[1.7] text-gray-500">Empty.</p>
-              )}
-              {sec.supportingDetail && (
-                <div className={clsx('mt-1.5', CASE_MEASURE)}>
-                  <SmartInputRenderer content={sec.supportingDetail} />
-                </div>
-              )}
-              <div className="mt-1 text-[11px] text-gray-500">
-                {sec.authorName ? `${sec.authorName} · ` : ''}
-                {new Date(sec.updatedAt).toLocaleDateString()}
+            <div
+              key={sec.section}
+              className="grid grid-cols-1 gap-x-5 gap-y-0.5 md:grid-cols-[150px_minmax(0,1fr)]"
+            >
+              <div className={clsx(EYEBROW, 'md:pt-[3px]')}>
+                {SECTION_LABEL[sec.section] ?? sec.section}
+              </div>
+              <div className="min-w-0">
+                {sec.content ? (
+                  <div className={CASE_MEASURE}>
+                    <SmartInputRenderer content={sec.content} density="reading" />
+                  </div>
+                ) : (
+                  <p className="text-[15px] italic leading-[1.7] text-gray-500">Empty.</p>
+                )}
+                {sec.supportingDetail && (
+                  <div className={clsx('mt-1.5', CASE_MEASURE)}>
+                    <SmartInputRenderer content={sec.supportingDetail} />
+                  </div>
+                )}
+                {/*
+                  Only where it differs from the one already stated above the
+                  section. The common case is one analyst writing the whole
+                  case in one sitting, which printed the identical name and
+                  date under every section — three copies of one fact.
+                */}
+                {!sharedByline && (
+                  <div className="mt-1 text-[11px] text-gray-500">
+                    {sec.authorName ? `${sec.authorName} · ` : ''}
+                    {new Date(sec.updatedAt).toLocaleDateString()}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -618,6 +690,10 @@ export function AssetWorkspacePane({
           This book&apos;s market value could not be derived, so no weight is shown.
         </p>
       )}
+      {/* One column, now that the panel itself is a third of the width
+          rather than the whole of it. Two up was tried here first and the
+          label and the next value collided: `Row` set a fixed 104px label,
+          which does not fit half of a third of the pane. */}
       <div className="mt-3 flex flex-col gap-1.5 text-[13px]">
         <Row k="Shares" v={position.shares.toLocaleString(undefined, { maximumFractionDigits: 0 })} />
         <Row k="Market value" v={bigMoney(position.marketValue)} />
@@ -952,6 +1028,36 @@ export function AssetWorkspacePane({
     if (decisions) context.push(decisions)
   }
 
+  /*
+   * ── Figures do not need a reading measure ─────────────────────────────
+   *
+   * The single vertical read above is right for the ARGUMENT and wrong for
+   * the facts underneath it. Measured on this pane at 1400px with AMZN open:
+   * "Largest position" spent a full-width band and ~105px of height on four
+   * numbers; "Also held in" spent a band on one row; "Research status" spent
+   * a band on a chip and a count. Three sections, three full widths, six
+   * values between them -- and a reader scrolling past ~300px of mostly
+   * empty panel to reach the next one.
+   *
+   * So the compact panels are grouped into one dense band and the rest keep
+   * the column. This is NOT the two-column pass that was reverted: that one
+   * auto-placed every module into a grid, so a long list and a short one
+   * landed side by side and the short column left a hole -- the failure
+   * quoted in `convergence.test.ts` as "stack down the left and leave the
+   * right empty whenever the data is sparse". The split here is by the
+   * panel's own shape, not by its position in a list: a panel that holds a
+   * handful of figures joins the band, a panel that holds a LIST (arrival,
+   * ideas, decisions, evidence) keeps the full width it needs. Those are
+   * the ones whose length is unbounded, so none of them can open a hole
+   * beside a short neighbour.
+   *
+   * Keyed rather than re-derived: the ordering above is four branches that
+   * each push a different selection, and tagging at the push site would mean
+   * four more places to keep in step.
+   */
+  const compact = context.filter(n => COMPACT_PANELS.has(keyOf(n)))
+  const wide = context.filter(n => !COMPACT_PANELS.has(keyOf(n)))
+
   return (
     /*
      * ── Neither `h-full` nor `overflow-y-auto`, and both were load-bearing
@@ -1049,7 +1155,12 @@ export function AssetWorkspacePane({
         column outnumber the paragraphs, and they were the things being
         starved.
       */}
-      <div className="px-4 pb-12 pt-5" data-asset-body>
+      {/*
+        `asset-body-host` makes this element the container the figures band
+        measures itself against -- the PANE, which at a 1534px window is
+        1103px wide, not the window. See the rule in `index.css`.
+      */}
+      <div className="asset-body-host px-4 pb-12 pt-5" data-asset-body>
         <div className="mx-auto flex w-full max-w-[140ch] flex-col gap-6">
           {/*
             The event the reader pressed, above everything.
@@ -1063,7 +1174,20 @@ export function AssetWorkspacePane({
           {orientation}
           <DecisionBand data={data} position={position} symbol={symbol} onOpenDecisions={openDecisionsLens} />
           {lead}
-          {context}
+          {/*
+            `items-start` so a two-row panel does not stretch to the height
+            of a four-row neighbour, which is the other way a grid of
+            figures turns into a grid of whitespace.
+          */}
+          {compact.length > 0 && (
+            <div
+              data-asset-figures
+              className="grid grid-cols-1 items-start gap-4"
+            >
+              {compact}
+            </div>
+          )}
+          {wide}
         </div>
       </div>
     </div>
@@ -1585,10 +1709,16 @@ function EvidenceRow({ item, isNew }: { item: any; isNew?: boolean }) {
 
 function Row({ k, v, tone }: { k: string; v: string; tone?: 'up' | 'down' }) {
   return (
-    <div className="flex items-baseline gap-2">
-      <span className="w-[104px] shrink-0 text-gray-500">{k}</span>
+    /*
+     * `justify-between` with a flexible label, not a fixed 104px one. The
+     * fixed width was sized for a full-width band; this panel now sits in a
+     * three-up figures grid, and at that width the label ran into its own
+     * value ("$148.90Unrealised", seen in the browser).
+     */
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="min-w-0 truncate text-gray-500">{k}</span>
       <span className={clsx(
-        'font-mono tabular-nums',
+        'shrink-0 font-mono tabular-nums',
         tone === 'up' ? 'text-emerald-600 dark:text-emerald-400'
           : tone === 'down' ? 'text-rose-600 dark:text-rose-400'
           : 'text-gray-900 dark:text-gray-100',
