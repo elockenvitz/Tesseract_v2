@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createEodhdAdapter, EODHD_CAPABILITIES, type EodhdInvoker } from '../eodhd-adapter'
 import {
+  toCorporateSplits,
   toDailyBars,
   toIntradayBars,
   toQuote,
@@ -47,6 +48,60 @@ const FN_SRC = readFileSync(
 const stub = (data: unknown, error: unknown = null): EodhdInvoker => async () => ({ data, error })
 
 /* ───────────────────────────── normalizers ─────────────────────────────── */
+
+describe('toCorporateSplits', () => {
+  /*
+   * These ratios decide what every historical price on the chart MEANS. A
+   * wrong one does not look wrong: it draws a smooth series at the wrong
+   * level, which is harder to catch than the cliff it replaces.
+   */
+  it('reads the documented shape into numbers, in date order', () => {
+    expect(toCorporateSplits([
+      { date: '2020-08-31', split: '4.000000/1.000000' },
+      { date: '2014-06-09', split: '7.000000/1.000000' },
+    ])).toEqual([
+      { date: '2014-06-09', numerator: 7, denominator: 1 },
+      { date: '2020-08-31', numerator: 4, denominator: 1 },
+    ])
+  })
+
+  it('keeps the vendor’s ratio string out of the result', () => {
+    /* `contracts.ts`: a vendor's field names stop at the adapter. A consumer
+       forced to parse "7.000000/1.000000" is coupled to EODHD whether the
+       type says so or not. */
+    const [split] = toCorporateSplits([{ date: '2014-06-09', split: '7.000000/1.000000' }])
+    expect(JSON.stringify(split)).not.toContain('/')
+    expect(typeof split.numerator).toBe('number')
+  })
+
+  it('reads a reverse split, which is a real event', () => {
+    expect(toCorporateSplits([{ date: '2024-03-01', split: '1.000000/10.000000' }]))
+      .toEqual([{ date: '2024-03-01', numerator: 1, denominator: 10 }])
+  })
+
+  it('drops a ratio it cannot use rather than defaulting it to 1:1', () => {
+    /* A factor of 1 is a claim that a split had no effect. It would leave
+       the cliff in place under a label saying it had been handled. */
+    expect(toCorporateSplits([
+      { date: '2014-06-09', split: '1.000000/1.000000' },
+      { date: '2014-06-09', split: '0/1' },
+      { date: '2014-06-09', split: '7/0' },
+      { date: '2014-06-09', split: 'seven-for-one' },
+      { date: '2014-06-09' },
+      { date: 'not-a-date', split: '7/1' },
+      { split: '7/1' },
+    ])).toEqual([])
+  })
+
+  it('treats no splits as an answer, not a failure', () => {
+    /* Most instruments have never split. A caller that read "none" as an
+       error would fall back to an unadjusted series for every ordinary
+       stock -- the defect, reintroduced by the fix. */
+    expect(toCorporateSplits([])).toEqual([])
+    expect(toCorporateSplits(null)).toEqual([])
+    expect(toCorporateSplits({ error: 'nope' })).toEqual([])
+  })
+})
 
 describe('toDailyBars', () => {
   it('maps a documented EOD response and sorts ascending', () => {

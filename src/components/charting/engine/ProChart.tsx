@@ -15,6 +15,11 @@ import { chartDataService, timeframeToParams, CandlestickData } from '../../../l
 import { useMarketDataEntitlement } from '../../../lib/market-data/provider-routing'
 import { failureMessage } from '../../../lib/market-data/eodhd-series'
 import type { AdapterFailure } from '../../../lib/market-data/contracts'
+import { type SeriesMeta } from '../workspace/series-meta'
+import type { SeriesBasis } from '../../../lib/chartData'
+import { OhlcReadout } from '../workspace/OhlcReadout'
+import { formatBarTime } from '../../../lib/charting/bar-format'
+import { barAtTime, reachForInterval, secondsForInterval } from '../../../lib/charting/bar-at-time'
 import {
   calculateSMA,
   calculateEMA,
@@ -176,6 +181,20 @@ interface ProChartProps {
    */
   onAnnotationSelect?: (id: string | null) => void
   /**
+   * What was drawn, reported to whoever owns the page furniture.
+   *
+   * The chart is the only thing that knows the last close, how many bars
+   * came back, which feed answered and on what adjustment basis -- and none
+   * of it was leaving this component, so the page above could show a symbol
+   * and a company name and nothing else. A reader could not tell a live
+   * series from a three-day-old cached one.
+   *
+   * Reported rather than lifted: the fetch belongs here, beside the view
+   * state it initialises, and moving it out to share four facts would be a
+   * much larger change for a much smaller reason.
+   */
+  onSeriesMeta?: (meta: SeriesMeta) => void
+  /**
    * A mark is being dragged. Fires on every frame of the drag, so the mark
    * follows the cursor.
    *
@@ -227,7 +246,8 @@ export function ProChart({
   onAnnotationDraw,
   onAnnotationSelect,
   onAnnotationChange,
-  onAnnotationCommit
+  onAnnotationCommit,
+  onSeriesMeta
 }: ProChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -253,6 +273,8 @@ export function ProChart({
 
   // Track the current interval for loading more data
   const [currentInterval, setCurrentInterval] = useState<string>('1d')
+  /** The bar the cursor is over, shown as O/H/L/C/V over the canvas. */
+  const [hoveredBar, setHoveredBar] = useState<OHLC | null>(null)
 
   // Separate indicators into main chart overlays and sub-panels
   const mainChartIndicators: IndicatorType[] = useMemo(() =>
@@ -445,6 +467,26 @@ export function ProChart({
         // Both branches report a reason now. The custom-range one matters
         // most: the Charting frequency picker reaches the provider through it.
         let failure: AdapterFailure | undefined
+        /*
+         * The adjustment basis of the series that actually arrived, measured
+         * by `chartData` from the provider's own corporate actions. It is
+         * read off the result rather than looked up from the provider's name
+         * because the name was WRONG: Yahoo's chart series is split-adjusted
+         * and the old provider table called it raw, so the header stated
+         * "raw prices · not split-adjusted" over an adjusted series.
+         */
+        let basis: SeriesBasis = { basis: 'unknown', splits: [], adjustedHere: false, evidence: 'not measured' }
+        /*
+         * When the provider answered, in unix milliseconds. 0 until one does.
+         *
+         * Kept separate from the last bar's timestamp because they are
+         * different quantities: a bar is stamped at the opening of the period
+         * it covers, so a monthly bar says the first of the month and reading
+         * age off it called a current chart 18 days old. A cache hit carries
+         * the moment the cached answer was observed, so a stale series still
+         * reads stale.
+         */
+        let observedAt = 0
 
         if (timeFrame === 'CUSTOM' && customRange) {
           // Use custom date range
@@ -460,6 +502,8 @@ export function ProChart({
           )
           rawData = custom.candles
           failure = custom.failure
+          basis = custom.basis
+          observedAt = custom.observedAt
         } else {
           // Use preset timeframe
           const params = timeframeToParams[timeFrame] || { interval: '1d', range: '1mo' }
@@ -474,6 +518,8 @@ export function ProChart({
           })
           rawData = result.candles
           failure = result.failure
+          basis = result.basis
+          observedAt = result.observedAt
         }
 
         if (rawData.length === 0) {
@@ -492,6 +538,28 @@ export function ProChart({
         } else {
           const ohlcData = convertToOHLC(rawData)
           setData(ohlcData)
+
+          /*
+           * The basis is measured from the delivered series, not named after
+           * the feed. See `basis` above and `normaliseYahooSeries`.
+           */
+          const lastBar = ohlcData[ohlcData.length - 1]
+          const prevBar = ohlcData[ohlcData.length - 2]
+          onSeriesMeta?.({
+            symbol: symbol.toUpperCase(),
+            last: lastBar ? lastBar.close : null,
+            previous: prevBar ? prevBar.close : null,
+            lastBarTime: lastBar ? lastBar.time : null,
+            // When the provider answered, which is what "how old is this"
+            // asks. The bar time above is a period boundary, not an age.
+            observedAt: observedAt > 0 ? Math.floor(observedAt / 1000) : null,
+            bars: ohlcData.length,
+            interval,
+            provider: marketDataProvider,
+            adjustment: basis.basis,
+            adjustmentEvidence: basis.evidence,
+            splits: basis.splits.length,
+          })
 
           // Calculate initial view
           const timeRange = ChartTransform.calculateTimeRange(ohlcData)
@@ -864,7 +932,18 @@ export function ProChart({
       chartType,
       showVolume,
       [...indicatorData.main, ...comparisonLines],
-      crosshair || undefined,
+      /*
+       * The time label names the hovered BAR, not the pixel. The renderer's
+       * own fallback prints `xToTime(mouseX)` with a clock time forced on,
+       * which on a daily series reads "Nov 3, 2026, 06:09 PM" -- a moment
+       * that is not in the data, attached to a bar that covers the session.
+       */
+      crosshair
+        ? {
+            ...crosshair,
+            timeLabel: hoveredBar ? formatBarTime(hoveredBar.time, currentInterval) : undefined,
+          }
+        : undefined,
       mainSymbolStyle
     )
 
@@ -902,7 +981,10 @@ export function ProChart({
         }
       }
     }
-  }, [data, view, dimensions, chartType, showVolume, theme, crosshair, indicatorData, mainChartHeightRatio, events, annotations, transformedData, comparisonLines, selectedLine, symbol, compareSymbols, mainSymbolStyle])
+    /* `hoveredBar` and `currentInterval` are here because the crosshair's
+       time label is derived from them: without them the canvas keeps the
+       label of whichever bar was hovered when this last ran. */
+  }, [data, view, dimensions, chartType, showVolume, theme, crosshair, indicatorData, mainChartHeightRatio, events, annotations, transformedData, comparisonLines, selectedLine, symbol, compareSymbols, mainSymbolStyle, hoveredBar, currentInterval])
 
   // Auto-scale price when view changes
   useEffect(() => {
@@ -1137,13 +1219,21 @@ export function ProChart({
         y >= area.y && y <= area.y + area.height) {
       setCrosshair({ x, y })
 
+      const time = transformRef.current.xToTime(x)
       if (onCrosshairMove) {
-        const price = transformRef.current.yToPrice(y)
-        const time = transformRef.current.xToTime(x)
-        onCrosshairMove(price, time)
+        onCrosshairMove(transformRef.current.yToPrice(y), time)
       }
+      /*
+       * Nearest bar, capped at one bar's reach, so panning into the empty
+       * canvas past the last bar clears the readout instead of pinning it
+       * to the final bar and asserting the cursor is over something it is
+       * nowhere near. `barAtTime` binary-searches: this runs on every
+       * mousemove, and the ALL view is thousands of bars.
+       */
+      setHoveredBar(barAtTime(data, time, reachForInterval(secondsForInterval(currentInterval))))
     } else {
       setCrosshair(null)
+      setHoveredBar(null)
       if (onCrosshairMove) {
         onCrosshairMove(null, null)
       }
@@ -1211,7 +1301,11 @@ export function ProChart({
         }
       }
     }
-  }, [isDragging, dragStart, dragMode, onCrosshairMove])
+    /* `data` and `currentInterval` are dependencies now: without them this
+       handler closes over the bars of whichever series was loaded when it
+       was last built, and the readout would report the previous symbol's
+       prices after a symbol change. */
+  }, [isDragging, dragStart, dragMode, onCrosshairMove, data, currentInterval])
 
   /**
    * Recompute the mark being dragged, from the press rather than the frame.
@@ -1605,6 +1699,15 @@ export function ProChart({
 
   return (
     <div ref={containerRef} className="relative w-full h-full">
+      {/*
+        The bar under the cursor, in numbers. Rendered here rather than in
+        the page because the series and the crosshair both live in this
+        component, and because it is positioned against this container --
+        moving it up would mean lifting the whole data set to show five
+        values.
+      */}
+      <OhlcReadout bar={hoveredBar} interval={currentInterval} />
+
       {/* Zoom controls */}
       <div className="absolute top-2 right-2 z-10 flex items-center space-x-1">
         <button
