@@ -44,6 +44,37 @@ export class ChartRenderer {
     this.devicePixelRatio = devicePixelRatio
   }
 
+  /**
+   * Confine drawing to the main chart's own rectangle.
+   *
+   * Nothing in this renderer used to clip. A series is plotted by mapping a
+   * price through `priceToY`, and that mapping does not stop at the edge of
+   * the plot: pan the view vertically and the price line is simply drawn
+   * wherever the arithmetic puts it, which is on top of the MACD pane, the
+   * RSI pane and every other plot below.
+   *
+   * The study panes have their own scales, so a price line crossing them is
+   * not merely untidy -- it reads as a value on a scale it has nothing to do
+   * with. Every method that plots DATA calls this; the grid, the axes and
+   * the crosshair deliberately do not, because they are chrome and are drawn
+   * to the edges on purpose.
+   *
+   * Must be called after `ctx.save()` and before the path, so the matching
+   * `ctx.restore()` lifts the clip again.
+   */
+  private clipToPlot() {
+    const area = this.transform.chartArea
+    const dpr = this.devicePixelRatio
+    this.ctx.beginPath()
+    this.ctx.rect(
+      area.x * dpr,
+      area.y * dpr,
+      area.width * dpr,
+      area.height * dpr
+    )
+    this.ctx.clip()
+  }
+
   // Clear the entire canvas
   clear() {
     const dims = this.transform.getDimensions()
@@ -188,6 +219,7 @@ export class ChartRenderer {
     const barWidth = this.transform.getBarWidth(data.length) * dpr
 
     ctx.save()
+    this.clipToPlot()
 
     for (const bar of data) {
       const { x, yOpen, yClose, yHigh, yLow } = this.transform.getPixelBounds(bar)
@@ -224,6 +256,7 @@ export class ChartRenderer {
     const barWidth = this.transform.getBarWidth(data.length) * dpr
 
     ctx.save()
+    this.clipToPlot()
     ctx.lineWidth = 1.5 * dpr
 
     for (const bar of data) {
@@ -263,6 +296,7 @@ export class ChartRenderer {
     const dpr = this.devicePixelRatio
 
     ctx.save()
+    this.clipToPlot()
     ctx.strokeStyle = color || this.theme.lineColor
     ctx.lineWidth = (lineWidth || 2) * dpr
     ctx.lineJoin = 'round'
@@ -298,6 +332,7 @@ export class ChartRenderer {
     const strokeColor = color || this.theme.areaBorder
 
     ctx.save()
+    this.clipToPlot()
 
     // Draw filled area
     ctx.beginPath()
@@ -384,6 +419,7 @@ export class ChartRenderer {
     if (maxVolume === 0) return
 
     ctx.save()
+    this.clipToPlot()
 
     const volumeAreaHeight = area.height * volumeHeight
     const volumeAreaTop = area.y + area.height - volumeAreaHeight
@@ -548,6 +584,7 @@ export class ChartRenderer {
     if (validPoints.length < 2) return
 
     ctx.save()
+    this.clipToPlot()
     ctx.strokeStyle = color
     ctx.lineWidth = lineWidth * dpr
     ctx.lineJoin = 'round'
@@ -594,6 +631,7 @@ export class ChartRenderer {
     if (validPoints.length < 2) return
 
     ctx.save()
+    this.clipToPlot()
 
     // Draw fill between upper and lower bands
     ctx.beginPath()
@@ -701,6 +739,7 @@ export class ChartRenderer {
     const step = Math.max(1, Math.floor(visibleData.length / targetDots))
 
     ctx.save()
+    this.clipToPlot()
     ctx.fillStyle = color
     ctx.strokeStyle = '#ffffff'
     ctx.lineWidth = 1.5 * dpr

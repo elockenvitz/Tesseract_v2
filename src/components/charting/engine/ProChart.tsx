@@ -60,6 +60,7 @@ import {
  * arithmetic, so every trend line was 30 days long and rose exactly 5%.
  */
 import { beginGesture, completeDraw, type PanAxis } from '../../../lib/charting/drawing-gesture'
+import { clampPriceWindow } from '../../../lib/charting/pan-bounds'
 import {
   moveAnnotation,
   reshapeAnnotation,
@@ -455,7 +456,13 @@ export function ProChart({
   const [dragStart, setDragStart] = useState<{
     x: number; y: number; viewStart: number; viewEnd: number
     minPrice: number; maxPrice: number; panAxis: PanAxis
-  }>({ x: 0, y: 0, viewStart: 0, viewEnd: 0, minPrice: 0, maxPrice: 0, panAxis: 'both' })
+    /* The price extent of what was on screen when the drag began, so a
+       vertical pan can be stopped before the data leaves the frame. */
+    dataMin: number; dataMax: number
+  }>({
+    x: 0, y: 0, viewStart: 0, viewEnd: 0, minPrice: 0, maxPrice: 0,
+    panAxis: 'both', dataMin: NaN, dataMax: NaN
+  })
   const [crosshair, setCrosshair] = useState<{ x: number; y: number } | null>(null)
   const [cursorStyle, setCursorStyle] = useState('crosshair')
   const [hoveredLine, setHoveredLine] = useState<string | null>(null) // symbol of hovered line
@@ -1192,6 +1199,37 @@ export function ProChart({
   }, [view.startTime, view.endTime, data, isLoadingMore, isLoading, symbol, currentInterval])
 
   // Mouse handlers
+  /**
+   * The price extent of everything drawn in the current time window.
+   *
+   * Same filter and same source as the `autoScalePrice` effect -- the
+   * TRANSFORMED series, so indexed and percentage modes are measured on the
+   * numbers actually plotted rather than on raw prices -- and comparisons
+   * are included, because a comparison is on the price plot's own scale and
+   * dragging it out of frame is the same loss.
+   *
+   * Declared above `handleMouseDown` so it exists when that callback's
+   * dependency array is evaluated at render.
+   */
+  const visiblePriceExtent = useCallback(() => {
+    const inWindow = (d: { time: number }) =>
+      d.time >= view.startTime && d.time <= view.endTime
+    let lo = Infinity
+    let hi = -Infinity
+    const consider = (rows: { time: number; low?: number; high?: number; close: number }[]) => {
+      for (const d of rows) {
+        if (!inWindow(d)) continue
+        const l = d.low ?? d.close
+        const h = d.high ?? d.close
+        if (l < lo) lo = l
+        if (h > hi) hi = h
+      }
+    }
+    consider(transformedData.main)
+    transformedData.compare.forEach(rows => consider(rows))
+    return { dataMin: lo, dataMax: hi }
+  }, [transformedData, view.startTime, view.endTime])
+
   const handleMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect || !transformRef.current) return
@@ -1278,9 +1316,10 @@ export function ProChart({
       maxPrice: view.maxPrice,
       /* Captured at press time, not read at move time: which pane the drag
          STARTED in is what decides whether it may touch the price range. */
-      panAxis: gesture.kind === 'pan' ? gesture.axis : 'both'
+      panAxis: gesture.kind === 'pan' ? gesture.axis : 'both',
+      ...visiblePriceExtent()
     })
-  }, [view, activeTool, annotations, onAnnotationSelect, dimensions.height])
+  }, [view, activeTool, annotations, onAnnotationSelect, dimensions.height, visiblePriceExtent])
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = canvasRef.current?.getBoundingClientRect()
@@ -1353,12 +1392,19 @@ export function ProChart({
         const priceDelta =
           dragStart.panAxis === 'time' ? 0 : (dy / area.height) * priceRange
 
+        /* Stopped before the bars leave the frame, so a drag cannot strand
+           the reader on a blank chart. Shifts only -- never resizes. */
+        const priced = clampPriceWindow(
+          { min: dragStart.minPrice + priceDelta, max: dragStart.maxPrice + priceDelta },
+          { min: dragStart.dataMin, max: dragStart.dataMax }
+        )
+
         setView(v => ({
           ...v,
           startTime: dragStart.viewStart + timeDelta,
           endTime: dragStart.viewEnd + timeDelta,
-          minPrice: dragStart.minPrice + priceDelta,
-          maxPrice: dragStart.maxPrice + priceDelta,
+          minPrice: priced.min,
+          maxPrice: priced.max,
           autoScalePrice: false
         }))
       } else if (dragMode === 'zoom-price') {
@@ -1638,12 +1684,19 @@ export function ProChart({
         const priceDelta =
           dragStart.panAxis === 'time' ? 0 : (dy / area.height) * priceRange
 
+        /* Stopped before the bars leave the frame, so a drag cannot strand
+           the reader on a blank chart. Shifts only -- never resizes. */
+        const priced = clampPriceWindow(
+          { min: dragStart.minPrice + priceDelta, max: dragStart.maxPrice + priceDelta },
+          { min: dragStart.dataMin, max: dragStart.dataMax }
+        )
+
         setView(v => ({
           ...v,
           startTime: dragStart.viewStart + timeDelta,
           endTime: dragStart.viewEnd + timeDelta,
-          minPrice: dragStart.minPrice + priceDelta,
-          maxPrice: dragStart.maxPrice + priceDelta,
+          minPrice: priced.min,
+          maxPrice: priced.max,
           autoScalePrice: false
         }))
       } else if (dragMode === 'zoom-price') {
