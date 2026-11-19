@@ -48,6 +48,15 @@ import {
   writeChartingWorkspace,
 } from '../lib/charting/workspace-state'
 import {
+  CHARTING_WORKSPACE_CODEC,
+  type ChartPanel,
+  type ChartingWorkspace,
+  type DisplayMode,
+  type LineStyleOption,
+  type MetricType,
+  type ViewMode,
+} from '../lib/charting/workspace-codec'
+import {
   Annotation,
   AnnotationType,
   DEFAULT_ANNOTATION_STYLE,
@@ -67,11 +76,6 @@ import {
   undo as historyUndo,
 } from '../lib/charting/annotation-history'
 
-// Metric types for charting
-type MetricType = 'price' | 'volume' | 'market_cap' | 'pe_ratio' | 'eps' | 'revenue' | 'dividend_yield'
-
-// Display modes for comparison
-type DisplayMode = 'absolute' | 'indexed' | 'relative'
 
 // Default index base value
 const DEFAULT_INDEX_BASE = 100
@@ -155,37 +159,12 @@ interface ChartingPageProps {
   workspaceId?: string
 }
 
-type ViewMode = 'single' | 'grid'
-
-interface ChartPanel {
-  id: string
-  symbol: string
-  companyName?: string
-  chartType: ChartType
-  timeFrame: TimeFrame
-  customRange?: CustomDateRange
-  indicators: string[]
-  metric: MetricType
-  annotations: Annotation[]
-  // Track selected frequency for highlighting
-  selectedFreq?: {
-    frequencyKey: string
-    interval: string
-    isIntraday: boolean
-  }
-  // Main symbol styling
-  mainSymbolStyle?: {
-    color?: string
-    lineWidth?: number
-    lineStyle?: LineStyleOption
-  }
-  // Comparison symbols
-  compareSymbols?: { symbol: string; companyName?: string; color?: string; lineWidth?: number; lineStyle?: LineStyleOption }[]
-  // Display mode: absolute prices, indexed, or relative to first symbol
-  displayMode?: DisplayMode
-  // Base value for indexed mode (default 100)
-  indexBase?: number
-}
+/*
+ * `ViewMode`, `ChartPanel` and `ChartingWorkspace` moved to
+ * `lib/charting/workspace-codec`, together with the codec that restores
+ * them from storage. The codec is defined over these types, and a `.tsx`
+ * file cannot export it without breaking Fast Refresh.
+ */
 
 // Context menu state
 interface ContextMenuState {
@@ -205,8 +184,6 @@ interface LineContextMenuState {
   isMainSymbol: boolean
 }
 
-// Line style type (matching renderer)
-type LineStyleOption = 'solid' | 'dashed' | 'dotted'
 
 const LINE_COLORS = [
   { value: '#dc2626', label: 'Red' },
@@ -292,20 +269,6 @@ function parseIntervalToDays(interval: string): number {
 }
 
 
-/**
- * What survives a tab switch.
- *
- * Held outside React by `lib/charting/workspace-state`, because
- * `renderTabContent` mounts only the active tab and therefore unmounts this
- * page entirely when you move to Overview. These are the fields a person
- * chose and would have to choose again.
- */
-interface ChartingWorkspace {
-  panels: ChartPanel[]
-  activePanel: string
-  viewMode: ViewMode
-}
-
 // Get fresh default state, used only when nothing was stored for this tab.
 function getDefaultChartingState(): ChartingWorkspace {
   return {
@@ -340,7 +303,8 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
    * first is the whole fix for that.
    */
   const [initialState] = useState<ChartingWorkspace>(
-    () => readChartingWorkspace<ChartingWorkspace>(workspaceKey) ?? getDefaultChartingState(),
+    () => readChartingWorkspace<ChartingWorkspace>(workspaceKey, CHARTING_WORKSPACE_CODEC)
+      ?? getDefaultChartingState(),
   )
 
   // Track symbols that have been added via initialSymbol to avoid duplicates
@@ -374,7 +338,11 @@ export function ChartingPage({ initialSymbol, workspaceId }: ChartingPageProps) 
    * a transient, not a choice.
    */
   useEffect(() => {
-    writeChartingWorkspace<ChartingWorkspace>(workspaceKey, { panels, activePanel, viewMode })
+    writeChartingWorkspace<ChartingWorkspace>(
+      workspaceKey,
+      { panels, activePanel, viewMode },
+      CHARTING_WORKSPACE_CODEC,
+    )
   }, [workspaceKey, panels, activePanel, viewMode])
 
   // Context menu state for right-click annotations
