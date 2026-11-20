@@ -315,7 +315,7 @@ pre-flight path in `ai-chat`. Items 5 to 8 are configuration.
 | Decision workflow end to end | **Works.** All four decision outcomes exist in the QA corpus |
 | Multi-tenant isolation | Extensive RLS, partially audited, with open items tracked |
 | Second human account for role testing | **Missing.** One human in the QA organization, so role separation is untested with real sessions |
-| Global search for assets | **Broken.** Returns no results although the backend RPC is correct |
+| Global search for assets | **Unreliable.** Usually shows "No results" although the RPC returns the row correctly. Intermittent and cache-shaped, not a backend fault |
 | Outcome attribution | **Four fixes unmerged:** PRs #341, #342, #343, #345 |
 | Pilot seed integrity | **Fix unmerged:** PR #340, and its migration is unapplied |
 | Production backup and PITR | **Not enabled** as of the last check. Re-verify before any pilot |

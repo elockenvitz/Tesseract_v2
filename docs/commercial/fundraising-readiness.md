@@ -85,7 +85,7 @@ customers.**
 | 4 | Platform AI provisioning | Engineering, plus the cost controls |
 | 5 | Decision-integrity fixes unmerged | Engineering, PRs already open |
 | 6 | Role separation untested with real accounts | One human in the test org |
-| 7 | Global search broken for assets | Bug, found 2026-11-19 |
+| 7 | Global search unreliable for assets | Bug, found 2026-11-19. Client-side, not the backend |
 | 8 | No third-party security review, no SOC 2 | Time and money |
 
 **Nothing on this list is a research problem.** That is genuinely good news:

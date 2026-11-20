@@ -57,10 +57,17 @@ Do this once before the real thing, every time.
 
 ## 4. Known-broken: do not navigate here
 
-- [ ] **Global search does not return assets.** Typing a ticker or company
-      name returns "No results" even though the row exists and the backend
-      RPC returns it correctly when called directly. Reach assets through
-      Idea Pipeline or Coverage instead. Do not demonstrate search.
+- [ ] **Global search is unreliable for assets.** Typing a ticker or company
+      name usually shows "No results" even though the row exists. It is not
+      the backend: the search RPC returns the row correctly for this account
+      when called directly, and when the query actually runs the result row
+      does render. The failure is intermittent and cache-shaped, so it can
+      look fine on one attempt and empty on the next.
+
+      **Test it during the dry run, and if it fails, do not demonstrate
+      search.** Reach assets through Idea Pipeline or Coverage instead. Do
+      not retry it live in front of a prospect: there is no reliable way to
+      clear the state mid-demo.
 - [ ] **Do not open the Outcomes surface.** Four attribution defects have
       open PRs (#341, #342, #343, #345). Until they merge it displays
       numbers we know are wrong.
