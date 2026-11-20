@@ -2377,6 +2377,21 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
   })
   const currentQuote = quoteResult?.quote ?? null
 
+  /**
+   * The identity columns off the `assets` row, for the header band.
+   *
+   * `fullAsset` is typed loosely at this call site (the tab accepts several
+   * shapes), so this is the same narrowing cast the `sector` prop already
+   * uses — one place, named, rather than three casts inline in the JSX.
+   * Every field is optional: a security that has not been enriched renders
+   * fewer facts, never a default exchange or an assumed USD.
+   */
+  const assetIdentity = fullAsset as unknown as {
+    exchange?: string | null
+    currency?: string | null
+    asset_type?: string | null
+  } | undefined
+
   // Unified view warnings (composes divergence + EV mismatch + revision-based rules)
   const viewWarnings = useViewWarnings({
     assetId: asset.id,
@@ -4289,7 +4304,20 @@ export function AssetTab({ asset, onCite, onNavigate, isFocusMode = false }: Ass
           company together, price/change, Ask AI, the ⚡ attention popover (one
           A1 resolver), and the collapsible context strip. No new data path. */}
       <AssetWorkspaceHeader
-        asset={asset}
+        /*
+          Instrument identity is merged from the two shapes this tab holds.
+          `asset` is the tab's seed (often just id/symbol/company_name, from
+          whichever surface opened it); `fullAsset` is the row. Exchange,
+          currency and security type live only on the row, so a header reading
+          `asset` alone showed none of them. Same precedence as `sector`
+          below: the seed first, the row as the fallback.
+        */
+        asset={{
+          ...asset,
+          exchange: asset.exchange ?? assetIdentity?.exchange ?? null,
+          currency: asset.currency ?? assetIdentity?.currency ?? null,
+          asset_type: asset.asset_type ?? assetIdentity?.asset_type ?? null,
+        }}
         sector={asset.sector || (fullAsset as unknown as { sector?: string | null } | undefined)?.sector}
         quote={currentQuote ?? null}
         spot={currentQuote?.price ?? null}

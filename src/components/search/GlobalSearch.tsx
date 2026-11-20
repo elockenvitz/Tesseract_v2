@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useObjectSearch, type SearchResult } from '../../hooks/useObjectSearch'
+import { CompanyMark } from '../common/CompanyMark'
 
 
 interface GlobalSearchProps {
@@ -82,12 +83,36 @@ const ResultItem = React.memo(({
       )}
       style={{ width: 'calc(100% - 8px)' }}
     >
-      <div className={clsx(
-        'flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-100',
-        isSelected ? 'bg-primary-100 scale-105' : 'bg-gray-50 dark:bg-gray-900'
-      )}>
-        {getResultIcon(result.type)}
-      </div>
+      {/*
+        A security gets its company mark; everything else keeps its type
+        icon.
+
+        Same 36px box either way. A result list whose rows change height
+        according to which marks resolved would shift under a user who is
+        arrowing down it — and the arrow keys are the primary way this list
+        is driven, so a shift here costs a wrong selection, not just a
+        flicker. `CompanyMark` therefore has no loading state and no
+        intrinsic size: it renders its monogram on the first paint.
+
+        No network request is made. There is no company-logo source in this
+        system and we are not reaching for a public logo endpoint on every
+        keystroke — see the note in CompanyMark.
+      */}
+      {result.type === 'asset' ? (
+        <CompanyMark
+          symbol={result.title}
+          name={result.subtitle}
+          size="md"
+          className={clsx('transition-all duration-100', isSelected && 'scale-105')}
+        />
+      ) : (
+        <div className={clsx(
+          'flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-100',
+          isSelected ? 'bg-primary-100 scale-105' : 'bg-gray-50 dark:bg-gray-900'
+        )}>
+          {getResultIcon(result.type)}
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className={clsx(

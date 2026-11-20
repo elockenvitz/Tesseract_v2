@@ -253,6 +253,15 @@ export const GATED_DIRS = [
   'src/components/notes',
   'src/components/tabs',
   /*
+   * `src/components/common` — the shared company mark.
+   *
+   * Gated rather than deferred because the suite's load-bearing case is a
+   * NEGATIVE: that no application caller passes a logo URL. There is no
+   * licensed company-logo source, so the first caller to add one needs that
+   * assertion to fail in front of a reviewer, not to go unrun.
+   */
+  'src/components/common',
+  /*
    * The Asset page's own surfaces: the Snapshot, the Decision Memory summary
    * and Our View.
    *
