@@ -1,133 +1,130 @@
 /**
- * A source that returns nothing must say why.
+ * Alpha Vantage is retired from market-news, and must stay retired.
  *
- * ── Two layers of the same silence ────────────────────────────────────────
+ * ── What this file used to be ─────────────────────────────────────────────
  *
- * `market-news` fans out to four providers and reports each one's outcome.
- * The report has been wrong twice, the same way both times: an empty list
- * reported as health.
+ * It asserted the `note` contract: Alpha Vantage never answers with an HTTP
+ * error, it answers 200 with prose in `Information`, `Note` or `Error
+ * Message` instead of a `feed`, so an invalid key, an exhausted quota and a
+ * quiet news day all arrived as the same empty array. `note` carried the
+ * provider's own words out to the caller.
  *
- * The FIRST layer was already fixed. A source with no API key returned `[]`
- * without erroring, so `ok: true, count: 0` described it identically to a
- * working source on a quiet news day. `configured` was added to separate
- * those.
+ * ── Why it is now the opposite assertion ──────────────────────────────────
  *
- * The SECOND layer is this file. A source can be configured, `ok: true`, and
- * still return nothing because the PROVIDER refused. Alpha Vantage is the one
- * that does this: it never answers with an HTTP error. It answers 200 with a
- * different SHAPE -- no `feed` key, and prose in `Information`, `Note` or
- * `Error Message` instead. So
+ * The diagnostic worked, and what it reported was fatal to the integration.
+ * Measured live on 2026-11-20, with a freshly rotated credential and against
+ * an uncached request:
  *
- *     const feed = Array.isArray(data?.feed) ? data.feed : []
+ *     finnhub        configured true  ok true  count 10
+ *     alphavantage   configured true  ok true  count  0
+ *                    note: "Information: ... This is a premium endpoint. You
+ *                    may subscribe to any of the premium plans ... to
+ *                    instantly unlock all premium endpoints"
+ *     yahoo          configured true  ok true  count  8
+ *     yahoo-rss      configured true  ok true  count 18
  *
- * silently flattens "your key is invalid" and "you have used today's 25
- * requests" into the same empty array a slow news day produces.
+ * NEWS_SENTIMENT is not in this subscription. Across all 73 cached news
+ * payloads the source had contributed zero articles. The key was set and
+ * valid enough to be recognised; the PLAN is the limit, so rotating the
+ * credential did not and could not change this.
  *
- * ── Why it is worth a gate ────────────────────────────────────────────────
+ * So the source is gone, and with it the only producer of `sentiment` and
+ * `relevanceScore` anywhere in the system.
  *
- * Measured live against production on 2026-11-02: every other source returned
- * stories (finnhub 20, yahoo 14, yahoo-rss 31) while Alpha Vantage reported
- * `ok: true, configured: true, count: 0`. It is the ONLY source carrying
- * sentiment and per-ticker relevance scores, and `market-news` sorts on
- * relevance where a provider supplies it. So with Alpha Vantage dark the whole
- * feed quietly degrades to ranking on recency alone, and nothing in the
- * response said a word about it.
+ * ── What is asserted ──────────────────────────────────────────────────────
+ *
+ * Absence, mostly, which is the durable half of a retirement: no provider
+ * URL, no credential read, no health row claiming a source that is not
+ * called. Alongside it, the three remaining sources and a recency-only sort,
+ * so a test suite that passes by having deleted everything would fail.
  *
  * The function cannot be imported -- it calls `serve()` and `Deno.env.get` at
- * module scope -- so these are source reads. That is the same method the
- * sibling `news-symbol-budget` suite uses and for the same reason.
+ * module scope -- so these are source reads, the same method the sibling
+ * `news-symbol-budget` suite uses and for the same reason. They are written
+ * as absence or as whole-identifier presence rather than as pinned
+ * expressions, so ordinary refactoring does not red them.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 
-const ROOT = resolve(__dirname, '../../../')
-const FN = 'supabase/functions/market-news/index.ts'
+const fn = () =>
+  readFileSync(path.join(process.cwd(), 'supabase/functions/market-news/index.ts'), 'utf8')
 
-const fn = () => {
-  const p = resolve(ROOT, FN)
-  if (!existsSync(p)) throw new Error(`${FN} is missing; nothing below has evidence behind it`)
-  return readFileSync(p, 'utf8')
-}
-
-/**
- * The same source with comments removed.
- *
- * Needed for any assertion that something is ABSENT: the function's own
- * comments quote the old broken line to explain why it is gone, and the first
- * version of the case below failed on that quotation rather than on code.
- */
+/** Source with every block comment stripped, so prose about the retirement
+ *  cannot satisfy an assertion about code. */
 const code = () =>
   fn()
     .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^[ \t]*\/\/.*$/gm, '')
-    .replace(/([^:])\/\/.*$/gm, '$1')
+    .replace(/^\s*\/\/.*$/gm, '')
 
-describe('Alpha Vantage answering 200 with a complaint', () => {
-  it('is read rather than discarded', () => {
-    const s = fn()
-    expect(s).toContain('function alphaVantageComplaint(')
+describe('no Alpha Vantage anywhere in the fan-out', () => {
+  it('never reads the credential', () => {
+    expect(code()).not.toContain('ALPHAVANTAGE_API_KEY')
   })
 
-  it('covers all three fields the provider actually uses', () => {
-    // `Information` is the rate-limit and plan message, `Note` the older
-    // throttle wording, `Error Message` a rejected key or parameter. Missing
-    // any one of them reinstates the silence for that case only, which is the
-    // hardest version of this bug to notice.
-    const s = fn()
-    for (const field of ['Information', 'Note', 'Error Message']) {
-      expect(s, field).toContain(`'${field}'`)
-    }
+  it('never builds a provider URL', () => {
+    expect(code()).not.toContain('alphavantage.co')
+    expect(code()).not.toContain('NEWS_SENTIMENT')
   })
 
-  it('never treats a complaint as data', () => {
-    // The old line. If it comes back, a response with no `feed` is an empty
-    // news day again.
-    expect(code()).not.toContain('Array.isArray(data?.feed) ? data.feed : []')
+  it('has no fetch function or complaint reader left', () => {
+    const c = code()
+    expect(c).not.toContain('fromAlphaVantage')
+    expect(c).not.toContain('alphaVantageComplaint')
   })
 
-  it('reports a response that is neither data nor a complaint', () => {
-    // A fourth shape nobody has seen yet still must not read as "no news".
-    const s = fn()
-    expect(s).toContain('if (!Array.isArray(data?.feed))')
-    expect(s).toContain('no `feed` array and no explanation')
+  it('does not report it as a source', () => {
+    // A health row for a provider that is never called is the misleading
+    // indicator this retirement removes.
+    expect(code()).not.toContain("'alphavantage'")
   })
 
-  it('reports an unset key as a reason, not as an empty news day', () => {
-    const s = fn()
-    expect(s).toContain("out.note = 'ALPHAVANTAGE_API_KEY is not set'")
-  })
-
-  it('reports a thrown request instead of swallowing it', () => {
-    // `fromAlphaVantage` ended in a bare `catch { return [] }`.
-    const s = code()
-    const at = s.indexOf('async function fromAlphaVantage(')
-    expect(at).toBeGreaterThan(-1)
-    const bodyText = s.slice(at, s.indexOf('function rssTag(', at))
-    expect(bodyText).not.toMatch(/\}\s*catch\s*\{\s*return \[\]\s*\}/)
-    expect(bodyText).toContain('the request failed:')
+  it('threads no SourceNote, which existed only for this provider', () => {
+    expect(code()).not.toContain('SourceNote')
   })
 })
 
-describe('the note reaches the caller', () => {
-  it('is carried per request, not at module scope', () => {
-    // An isolate serves many requests. A module-level note would describe a
-    // previous caller's failure, which is worse than no note at all.
-    const s = fn()
-    expect(s).toContain('interface SourceNote')
-    expect(s).toMatch(/const alphaVantage: SourceNote = \{\}/)
-    expect(s).toMatch(/fromAlphaVantage\(symbols, alphaVantage\)/)
-    // No `let` holding a note outside the handler.
-    expect(s).not.toMatch(/^let\s+\w*[Nn]ote\b/m)
+describe('the three remaining sources survive', () => {
+  // Without these, deleting the whole file would pass the suite above.
+  it('still fans out to Finnhub and both Yahoo sources', () => {
+    const c = code()
+    expect(c).toContain('fromFinnhub')
+    expect(c).toContain('fromYahoo')
+    expect(c).toContain('fromYahooRss')
   })
 
-  it('appears on the source entry in the response', () => {
-    expect(fn()).toMatch(/name === 'alphavantage' && alphaVantage\.note \? \{ note: alphaVantage\.note \}/)
+  it('still names exactly those three in the health report', () => {
+    expect(code()).toContain("const names = ['finnhub', 'yahoo', 'yahoo-rss']")
   })
 
-  it('is declared on the client type, so a reader can surface it', () => {
-    const hook = readFileSync(resolve(ROOT, 'src/hooks/useMarketNews.ts'), 'utf8')
-    expect(hook).toContain('note?: string')
-    expect(hook).toContain('configured?: boolean')
+  it('still reports Finnhub configuration separately from success', () => {
+    // The first layer of the original defect: an unset key must stay
+    // distinguishable from a quiet news day.
+    const c = code()
+    expect(c).toContain('FINNHUB_API_KEY')
+    expect(c).toContain('configured')
+  })
+
+  it('still authorizes a verified user before calling any provider', () => {
+    const c = code()
+    expect(c).toContain('authorizeVerifiedUser')
+    expect(c).toContain('requirePublishableKey')
+  })
+})
+
+describe('ranking claims only what it has', () => {
+  it('sorts on publishedAt and nothing else', () => {
+    expect(code()).toContain(
+      '.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())',
+    )
+  })
+
+  it('does not rank on a relevance score no source supplies', () => {
+    expect(code()).not.toContain('relevanceScore')
+  })
+
+  it('does not carry a sentiment field no source supplies', () => {
+    expect(code()).not.toContain('sentiment')
   })
 })
