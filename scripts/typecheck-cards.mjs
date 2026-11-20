@@ -315,7 +315,7 @@ const MAX_ERRORS = 0
 // 8569 -> 8568 on 2026-11-16. Replacing `(supabase.rpc as any)` in
 // `useObjectSearch.ts` with the typed `callGlobalSearch` helper removed
 // another one. Ratcheted because the gate asked.
-const MAX_REPO_ERRORS = 8568
+const MAX_REPO_ERRORS = 8562
 
 /**
  * A floor on real source files, now that they are counted as source files.
