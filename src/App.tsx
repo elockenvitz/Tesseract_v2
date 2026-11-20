@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
@@ -22,6 +23,25 @@ import { CaptureOverlay } from './components/capture/CaptureOverlay'
 import { CaptureConfigModal } from './components/capture/CaptureConfigModal'
 import { OpsGuard } from './components/ops/OpsGuard'
 import { OpsLayout } from './components/ops/OpsLayout'
+
+/**
+ * The public landing page, lazily.
+ *
+ * Every other page here is imported eagerly, and this one deliberately is
+ * not. A visitor who has never signed in is the ONLY audience for it, so
+ * putting its markup in the entry chunk would make the authenticated app
+ * carry marketing weight on every load. That lane has already cost this
+ * project once (the 8,950 kB entry chunk, PR #308).
+ *
+ * The flip side is honest too: an unauthenticated visitor now waits for one
+ * extra chunk before seeing anything. It is a small page with no images and
+ * no new dependencies, and the fallback below is the same boot loader the
+ * rest of the app uses, so the wait reads as the app starting rather than
+ * as a blank screen.
+ */
+const LandingPage = lazy(() =>
+  import('./pages/LandingPage').then(m => ({ default: m.LandingPage })),
+)
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -103,10 +123,36 @@ function AppRoutes() {
         </ProtectedRoute>
       } />
 
-      {/* Default redirect */}
+      {/*
+        The front door.
+        ──────────────────────────────────────────────────────────────────
+        This redirected to `/login` with no session, so every visitor who
+        had not already been invited met a password box and no explanation
+        of what it was for. There was no page a prospective investment team
+        or investor could be sent to.
+
+        A signed-in visitor still goes straight to `/dashboard`: the landing
+        page is for people who do not have an account, and sending a user
+        with a live session to marketing copy would be a regression in the
+        thing they actually use. Session handling, organization selection and
+        every other redirect are untouched -- this route is the only one that
+        changes, and only in its unauthenticated branch.
+      */}
       <Route
         path="/"
-        element={<Navigate to={user ? "/dashboard" : "/login"} replace />}
+        element={
+          user
+            ? <Navigate to="/dashboard" replace />
+            : (
+              <Suspense fallback={
+                <div className={LOADER_ANCHOR} data-testid="landing-loader">
+                  <TesseractLoader size={96} compact text="Loading…" />
+                </div>
+              }>
+                <LandingPage />
+              </Suspense>
+            )
+        }
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
