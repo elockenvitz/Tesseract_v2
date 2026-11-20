@@ -73,14 +73,14 @@ export interface NewsItem {
 
 // Simple service class for browser use
 export class BrowserFinancialService {
-  private alphaVantageKey: string | null = null
   private cache: Map<string, { data: Quote; timestamp: number }> = new Map()
   private readonly CACHE_TTL = 5 * 60 * 1000 // 5 minutes to reduce API calls
+  /* Reported by `getCacheStatus()`. The counters that fed the retired Alpha
+   * Vantage rate limiter (`API_CALL_DELAY`, `dailyCallCount`'s increment,
+   * `lastResetDate`, `rateLimitHit`) went with it; these two remain because
+   * the debug surface reads them. */
   private lastApiCall = 0
-  private readonly API_CALL_DELAY = 1000 // 1 second between API calls to respect rate limits
   private dailyCallCount = 0
-  private lastResetDate = new Date().getDate()
-  private rateLimitHit = false
 
   constructor() {
     /*
@@ -103,11 +103,21 @@ export class BrowserFinancialService {
       `Deno.env.get`, with no VITE prefix, which is what a provider credential
       is supposed to look like.
 
-      Leaving the field as a permanent null rather than deleting it: every
-      Alpha Vantage path in this file is already guarded by `if
-      (this.alphaVantageKey)` and falls through to Yahoo, so the fallbacks stay
-      exercised and reachable, and the next person to consider wiring a key in
-      finds this note where they would have written it.
+      The field and both Alpha Vantage paths are now GONE, not merely null.
+
+      They were kept as a permanent null so the Yahoo fallbacks stayed
+      exercised. That reasoning expired once Alpha Vantage was retired
+      outright: measured live on 2026-11-20, `NEWS_SENTIMENT` is a premium
+      endpoint this subscription does not include, and the provider had
+      contributed zero articles across all 73 cached news payloads. Keeping an
+      unreachable credential path and a `connect-src` allowance for a provider
+      we do not use is standing permission for the exact pattern that leaked
+      the key.
+
+      So: no Alpha Vantage, no key field, and `alphavantage.co` removed from
+      the CSP in `index.html`. If a provider credential is ever wanted here
+      again, the answer is still not this file -- it is a server-side function
+      reading `Deno.env.get`, as `market-news` does.
     */
   }
 
@@ -134,18 +144,9 @@ export class BrowserFinancialService {
         return cached.data
       }
 
-      // Try Alpha Vantage first if we have an API key
-      if (this.alphaVantageKey) {
-        const quote = await this.fetchFromAlphaVantage(upperSymbol)
-        if (quote) {
-          // Cache successful result
-          this.cache.set(upperSymbol, { data: quote, timestamp: Date.now() })
-          return quote
-        }
-      } else {
-      }
-
-      // Fallback to Yahoo Finance
+      // Yahoo Finance first, then Finnhub. An Alpha Vantage branch sat above
+      // this, guarded by a key field that was permanently null, so Yahoo has
+      // always been the first provider actually called. See the constructor.
       const yahooQuote = await this.fetchFromYahooFinance(upperSymbol)
       if (yahooQuote) {
         // Cache successful result
@@ -182,118 +183,18 @@ export class BrowserFinancialService {
 
   async getNews(symbols?: string[], limit: number = 5): Promise<NewsItem[]> {
     try {
-      // Try Alpha Vantage news if we have an API key
-      if (this.alphaVantageKey && symbols && symbols.length > 0) {
-        const news = await this.fetchNewsFromAlphaVantage(symbols[0])
-        if (news && news.length > 0) return news.slice(0, limit)
-      }
-
-      // Fallback to mock news
+      /*
+       * Mock news is all this has ever returned.
+       *
+       * An Alpha Vantage branch sat above this, guarded by a key field that
+       * was permanently null, so it never ran. Real company news comes from
+       * `supabase/functions/market-news`, which is server-side and keyed; this
+       * method is not on that path.
+       */
       return this.createMockNews(symbols, limit)
     } catch (error) {
       console.warn('Failed to fetch news', error)
       return this.createMockNews(symbols, limit)
-    }
-  }
-
-  private async fetchFromAlphaVantage(symbol: string): Promise<Quote | null> {
-    try {
-      // Reset daily counter if new day
-      const today = new Date().getDate()
-      if (today !== this.lastResetDate) {
-        this.dailyCallCount = 0
-        this.lastResetDate = today
-      }
-
-      // Check daily limit (Alpha Vantage free tier: 25 calls/day for demo key)
-      if (this.dailyCallCount >= 20 || this.rateLimitHit) { // Stay safely under limit
-        console.warn(`Daily API limit reached (${this.dailyCallCount} calls) or rate limit hit. Using fallback providers.`)
-        this.rateLimitHit = true
-        return null
-      }
-
-      // Respect rate limiting (but much more reasonable)
-      const now = Date.now()
-      const timeSinceLastCall = now - this.lastApiCall
-      if (timeSinceLastCall < this.API_CALL_DELAY) {
-        const waitTime = this.API_CALL_DELAY - timeSinceLastCall
-        await new Promise(resolve => setTimeout(resolve, waitTime))
-      }
-
-      this.lastApiCall = Date.now()
-      this.dailyCallCount++
-
-      const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${this.alphaVantageKey}`
-      const response = await fetch(url)
-      const data = await response.json()
-      // Check for API error responses
-      if (data['Error Message']) {
-        console.warn('Alpha Vantage API error:', data['Error Message'])
-        return null
-      }
-
-      if (data['Note']) {
-        console.warn('Alpha Vantage rate limit hit:', data['Note'])
-        return null
-      }
-
-      // Check for Information message (rate limit)
-      if (data['Information']) {
-        console.warn('Alpha Vantage rate limit hit:', data['Information'])
-        this.rateLimitHit = true
-        return null
-      }
-
-      const quote = data['Global Quote']
-      if (!quote || !quote['01. symbol']) {
-        console.warn('No quote data returned for', symbol)
-        return null
-      }
-
-      // The same lie as the placeholder, in miniature: falling back to
-      // `new Date()` here stamped an undated quote as current. If Alpha
-      // Vantage will not say when the price was true, we do not know, and the
-      // next provider in the chain gets a turn.
-      if (!quote['07. latest trading day']) {
-        console.warn('Alpha Vantage quote has no trading day for', symbol)
-        return null
-      }
-
-      /*
-       * Alpha Vantage states the change itself, so it is read rather than
-       * derived — but `|| '0'` turned an absent field into a measured zero
-       * exactly as the other two providers did. A missing field is parsed as
-       * NaN and normalised to null.
-       *
-       * This path is dormant (`alphaVantageKey` is permanently null, see the
-       * constructor) and is corrected anyway: the next person to wire a key in
-       * must not reintroduce the defect by inheriting it.
-       */
-      const num = (v: unknown): number | null => {
-        const n = v == null ? NaN : Number(v)
-        return Number.isFinite(n) ? n : null
-      }
-      const avPrice = parseFloat(quote['05. price'] || '0')
-      const avPrev = num(quote['08. previous close'])
-      const result = {
-        symbol: quote['01. symbol'] || symbol,
-        price: avPrice,
-        change: num(quote['09. change']),
-        changePercent: num(quote['10. change percent']?.replace('%', '')),
-        previousClose: avPrev,
-        open: parseFloat(quote['02. open'] || '0'),
-        high: parseFloat(quote['03. high'] || '0'),
-        low: parseFloat(quote['04. low'] || '0'),
-        volume: parseInt(quote['06. volume'] || '0'),
-        timestamp: quote['07. latest trading day'],
-        dayHigh: parseFloat(quote['03. high'] || '0'),
-        dayLow: parseFloat(quote['04. low'] || '0')
-      }
-
-      return result
-    } catch (error) {
-      console.warn('Alpha Vantage request failed:', error)
-      return null
     }
   }
 
@@ -546,31 +447,6 @@ export class BrowserFinancialService {
       return null
     }
   }
-
-  private async fetchNewsFromAlphaVantage(symbol: string): Promise<NewsItem[]> {
-    try {
-      const url = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${symbol}&apikey=${this.alphaVantageKey}&limit=50`
-      const response = await fetch(url)
-      const data = await response.json()
-
-      const feed = data.feed
-      if (!Array.isArray(feed)) return []
-
-      return feed.map((item: any, index: number) => ({
-        id: `${symbol}-${index}`,
-        headline: item.title || 'No headline',
-        summary: item.summary || '',
-        url: item.url || '#',
-        source: item.source || 'Unknown',
-        publishedAt: item.time_published || new Date().toISOString(),
-        symbols: [symbol]
-      }))
-    } catch (error) {
-      console.warn('Alpha Vantage news request failed:', error)
-      return []
-    }
-  }
-
 
   /*
    * createPlaceholderQuote was here.

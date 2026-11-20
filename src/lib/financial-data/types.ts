@@ -76,8 +76,15 @@ export interface NewsItem {
   publishedAt: Date
   source: string
   symbols?: string[]
-  sentiment?: 'positive' | 'negative' | 'neutral'
-  relevanceScore?: number
+  /*
+   * `sentiment` and `relevanceScore` were here.
+   *
+   * Alpha Vantage's NEWS_SENTIMENT was their only source anywhere in the
+   * system, and it is retired: measured 2026-11-20, it is a premium endpoint
+   * this subscription does not include and had returned zero articles across
+   * all 73 cached payloads. No producer sets these and no consumer read them,
+   * so declaring them advertised a signal that never arrived.
+   */
 }
 
 // Time period types

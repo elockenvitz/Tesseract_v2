@@ -7,12 +7,34 @@
  * on the server — anything in the client bundle is public, and these are
  * rate-limited credentials tied to a paid plan.
  *
- * Four sources, each independently optional:
+ * Three sources, each independently optional:
  *
  *   Finnhub        company-news        needs FINNHUB_API_KEY
- *   Alpha Vantage  NEWS_SENTIMENT      needs ALPHAVANTAGE_API_KEY
  *   Yahoo Finance  search              no key — headlines and thumbnails
  *   Yahoo Finance  RSS headline feed   no key — the descriptions, see below
+ *
+ * ── Alpha Vantage was the fourth, and is retired ──────────────────────────
+ *
+ * It supplied NEWS_SENTIMENT, the only source of sentiment labels and
+ * per-ticker relevance scores. Measured live on 2026-11-20, immediately after
+ * the credential was rotated: the key is configured and the provider answers
+ * 200, but with
+ *
+ *   "Information: ... This is a premium endpoint. You may subscribe to any of
+ *    the premium plans ... to instantly unlock all premium endpoints"
+ *
+ * NEWS_SENTIMENT is not included in this subscription. It had contributed
+ * ZERO articles across all 73 cached news payloads, and a fresh uncached
+ * request confirmed count: 0. The `note` field below is what made that
+ * visible; having made it visible, the honest next step is to stop asking.
+ *
+ * Removing it means `sentiment` and `relevanceScore` have no source at all,
+ * so they are gone from `NewsItem` and ranking is recency-only. See the sort
+ * at the bottom: it previously preferred relevance and would now have been
+ * sorting every item by a field nothing sets.
+ *
+ * Rotating the key did not and could not fix this. It is a plan limit, not a
+ * credential fault, so re-adding the source needs a paid plan first.
  *
  * Whichever are configured get used; the rest are skipped. With no keys at all
  * the function still returns Yahoo results, so the feed works out of the box
@@ -35,11 +57,12 @@
  * `configured` is reported separately from `ok` because a source with no API
  * key returns an empty list without erroring, which is indistinguishable from
  * a working source on a quiet news day. Alpha Vantage sat dark that way and
- * nothing in the response said so.
+ * nothing in the response said so. Finnhub can still sit dark the same way,
+ * so the field stays.
  *
- * `note` is the next layer of the same problem. A source can be configured,
- * `ok`, and still return nothing because the PROVIDER refused -- Alpha Vantage
- * answers 200 with prose where the data should be. `note` carries that prose.
+ * `note` is gone with Alpha Vantage. It existed because that provider answers
+ * 200 with prose where the data should be; the remaining three either return
+ * stories or throw, and `ok: false` already says which.
  *
  * `NewsItem` matches src/lib/financial-data/types.ts so the client can treat
  * these identically to any other provider's output.
@@ -82,14 +105,18 @@ interface NewsItem {
   symbols: string[]
   /**
    * The ticker the story is *about*, as distinct from the ones it mentions.
-   * Finnhub knows it exactly — the story came back from a per-symbol query.
-   * Alpha Vantage gives per-ticker relevance scores, so it is the top-scoring
-   * one. Preserved through merge so the tile never has to guess.
+   * Finnhub and both Yahoo sources know it exactly — the story came back from
+   * a per-symbol query. Preserved through merge so the tile never has to
+   * guess.
    */
   primarySymbol?: string
-  sentiment?: 'positive' | 'negative' | 'neutral'
-  relevanceScore?: number
   imageUrl?: string
+  /*
+   * `sentiment` and `relevanceScore` were here. Alpha Vantage was their only
+   * source, and it is retired (see the header), so nothing can populate them.
+   * Declaring optional fields no source sets would advertise a signal this
+   * function does not have.
+   */
 }
 
 /** Per-source timeout. A slow provider must not hold up the whole response. */
@@ -182,106 +209,24 @@ async function fromFinnhub(symbols: string[], from: string, to: string): Promise
   return out
 }
 
-/**
- * Somewhere for a source to say why it came back empty.
+/*
+ * `fromAlphaVantage`, `alphaVantageComplaint` and the `SourceNote` interface
+ * were here.
  *
- * One object per request, handed in rather than held at module scope: an
- * isolate serves many requests and a module-level note would outlive the one
- * it describes.
- */
-interface SourceNote { note?: string }
-
-/**
- * Alpha Vantage never returns an HTTP error. It returns 200 with a different
- * SHAPE -- no `feed` key, and one of three prose fields instead -- so the
- * obvious `Array.isArray(data?.feed) ? data.feed : []` turns "your key is
- * invalid" and "you have used your 25 requests for today" into the same empty
- * list a genuinely quiet news day produces.
+ * `alphaVantageComplaint` existed because Alpha Vantage never returns an HTTP
+ * error -- it answers 200 with prose where the data should be, so an invalid
+ * key, an exhausted quota and a quiet news day all arrived as the same empty
+ * list. Reading that prose into `note` is what finally made the source's
+ * silence legible, and what it said, on 2026-11-20 with a freshly rotated
+ * key, was that NEWS_SENTIMENT is a premium endpoint this plan does not
+ * include.
  *
- * Measured live on 2026-11-02, this source reported `ok: true, configured:
- * true, count: 0` while every other source returned stories. Alpha Vantage is
- * the ONLY source carrying sentiment and relevance scores, so with it dark the
- * feed silently falls back to ranking on recency alone -- and the response said
- * nothing was wrong. Same class of defect as the `configured` field that was
- * added above it, one level deeper.
+ * So the diagnostic did its job and the source is retired. `SourceNote` goes
+ * with it: it was only ever threaded through for this one provider, because
+ * it is the only one that fails by explaining itself rather than by throwing.
  *
- * So: read the prose field and pass it back. `note` appearing on a source is
- * the provider explaining itself.
+ * Re-adding this needs a paid Alpha Vantage plan first, not a new key.
  */
-function alphaVantageComplaint(data: unknown): string | undefined {
-  if (!data || typeof data !== 'object') return undefined
-  const d = data as Record<string, unknown>
-  // `Information` is the rate-limit and plan message, `Note` the older
-  // throttle message, `Error Message` a bad key or a bad parameter.
-  for (const field of ['Information', 'Note', 'Error Message']) {
-    const v = d[field]
-    if (typeof v === 'string' && v.trim()) return `${field}: ${v.trim()}`
-  }
-  return undefined
-}
-
-/**
- * Alpha Vantage is the only one of the sources returning sentiment and a
- * per-ticker relevance score, which is why it is worth a key: those feed the
- * feed's ranking directly instead of news being ordered on recency alone.
- */
-async function fromAlphaVantage(symbols: string[], out: SourceNote): Promise<NewsItem[]> {
-  const key = Deno.env.get('ALPHAVANTAGE_API_KEY')
-  if (!key) {
-    out.note = 'ALPHAVANTAGE_API_KEY is not set'
-    return []
-  }
-  try {
-    const data = await fetchJson(
-      `https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${encodeURIComponent(symbols.join(','))}&limit=50&apikey=${key}`
-    )
-    const complaint = alphaVantageComplaint(data)
-    if (complaint) {
-      // The provider's own words. They never contain the key -- the key is
-      // only ever in the query string, which is not echoed back.
-      out.note = complaint
-      return []
-    }
-    if (!Array.isArray(data?.feed)) {
-      out.note = 'the response carried no `feed` array and no explanation'
-      return []
-    }
-    const feed = data.feed
-    return feed.flatMap((a: any) => {
-      if (!a?.title || !a?.url) return []
-      // "20240115T120000" → ISO
-      const t = String(a.time_published ?? '')
-      const iso = t.length >= 15
-        ? `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}T${t.slice(9, 11)}:${t.slice(11, 13)}:${t.slice(13, 15)}Z`
-        : new Date().toISOString()
-      const relevant = (a.ticker_sentiment ?? [])
-        .filter((ts: any) => symbols.includes(ts.ticker))
-        .sort((x: any, y: any) => Number(y.relevance_score) - Number(x.relevance_score))
-      const top = relevant[0]
-      const label = String(a.overall_sentiment_label ?? '').toLowerCase()
-      return [{
-        id: `av:${a.url}`,
-        headline: a.title,
-        summary: a.summary || undefined,
-        url: a.url,
-        publishedAt: iso,
-        source: a.source || 'Alpha Vantage',
-        symbols: relevant.map((ts: any) => ts.ticker),
-        primarySymbol: top?.ticker,
-        sentiment: label.includes('bull') ? 'positive' as const
-          : label.includes('bear') ? 'negative' as const
-          : 'neutral' as const,
-        relevanceScore: top ? Number(top.relevance_score) : undefined,
-        imageUrl: a.banner_image || undefined,
-      }]
-    })
-  } catch (thrown) {
-    // `fetchJson` throws the status for a non-2xx, which for this provider is
-    // unusual enough to be worth saying out loud rather than swallowing.
-    out.note = `the request failed: ${thrown instanceof Error ? thrown.message : String(thrown)}`
-    return []
-  }
-}
 
 /** Pull one XML tag's text out of an RSS <item> block. */
 function rssTag(block: string, name: string): string {
@@ -412,12 +357,22 @@ function merge(lists: NewsItem[][]): NewsItem[] {
     // becomes a headline ticker, so leave them alone and keep the first.
     if (existing.url !== item.url) continue
 
-    const richer = (item.relevanceScore != null || item.sentiment != null) &&
-      existing.relevanceScore == null && existing.sentiment == null
-    const merged = richer ? { ...item } : { ...existing }
+    /*
+     * Keep the first record. This used to prefer whichever copy carried
+     * `relevanceScore` or `sentiment`, which only ever meant "prefer the
+     * Alpha Vantage copy". With that source retired no record can carry
+     * either field, so the preference could never fire and the two branches
+     * were the same branch.
+     *
+     * The fields below are still merged, so a later copy can still
+     * contribute a summary or an image the first one lacked. That is what
+     * actually matters here: Yahoo RSS exists purely to supply the prose
+     * that the JSON search endpoint omits.
+     */
+    const merged = { ...existing }
 
-    // The subject survives the merge. Finnhub's is exact (it came from a
-    // per-symbol query) so it wins over Alpha Vantage's relevance ranking.
+    // The subject survives the merge. Every remaining source queries per
+    // symbol, so each one's `primarySymbol` is exact; keep the first.
     const primary = existing.primarySymbol ?? item.primarySymbol
     merged.primarySymbol = primary
 
@@ -613,27 +568,24 @@ serve(async (req) => {
   const from = new Date(to.getTime() - lookbackDays * 86400_000)
   const fmt = (d: Date) => d.toISOString().slice(0, 10)
 
-  // All four in parallel; a rejection becomes an empty list rather than a
+  // All three in parallel; a rejection becomes an empty list rather than a
   // failed response.
-  const alphaVantage: SourceNote = {}
   const settled = await Promise.allSettled([
     withTimeout(fromFinnhub(symbols, fmt(from), fmt(to)), SOURCE_TIMEOUT_MS),
-    withTimeout(fromAlphaVantage(symbols, alphaVantage), SOURCE_TIMEOUT_MS),
     withTimeout(fromYahoo(symbols), SOURCE_TIMEOUT_MS),
     withTimeout(fromYahooRss(symbols), SOURCE_TIMEOUT_MS),
   ])
-  const names = ['finnhub', 'alphavantage', 'yahoo', 'yahoo-rss']
+  const names = ['finnhub', 'yahoo', 'yahoo-rss']
   const lists = settled.map(s => (s.status === 'fulfilled' ? s.value : []))
 
-  // A source with no API key returned an empty array without ever making a
-  // request, which `ok: true, count: 0` reported as a healthy source with no
-  // news. Alpha Vantage sat dark that way across every cached payload — it is
-  // the only source carrying sentiment, so sentiment was absent everywhere and
-  // nothing said why. Reporting configuration separately from success makes an
-  // unset key visible instead of indistinguishable from a quiet news day.
+  // A source with no API key returns an empty array without ever making a
+  // request, which `ok: true, count: 0` reports as a healthy source with no
+  // news. Reporting configuration separately from success makes an unset key
+  // visible instead of indistinguishable from a quiet news day. Finnhub is
+  // the only remaining source that can sit dark this way; the Yahoo pair need
+  // no key, so they are honestly always configured.
   const configured: Record<string, boolean> = {
     finnhub: !!Deno.env.get('FINNHUB_API_KEY'),
-    alphavantage: !!Deno.env.get('ALPHAVANTAGE_API_KEY'),
     yahoo: true,
     'yahoo-rss': true,
   }
@@ -672,15 +624,20 @@ serve(async (req) => {
       )
       return { ...i, symbols: attribution.symbols, primarySymbol: attribution.primarySymbol }
     })
-    .sort((a, b) => {
-      // Relevance first where a provider supplied it, recency otherwise. A
-      // highly-relevant story from this morning should outrank a passing
-      // mention from ten minutes ago.
-      const ra = a.relevanceScore ?? 0
-      const rb = b.relevanceScore ?? 0
-      if (Math.abs(ra - rb) > 0.05) return rb - ra
-      return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
-    })
+    /*
+     * Newest first, and that is the whole ranking.
+     *
+     * This used to prefer `relevanceScore` and fall back to recency. Alpha
+     * Vantage was the only source that ever set that field, so with it
+     * retired the relevance comparison read `0` against `0` on every pair and
+     * fell through to recency anyway -- a ranking that described a signal the
+     * function no longer receives.
+     *
+     * Saying "recency" plainly is the honest version. If relevance ranking is
+     * wanted back, it needs a source that actually supplies a score, which
+     * means a paid Alpha Vantage plan or a different provider.
+     */
+    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
     .slice(0, limit)
 
   const payload = {
@@ -690,10 +647,10 @@ serve(async (req) => {
       ok: settled[i].status === 'fulfilled',
       configured: configured[name] ?? true,
       count: lists[i].length,
-      // Only Alpha Vantage answers 200 with a complaint instead of data, so
-      // only Alpha Vantage needs somewhere to put it. The others either return
-      // stories or throw, and `ok: false` already says which.
-      ...(name === 'alphavantage' && alphaVantage.note ? { note: alphaVantage.note } : {}),
+      // `note` was here, for the one provider that answered 200 with a
+      // complaint instead of data. The three that remain either return stories
+      // or throw, and `ok: false` already says which, so there is nothing left
+      // for a note to carry.
     })),
   }
 
