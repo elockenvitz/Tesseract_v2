@@ -42,6 +42,10 @@ import type {
   UnmatchedExecution,
   SizeBasis,
 } from '../types/decision-accountability'
+import {
+  dropIdeaRowsSupersededByRequest,
+  stageFromRequestStatus,
+} from '../lib/outcomes/decision-stage-identity'
 
 // ============================================================
 // Constants
@@ -978,7 +982,21 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         source: 'decision' as const,
         category: 'passed' as const,
         direction,
-        stage: (d.status === 'deferred' ? 'rejected' : d.status) as any,
+        /*
+         * The PM's answer, as the PM gave it.
+         *
+         * This was `d.status === 'deferred' ? 'rejected' : d.status`, because
+         * `DecisionStage` had no `deferred` member and the cast through `any`
+         * hid that it was lying. A PM who deferred META saw the Outcomes log
+         * of record say they REJECTED it.
+         *
+         * A deferral is not a rejection. It keeps the idea alive and says
+         * "not yet"; a rejection closes it. Attributing the harsher answer to
+         * a PM who never gave it is exactly the kind of claim this surface
+         * exists to get right. `deferred` is now a stage, so the status
+         * passes through untouched and the `any` is gone.
+         */
+        stage: stageFromRequestStatus(d.status),
         /*
          * What the analyst said WHEN THEY RECOMMENDED, for a decision the PM
          * rejected or deferred.
@@ -1045,7 +1063,36 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     const batchMap = batchesByDecision(outcomesPayloadQuery.data?.acceptedTrades ?? [])
     const withBatches = decisionRows.map(r => ({ ...r, batches: batchMap.get(r.decision_id) ?? [] }))
 
-    return [...withBatches, ...discretionaryRows, ...passedRows]
+    /*
+     * ── One decision, one row ────────────────────────────────────────────
+     *
+     * A rejected decision was listed TWICE in Outcomes. Rejecting a
+     * recommendation writes the outcome onto the idea AND leaves the
+     * `decision_requests` row in `rejected`, so both sources emit a row for
+     * the same decision. Measured in the QA org, 2026-11-20: CRWD appeared
+     * twice, while MSFT (accepted) and META (deferred) appeared once each.
+     *
+     * The two rows cannot be deduplicated by `decision_id`, which is the
+     * reason this went unnoticed: `decisionRows` key on the
+     * `trade_queue_items` id and `passedRows` on the `decision_requests` id,
+     * so the same decision carries two different ids and nothing collides.
+     * The shared identity is the IDEA, which `passedRows` already joins as
+     * `trade_idea`.
+     *
+     * The decision request wins, because it is the record of the PM's answer:
+     * it has the reviewer, the review timestamp, the frozen
+     * `proposal_version`, and the true `deferred`/`rejected` status. The idea
+     * row carries the outcome copied onto the idea, which is why a deferral
+     * read as `rejected` there at all.
+     *
+     * Only `passed` idea rows are dropped. An approved or executed row is
+     * never a duplicate of a passed request, and dropping one would take its
+     * matched executions with it. A rejected idea with no request of its own
+     * still has no request in this set, so it is still listed.
+     */
+    const deduped = dropIdeaRowsSupersededByRequest(withBatches, passedData ?? [])
+
+    return [...deduped, ...discretionaryRows, ...passedRows]
   }, [decisionData, eventData, passedData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data, acceptedTradesQuery.data, outcomesPayloadQuery.data?.acceptedTrades])
 
   /*

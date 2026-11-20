@@ -39,7 +39,17 @@
 
 export type DecisionDirection = 'buy' | 'sell' | 'long' | 'short' | 'pair' | 'add' | 'trim' | 'unknown'
 
-export type DecisionStage = 'approved' | 'rejected' | 'cancelled'
+/**
+ * A PM's terminal answer on a decision request.
+ *
+ * `deferred` is a real answer and must be its own member. It used to be
+ * absent, so `useDecisionAccountability` coerced it: `d.status === 'deferred'
+ * ? 'rejected'`. A PM who deferred META was shown, in the Outcomes log of
+ * record, as having REJECTED it. Those are different decisions with different
+ * accountability: a rejection closes the idea, a deferral keeps it alive and
+ * says "not yet".
+ */
+export type DecisionStage = 'approved' | 'rejected' | 'deferred' | 'cancelled'
 
 /**
  * Whether the market move since execution validated the decision direction.
