@@ -14,6 +14,14 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import { RecommendationEditorModal } from '../trading/RecommendationEditorModal'
 import { RecommendationReviewPane } from './RecommendationReviewPane'
+import {
+  rawStageValuesFor,
+  RECOMMENDABLE_STAGES,
+  TERMINAL_IDEA_STATUSES,
+  stageLabel,
+  toIdeaStage,
+  type IdeaStage,
+} from '../../lib/ideas/stage-model'
 import type { TradeQueueItemWithDetails } from '../../types/trading'
 import type { CapturedContext } from './ContextSelector'
 import { useIsMobile } from '../../hooks/useMediaQuery'
@@ -33,11 +41,18 @@ const ACTION_COLORS: Record<string, string> = {
   trim: 'text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400',
 }
 
-/** Status sort priority: deciding first, then simulating, then idea */
-const STATUS_SORT_ORDER: Record<string, number> = {
-  deciding: 0,
-  simulating: 1,
-  idea: 2,
+/**
+ * Sort priority: the ideas the desk is waiting on come first.
+ *
+ * Keyed on CANONICAL stages. The previous table was keyed on `deciding`,
+ * `simulating` and `idea` — gen-1 labels — so against gen-2 data every row
+ * scored the `?? 9` fallback and the list came back in no order at all.
+ */
+const STAGE_SORT_ORDER: Record<IdeaStage, number> = {
+  ready_to_recommend: 0,
+  developing: 1,
+  researching: 2,
+  exploring: 3,
 }
 
 /** A display row — either a single trade idea or a grouped pair trade */
@@ -46,7 +61,12 @@ interface DisplayRow {
   isPair: boolean
   /** The first leg (used when selecting for RecommendationEditorModal) */
   primaryIdea: TradeQueueItemWithDetails
-  status: string
+  /**
+   * The row's CANONICAL stage. Normalized on the way in, so neither the sort
+   * nor the label ever sees a legacy label — and the chip can never render a
+   * raw enum like `ready_for_decision` at a portfolio manager.
+   */
+  stage: IdeaStage
   /** For single ideas */
   action?: string
   symbol?: string
@@ -74,17 +94,36 @@ export function RecommendationQuickModal({ isOpen, onClose, context, embedded = 
 
   // Fetch trade ideas the user can propose on
   const { data: tradeIdeas = [], isLoading } = useQuery({
-    queryKey: ['trade-ideas-for-proposal', user?.id, 'v2'],
+    /* v3: the stage filter changed, so a cached v2 result is a cached empty
+       list for exactly the orgs this fixes. */
+    queryKey: ['trade-ideas-for-proposal', user?.id, 'v3'],
     queryFn: async () => {
       if (!user?.id) return []
 
+      /*
+       * `portfolio_id` is not optional in this projection.
+       * `RecommendationReviewPane` reads `tradeIdea.portfolio_id` and refuses
+       * with "No portfolio linked — recommendations require a portfolio
+       * context" when it is missing. It was absent here, so every idea this
+       * picker offered was unrecommendable on selection even though all of
+       * them carry a portfolio. Keep comments OUT of the select string — it
+       * is sent to PostgREST verbatim.
+       */
       const query = supabase
         .from('trade_queue_items')
         .select(`
           id, action, urgency, status, stage, created_at, pair_id,
+          portfolio_id,
           asset:assets(id, symbol, company_name, sector)
         `)
-        .in('stage', ['idea', 'simulating', 'deciding'])
+        /* Every raw spelling of a recommendable stage, derived from the
+           canonical model rather than listed here — see
+           `rawStageValuesFor`. Hardcoding gen-1 labels here is the defect
+           that made this picker read "No active trade ideas" in every
+           freshly provisioned org. */
+        .in('stage', rawStageValuesFor(RECOMMENDABLE_STAGES))
+        .not('status', 'in', `(${TERMINAL_IDEA_STATUSES.join(',')})`)
+        .is('outcome', null)
         .is('deleted_at', null)
         .order('created_at', { ascending: false })
         .limit(50)
@@ -140,7 +179,7 @@ export function RecommendationQuickModal({ isOpen, onClose, context, embedded = 
         key: `pair-${pairId}`,
         isPair: true,
         primaryIdea: legs[0],
-        status: legs[0].stage || legs[0].status,
+        stage: toIdeaStage(legs[0].stage || legs[0].status),
         legs: legGroups,
         legCount: legs.length,
       })
@@ -153,15 +192,15 @@ export function RecommendationQuickModal({ isOpen, onClose, context, embedded = 
         key: idea.id,
         isPair: false,
         primaryIdea: idea,
-        status: idea.stage || idea.status,
+        stage: toIdeaStage(idea.stage || idea.status),
         action: idea.action,
         symbol: asset?.symbol || 'Unknown',
         name: asset?.company_name || '',
       })
     }
 
-    // Sort: deciding → simulating → idea
-    rows.sort((a, b) => (STATUS_SORT_ORDER[a.status] ?? 9) - (STATUS_SORT_ORDER[b.status] ?? 9))
+    // Sort: ready to recommend → developing → researching → exploring
+    rows.sort((a, b) => STAGE_SORT_ORDER[a.stage] - STAGE_SORT_ORDER[b.stage])
 
     return rows
   }, [tradeIdeas])
@@ -282,7 +321,7 @@ export function RecommendationQuickModal({ isOpen, onClose, context, embedded = 
                         </span>
                       )}
                     </div>
-                    <span className="text-xs text-gray-400 capitalize">{row.status}</span>
+                    <span className="text-xs text-gray-400">{stageLabel(row.stage)}</span>
                     <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
                   </button>
                 )
@@ -308,7 +347,7 @@ export function RecommendationQuickModal({ isOpen, onClose, context, embedded = 
                       </span>
                     </div>
                   </div>
-                  <span className="text-xs text-gray-400 capitalize">{row.status}</span>
+                  <span className="text-xs text-gray-400">{stageLabel(row.stage)}</span>
                   <ChevronRight className="h-4 w-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
                 </button>
               )
