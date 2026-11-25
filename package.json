@@ -67,7 +67,11 @@
     "sec:asset-workspace": "node scripts/security-suite.mjs asset-workspace-tenant-isolation",
     "sec:platform-baseline": "node scripts/security-suite.mjs platform-rls-baseline",
     "security:check": "node scripts/security-check.mjs",
-    "security:check:static": "node scripts/security-check.mjs --static"
+    "security:check:static": "node scripts/security-check.mjs --static",
+    "legal:publish": "node scripts/publish-legal.mjs",
+    "legal:publish:build": "node scripts/publish-legal.mjs --if-approved",
+    "legal:unpublish": "node scripts/publish-legal.mjs --unpublish",
+    "guard:legal": "vitest run --config vitest.config.ts --project unit --project unit-node src/legal src/components/legal src/lib/storage/legal-pages.test.ts scripts/__tests__/publish-legal.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

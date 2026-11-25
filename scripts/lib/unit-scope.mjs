@@ -543,6 +543,29 @@ export const GATED_DIRS = [
    * nothing, a rail that loses the reader's place. None of them throws.
    */
   'src/components/ideas-app/__tests__',
+  /*
+   * The legal publication and acceptance gates.
+   *
+   * Gated rather than deferred because both failure modes are silent and
+   * neither is a crash:
+   *
+   *   - The publication gate decides whether draft legal text is served to
+   *     the public. Opening it early publishes a policy naming a legal entity
+   *     that does not exist, which is a false statement rather than a missing
+   *     one.
+   *   - The acceptance gate decides whether a consent record is written. Open
+   *     it early and it manufactures an acceptance row for an unapproved
+   *     draft, which is worse than having no record, because it looks like
+   *     consent.
+   *
+   * The gates are environment flags, so a regression is a one-character edit
+   * with no visible symptom in the app. `envFlag` reading `value === 'true'`
+   * instead of `Boolean(value)` is the whole difference between closed and
+   * open-whenever-anyone-sets-it-to-"false"; that case is asserted in
+   * src/legal/__tests__/gates.test.ts.
+   */
+  'src/legal/__tests__',
+  'src/components/legal/__tests__',
 
 ]
 

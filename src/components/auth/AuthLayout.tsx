@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import { Card } from '../ui/Card'
 import { hideBootLoader } from '../../lib/boot-loader'
+import { LegalFooter } from '../legal/LegalFooter'
 
 interface AuthLayoutProps {
   children: React.ReactNode
@@ -58,6 +59,14 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
         <Card>
           {children}
         </Card>
+
+        {/*
+          Here rather than in each of the six pages using this layout, for the
+          same reason hideBootLoader() moved here: three of the six forgot it.
+          A legal link missing from one auth page is the same class of defect
+          and harder to notice, because nothing looks broken.
+        */}
+        <LegalFooter className="mt-8" />
       </div>
     </div>
   )
