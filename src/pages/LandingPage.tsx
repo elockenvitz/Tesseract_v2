@@ -2,9 +2,12 @@ import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeftRight, ArrowRight, BookOpen, Boxes, FileSignature, Gavel, History,
-  Layers, LineChart, Link2, ListChecks, Lock, Quote, RotateCcw, ShieldCheck,
+  Layers, Link2, ListChecks, Lock, Quote, RotateCcw, ShieldCheck,
   Sparkles, Target, Users,
 } from 'lucide-react'
+// `LineChart` was dropped with the "Review and learning" memory item, which
+// was the lifecycle's Review stage restated. An unused import is an eslint
+// error here, so the icon list is a quiet check on content that left.
 import { TesseractLogo } from '../components/ui/TesseractLogo'
 import { TesseractMark } from '../components/ui/TesseractMark'
 import { hideBootLoader } from '../lib/boot-loader'
@@ -42,6 +45,39 @@ import { hideBootLoader } from '../lib/boot-loader'
  * substitute has already decided what this is before the conversation
  * starts. Saying what you are not is how a focused product sells; saying
  * what you have not finished is not. Keep the first, never add the second.
+ *
+ * ── RULE TWO: one job per section, and no claim made twice ──────────────
+ *
+ * The brief was that the copy had to be clear and not overwhelming, and the
+ * cause turned out to be measurable rather than a matter of taste. The page
+ * was 1,603 words across 31 headed items, and the sections were re-arguing
+ * each other: "the version the PM read is frozen" was asserted NINE times
+ * (in the problem list twice, two lifecycle stages, the diagram and its
+ * note, the capture list, the product list, and the memory list), and "a
+ * rejection is a record" five times. A reader does not experience that as
+ * thorough. They experience it as not being able to tell what is new, which
+ * is what "confusing" meant here.
+ *
+ * So every section has exactly ONE job and carries only what is its own:
+ *
+ *   problem    what breaks today
+ *   lifecycle  the five stages and the record each one leaves
+ *   research   what an analyst actually does, so capture is not a chore
+ *   product    where the work happens, as a map of surfaces
+ *   memory     why the accumulation is worth owning
+ *   act-ai     why a structured record makes an assistant useful
+ *
+ * If a line could sit in two of those sections, it belongs in the earlier
+ * one and must be deleted from the later one. The memory list lost three of
+ * its six items that way, and the lifecycle lost a whole field. Two further
+ * rules came out of the same pass:
+ *
+ *   ONE SENTENCE PER BULLET. A second sentence in a grid cell is where the
+ *   scanning stops. Where both sentences carried weight they were joined,
+ *   not halved.
+ *
+ *   NUMBERS MEAN SEQUENCE. There were three numbered lists; only the
+ *   lifecycle has an order, so only the lifecycle is numbered.
  *
  * ── The visual system ────────────────────────────────────────────────────
  *
@@ -886,13 +922,13 @@ function RecordChain() {
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
       />
-      <figcaption className="flex flex-wrap items-center justify-between gap-3">
-        <span className="text-[13px] font-semibold tracking-tight text-white">
-          How one decision is stored
-        </span>
-        <span className="rounded-full bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10">
-          Record shape
-        </span>
+      {/*
+        One caption, not two. This had "How one decision is stored" on the
+        left and a pill reading "Record shape" on the right, which are the
+        same statement twice with a piece of chrome around the second.
+      */}
+      <figcaption className="text-[13px] font-semibold tracking-tight text-white">
+        How one decision is stored
       </figcaption>
 
       <ol className="mt-7 space-y-0">
@@ -931,8 +967,8 @@ function RecordChain() {
                 )}
                 {frozen && (
                   <p className="mt-1.5 max-w-[46ch] text-[12px] leading-relaxed text-slate-300">
-                    Immutable. Later edits to the research create new versions
-                    and never alter what the PM actually read.
+                    Later edits create new versions and never alter what the
+                    PM actually read.
                   </p>
                 )}
               </div>
@@ -948,8 +984,7 @@ function RecordChain() {
         </div>
         <p className="max-w-[48ch] text-[12px] leading-relaxed text-slate-500">
           The review returns to the note, so the next decision on this name
-          starts from what the firm already learned rather than from a blank
-          page.
+          starts from what the firm already learned.
         </p>
       </div>
     </figure>
@@ -972,14 +1007,22 @@ function RecordChain() {
  *  - The RETURN. The review is the input to the next decision on that name.
  *    A lifecycle drawn as a line that stops implies a filing system.
  *
- * Each stage now carries three things rather than one sentence, because
- * "shows more on each aspect of the lifecycle" was the brief and because a
- * one-line stage is an assertion while a stage with a record, a captured
- * field and a stated consequence is an explanation:
+ * ── TWO LINES PER STAGE, NOT THREE ──────────────────────────────────────
+ *
+ * This carried `line`, `keeps` and `so`, rendered as a sentence plus a
+ * two-term definition list, and at 407 words it was the heaviest section on
+ * the page by a factor of two. The brief was "show more on each aspect of
+ * the lifecycle"; the answer overshot into a format that stopped being read.
+ *
+ * `keeps` is the field that went, and it went because it was REDUNDANT
+ * rather than because it was long: `RecordChain`, sitting directly beside
+ * this list, already names the row each stage writes and the field that
+ * carries the reference to the row before it. "What is retained" was the
+ * diagram's whole job, stated again in prose, with a `dt`/`dd` pair of
+ * chrome around it.
  *
  *   `record`  the typed row the stage writes, which `RecordChain` draws
  *   `line`    what happens at this stage
- *   `keeps`   what is retained that would otherwise be lost
  *   `so`      the consequence a year later, which is the actual pitch
  */
 const LIFECYCLE = [
@@ -987,49 +1030,52 @@ const LIFECYCLE = [
     icon: BookOpen,
     stage: 'Research',
     record: 'Research note',
-    line: 'The written case, its evidence and its revisions live on the security itself rather than in a folder, a drive or a thread.',
-    keeps: 'Every revision, with the author and the moment of each change.',
-    so: 'The version that justified the position is still readable after the note has moved on six times.',
+    line: 'The written case, its evidence and its revisions live on the security itself, not in a folder or a thread.',
+    so: 'The version that justified the position stays readable after the note has moved on.',
   },
   {
     icon: FileSignature,
     stage: 'Recommend',
     record: 'Recommendation',
-    line: 'An analyst puts a view forward with its conviction, its sizing and its target, and submission freezes the reasoning behind it.',
-    keeps: 'The case exactly as the portfolio manager received it, pinned as a version.',
-    so: 'Nobody has to argue later about which draft was the one that got approved.',
+    line: 'An analyst puts a view forward with its conviction, sizing and target, and submitting it freezes the reasoning behind it.',
+    so: 'Nobody argues later about which draft was the one that got approved.',
   },
   {
     icon: Gavel,
     stage: 'Decide',
     record: 'Decision',
-    line: 'The portfolio manager accepts, rejects or defers, and the rationale is captured as part of the decision instead of as a reply to a message.',
-    keeps: 'Rejections and deferrals as first-class records, not absences.',
-    so: 'The firm can study what it declined, which is where most of its unexamined judgement sits.',
+    line: 'The portfolio manager accepts, rejects or defers, and the rationale is captured with the decision rather than in a reply.',
+    so: 'Rejections and deferrals become records the firm can study, which is where its unexamined judgement sits.',
   },
   {
     icon: ArrowLeftRight,
     stage: 'Execute',
     record: 'Accepted trade',
-    line: 'The approved trade becomes the firm’s committed record of what it actually did, carrying whether the fill was assumed from the approval or confirmed against the book.',
-    keeps: 'The authorizing decision, and the provenance of the price the record was built on.',
+    line: 'The approval becomes the firm’s committed record of what it did, including whether the fill was assumed or confirmed against the book.',
     so: 'A position traces back to the argument that authorized it, not just to a timestamp.',
   },
   {
     icon: History,
     stage: 'Review',
     record: 'Outcome review',
-    line: 'Later, the decision is revisited against what actually happened, and the review is written against the original thesis rather than against the current price.',
-    keeps: 'The grade and its reasoning, attached to the decision it judges.',
-    so: 'Judgement becomes separable from luck, because the claim and the result are in the same record.',
+    line: 'The decision is revisited against what actually happened, judged on the original thesis rather than the current price.',
+    so: 'Judgement becomes separable from luck, because the claim and the result sit in one record.',
   },
 ]
 
+/**
+ * Four ways the reasoning goes missing. ONE SENTENCE EACH.
+ *
+ * Every item here was two sentences, and in a two-column grid that is the
+ * difference between a list a reader scans and a list a reader abandons. The
+ * second sentence was carrying the sting in each case, so each pair was
+ * joined rather than halved: nothing was cut except the comma splice.
+ */
 const PROBLEMS: [string, string][] = [
-  ['Research evolves', 'The note that justified the position has been edited six times since. The version the PM actually read is gone.'],
-  ['Recommendations change', 'A target moves, conviction shifts, the sizing is revised. Which version was the one that got approved?'],
-  ['PMs disagree', 'A rejection or a deferral carries as much information as an approval, and it usually lives in a reply to a message.'],
-  ['Positions get adjusted', 'Six months later the book looks nothing like the trade that was authorized, and nobody can reconstruct the path.'],
+  ['Research evolves', 'The note that justified the position has been edited six times since, and the version the PM actually read is gone.'],
+  ['Recommendations change', 'A target moves, conviction shifts, sizing is revised, and nobody can say which version was the one that got approved.'],
+  ['PMs disagree', 'A rejection carries as much information as an approval, and it usually lives in a reply to a message.'],
+  ['Positions get adjusted', 'Six months on, the book looks nothing like the trade that was authorized, and nobody can retrace the path.'],
 ]
 
 /**
@@ -1048,30 +1094,66 @@ const PROBLEMS: [string, string][] = [
  * to round the list out to six.
  */
 const CAPTURE: [typeof BookOpen, string, string][] = [
-  [BookOpen, 'Notes that belong to the name', 'Research is written against the security, not against a document that happens to mention it. Open the name a year later and the thinking is already there.'],
-  [Quote, 'Fast capture, kept in place', 'A quick thought during a call lands on the right security in a couple of keystrokes and stays attached to it, instead of in a notebook nobody opens again.'],
-  [History, 'Versions instead of overwrites', 'Editing a note adds a version. Nothing that someone else may have relied on is silently replaced.'],
-  [Layers, 'Themes across names', 'A view that spans several securities is its own subject, so the work that applies to a theme is not retyped into four separate notes.'],
-  [Target, 'Price targets with a history', 'A target is a record with a lifecycle rather than a number in a cell, so a revision is visible as a revision.'],
-  [ListChecks, 'Structured diligence', 'Checklists and requirements turn a repeated process into something the firm can see the state of, with the supporting material attached where it was used.'],
+  [BookOpen, 'Notes that belong to the name', 'Research is written against the security, so opening a name a year later means the thinking is already there.'],
+  [Quote, 'Fast capture, kept in place', 'A thought during a call lands on the right security in a couple of keystrokes and stays attached to it.'],
+  [History, 'Versions instead of overwrites', 'Editing a note adds a version, so nothing a colleague relied on is silently replaced.'],
+  [Layers, 'Themes across names', 'A view that spans several securities is its own subject, rather than being retyped into four separate notes.'],
+  [Target, 'Price targets with a history', 'A target is a record with a lifecycle, so a revision is visible as a revision.'],
+  [ListChecks, 'Structured diligence', 'Checklists and requirements make a repeated process something the firm can see the state of.'],
 ]
 
+/**
+ * SIX ITEMS DOWN TO THREE, and the three are the ones nothing else says.
+ *
+ * This was the clearest case of the page's real problem, which is not
+ * density but REPETITION. The six items were: preserved reasoning, decision
+ * history, accountability, continuity, review and learning, and a connected
+ * corpus. Four of those are the lifecycle section restated with different
+ * nouns, and a reader who has just read the lifecycle hits them and cannot
+ * tell what is new, which is what "confusing" means here.
+ *
+ * Counted across the whole page before this pass, "the version the PM read
+ * is frozen" was asserted NINE times, and "a rejection is a record" five.
+ * Each section had re-argued the same four points.
+ *
+ * So each section now has one job and says only what is its own. This
+ * section's job is why the ACCUMULATION is worth owning, which is a
+ * different argument from what the lifecycle does, and these three carry it:
+ * the record survives the people, it answers who decided, and a handoff
+ * starts from context. None of them appears anywhere else on the page.
+ *
+ * Note what is deliberately NOT here: anything about analysing the corpus to
+ * find patterns across the firm. That capability was removed from this page
+ * rather than reworded, and the test suite holds the line.
+ */
 const MEMORY: [typeof Lock, string, string][] = [
-  [Lock, 'Preserved reasoning', 'The case as it stood at the moment of decision, immune to later editing.'],
-  [History, 'Decision history', 'Approvals, rejections and deferrals as records of equal standing, each with its rationale.'],
-  [ShieldCheck, 'Accountability', 'Who decided, on what evidence, and when. Available without anyone reconstructing a thread.'],
-  [Users, 'Continuity', 'A name handed between analysts or PMs arrives with its context, not as a blank page.'],
-  [LineChart, 'Review and learning', 'Outcomes assessed against the original thesis, so the firm can tell judgement from luck.'],
-  [Layers, 'A connected corpus', 'Research, ideas, recommendations, decisions and reviews as linked records, queryable as one body.'],
+  [Lock, 'It outlasts the team', 'Reasoning stays with the firm when an analyst leaves, instead of in their drive, their inbox and their head.'],
+  [ShieldCheck, 'It answers who decided', 'Who chose, on what evidence and when, without anyone reconstructing a thread six months later.'],
+  [Users, 'Handoffs start from context', 'A name passed between analysts or PMs arrives with its history rather than as a blank page.'],
 ]
 
+/**
+ * Where the work happens. SHORT LINES, because this is a map.
+ *
+ * Every entry was a 20-word sentence stacking three or four attributes, so
+ * six of them read as an argument rather than as a list of places. The
+ * section before it already made the argument; this one only has to let a
+ * reader picture the screens. Each line is now one clause.
+ */
 const SURFACES: [string, string][] = [
-  ['Asset workspace', "The security, its instrument identity and price provenance, the firm's exposure, coverage, and the written case in one view."],
-  ['Idea pipeline', 'Ideas moving through exploring, researching, developing and ready-to-recommend, with conviction and staleness visible.'],
-  ['Recommendation and frozen reasoning', 'What the analyst submitted, preserved exactly as the PM received it, with later edits kept as versions rather than overwrites.'],
-  ['Decision inbox', 'Recommendations awaiting a portfolio-manager decision, with accept, reject and defer each recorded as a first-class outcome.'],
-  ['Historical decision record', 'Every decision the firm has made, with the case, the decision-maker, the rationale and the execution provenance attached.'],
-  ['Outcome review', 'A structured review of whether the thesis played out, recorded against the decision it belongs to.'],
+  ['Asset workspace', "The security, the firm's exposure, coverage and the written case in one view."],
+  ['Idea pipeline', 'Ideas moving from exploring to ready-to-recommend, with conviction and staleness visible.'],
+  /*
+   * "preserved exactly as the PM received it" was here, and the repetition
+   * gate caught it: that is the lifecycle's Recommend stage and the
+   * diagram's frozen row, stated a third and fourth time. This section is a
+   * MAP, so this entry says what is on the screen and leaves the guarantee
+   * to the section that owns it.
+   */
+  ['Recommendation', 'What the analyst submitted, with its conviction, sizing and target.'],
+  ['Decision inbox', 'Recommendations waiting on a portfolio manager, with accept, reject and defer all recorded.'],
+  ['Decision record', 'Every decision the firm has made, with its case, its author and its rationale attached.'],
+  ['Outcome review', 'A structured verdict on whether the thesis played out, attached to the decision.'],
 ]
 
 /**
@@ -1083,9 +1165,9 @@ const SURFACES: [string, string][] = [
  * Everything below is something the assistant does today.
  */
 const INTELLIGENCE: [typeof Sparkles, string, string][] = [
-  [Boxes, 'It knows where you are', 'The assistant is in the workspace, with the security you are looking at and the portfolio it sits in as context, so a question does not start by re-establishing what you are working on.'],
-  [Link2, 'It reads the record, not the internet', 'Retrieval runs over the firm’s own research, ideas, recommendations and decisions. Its usefulness comes from the corpus being typed and linked rather than a folder of documents.'],
-  [ShieldCheck, 'It cites what it used', 'Answers point at the records they came from, so a claim can be checked rather than taken. An assistant over investment reasoning that cannot be audited is not usable at a firm.'],
+  [Boxes, 'It knows where you are', 'The assistant sits in the workspace with the security you are looking at, and the portfolio it sits in, as context.'],
+  [Link2, 'It reads the record, not the internet', 'Retrieval runs over your own research, ideas, recommendations and decisions, and works because they are typed and linked.'],
+  [ShieldCheck, 'It cites what it used', 'Answers point at the records they came from, so a claim can be checked rather than taken on trust.'],
 ]
 
 /** Primary and secondary button classes, so every CTA matches exactly. */
@@ -1259,11 +1341,18 @@ export function LandingPage() {
               <span className={`mt-2 block ${ACCENT_TEXT}`}>Make sure your firm remembers it.</span>
             </h1>
 
-            <p className="mt-9 max-w-[62ch] text-lg leading-[1.7] text-slate-300">
-              Tesseract connects investment research, recommendations,
-              portfolio-manager decisions and subsequent outcomes in one
-              institutional workspace. It helps teams preserve reasoning,
-              maintain context, and learn from decisions over time.
+            {/*
+              Two sentences, and the second one is the payoff.
+
+              This was one 31-word sentence followed by "It helps teams
+              preserve reasoning, maintain context, and learn from decisions
+              over time" — three abstractions in a row, which is the shape a
+              reader skips. The claim is the same; it now lands.
+            */}
+            <p className="mt-9 max-w-[56ch] text-lg leading-[1.7] text-slate-300">
+              It keeps research, recommendations, portfolio-manager decisions
+              and outcomes as one linked record. A year from now, your firm can
+              still see why it acted.
             </p>
 
             <div className="mt-11 flex flex-wrap items-center gap-3">
@@ -1300,28 +1389,41 @@ export function LandingPage() {
           title="The reasoning behind a decision is the first thing a firm loses"
           lead="Investment organizations have research, market data, spreadsheets, notes, chat and trading systems. What they rarely have is one durable record of why a position was taken."
         >
-          <div className="grid gap-x-16 gap-y-10 sm:grid-cols-2">
-            {PROBLEMS.map(([h, p], i) => (
-              <div key={h}>
-                <div className="flex items-baseline gap-3">
-                  <span className="text-[11px] font-semibold tabular-nums tracking-[0.12em] text-primary-400/70">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                  <h3 className="text-[15px] font-semibold tracking-tight text-white">{h}</h3>
-                </div>
-                <p className="mt-2.5 max-w-[50ch] pl-[calc(0.75rem+1.4em)] text-[14px] leading-[1.75] text-slate-400">
-                  {p}
-                </p>
+          {/*
+            NUMBERS MEAN SEQUENCE, and this is not one.
+
+            The page carried three numbered lists: these four problems 01-04,
+            the five lifecycle stages 01-05, and six product surfaces 01-06.
+            Numbering everything makes a page read as one long enumerated
+            document and, worse, implies an order that only one of the three
+            actually has. The lifecycle keeps its numerals because its order
+            is the argument; these four are concurrent failures, and the
+            product surfaces are parallel views.
+
+            A left rule replaces the numeral, which also retires a
+            `pl-[calc(0.75rem+1.4em)]` hanging indent that existed only to
+            align a paragraph under a two-character number.
+          */}
+          <div className="grid gap-x-16 gap-y-9 sm:grid-cols-2">
+            {PROBLEMS.map(([h, p]) => (
+              <div key={h} className="border-l border-white/[0.09] pl-5">
+                <h3 className="text-[15px] font-semibold tracking-tight text-white">{h}</h3>
+                <p className="mt-2 max-w-[50ch] text-[14px] leading-[1.75] text-slate-400">{p}</p>
               </div>
             ))}
           </div>
 
           {/* The consequence, pulled out larger: it is the argument. */}
-          <p className="mt-16 max-w-[68ch] text-pretty text-xl leading-[1.6] tracking-[-0.01em] text-slate-200 sm:text-2xl">
-            A team that cannot reconstruct its own reasoning cannot tell a
-            correct call from a lucky one, cannot separate a thesis that played
-            out from a thesis that was never tested, and cannot hand a name from
-            one analyst to the next without starting again.
+          {/*
+            Two clauses, not three. The middle one, about separating a thesis
+            that played out from one that was never tested, is the first
+            clause again in different words, and a 42-word sentence set at
+            24px loses its reader before the verdict arrives.
+          */}
+          <p className="mt-16 max-w-[60ch] text-pretty text-xl leading-[1.6] tracking-[-0.01em] text-slate-200 sm:text-2xl">
+            A firm that cannot reconstruct its own reasoning cannot tell a
+            correct call from a lucky one, and cannot hand a name to the next
+            analyst without starting over.
           </p>
         </Section>
 
@@ -1351,8 +1453,20 @@ export function LandingPage() {
                 aria-hidden="true"
                 className="absolute bottom-6 left-5 top-6 w-px bg-gradient-to-b from-transparent via-white/12 to-transparent"
               />
-              {LIFECYCLE.map(({ icon: Icon, stage, record, line, keeps, so }, i) => (
-                <li key={stage} className="relative flex gap-5 pb-10 last:pb-0">
+              {LIFECYCLE.map(({ icon: Icon, stage, record, line, so }, i) => (
+                /*
+                 * `data-lifecycle-stage` is a test hook, and it exists
+                 * because the obvious selector was wrong again. A gate on
+                 * `#lifecycle ol > li` also matches the six rows of
+                 * `RecordChain`, which is an `ol` inside the same section,
+                 * so it counted 11 stages. Position-based selectors in this
+                 * file have now been wrong three times; name the thing.
+                 */
+                <li
+                  key={stage}
+                  data-lifecycle-stage=""
+                  className="relative flex gap-5 pb-10 last:pb-0"
+                >
                   <span className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#050710] ring-1 ring-inset ring-white/10">
                     <span
                       aria-hidden="true"
@@ -1371,22 +1485,49 @@ export function LandingPage() {
                       </span>
                     </div>
                     <p className="mt-2 max-w-[54ch] text-[13px] leading-[1.75] text-slate-400">{line}</p>
-                    <dl className="mt-3.5 max-w-[54ch] space-y-1.5 border-l border-white/[0.08] pl-4">
-                      <div className="flex flex-wrap gap-x-2 text-[12px] leading-[1.7]">
-                        <dt className="font-semibold text-slate-500">Keeps</dt>
-                        <dd className="text-slate-400">{keeps}</dd>
-                      </div>
-                      <div className="flex flex-wrap gap-x-2 text-[12px] leading-[1.7]">
-                        <dt className="font-semibold text-slate-500">So</dt>
-                        <dd className="text-slate-400">{so}</dd>
-                      </div>
-                    </dl>
+                    {/*
+                      The consequence, set as a quiet second line.
+
+                      This was a `dl` with "Keeps" and "So" as `dt` labels,
+                      which put four pieces of text and two labels under
+                      every stage. Two labels on two single items is chrome
+                      that costs more attention than it directs, and the
+                      indent plus the rule already say "this follows from
+                      the line above". The label is gone; the rule stayed.
+                    */}
+                    <p className="mt-3 max-w-[54ch] border-l border-white/[0.08] pl-4 text-[12px] leading-[1.7] text-slate-500">
+                      {so}
+                    </p>
                   </div>
                 </li>
               ))}
             </ol>
 
-            <div className="lg:col-span-5">
+            {/*
+              Sticky, so the diagram is beside whichever stage you are
+              reading.
+
+              The two columns are very different heights: five stages run
+              about twice the diagram's length, so a static right column
+              finished near the top and left a tall empty gap beside stages
+              three to five, which is the layout reading as unfinished. The
+              stages and the record shape are the same object described two
+              ways, and the whole reason they sit side by side is that each
+              is weak alone.
+
+              `self-start` is required: a grid item stretches by default, so
+              `sticky` on a full-height box has nothing to travel in.
+
+              The travel is BOUNDED, and the bound is inherent rather than a
+              tuning choice: a sticky box cannot leave its own grid area, so
+              it can move by the row height minus its own height and no
+              further. Measured at 1920px that is 847 minus 570, or 277px.
+              That is enough for what this needed — the browser shows the
+              figure still on screen at every scroll position where any
+              stage is on screen — but it is not an unlimited rail, and
+              making the figure taller would eat the travel.
+            */}
+            <div className="lg:col-span-5 lg:sticky lg:top-24 lg:self-start">
               <RecordChain />
             </div>
           </div>
@@ -1507,11 +1648,10 @@ export function LandingPage() {
 
               {/* The turn back to the lifecycle, so this band is part of the
                   argument rather than a feature list parked in the middle. */}
-              <p className="mt-14 max-w-[68ch] text-pretty text-lg leading-[1.6] text-slate-700 sm:text-xl">
-                Every one of these is a typed record rather than a document.
-                That is the only reason the decision chain further up can
-                exist: a recommendation can cite a note because the note is a
-                row, not a file somebody attached.
+              <p className="mt-14 max-w-[60ch] text-pretty text-lg leading-[1.6] text-slate-700 sm:text-xl">
+                Every one of these is a typed record rather than a document,
+                which is the only reason the chain above can exist: a
+                recommendation can cite a note because the note is a row.
               </p>
             </div>
           </div>
@@ -1527,21 +1667,30 @@ export function LandingPage() {
           divide={false}
           label="The product"
           title="One workspace, built around the security and the decision"
-          lead="Analysts work where the name lives. PMs decide from a queue that shows them the frozen case, not a forwarded document. The record assembles itself as a side effect of the work."
+          /*
+            Two sentences became one, and both cuts were duplication the
+            repetition gate found. "the frozen case" is the fifth statement
+            of the freezing guarantee, and "the record assembles itself as a
+            side effect of the work" is the light band's own headline,
+            reworded, one section earlier.
+          */
+          lead="Analysts work where the name lives, and portfolio managers decide from a queue rather than from a forwarded document."
         >
+          {/*
+            Unnumbered, and read as a two-column list of places rather than
+            as a six-step process. These surfaces are concurrent views onto
+            the same records, so numbering them asserted an order the product
+            does not have. The row rules carry the structure the numerals
+            were pretending to, and the hanging indent goes with them.
+          */}
           <div className="grid gap-x-16 gap-y-0 sm:grid-cols-2">
-            {SURFACES.map(([title, shows], i) => (
+            {SURFACES.map(([title, shows]) => (
               <div
                 key={title}
-                className="border-t border-white/[0.07] py-7 first:border-t-0 sm:[&:nth-child(2)]:border-t-0"
+                className="border-t border-white/[0.07] py-6 first:border-t-0 sm:[&:nth-child(2)]:border-t-0"
               >
-                <div className="flex items-baseline gap-3">
-                  <span className="font-mono text-[11px] tabular-nums text-primary-400/60">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                  <h3 className="text-[15px] font-semibold tracking-tight text-white">{title}</h3>
-                </div>
-                <p className="mt-2 max-w-[50ch] pl-[calc(0.75rem+1.9em)] text-[13px] leading-[1.75] text-slate-400">
+                <h3 className="text-[15px] font-semibold tracking-tight text-white">{title}</h3>
+                <p className="mt-1.5 max-w-[50ch] text-[13px] leading-[1.75] text-slate-400">
                   {shows}
                 </p>
               </div>
@@ -1560,11 +1709,16 @@ export function LandingPage() {
             images; see `docs/commercial/demo-checklist.md` for which are
             safe to take.
           */}
-          <p className="mt-12 max-w-[68ch] text-[14px] leading-[1.75] text-slate-400">
-            Each surface is a view onto the same records, which is why moving
-            between them does not mean re-entering anything. A decision in the
-            inbox and the same decision in the historical record are one row,
-            read two ways.
+          {/*
+            One sentence. This was two, and the first ("each surface is a view
+            onto the same records") is the light band's closing line again.
+            The example is the part that was doing work, so the example is
+            what stayed.
+          */}
+          <p className="mt-12 max-w-[60ch] text-[14px] leading-[1.75] text-slate-400">
+            A decision in the inbox and the same decision in the historical
+            record are one row read two ways, so moving between surfaces never
+            means re-entering anything.
           </p>
         </Section>
 
@@ -1575,7 +1729,9 @@ export function LandingPage() {
           title="The firm's accumulated decisions as an asset it owns"
           lead="Every investment organization can buy the same market data. What cannot be bought is a connected history of this firm's own judgement: what it considered, what it chose, what it declined, and what it learned."
         >
-          <div className="grid gap-x-16 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
+          {/* Three across from `sm` up. At six items this was 2-up then 3-up,
+              which left a ragged last row; three items want one clean row. */}
+          <div className="grid gap-x-16 gap-y-10 sm:grid-cols-3">
             {MEMORY.map(([Icon, h, p]) => {
               const I = Icon as typeof Lock
               return (
@@ -1619,9 +1775,8 @@ export function LandingPage() {
 
           <div className="mt-10 grid gap-x-16 gap-y-6 lg:grid-cols-2">
             <p className="max-w-[60ch] text-[14px] leading-[1.75] text-slate-400">
-              The assistant runs on your organization’s own provider key, held
-              encrypted, so the firm keeps control of which model its
-              reasoning is sent to and what it spends.
+              It runs on your organization’s own provider key, held encrypted,
+              so the firm controls which model its reasoning reaches.
             </p>
             <p className="max-w-[60ch] text-[13px] leading-[1.75] text-slate-500">
               ACT AI assists the people who make the decisions. It does not

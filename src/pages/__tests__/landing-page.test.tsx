@@ -144,18 +144,159 @@ describe('the decision lifecycle is complete and closes', () => {
   })
 
   /*
-   * Depth, which was the brief. A stage reduced back to a single sentence
-   * is an assertion; a stage that names what it KEEPS and the consequence a
-   * year later is an explanation. Five of each, one per stage.
+   * REWRITTEN, and the requirement is narrower than it was.
+   *
+   * This asserted ten `dt` elements: a "Keeps" and a "So" term under each of
+   * the five stages. That structure is gone. `keeps` named what the stage
+   * retains, which is exactly what `RecordChain` draws immediately beside
+   * this list, so the section stated the diagram's content a second time in
+   * prose with a definition list wrapped around it. At 407 words it was
+   * double the next-heaviest section on the page.
+   *
+   * What has to survive is the part that made a stage an explanation rather
+   * than an assertion: the CONSEQUENCE. This now pins that each stage
+   * carries a second line beyond its description, and that the three
+   * consequences doing the most work are still stated. Narrower than the old
+   * case, deliberately, because the old case would have failed on a change
+   * that improved the page.
+   *
+   * Not vacuous: a stage reduced back to a single line drops its paragraph
+   * count to 1 and fails on that stage by name.
    */
-  it('explains what each stage keeps and why that matters later', async () => {
+  it('gives every stage a consequence, not just a description', async () => {
     await renderConfigured()
     const lifecycle = document.getElementById('lifecycle')
-    const keeps = lifecycle?.querySelectorAll('dt') ?? []
-    expect(keeps.length).toBe(10)
-    expect(lifecycle?.textContent).toMatch(/immune to later editing|pinned as a version/i)
-    expect(lifecycle?.textContent).toMatch(/rejections and deferrals as first-class records/i)
+    const stages = lifecycle?.querySelectorAll('[data-lifecycle-stage]') ?? []
+    expect(stages.length, 'five stages').toBe(5)
+    for (const li of stages) {
+      expect(
+        li.querySelectorAll('p').length,
+        `${li.querySelector('h3')?.textContent ?? '?'} needs a description AND a consequence`,
+      ).toBeGreaterThanOrEqual(2)
+    }
+    expect(lifecycle?.textContent).toMatch(/freezes the reasoning behind it/i)
+    expect(lifecycle?.textContent).toMatch(/rejections and deferrals become records/i)
     expect(lifecycle?.textContent).toMatch(/judgement becomes separable from luck/i)
+  })
+})
+
+/*
+ * ── Reading load ────────────────────────────────────────────────────────
+ *
+ * The report was that the copy overwhelmed and confused, and the cause was
+ * measurable rather than a matter of taste. The page was 1,603 words across
+ * 31 headed items, and the sections were re-arguing each other: "the version
+ * the PM read is frozen" was asserted NINE times and "a rejection is a
+ * record" five. A reader does not experience that as thorough, they
+ * experience it as being unable to tell what is new.
+ *
+ * Four bounds, because they fail differently. A page can be short overall
+ * and still unreadable in its lists, and it can have short bullets that all
+ * say the same thing.
+ */
+describe('the page stays readable', () => {
+  /*
+   * A RATCHET, not a round number, in the spirit of this repo's type-error
+   * ceiling. The page measures 1,199 words here, so the bound is 1,250: it
+   * permits a sentence or two and fails on a new section.
+   *
+   * The metric matters. The "1,603 words" figure in the comment above was
+   * measured in the browser over the nine content sections only; this reads
+   * `document.body.textContent`, which also includes the nav and footer. The
+   * two numbers are not directly comparable, so the bound is set against
+   * what THIS assertion measures rather than against the browser figure.
+   */
+  it('holds the total word count to a ratchet', async () => {
+    await renderConfigured()
+    const words = (pageText().match(/\S+/g) ?? []).length
+    expect(words, `${words} words, ceiling 1250. Cut something before raising this.`)
+      .toBeLessThan(1250)
+  })
+
+  /*
+   * ONE SENTENCE PER BULLET, which is the rule that was actually broken:
+   * 20 of the page's items carried two or more.
+   *
+   * Headed items only. The section leads and the closing arguments are
+   * exempt by design, because those are prose a reader has chosen to enter
+   * and the problem was never the paragraphs.
+   */
+  it('keeps every bullet to a single sentence', async () => {
+    await renderConfigured()
+    const offenders: string[] = []
+    for (const h of document.querySelectorAll('h3')) {
+      const text = h.parentElement?.querySelector('p')?.textContent ?? ''
+      const sentences = (text.match(/[.?!](\s|$)/g) ?? []).length
+      if (sentences > 1) offenders.push(`${h.textContent}: ${text}`)
+    }
+    expect(offenders, `multi-sentence bullets:\n${offenders.join('\n')}`).toHaveLength(0)
+  })
+
+  /*
+   * The repetition bound, COUNTED IN SECTIONS rather than in occurrences.
+   *
+   * My first version counted raw matches across the page and failed at 4,
+   * which was the gate measuring the wrong unit rather than the page being
+   * wrong. Three of those four were inside `RecordChain`, where the record
+   * is named once as a row and once as the next row's reference field —
+   * that is the diagram DRAWING the link, which is its entire job, and no
+   * bound on raw occurrences can tell it apart from a fourth section
+   * re-arguing the point.
+   *
+   * The defect was always "each section restates the previous one", so the
+   * unit is the section. Three is the bound because a claim legitimately
+   * appears where it is motivated (`problem`), where it is owned
+   * (`lifecycle`), and where its day-to-day mechanism lives (`research`).
+   * A fourth section is the page repeating itself.
+   *
+   * The patterns deliberately include PARAPHRASE. A gate that only matched
+   * the word "frozen" would be defeated by writing "preserved exactly as
+   * the PM received it", which is what the product section actually said,
+   * and this gate caught it there.
+   */
+  it('does not argue the same claim in four different sections', async () => {
+    await renderConfigured()
+    const SECTIONS = ['top', 'problem', 'lifecycle', 'research', 'product', 'memory', 'act-ai']
+    const CLAIMS: [string, RegExp][] = [
+      ['the case is frozen at submission', /frozen|freezes|pinned as a version|versions instead of overwrites|preserved (exactly )?as the PM received|version the PM actually read|immune to later editing/i],
+      ['a rejection is a record', /rejections? (and|or) (deferrals?|a deferral)|reject and defer|accept, reject/i],
+      ['the records are linked', /linked record|points at the one before|typed record rather than a document|linked records/i],
+    ]
+    for (const [claim, pattern] of CLAIMS) {
+      const inSections = SECTIONS.filter(id =>
+        pattern.test(document.getElementById(id)?.textContent ?? ''))
+      expect(inSections.length, `"${claim}" is argued in ${inSections.length} sections: ${inSections.join(', ')}`)
+        .toBeLessThanOrEqual(3)
+    }
+  })
+
+  /*
+   * NUMBERS MEAN SEQUENCE. There were three numbered lists, which made the
+   * page read as one long enumerated document and implied an order that two
+   * of the three did not have. Only the lifecycle is numbered now, so a
+   * reader can trust a numeral when they see one.
+   */
+  it('numbers only the list that has an order', async () => {
+    await renderConfigured()
+    /*
+     * `/\b0[1-9]\b/` was the first spelling and it is VACUOUS. `textContent`
+     * concatenates with no separator, so a numeral renders as "01Research",
+     * where the digit is followed by a word character and the trailing `\b`
+     * never holds. The positive assertion failing is what exposed it; the
+     * four negative assertions would have passed with the numerals still on
+     * the page, which is this file's recurring defect class.
+     *
+     * No bare digits appear anywhere else in the page's copy, so an
+     * unanchored pattern is safe here.
+     */
+    const NUMERAL = /0[1-9]/
+    for (const id of ['problem', 'product', 'memory', 'act-ai', 'research']) {
+      const text = document.getElementById(id)?.textContent ?? ''
+      expect(text, `${id} is numbered, which implies a sequence it does not have`)
+        .not.toMatch(NUMERAL)
+    }
+    expect(document.getElementById('lifecycle')?.textContent, 'the lifecycle keeps its numerals')
+      .toMatch(NUMERAL)
   })
 })
 
@@ -701,18 +842,34 @@ describe('nothing on the page imitates real data', () => {
     }
   })
 
+  /*
+   * Two headings were SHORTENED here, and the test follows rather than the
+   * page being held to an old label:
+   *
+   *   'Recommendation and frozen reasoning' → 'Recommendation'
+   *   'Historical decision record'          → 'Decision record'
+   *
+   * This section is a map of surfaces, and a heading that carries a
+   * guarantee ("frozen reasoning") was restating the lifecycle stage that
+   * owns it, which the repetition gate above caught independently. The count
+   * is unchanged at six: nothing was dropped, only renamed.
+   */
   it('still names every product surface', async () => {
     await renderConfigured()
     for (const surface of [
       'Asset workspace',
       'Idea pipeline',
-      'Recommendation and frozen reasoning',
+      'Recommendation',
       'Decision inbox',
-      'Historical decision record',
+      'Decision record',
       'Outcome review',
     ]) {
       expect(screen.getByRole('heading', { name: surface }), surface).toBeTruthy()
     }
+    expect(
+      document.getElementById('product')?.querySelectorAll('h3').length,
+      'six surfaces, renamed but not reduced',
+    ).toBe(6)
   })
 })
 
@@ -736,7 +893,11 @@ describe('the assistant is described by what it does', () => {
     await renderConfigured()
     const actAi = document.getElementById('act-ai')
     expect(actAi?.textContent).toMatch(/own provider key/i)
-    expect(actAi?.textContent).toMatch(/keeps control of which model/i)
+    // Was /keeps control of which model/. The sentence was shortened to
+    // "the firm controls which model its reasoning reaches", so the pattern
+    // now accepts either verb. The requirement is unchanged: the BYOK line
+    // has to read as the firm being in control, not as a missing feature.
+    expect(actAi?.textContent).toMatch(/(keeps control of|controls) which model/i)
   })
 
   it('does not claim the assistant manages portfolios or trades', async () => {
