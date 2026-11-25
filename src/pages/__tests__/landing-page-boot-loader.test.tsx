@@ -82,3 +82,78 @@ describe('the landing page releases the boot loader', () => {
     ).not.toThrow()
   })
 })
+
+/**
+ * The nav mark must be the LOGO, not the LOADER.
+ *
+ * `TesseractLoader` is a loading indicator: it renders the mark plus the
+ * word "Loading..." and turns continuously at 4.5s. The first version of
+ * this page mounted it as the brand mark in the navigation bar, so the page
+ * permanently displayed the text "Loading..." under the nav and carried a
+ * logo that never stopped moving. Reported from a real browser.
+ *
+ * `TesseractLogo` is the same geometry configured as a logo: still at rest
+ * (`data-animating="false"`), turning only under a pointer, with
+ * `showNodes={false}` and a lighter stroke, which is the pairing its own
+ * comments say keeps a small mark from reading as a blob.
+ */
+describe('the brand mark is a logo, not a loading indicator', () => {
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('mounts no loading indicator anywhere on the page', () => {
+    render(
+      <MemoryRouter>
+        <LandingPage />
+      </MemoryRouter>,
+    )
+    expect(document.querySelectorAll('[data-testid="tesseract-loader"]')).toHaveLength(0)
+  })
+
+  it('renders the word "Loading" nowhere in the page chrome', () => {
+    render(
+      <MemoryRouter>
+        <LandingPage />
+      </MemoryRouter>,
+    )
+    // The boot overlay lives outside #root and is not rendered by this page,
+    // so anything matching here came from the page itself.
+    expect(screen.queryByText(/^loading/i)).toBeNull()
+  })
+
+  /*
+   * Scoped to the NAV on purpose.
+   *
+   * An unscoped `querySelectorAll('[data-testid="tesseract-logo"]')` passed
+   * while the nav still mounted the loader, because the footer's logo
+   * satisfied it on its own. A gate that any one call site can satisfy does
+   * not cover the call site that broke.
+   */
+  it('puts a still logo in the navigation bar, not a spinner', () => {
+    render(
+      <MemoryRouter>
+        <LandingPage />
+      </MemoryRouter>,
+    )
+    const nav = document.querySelector('nav[aria-label="Main"]')
+    expect(nav).not.toBeNull()
+    const navMark = nav?.querySelector('[data-testid="tesseract-logo"]')
+    expect(navMark, 'the nav must carry the logo mark').not.toBeNull()
+    expect(navMark?.getAttribute('data-animating')).toBe('false')
+    expect(nav?.querySelectorAll('[data-testid="tesseract-loader"]')).toHaveLength(0)
+  })
+
+  it('holds every mark on the page still until a pointer is over it', () => {
+    render(
+      <MemoryRouter>
+        <LandingPage />
+      </MemoryRouter>,
+    )
+    const marks = document.querySelectorAll('[data-testid="tesseract-logo"]')
+    expect(marks.length).toBeGreaterThan(0)
+    for (const mark of marks) {
+      expect(mark.getAttribute('data-animating')).toBe('false')
+    }
+  })
+})
