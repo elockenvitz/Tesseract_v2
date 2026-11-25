@@ -151,12 +151,53 @@ describe('the design-partner section does not oversell access', () => {
     expect(t).toMatch(/not an offer of unrestricted production access/i)
   })
 
-  it('discloses the three dependencies up front', async () => {
+  /*
+   * REPLACES 'discloses the three dependencies up front'.
+   *
+   * That test pinned a three-bullet panel headed "What we are honest about
+   * up front" inside the design-partner section. The panel was removed as a
+   * product decision: the section whose job is to convert was the densest on
+   * the page and led with caveats.
+   *
+   * This is NOT the test weakened to go green. The disclosures are still
+   * required, and this version is stricter than the old one, because it
+   * checks WHERE each one lands rather than only that the words appear
+   * somewhere in the document:
+   *
+   *   - scope, in the hero, above the fold
+   *   - the provider-key dependency, in the ACT AI not-yet-built column
+   *   - pre-release, in the footer
+   *
+   * ONE DISCLOSURE DID LEAVE THE PAGE and is deliberately not asserted
+   * here: "Commercial market-data licensing for external users is not yet in
+   * place." The hero's "not a market-data terminal" is a statement about
+   * product category, not about licensing, so it does not replace it. That
+   * is a judgement the founder made knowingly. If it should return, its home
+   * is the pilot conversation or the design-partner brief in
+   * docs/commercial, not a panel on the conversion path.
+   */
+  it('keeps each scope disclosure in the place a reader meets it', async () => {
+    await renderLanding('demo@example.test')
+
+    // 1. Scope, in the hero.
+    const hero = document.getElementById('top')
+    expect(hero?.textContent).toMatch(/early-stage/i)
+    expect(hero?.textContent).toMatch(/not a market-data terminal/i)
+
+    // 2. The provider-key dependency, where the AI claim is made.
+    const actAi = document.getElementById('act-ai')
+    expect(actAi?.textContent).toMatch(/not yet built/i)
+    expect(actAi?.textContent).toMatch(/key your firm supplies/i)
+
+    // 3. Pre-release, in the footer.
+    expect(document.querySelector('footer')?.textContent).toMatch(/pre-release/i)
+  })
+
+  it('never claims market-data coverage it does not have', async () => {
     await renderLanding('demo@example.test')
     const t = pageText()
-    expect(t).toMatch(/market-data licensing for external users is not yet/i)
-    expect(t).toMatch(/platform-provisioned ai is not yet available/i)
-    expect(t).toMatch(/pre-release platform/i)
+    expect(t).not.toMatch(/real-?time (market )?data|full market coverage/i)
+    expect(t).not.toMatch(/licensed (market )?data|data included/i)
   })
 
   it('promises no free data or unlimited AI', async () => {
