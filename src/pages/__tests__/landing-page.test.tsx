@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+/* The registry, so the footer-link case asserts against the real document
+   list rather than a copy of it that can go stale. */
+import { LEGAL_DOCUMENTS } from '../../legal/documents'
 
 /**
  * The public landing page, and the claims it is not allowed to make.
@@ -1018,5 +1021,68 @@ describe('the page is reachable and accessible by keyboard', () => {
     expect(footer?.textContent).toMatch(/offer of securities/i)
     expect(footer?.textContent).toMatch(/performance representation/i)
     expect(footer?.textContent).not.toMatch(/pre-?release/i)
+  })
+
+  /*
+   * What the PRODUCT is not, which is a different statement from what the
+   * PAGE is not.
+   *
+   * The line above says nothing on the page is advice or an offer. That does
+   * not tell a compliance reviewer whether the software they are being shown
+   * is an investment adviser, and that is the question they are actually
+   * asking. The auth-page footer has carried this sentence from the start;
+   * the public page, which is the one a stranger reads first, did not.
+   */
+  it('says what the product is not, not only what the page is not', async () => {
+    await renderConfigured()
+    const footer = document.querySelector('footer')
+    expect(footer?.textContent).toMatch(/not an investment adviser or a broker-dealer/i)
+    expect(footer?.textContent).toMatch(/gives no investment advice/i)
+    expect(footer?.textContent).toMatch(/places no orders/i)
+  })
+
+  /*
+   * The legal links, and that they come from the registry.
+   *
+   * Asserted against LEGAL_DOCUMENTS rather than against five hard-coded
+   * hrefs, so the test cannot pass while the page lists four of five
+   * documents -- which is what a hand-written list does the first time a
+   * document is added.
+   */
+  it('links every legal document, generated from the registry', async () => {
+    await renderConfigured()
+    const nav = screen.getByTestId('landing-legal-links')
+
+    for (const doc of LEGAL_DOCUMENTS) {
+      const link = nav.querySelector(`[data-legal-document="${doc.id}"]`)
+      expect(link, `${doc.id} is not linked in the landing footer`).toBeTruthy()
+      expect(link?.getAttribute('href')).toBe(`/legal/${doc.id}`)
+      expect(link?.textContent?.trim().length, `${doc.id} has an empty label`)
+        .toBeGreaterThan(0)
+    }
+
+    /* And no MORE than the registry: a stale link to a retired document is
+       the other half of the same failure. */
+    expect(nav.querySelectorAll('[data-legal-document]')).toHaveLength(
+      LEGAL_DOCUMENTS.length,
+    )
+  })
+
+  it('does not serve any legal text itself', async () => {
+    /*
+     * The landing page links to the documents; it must not quote them. A
+     * paraphrased policy on a marketing page is a second, uncontrolled copy
+     * of legal text, which is the divergence that retiring
+     * docs/legal/site/*.html was meant to end.
+     *
+     * Checks the structural giveaways rather than wording, because wording is
+     * what a paraphrase changes.
+     */
+    await renderConfigured()
+    const body = pageText()
+    expect(body).not.toMatch(/last updated:/i)
+    expect(body).not.toMatch(/effective date/i)
+    expect(body).not.toMatch(/by using this (site|service)/i)
+    expect(body).not.toMatch(/we collect the following/i)
   })
 })

@@ -11,6 +11,9 @@ import {
 import { TesseractLogo } from '../components/ui/TesseractLogo'
 import { TesseractMark } from '../components/ui/TesseractMark'
 import { hideBootLoader } from '../lib/boot-loader'
+/* The legal link list and its short labels, shared with the auth-page footer
+   so a renamed document cannot go stale in one of the two places. */
+import { LEGAL_DOCUMENTS, legalPath, FOOTER_LABELS } from '../legal/documents'
 
 /**
  * The public front door.
@@ -1908,8 +1911,50 @@ export function LandingPage() {
               and has been removed.
             */}
             <p className="mt-10 border-t border-white/[0.06] pt-6 text-[12px] leading-[1.75] text-slate-600">
-              Nothing on this page is an offer of securities, investment advice, or a performance representation.
+              Tesseract is research and workflow software. It is not an investment adviser or a broker-dealer, it gives no investment advice, and it places no orders. Nothing on this page is an offer of securities, investment advice, or a performance representation.
             </p>
+
+            {/*
+              The legal links.
+
+              A separate row rather than appended to the nav above: those are
+              sections of this page, these leave it, and mixing the two puts
+              ten items in a row that reads well with five.
+
+              Generated from LEGAL_DOCUMENTS rather than hand-written, so a
+              document added or renamed in the registry appears here without
+              anyone remembering this file. The same list drives /legal and
+              the auth-page footer.
+
+              Not `LegalFooter`. That component is light-palette by design: it
+              renders on the auth pages, and `darkMode: 'class'` means a
+              signed-out visitor has no theme class, so it commits to one
+              palette. Dropping it into this dark footer would read as pasted
+              in. The LINK LIST is the shared thing; the styling is this
+              page's.
+
+              The sentence above was extended rather than duplicated. It said
+              what the PAGE is not; the auth footer says what the PRODUCT is
+              not, and only the second matters to someone deciding whether
+              this is an adviser. Two near-identical disclosures in one footer
+              is how both stop being read.
+            */}
+            <nav
+              aria-label="Legal"
+              data-testid="landing-legal-links"
+              className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[12px] text-slate-600"
+            >
+              {LEGAL_DOCUMENTS.map(doc => (
+                <Link
+                  key={doc.id}
+                  to={legalPath(doc.id)}
+                  data-legal-document={doc.id}
+                  className="transition-colors hover:text-slate-300"
+                >
+                  {FOOTER_LABELS[doc.id] ?? doc.title}
+                </Link>
+              ))}
+            </nav>
           </div>
         </footer>
       </div>

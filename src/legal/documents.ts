@@ -173,3 +173,30 @@ export function allAcceptanceDocumentsApproved(): boolean {
 export function anyDocumentIsDraft(): boolean {
   return LEGAL_DOCUMENTS.some(d => d.status === 'draft')
 }
+
+/**
+ * Shorter labels for a footer.
+ *
+ * A footer with "Cookie and Local Storage Notice" in it wraps onto three lines
+ * on a phone. The full titles stay on the document itself and in each link's
+ * `title` attribute, so nothing is hidden; this is a layout decision, which is
+ * what "look and feel" means in this repository.
+ *
+ * Keyed by id and read with a fallback to `doc.title`, so a document added to
+ * the registry gets a working link rather than nothing.
+ *
+ * Lives HERE, beside the registry, rather than in LegalFooter. It started in
+ * that component and was exported from it when the public landing page needed
+ * the same labels in its own dark palette -- which eslint correctly rejected:
+ * exporting a constant from a component file breaks React fast refresh for
+ * that file. A label map is registry data, not a component, so the registry is
+ * where it belongs. Two consumers, one source: the LIST and the LABELS are
+ * shared, the styling is each page's own.
+ */
+export const FOOTER_LABELS: Record<string, string> = {
+  'terms-of-use': 'Terms of Use',
+  'privacy-policy': 'Privacy',
+  'cookie-notice': 'Cookies',
+  'financial-ai-disclosures': 'Disclosures',
+  'application-terms': 'Application Terms',
+}

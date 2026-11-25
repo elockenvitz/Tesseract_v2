@@ -22,7 +22,7 @@
  */
 
 import { Link } from 'react-router-dom'
-import { LEGAL_DOCUMENTS, legalPath } from '../../legal/documents'
+import { LEGAL_DOCUMENTS, legalPath, FOOTER_LABELS } from '../../legal/documents'
 
 interface LegalFooterProps {
   /** Compact drops the disclosure line, for a tight surface such as a modal
@@ -63,25 +63,6 @@ export function LegalFooter({ compact = false, className = '' }: LegalFooterProp
       </nav>
     </footer>
   )
-}
-
-/**
- * Shorter labels for the footer.
- *
- * A footer with "Cookie and Local Storage Notice" in it wraps onto three lines
- * on a phone. The full titles stay on the document and in the `title`
- * attribute, so nothing is hidden; this is a layout decision, which is what
- * "look and feel" means in this repository.
- *
- * Keyed by id and falling back to the title, so a new document gets a working
- * link rather than nothing.
- */
-const FOOTER_LABELS: Record<string, string> = {
-  'terms-of-use': 'Terms of Use',
-  'privacy-policy': 'Privacy',
-  'cookie-notice': 'Cookies',
-  'financial-ai-disclosures': 'Disclosures',
-  'application-terms': 'Application Terms',
 }
 
 export default LegalFooter
