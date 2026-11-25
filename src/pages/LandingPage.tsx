@@ -5,6 +5,7 @@ import {
   Layers, LineChart, Lock, ShieldCheck, Sparkles, Users,
 } from 'lucide-react'
 import { TesseractLoader } from '../components/ui/TesseractLoader'
+import { hideBootLoader } from '../lib/boot-loader'
 
 /**
  * The public front door.
@@ -184,6 +185,29 @@ const LIFECYCLE = [
 
 export function LandingPage() {
   const markRef = useRef<HTMLDivElement>(null)
+
+  /*
+   * Release the static boot loader.
+   *
+   * `#tesseract-boot-loader` is painted by index.html OUTSIDE `#root` at
+   * `position: fixed`, `inset: 0`, `z-index: 2147483647`, with an opaque
+   * background, and React's mount deliberately does not remove it. It stops
+   * covering the page only once something adds `.is-fading`, which is what
+   * `hideBootLoader()` does — and `pointer-events: none` lives in that class,
+   * so until then the overlay also swallows every click.
+   *
+   * `/` for a signed-out visitor renders this page and nothing else.
+   * `ProtectedRoute` never runs for a public route, and this page is not
+   * inside `AuthLayout`, so NEITHER existing caller of `hideBootLoader()`
+   * fires. Without this the page rendered correctly and was then covered by
+   * "Loading…" indefinitely on every cold load.
+   *
+   * That is the identical defect AuthLayout was fixed for; its comment notes
+   * it was moved into the layout so the next public route could not
+   * reintroduce it. This route is outside that layout, so it has to call it
+   * itself. Idempotent, and a no-op when the overlay is absent.
+   */
+  useEffect(() => { hideBootLoader() }, [])
 
   // The page title is the one SEO signal that differs by route in a SPA, and
   // "Investment Intelligence" is the app's title, not this page's pitch.
