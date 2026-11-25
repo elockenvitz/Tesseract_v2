@@ -1,3 +1,4 @@
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { supabase } from './lib/supabase'
@@ -22,6 +23,45 @@ import { CaptureOverlay } from './components/capture/CaptureOverlay'
 import { CaptureConfigModal } from './components/capture/CaptureConfigModal'
 import { OpsGuard } from './components/ops/OpsGuard'
 import { OpsLayout } from './components/ops/OpsLayout'
+import { hideBootLoader } from './lib/boot-loader'
+
+/* Legal pages: lazy, because react-markdown is a dependency nobody reaching
+   the dashboard should pay for. */
+const LegalIndexPage = lazy(() =>
+  import('./pages/legal/LegalIndexPage').then(m => ({ default: m.LegalIndexPage })),
+)
+const LegalDocumentPage = lazy(() =>
+  import('./pages/legal/LegalDocumentPage').then(m => ({ default: m.LegalDocumentPage })),
+)
+
+/* The Suspense fallback for the legal routes.
+ *
+ * Eager, not lazy. A lazy fallback would suspend while React was already
+ * rendering a fallback, which React treats as an error -- so this must stay a
+ * plain component even though its twin lives in LegalPageShell.tsx.
+ *
+ * It fades the boot loader, and it has to: index.html paints
+ * #tesseract-boot-loader over everything at z-index 2147483647 until
+ * hideBootLoader() is called, and neither AuthLayout nor ProtectedRoute runs
+ * for these public routes. Without this call the pages render correctly
+ * underneath an opaque "Loading…" -- which is exactly what happened on the
+ * first browser check.
+ *
+ * Plain text rather than TesseractLoader: a full-screen animated mark for a
+ * small chunk is heavier than the wait it covers. Light palette only, because
+ * `darkMode: 'class'` means a signed-out visitor has no theme class and any
+ * `dark:` variant here would be dead. */
+function LegalFallback() {
+  useEffect(() => { hideBootLoader() }, [])
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-3xl px-4 py-12 text-slate-500 sm:px-6 lg:px-8">
+        Loading…
+      </div>
+    </div>
+  )
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -81,6 +121,33 @@ function AppRoutes() {
           to handle "signed in as the wrong person" and "already accepted",
           and it is what an email-confirmation round-trip returns to. */}
       <Route path="/invite/:token" element={<InvitePage />} />
+
+      {/* Legal documents — public, and public on purpose.
+
+          Two things about the placement matter and neither is obvious:
+
+          * These MUST sit above the `/*` catch-all below. react-router takes
+            the first match, and `/*` is wrapped in ProtectedRoute — so placed
+            underneath, /legal/privacy-policy would bounce a signed-out visitor
+            to the login page. A privacy policy nobody can read without an
+            account is not a published privacy policy.
+
+          * They are NOT redirected away when a session exists. A signed-in
+            user reading the terms they accepted is the normal case, and it is
+            the one an auditor will ask about.
+
+          Lazily loaded: they are read rarely, they pull in react-markdown, and
+          this bundle's entry chunk has been a P0 once already. */}
+      <Route path="/legal" element={
+        <Suspense fallback={<LegalFallback />}>
+          <LegalIndexPage />
+        </Suspense>
+      } />
+      <Route path="/legal/:documentId" element={
+        <Suspense fallback={<LegalFallback />}>
+          <LegalDocumentPage />
+        </Suspense>
+      } />
 
       {/* Setup Wizard disabled — org creation is invite-only */}
       <Route path="/setup" element={

@@ -1,5 +1,10 @@
 # Privacy Policy — DRAFT, NOT LEGAL REVIEWED
 
+**Document id:** `privacy-policy` · **Version:** 0.1.0-draft ·
+**Effective:** not in effect
+
+> **Counsel-review draft. Not in effect, binds nobody, not approved.**
+>
 > **Do not publish this as-is.** It was drafted from `DATA-INVENTORY.md` by an
 > engineer, not a lawyer. Every bracketed `[…]` is a fact only you can supply.
 > The notes in blockquotes are for your counsel and should be deleted before
@@ -11,8 +16,8 @@
 > that does not. If you shorten this document, do not shorten it by making the
 > promises broader.
 
-**Effective date:** [DATE]
-**Last updated:** [DATE]
+**Effective date:** not in effect
+**Last updated:** 2026-11-25
 
 ---
 

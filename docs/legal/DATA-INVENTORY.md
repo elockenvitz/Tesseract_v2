@@ -246,3 +246,58 @@ retrieved; **that has not been investigated.**
 4. Are EU/UK users in scope?
 5. Do the AI providers' standard terms suffice, or is a zero-retention
    agreement needed per provider?
+
+Each now has an owner in
+[`counsel-review-checklist.md`](./counsel-review-checklist.md) §Z, and all five
+are still open.
+
+---
+
+## 10. Re-verification, 2026-11-25
+
+This document was compiled on 2026-08-14. It was re-read against the live
+database and the codebase on **2026-11-25**, before anything in `policies/` or
+`contracts/` was drafted. `read_only = on` was confirmed on the MCP session
+before any query.
+
+**It holds, with four corrections and three additions.** Recorded here rather
+than edited into the body above, so that what was verified when stays legible.
+
+### Corrections
+
+| § | Recorded | Actual, 2026-11-25 |
+|---|---|---|
+| §3 | Platform AI model `claude-haiku-4-5-20251001` | **`claude-3-5-sonnet-20241022`**, a **retired** model. A product defect rather than a legal one, but this document is the source the policies derive from. |
+| §3 | A customer's provider key column | The column is **`byok_secret_id`**: the key lives in Supabase Vault and there is no plaintext key column. Stronger than recorded. |
+| — | Polygon as a market-data recipient | **Not a recipient.** Every "polygon" in the codebase is the CSS `polygon()` clip-path. Removed from `SUBPROCESSORS.md`. |
+| — | Alpha Vantage: prices and fundamentals | **News sentiment**, via the `market-news` Edge Function. Still a live code path. |
+
+### Additions
+
+1. **EODHD** is now a market-data subprocessor, via its own Edge Function.
+2. **Yahoo Finance and Finnhub are called from the BROWSER**, by
+   `src/lib/financial-data/browser-client.ts`, which 14 modules import. The
+   user's own IP address and browser therefore reach those vendors directly.
+   That is a privacy-policy disclosure, and it is also the market-data
+   licensing problem in `risk-register.md` §4.
+3. **There is no terms acceptance anywhere.** No table in `public` matches
+   `term`, `accept` or `consent`. 28 users, 29 organizations, and no contract
+   with any of them. This is what
+   `supabase/migrations/20261125120000_terms_acceptances.sql` addresses, and it
+   is not applied.
+
+### Confirmed unchanged
+
+- **296 of 296** `public` tables have RLS enabled, with **957** policies.
+  Three are RLS-on-with-no-policy, which denies everything:
+  `custom_notebook_notes`, `market_data_cache`, `trade_lab_view_members`.
+- All **7** storage buckets are private.
+- `erase_user_personal_data` is present; the only retention control remains
+  `organization_governance.retention_days_audit_log`.
+- **Zero cookies.** No `document.cookie` anywhere in `src/` or
+  `supabase/functions`, and an empty cookie store in a live browser session.
+  No analytics, pixels or tag managers. This is what
+  `policies/cookie-notice-draft.md` rests on, and it is why there is no
+  consent banner.
+- 29 localStorage key patterns, whose names embed user and organization UUIDs.
+- PostgreSQL 17.4.
