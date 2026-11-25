@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, BookOpen, FileSignature, Gavel, History,
-  Layers, LineChart, Lock, ShieldCheck, Sparkles, Users,
+  ArrowLeftRight, ArrowRight, BookOpen, FileSignature, Gavel, History,
+  Layers, LineChart, Lock, RotateCcw, ShieldCheck, Sparkles, Users,
 } from 'lucide-react'
 import { TesseractLogo } from '../components/ui/TesseractLogo'
 import { TesseractMark } from '../components/ui/TesseractMark'
@@ -183,37 +183,27 @@ function Section({
   )
 }
 
-/**
- * A product surface, named rather than shown.
+/*
+ * `ProductShot` was removed here, deliberately, and should not come back.
  *
- * Authentic screenshots are not committed to this repository. The only
- * tenant with data in it is a synthetic QA organization, and two of the
- * surfaces a deck would most want to show (Outcomes attribution, execution
- * provenance) have fixes sitting in unmerged PRs. A screenshot taken today
- * would therefore show numbers we know to be wrong, presented as product.
+ * It rendered one placeholder panel per product surface: a bordered frame
+ * containing a title, a sentence, and the line "Product capture pending.
+ * This frame is a placeholder, not a rendering of the feature." Six of them
+ * sat in a grid. The honesty was right and the form was wrong. Six boxes
+ * drawn around nothing, each announcing that it contains nothing, is the
+ * single most unfinished-looking element a page can carry, and it survived
+ * two visual passes because it was never the styling that was at fault.
  *
- * So each frame states what belongs in it and that the capture is pending.
- * `docs/commercial/demo-checklist.md` lists the captures to take.
+ * The surfaces are now a dense index and the disclaimer is stated once at
+ * section level. Nothing was softened: the page still says plainly that no
+ * screenshots appear on it, and `landing-page.test.tsx` holds that to a
+ * page-level assertion plus a hard zero on `<img>`.
  *
- * The three grey circles imitating a macOS title bar are gone: fake window
- * chrome drawn around an empty box asks to be read as a screenshot and then
- * is not one. The accent rule on hover is the only motion.
+ * Real captures, when the blocking fixes merge, belong in this section as
+ * images with the placeholder text deleted, not reintroduced as frames.
+ * `docs/commercial/demo-checklist.md` lists which captures are safe to take
+ * and which are blocked, and why.
  */
-function ProductShot({ title, shows }: { title: string; shows: string }) {
-  return (
-    <figure className="group relative flex h-full flex-col overflow-hidden rounded-xl bg-white/[0.025] p-6 ring-1 ring-inset ring-white/[0.08] transition-colors hover:bg-white/[0.045] hover:ring-white/[0.14]">
-      <span
-        aria-hidden="true"
-        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary-400/0 to-transparent transition-all duration-300 group-hover:via-primary-400/60"
-      />
-      <figcaption className="text-[13px] font-semibold tracking-tight text-white">{title}</figcaption>
-      <p className="mt-3 flex-1 text-[13px] leading-[1.7] text-slate-400">{shows}</p>
-      <p className="mt-5 border-t border-white/[0.07] pt-3 text-[11px] leading-relaxed text-slate-600">
-        Product capture pending. This frame is a placeholder, not a rendering of the feature.
-      </p>
-    </figure>
-  )
-}
 
 /**
  * A status marker that distinguishes what runs from what is planned.
@@ -237,6 +227,111 @@ function Status({ kind }: { kind: 'now' | 'planned' }) {
   )
 }
 
+/**
+ * The linkage, drawn.
+ *
+ * ── Why this exists ──────────────────────────────────────────────────────
+ *
+ * The page's central claim is "typed records that point at the one before
+ * it, linked rather than filed". Every version of this page asserted that
+ * in prose and then showed six empty placeholder boxes. A reader had no way
+ * to see the thing being claimed, which is the real reason the page read as
+ * generated: it described a mechanism it never demonstrated.
+ *
+ * ── Why it is not a fabrication ──────────────────────────────────────────
+ *
+ * This is a SCHEMA, not data. It names the row each stage writes and the
+ * field that carries the reference to the row before it, and it is labelled
+ * as the shape of the record rather than a capture of the product. There
+ * are no prices, no tickers, no names, no numbers, and nothing here could
+ * be mistaken for a screenshot of a tenant. The constraint on this page is
+ * that nothing invented is presented as real; a structural diagram of our
+ * own data model invents nothing.
+ *
+ * It also carries the argument the prose cannot: the arrow from the review
+ * back to the research note is the reason this is a lifecycle and not a
+ * list, and the dotted "frozen" marker is where the differentiator lives.
+ */
+const CHAIN: { record: string; via: string | null }[] = [
+  { record: 'Research note', via: null },
+  { record: 'Recommendation', via: 'cites the note' },
+  { record: 'Frozen reasoning', via: 'version pinned at submission' },
+  { record: 'Decision', via: 'references the frozen version' },
+  { record: 'Accepted trade', via: 'authorized by the decision' },
+  { record: 'Outcome review', via: 'graded against the original case' },
+]
+
+function RecordChain() {
+  return (
+    <figure className="relative overflow-hidden rounded-2xl bg-white/[0.025] p-6 ring-1 ring-inset ring-white/[0.08] sm:p-8">
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
+      />
+      <figcaption className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-[13px] font-semibold tracking-tight text-white">
+          How one decision is stored
+        </span>
+        <span className="rounded-full bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium text-slate-400 ring-1 ring-inset ring-white/10">
+          Record shape, not a screenshot
+        </span>
+      </figcaption>
+
+      <ol className="mt-7 space-y-0">
+        {CHAIN.map(({ record, via }, i) => {
+          const frozen = record === 'Frozen reasoning'
+          return (
+            <li key={record} className="relative flex gap-4">
+              {/* The spine: a continuous line through every row but the last. */}
+              <div className="flex w-5 shrink-0 flex-col items-center">
+                <span
+                  className={`h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-[#070b16] ${
+                    frozen ? 'bg-violet-400' : 'bg-primary-400'
+                  }`}
+                />
+                {i < CHAIN.length - 1 && (
+                  <span
+                    aria-hidden="true"
+                    className={`w-px flex-1 ${frozen ? 'bg-violet-400/30' : 'bg-primary-400/25'}`}
+                    style={frozen ? { backgroundImage: 'none' } : undefined}
+                  />
+                )}
+              </div>
+
+              <div className={i < CHAIN.length - 1 ? 'pb-7' : ''}>
+                <p className="text-[13px] font-semibold tracking-tight text-white">{record}</p>
+                {via && (
+                  <p className="mt-1 font-mono text-[11px] leading-relaxed text-slate-500">
+                    {via}
+                  </p>
+                )}
+                {frozen && (
+                  <p className="mt-1.5 max-w-[46ch] text-[12px] leading-relaxed text-violet-200/70">
+                    Immutable. Later edits to the research create new versions
+                    and never alter what the PM actually read.
+                  </p>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+
+      {/* The return leg, which is what makes it a loop rather than a list. */}
+      <div className="mt-2 flex items-start gap-4">
+        <div className="flex w-5 shrink-0 justify-center">
+          <RotateCcw className="h-4 w-4 text-slate-500" aria-hidden="true" />
+        </div>
+        <p className="max-w-[48ch] text-[12px] leading-relaxed text-slate-500">
+          The review returns to the note, so the next decision on this name
+          starts from what the firm already learned rather than from a blank
+          page.
+        </p>
+      </div>
+    </figure>
+  )
+}
+
 /** A quiet bullet, so a list needs no border and no icon per row. */
 function Bullet({ children }: { children: React.ReactNode }) {
   return (
@@ -249,25 +344,55 @@ function Bullet({ children }: { children: React.ReactNode }) {
 
 /* ──────────────────────────────── the page ──────────────────────────────── */
 
+/**
+ * The lifecycle, complete.
+ *
+ * This ran Research, Recommend, Decide, Review, and stopped. Two stages of
+ * the real chain were missing, and they are the two that make the claim
+ * land:
+ *
+ *  - EXECUTE. A decision that never reaches the book is not a decision the
+ *    firm acted on. `accepted_trades` is the only object in this system
+ *    that represents a committed trade, and the record carries whether the
+ *    fill was assumed from the approval or confirmed against holdings.
+ *    Leaving it out skipped from a PM saying yes straight to grading the
+ *    outcome, which is the gap every attribution argument falls into.
+ *  - The RETURN. The review is not the end, it is the input to the next
+ *    decision on that name. A lifecycle drawn as a line that stops implies
+ *    a filing system; the point of the product is that it closes.
+ *
+ * Each `record` names the typed row the stage actually writes, which is
+ * what `RecordChain` draws below it.
+ */
 const LIFECYCLE = [
   {
     icon: BookOpen,
     stage: 'Research',
+    record: 'Research note',
     line: 'The written case, its evidence and its revisions, attached to the security rather than to a folder.',
   },
   {
     icon: FileSignature,
     stage: 'Recommend',
+    record: 'Recommendation',
     line: 'An analyst puts a view forward. The reasoning behind it is frozen at submission, so what the PM read is what the record keeps.',
   },
   {
     icon: Gavel,
     stage: 'Decide',
+    record: 'Decision',
     line: 'The PM accepts, rejects or defers, with the rationale captured as part of the decision instead of in a reply to a message.',
+  },
+  {
+    icon: ArrowLeftRight,
+    stage: 'Execute',
+    record: 'Accepted trade',
+    line: 'The approved trade becomes the firm’s committed record of what it actually did, carrying whether the fill was assumed from the approval or confirmed against the book.',
   },
   {
     icon: History,
     stage: 'Review',
+    record: 'Outcome review',
     line: 'Later, the decision is revisited against what actually happened, and the review becomes part of the record too.',
   },
 ]
@@ -477,30 +602,51 @@ export function LandingPage() {
             than four adjacent cards. Four bordered boxes in a row was the
             arrangement that made this look generated.
           */}
-          <ol className="relative grid gap-x-10 gap-y-12 sm:grid-cols-2 lg:grid-cols-4">
-            <div
-              aria-hidden="true"
-              className="absolute left-0 right-0 top-[19px] hidden h-px bg-gradient-to-r from-transparent via-white/15 to-transparent lg:block"
-            />
-            {LIFECYCLE.map(({ icon: Icon, stage, line }, i) => (
-              <li key={stage} className="relative">
-                <div className="flex items-center gap-3">
-                  <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#070b16] ring-1 ring-inset ring-white/10">
+          {/*
+            Stages left, the record shape right.
+
+            The prose claims linkage; the diagram beside it shows the
+            linkage. Putting them side by side is the whole point, because
+            each one is weak alone: the stages without the chain are five
+            abstractions, and the chain without the stages is a schema with
+            no narrative.
+          */}
+          <div className="grid gap-x-16 gap-y-12 lg:grid-cols-12">
+            <ol className="relative lg:col-span-7">
+              {/* A spine down the stages, so they read as one run. */}
+              <div
+                aria-hidden="true"
+                className="absolute bottom-6 left-5 top-6 w-px bg-gradient-to-b from-transparent via-white/12 to-transparent"
+              />
+              {LIFECYCLE.map(({ icon: Icon, stage, record, line }, i) => (
+                <li key={stage} className="relative flex gap-5 pb-9 last:pb-0">
+                  <span className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#070b16] ring-1 ring-inset ring-white/10">
                     <span
                       aria-hidden="true"
                       className="absolute inset-0 rounded-xl bg-gradient-to-br from-primary-500/20 to-violet-500/10"
                     />
                     <Icon className="relative h-[18px] w-[18px] text-primary-300" aria-hidden="true" />
                   </span>
-                  <span className="text-[11px] font-semibold tabular-nums tracking-[0.12em] text-slate-600">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                </div>
-                <h3 className="mt-5 text-[15px] font-semibold tracking-tight text-white">{stage}</h3>
-                <p className="mt-2.5 max-w-[42ch] text-[13px] leading-[1.75] text-slate-400">{line}</p>
-              </li>
-            ))}
-          </ol>
+                  <div className="min-w-0 pt-1">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="text-[11px] font-semibold tabular-nums tracking-[0.12em] text-primary-400/70">
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      <h3 className="text-[15px] font-semibold tracking-tight text-white">{stage}</h3>
+                      <span className="rounded bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400 ring-1 ring-inset ring-white/[0.08]">
+                        {record}
+                      </span>
+                    </div>
+                    <p className="mt-2 max-w-[52ch] text-[13px] leading-[1.75] text-slate-400">{line}</p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+
+            <div className="lg:col-span-5">
+              <RecordChain />
+            </div>
+          </div>
         </Section>
 
         {/* ── 2. The problem ──────────────────────────────────────────────── */}
@@ -542,16 +688,57 @@ export function LandingPage() {
           title="One workspace, built around the security and the decision"
           lead="Analysts work where the name lives. PMs decide from a queue that shows them the frozen case, not a forwarded document. The record assembles itself as a side effect of the work."
         >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {SURFACES.map(([title, shows]) => (
-              <ProductShot key={title} title={title} shows={shows} />
+          {/*
+            A surface index, not six empty windows.
+
+            This was six identical panels, each imitating a product frame
+            and each repeating the same twelve-word placeholder disclaimer.
+            Six boxes drawn around nothing, saying "nothing here" six times,
+            is the most unfinished-looking thing a page can do, and it was
+            the element that kept reading as generated however the rest was
+            tuned.
+
+            The information is the same and the honesty is the same. The
+            disclaimer is stated ONCE, clearly, at the section level where it
+            belongs, instead of being tiled. A reader learns what the product
+            contains from a dense index far faster than from six frames they
+            have to scan individually.
+          */}
+          <div className="grid gap-x-16 gap-y-0 sm:grid-cols-2">
+            {SURFACES.map(([title, shows], i) => (
+              <div
+                key={title}
+                className="group border-t border-white/[0.07] py-7 transition-colors first:border-t-0 sm:[&:nth-child(2)]:border-t-0"
+              >
+                <div className="flex items-baseline gap-3">
+                  <span className="font-mono text-[11px] tabular-nums text-primary-400/60">
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <h3 className="text-[15px] font-semibold tracking-tight text-white">{title}</h3>
+                </div>
+                <p className="mt-2 max-w-[50ch] pl-[calc(0.75rem+1.9em)] text-[13px] leading-[1.75] text-slate-400">
+                  {shows}
+                </p>
+              </div>
             ))}
           </div>
-          <p className="mt-8 max-w-[64ch] text-[13px] leading-[1.75] text-slate-500">
-            Captures are pending rather than mocked up. We would rather show you
-            the live product in a scheduled walkthrough than publish a rendering
-            of it.
-          </p>
+
+          {/* The disclosure, once, where it reads as a position rather than
+              as six captions. */}
+          <div className="mt-12 flex max-w-[72ch] gap-4 rounded-xl bg-white/[0.02] p-5 ring-1 ring-inset ring-white/[0.07]">
+            <span
+              aria-hidden="true"
+              className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-500"
+            />
+            <p className="text-[13px] leading-[1.75] text-slate-400">
+              <span className="font-semibold text-slate-200">
+                No product screenshots appear on this page.
+              </span>{' '}
+              Captures are pending rather than mocked up, and nothing above is a
+              rendering of a feature. We would rather walk you through the live
+              product on a scheduled call than publish an illustration of it.
+            </p>
+          </div>
         </Section>
 
         {/* ── 5. Institutional memory ────────────────────────────────────── */}

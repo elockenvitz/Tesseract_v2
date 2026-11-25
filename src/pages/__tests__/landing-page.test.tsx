@@ -58,11 +58,45 @@ describe('the positioning a visitor reads in the first screen', () => {
     expect(screen.getByText(/explore the platform/i)).toBeTruthy()
   })
 
-  it('states the four lifecycle stages as the central story', async () => {
+  /*
+   * Five stages, not four.
+   *
+   * This asserted Research, Recommend, Decide, Review and passed, which is
+   * how the page shipped with an incomplete lifecycle: it went from a PM
+   * saying yes straight to grading the outcome. EXECUTE was missing, and it
+   * is the stage that makes the chain real, because `accepted_trades` is
+   * the only object in this system representing a committed trade and it
+   * carries whether the fill was assumed or confirmed.
+   */
+  it('states the five lifecycle stages as the central story', async () => {
     await renderLanding('demo@example.test')
-    for (const stage of ['Research', 'Recommend', 'Decide', 'Review']) {
+    for (const stage of ['Research', 'Recommend', 'Decide', 'Execute', 'Review']) {
       expect(screen.getByRole('heading', { name: stage, level: 3 }), stage).toBeTruthy()
     }
+  })
+
+  /*
+   * The loop is the argument. A lifecycle drawn as a line that stops
+   * describes a filing system; the product's claim is that the review feeds
+   * the next decision. If the return leg is ever dropped, this fails.
+   */
+  it('closes the loop back to research rather than ending at review', async () => {
+    await renderLanding('demo@example.test')
+    expect(pageText()).toMatch(/the review returns to the note/i)
+  })
+
+  /*
+   * The linkage, shown rather than only asserted. Every version of this
+   * page claimed "typed records that point at the one before" in prose and
+   * then showed nothing. These are the reference fields the diagram draws.
+   */
+  it('shows how each record references the one before it', async () => {
+    await renderLanding('demo@example.test')
+    const t = pageText()
+    expect(t).toMatch(/version pinned at submission/i)
+    expect(t).toMatch(/references the frozen version/i)
+    expect(t).toMatch(/authorized by the decision/i)
+    expect(t).toMatch(/graded against the original case/i)
   })
 })
 
@@ -107,13 +141,66 @@ describe('no fabricated social proof, ever', () => {
 })
 
 describe('product visuals are placeholders, and say so', () => {
-  it('marks every product frame as a pending capture', async () => {
+  /*
+   * REPLACES 'marks every product frame as a pending capture'.
+   *
+   * That test required at least six <figure> elements, each repeating
+   * "capture pending" and "placeholder, not a rendering". It was describing
+   * a FORM: one placeholder panel per product surface. Six bordered boxes
+   * drawn around nothing, each announcing that it contains nothing, read as
+   * an unfinished page no matter how it was styled, so the form was
+   * replaced with a dense surface index and a single section-level
+   * disclosure.
+   *
+   * The requirement was never "six figures". It was: nothing on this page
+   * may be mistaken for a screenshot of the product. These three
+   * assertions hold that line, and two of them are stricter than what they
+   * replace, because the old test said nothing about the page as a whole
+   * and nothing about figures added later:
+   *
+   *   1. The page states the position in its own words, once, visibly.
+   *   2. ANY figure on the page must declare it is not a screenshot. The
+   *      record-shape diagram is the only one today; the next one added has
+   *      to label itself or this fails.
+   *   3. Every product surface is still named, so the index cannot quietly
+   *      shrink.
+   *
+   * The hard zero on <img> is the test below and is the real backstop.
+   * When captures are finally safe to take, THAT test is the one that must
+   * be changed deliberately, and `docs/commercial/demo-checklist.md` says
+   * which captures are blocked and why.
+   */
+  it('states plainly that no screenshots appear on the page', async () => {
+    await renderLanding('demo@example.test')
+    const t = pageText()
+    expect(t).toMatch(/no product screenshots appear on this page/i)
+    expect(t).toMatch(/captures are pending rather than mocked up/i)
+    expect(t).toMatch(/nothing above is a\s+rendering of a feature/i)
+  })
+
+  it('requires every figure to declare it is not a screenshot', async () => {
     await renderLanding('demo@example.test')
     const figures = screen.getAllByRole('figure')
-    expect(figures.length).toBeGreaterThanOrEqual(6)
+    expect(figures.length).toBeGreaterThan(0)
     for (const f of figures) {
-      expect(f.textContent).toMatch(/capture pending/i)
-      expect(f.textContent).toMatch(/placeholder, not a rendering/i)
+      expect(
+        f.textContent,
+        `figure "${f.textContent?.slice(0, 40)}" must say it is not a capture`,
+      ).toMatch(/not a screenshot|capture pending|placeholder, not a rendering/i)
+    }
+  })
+
+  it('still names every product surface', async () => {
+    await renderLanding('demo@example.test')
+    for (const surface of [
+      'Asset workspace',
+      'Idea pipeline',
+      'Recommendation and frozen reasoning',
+      'Decision inbox',
+      'Historical decision record',
+      'Outcome review',
+    ]) {
+      expect(screen.getByRole('heading', { name: surface }), surface).toBeTruthy()
     }
   })
 
