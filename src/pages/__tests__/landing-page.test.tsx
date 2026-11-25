@@ -299,49 +299,201 @@ describe('the background is built, not just dark', () => {
   })
 
   /*
-   * Ambient motion must be switchable off. It is a vestibular trigger for
-   * some people and a marketing page is the last place to argue about it.
-   * The drift is the only motion on the page that is not hover-driven.
+   * INVERTED from 'disables the drift under prefers-reduced-motion'.
+   *
+   * That test required `@keyframes tsrAurora` plus a reduced-motion guard
+   * naming both animated classes. It was the correct gate for a page with
+   * a drifting aurora on it, and the aurora is gone: the colours read as
+   * vibe coded, and the drift went with them, because a luminance gradient
+   * that slides around is a lighting rig with a loose bolt.
+   *
+   * Rather than delete the case, it asserts the stronger property that now
+   * holds: NOTHING on this page animates unless a pointer asks it to. That
+   * subsumes the old requirement (no ambient animation needs no
+   * reduced-motion exception) and it enforces the founder's standing
+   * instruction that the mark moves on hover only, which the background
+   * previously did not follow.
+   *
+   * Twinkling stars are the specific thing this is here to prevent. With a
+   * starfield on the page it is the obvious next idea and it would make the
+   * whole thing look cheap instantly.
    */
-  it('disables the drift under prefers-reduced-motion', async () => {
+  it('has no ambient motion at all, so hover is the only trigger', async () => {
     await renderConfigured()
-    const css = [...document.querySelectorAll('style')].map(s => s.textContent ?? '').join('\n')
-    expect(css).toMatch(/@keyframes\s+tsrAurora/)
-    expect(css).toMatch(/prefers-reduced-motion:\s*reduce/)
-    // The guard must actually name the animated classes, not just exist.
-    const guard = css.slice(css.indexOf('prefers-reduced-motion'))
-    expect(guard).toMatch(/tsr-aurora-a/)
-    expect(guard).toMatch(/tsr-aurora-b/)
-    expect(guard).toMatch(/animation:\s*none/)
+
+    /*
+     * SCOPED TO THE PAGE'S OWN SUBTREE, and the first version was not.
+     *
+     * It read every `<style>` in the document and asserted no `@keyframes`
+     * anywhere. That passed in jsdom, which loads no stylesheets, and is
+     * FALSE in a real browser: Chrome reports two such blocks on this page,
+     * `src/index.css` injected by Vite (bounce, ping, pulse, spin and a
+     * dozen more the app uses) and `tesseract-boot-breathe` from
+     * index.html. Neither is this page's, and neither should make this
+     * gate fail or pass.
+     *
+     * Third time this exact mistake has come up in this file, so the rule
+     * is worth stating: a gate written against `document` in jsdom is
+     * asserting something about an EMPTY environment. Scope to the subtree
+     * under test, or assert a property the environment actually models.
+     *
+     * What is checked now: the page contributes no stylesheet of its own
+     * (it used to inject one for the aurora drift, which is gone), and no
+     * element inside it declares an animation inline, which is how a
+     * twinkling star would arrive. Verified separately in the browser with
+     * `document.getAnimations().length === 0`, which is the authoritative
+     * check and cannot be done in jsdom.
+     */
+    const page = document.querySelector('.min-h-screen')
+    expect(page, 'the page root must be found for this to mean anything').not.toBeNull()
+
+    const own = [...(page?.querySelectorAll('style') ?? [])]
+    expect(own, 'this page injects no stylesheet of its own').toHaveLength(0)
+
+    const inline = [...(page?.querySelectorAll<HTMLElement>('[style]') ?? [])]
+      .map(el => el.getAttribute('style') ?? '')
+      .filter(s => /animation/.test(s))
+    expect(inline, `inline animation found: ${inline[0] ?? ''}`).toHaveLength(0)
   })
 
   /*
-   * The texture layers have to be ABOVE the visibility threshold, which is
-   * the specific thing that was wrong twice. 1.5% is not subtlety.
+   * REPLACES the dot-grid half of 'pitches its texture where a person can
+   * actually see it'.
+   *
+   * The dot grid is gone: the starfield does its job properly, so a 26px
+   * lattice of faint dots on top of it would be two competing textures.
+   * The requirement it encoded was never "a dot grid"; it was that texture
+   * must be pitched ABOVE the threshold where a person sees it, which is
+   * the specific mistake that shipped twice at 1.5% white. Grain carries
+   * that now and is asserted below.
    */
-  it('pitches its texture where a person can actually see it', async () => {
+  it('keeps its grain where a person can actually see it', async () => {
     await renderConfigured()
     // jsdom has no #root: testing-library renders into its own container
     // under body, so this reads body. My first version read #root, got
     // null, and failed against an empty string.
     const html = document.body.innerHTML
-    // Grain, from the inline SVG turbulence filter.
-    expect(html).toMatch(/feTurbulence/)
+    expect(html, 'grain comes from an inline SVG turbulence filter').toMatch(/feTurbulence/)
+
+    const grainLayers = [...document.querySelectorAll<HTMLElement>('[style*="svg+xml"]')]
+    expect(grainLayers.length, 'the dark page and the light band each grain').toBeGreaterThanOrEqual(2)
+    for (const layer of grainLayers) {
+      const o = Number.parseFloat(getComputedStyle(layer).opacity || '1')
+      expect(o, `grain at ${o} is below the visibility threshold`).toBeGreaterThanOrEqual(0.02)
+      expect(o, `grain at ${o} would be a visible pattern, not a texture`).toBeLessThan(0.1)
+    }
+  })
+
+  /*
+   * ── The sky ────────────────────────────────────────────────────────────
+   *
+   * SEEDED, not random, and this is a correctness property rather than an
+   * aesthetic one. `Math.random()` would give a different sky on every
+   * mount: stars jumping on re-render, a different arrangement per visitor,
+   * and nothing any visual check could ever be compared against.
+   */
+  it('renders a seeded starfield that is identical across renders', async () => {
     /*
-     * The dot grid, raised from 0.015. Anything back at 0.01x is invisible
-     * and this gate exists precisely because that shipped once.
-     *
-     * jsdom normalizes the colour when it reparses the style attribute, so
-     * `rgba(255,255,255,0.026)` comes back as `rgba(255, 255, 255, 0.026)`.
-     * The whitespace has to be optional or this matches nothing, which is
-     * how my first version of this failed.
+     * Scoped to `[data-starfield]`. A bare `circle` selector also picks up
+     * the vertex circles inside the tesseract marks in the nav and footer,
+     * so the fill assertion below failed on a logo node rather than on a
+     * star. Same class of mistake as the `[style*="opacity"]` selector two
+     * rounds ago, which is why both hooks are now explicit.
      */
-    const dots = html.match(/rgba\(\s*255\s*,\s*255\s*,\s*255\s*,\s*(0\.\d+)\s*\)\s*1px/)
-    expect(dots, 'the dot grid must still be present').not.toBeNull()
-    expect(
-      Number.parseFloat(dots?.[1] ?? '0'),
-      'a dot grid below 2% white is invisible, which is the bug this gate is for',
-    ).toBeGreaterThanOrEqual(0.02)
+    const sky = () => [...document.querySelectorAll('[data-starfield] circle')]
+      .map(c => `${c.getAttribute('cx')},${c.getAttribute('cy')},${c.getAttribute('r')}`)
+
+    await renderConfigured()
+    const first = sky()
+    expect(first.length, 'the sky needs enough stars to read as a sky').toBeGreaterThanOrEqual(150)
+
+    cleanup()
+    await renderConfigured()
+    expect(sky(), 'the sky must not change between renders').toEqual(first)
+  })
+
+  /*
+   * The distribution is the part that makes it a sky rather than noise.
+   * Uniform points at uniform brightness is what a CSS starfield looks
+   * like; a real one is heavily skewed, with most stars faint and small.
+   */
+  it('varies star brightness and size instead of drawing uniform dots', async () => {
+    await renderConfigured()
+    const stars = [...document.querySelectorAll('[data-starfield] circle')]
+    expect(stars.length).toBeGreaterThanOrEqual(150)
+    const radii = new Set(stars.map(c => c.getAttribute('r')))
+    const opacities = new Set(stars.map(c => c.getAttribute('opacity')))
+    expect(radii.size, 'uniform radii read as a dot grid, not a sky').toBeGreaterThan(20)
+    expect(opacities.size, 'uniform brightness is the giveaway').toBeGreaterThan(20)
+
+    // Skewed, not flat: most stars must be in the dim half of the range.
+    const vals = stars.map(c => Number.parseFloat(c.getAttribute('opacity') ?? '0'))
+    const mid = (Math.min(...vals) + Math.max(...vals)) / 2
+    const dim = vals.filter(v => v < mid).length
+    expect(dim / vals.length, 'a real magnitude curve is faint-heavy').toBeGreaterThan(0.6)
+
+    // White only. A coloured star is how a nebula palette gets in.
+    for (const c of stars) expect(c.getAttribute('fill')).toBe('#fff')
+  })
+
+  /*
+   * Gargantua. The concept the founder asked for, and the four restraints
+   * in `BlackHole`'s own comment are what keep it from being a poster. Two
+   * of them are testable: the ring must stay a warm WHITE rather than
+   * turning into fire, and the event horizon must be DARKER than the page,
+   * because a hole that is the same value as the sky is not a hole.
+   */
+  it('puts the mark inside a black hole, without lighting it on fire', async () => {
+    await renderConfigured()
+    const hero = document.getElementById('top')
+    const html = hero?.innerHTML ?? ''
+
+    // The event horizon, darker than the #050710 base.
+    expect(html, 'the horizon must be darker than the page').toMatch(/#01020a/)
+
+    // The ring is near-white. Anything with a red/blue spread this wide is
+    // amber, which is the poster version rather than the film's.
+    const rings = [...(html.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/g) ?? [])]
+    for (const ring of rings) {
+      const [r, g, b] = ring.replace(/rgba?\(/, '').split(',').map(n => Number.parseInt(n, 10))
+      if (r === 0 && g === 0 && b === 0) continue
+      expect(r - b, `${ring} is amber, not warm white`).toBeLessThanOrEqual(30)
+      expect(Math.abs(r - g), `${ring} is too saturated for this`).toBeLessThanOrEqual(20)
+    }
+  })
+
+  /*
+   * The mark must be INSIDE the hole, and the hole must stay modest.
+   *
+   * Both halves of this were real defects. The first version positioned the
+   * mark as a sibling of the hole with hand-matched offsets, so the two
+   * were concentric at one size only and any change to either knocked them
+   * apart. The second was simply too big at 44rem: it stopped reading as a
+   * distant object and became a shape competing with the headline.
+   *
+   * Nesting makes concentricity structural, and this asserts the structure
+   * rather than the pixels, since jsdom has no layout: the mark must be a
+   * DESCENDANT of the hole, and the hole's size must stay within a range
+   * that reads as distant. A sibling with matching offsets would pass a
+   * coordinate check and fail this one, which is the right way round.
+   */
+  it('nests the mark inside the hole, at a restrained size', async () => {
+    await renderConfigured()
+    const horizon = document.querySelector('[class*="#01020a"]')
+    expect(horizon, 'the event horizon must render').not.toBeNull()
+
+    const hole = horizon?.parentElement
+    expect(hole?.querySelector('svg'), 'the mark must be a DESCENDANT of the hole').not.toBeNull()
+
+    // 28rem. Anything at or above 40rem is the version that was too large.
+    const size = hole?.className.match(/h-\[(\d+(?:\.\d+)?)rem\]/)?.[1]
+    expect(size, 'the hole must declare an explicit size').toBeDefined()
+    expect(Number.parseFloat(size ?? '0')).toBeLessThan(36)
+    expect(Number.parseFloat(size ?? '0')).toBeGreaterThan(16)
+
+    // And it is absent at phone width, where it would sit on the headline.
+    expect(hole?.className).toMatch(/hidden/)
+    expect(hole?.className).toMatch(/md:block/)
   })
 })
 

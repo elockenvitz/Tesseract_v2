@@ -51,41 +51,60 @@ import { hideBootLoader } from '../lib/boot-loader'
  * where a person actually sees it. A dot grid at 1.5% white is not subtle,
  * it is absent. See `PageAtmosphere` for the rebuilt version.
  *
- * Two constraints arrived with the second pass and both narrow the obvious
- * options, which is why the page leans on structure:
+ * Three constraints arrived over three rounds of review, and together they
+ * removed every easy option, which is why the page ended up somewhere
+ * specific instead of somewhere tasteful:
  *
- *   NO PURPLE. No violet or fuchsia anywhere, in a wash, a gradient or an
- *   accent. The palette is one cool sweep: blue, sky, teal, emerald.
- *   Purple is the default accent of consumer AI launches and this audience
- *   reads cool blues as infrastructure.
+ *   NO PURPLE. No violet, fuchsia or indigo anywhere, in a wash, a
+ *   gradient or an accent.
  *
  *   THE TESSERACT BEHIND, LIGHTLY. The brand geometry is the background
- *   motif, which is what `TesseractField` does. It replaces the colour the
- *   palette gave up with form, and it means the ornament on this page is
- *   the product's own mark at six scales rather than a decoration.
+ *   motif, which is what `TesseractField` does.
  *
- * The mechanisms, in order of how much they do:
+ *   NO BLOBS AT ALL, and the reference is the Milky Way, a starfield, and
+ *   a black hole, since a tesseract is what sits inside one. That last one
+ *   is not decoration: it is the only image on this page that no other
+ *   company could use.
  *
- *  1. ONE LIGHT BAND. The research section inverts to near-white. A long
- *     page in a single value register reads as one undifferentiated surface
- *     no matter how well each section is set, and an inversion halfway down
- *     is the single strongest signal that a human laid the page out. It is
- *     deliberately the section about capture, because that is the part of
- *     the product a reader is most likely to actually touch. Its palette is
- *     self-contained, with a gradient transition at both edges so the
- *     change arrives rather than cuts, and it carries its own tint, grid
- *     and grain so the inversion is not itself a flat field.
- *  2. THE ATMOSPHERE. Drifting aurora, a column grid aligned to the text,
- *     grain, and a masked dot grid. `PageAtmosphere` documents each layer
- *     and why it is a separate layer.
+ * ── Where the colour went ───────────────────────────────────────────────
+ *
+ * The page is now effectively MONOCHROME. One accent hue, the product's
+ * blue, on small marks only: eyebrow rules, lifecycle icons and numerals,
+ * the diagram spine, the assistant icons. Exactly ONE coloured field
+ * survives anywhere, the wash inside the design-partner panel, and it is
+ * the one block on the page that should be the most luminous. Everything
+ * else is white, grey or near-black.
+ *
+ * That is not minimalism for its own sake. Three rounds of "this looks
+ * vibe coded" all landed on colour that the composition had not earned:
+ * four drifting aurora fields, four per-section hue washes, a three-stop
+ * gradient across the headline. Each was added to make the page
+ * interesting and each made it generic, because colour applied as
+ * decoration is the cheapest thing on a page and reads that way.
+ *
+ * The mechanisms that carry it instead:
+ *
+ *  1. THE SKY. A vignette, a galactic band, and 220 seeded stars. See
+ *     `PageAtmosphere` and `STARS`.
+ *  2. GARGANTUA. The hero mark sits inside a black hole. See `BlackHole`,
+ *     which documents the four restraints that keep it from being kitsch.
  *  3. THE TESSERACT FIELD. Four large still marks anchored to the document
  *     so the geometry behind the text changes as you scroll.
- *  4. PER-SECTION ACCENT. Each band carries its own hue on its eyebrow
- *     rule, icons and background wash, so the ambient colour progresses as
- *     you read instead of repeating. All Tailwind defaults; no dependency
- *     and no config change.
- *  5. DEPTH, not borders. Surfaces separate by translucency and a 1px
+ *  4. ONE LIGHT BAND. The research section inverts to near-white. A long
+ *     page in a single value register reads as one undifferentiated
+ *     surface, and an inversion halfway down is the strongest available
+ *     signal that a human laid the page out. It is deliberately the
+ *     section about capture, because that is the part of the product a
+ *     reader is most likely to touch. Self-contained palette, a gradient
+ *     transition at both edges so the change arrives rather than cuts, and
+ *     its own neutral shadows, grid and grain so the inversion is not
+ *     itself a flat field.
+ *  5. LUMINANCE RHYTHM. Alternate bands sit about one percent lighter.
+ *     See `TONES`.
+ *  6. DEPTH, not borders. Surfaces separate by translucency and a 1px
  *     inner highlight rather than by a box outline.
+ *
+ * NOTHING ANIMATES except on hover. No drift, no twinkle, no parallax.
  *
  * THEME INDEPENDENT. No `dark:` variants anywhere in this file, on purpose.
  * `tailwind.config.js` sets `darkMode: 'class'` and a signed-out visitor has
@@ -235,51 +254,74 @@ const SHELL = `mx-auto w-full max-w-7xl ${GUTTER}`
  * a matter of taste: the previous background was two radial gradients and a
  * dot grid at 1.5% white. At that opacity the grid is below the threshold
  * where a human notices it on an ordinary monitor, so the page was, for all
- * practical purposes, flat #070b16 with a slight blue corner. Subtlety past
+ * practical purposes a flat field with a slight blue corner. Subtlety past
  * the point of visibility is not restraint, it is absence.
  *
- * ── The four layers, and what each one is for ───────────────────────────
+ * The base is now #050710, deepened from #070b16 for the space direction:
+ * a hole has to be darker than the sky around it, and at the old value
+ * there was not enough room below the background to put one.
  *
- * They are separate layers on purpose. A single busy gradient is the thing
- * that reads as generated; four quiet layers at different scales is how a
- * background acquires depth, because the eye resolves them at different
- * distances.
+ * ── THE AURORA IS GONE, AND IT IS NOT COMING BACK ───────────────────────
  *
- *  1. AURORA. Four large colour fields, now at opacities that are actually
- *     visible, and two of them drift. Motion is what separates a background
- *     from a wallpaper, and it is the single biggest change here. It is
- *     also deliberately slow: 48 and 64 seconds for one full cycle, with a
- *     translation of a few percent. Nothing on screen appears to move while
- *     you look at it; the page is simply never quite the same when you
- *     scroll back up.
- *  2. COLUMN GRID. Five vertical hairlines aligned to the content column,
- *     fading out top and bottom. This is the layer that makes the page feel
- *     ARCHITECTED: the text now visibly sits on a structure instead of
- *     floating on a colour. It is aligned to `SHELL`, so the outer two
- *     lines land exactly on the text edge.
- *  3. GRAIN. Fractal noise from an inline SVG filter, at 3.5%. This is the
- *     layer that does the most for perceived quality and the least to the
- *     composition. A flat dark field renders as a smooth digital surface and
- *     a slightly noisy one renders as a material, which is why every print
- *     process and every piece of film has grain in it.
- *  4. DOT GRID. Kept from the previous version but raised from 1.5% to 2.6%
- *     and given a mask that fades it out below the fold, so it reinforces
- *     the hero without tiling the whole document.
+ * The second attempt put four large coloured radial fields on the page,
+ * two of them slowly drifting, and the verdict was that the colours looked
+ * vibe coded. That is correct, and recolouring them would not have helped,
+ * because the problem is the DEVICE rather than the hue. A big soft
+ * coloured radial blob behind a dark page is the single most reproduced
+ * background of the last three years. It arrives free with every template
+ * and it says nothing about the product. Its presence is the tell, so there
+ * is no palette that rescues it.
  *
- * ── Motion is gated, and that is not optional ───────────────────────────
+ * ── What replaced it: deep space, and a specific piece of it ────────────
  *
- * `prefers-reduced-motion: reduce` stops the drift completely. Ambient
- * motion is a vestibular trigger for some people, and a marketing page is
- * the last place to argue about it. The CSS is scoped to this component
- * rather than added to `tailwind.config.js` or a global stylesheet, because
- * this page is lazily routed and none of it should reach the authenticated
- * app.
+ * The brief was the Milky Way, stars, and a black hole, because a tesseract
+ * is what sits inside one. That is a real idea and it is ownable, which is
+ * the opposite of a gradient: nobody else's landing page can use it,
+ * because nobody else is called Tesseract.
+ *
+ * The risk is equally specific. Starfields and black holes are one bad
+ * decision away from a screensaver, and this page sells software to
+ * institutional investors. So the register is the FILM's register, not a
+ * science-fiction poster's: near black, cold white, one warm highlight,
+ * enormous scale, and a great deal of empty space. The things that would
+ * wreck it are the things it does not have, namely coloured nebulae,
+ * twinkling, parallax, and any shade of purple.
+ *
+ * ── The layers, outermost first ─────────────────────────────────────────
+ *
+ *  1. DEEP FIELD. A vignette rather than a glow: the frame darkens at its
+ *     edges so the centre has air. This is the layer the aurora was
+ *     pretending to be, done as lighting instead of as colour.
+ *  2. GALACTIC BAND. One soft diagonal band of dust across the frame at
+ *     about twenty degrees, in white at three percent. It is what makes the
+ *     sky a SKY rather than a scatter of dots: a starfield with no
+ *     structure is noise, and the galactic plane is the structure.
+ *  3. STARFIELD. 220 points, seeded so the sky is IDENTICAL on every render
+ *     and for every visitor, sized and brightened on a distribution rather
+ *     than uniformly, and clustered along the band. See `STARS`.
+ *  4. COLUMN GRID. Five vertical hairlines on the content column. Kept, and
+ *     dimmed, because the tension between an observatory grid and a
+ *     photograph of space is exactly right for this product: it is the
+ *     layer that stops the sky becoming a wallpaper and keeps the page
+ *     reading as an instrument.
+ *  5. GRAIN. Fractal noise at 3.5%, which now reads as sensor noise, which
+ *     is what it would be.
+ *
+ * The dot grid is gone: the starfield does its job properly.
+ *
+ * ── NO MOTION, STILL ────────────────────────────────────────────────────
+ *
+ * No drift, no twinkle, no parallax. The standing instruction on this page
+ * is that the mark moves on hover only and the background holds to the same
+ * rule, so there is no `prefers-reduced-motion` exception to maintain.
+ * Twinkling stars in particular would be the single fastest way to make
+ * this look cheap.
  *
  * ── Cost ────────────────────────────────────────────────────────────────
  *
- * No images, no dependency, no web request. The grain is one inline SVG
- * data URI the browser rasterizes once. The drift animates `transform`
- * only, so it runs on the compositor and never triggers layout or paint.
+ * No images, no dependency, no web request, no animation frames. The
+ * starfield is one inline SVG with 220 circles, generated once at module
+ * scope. The grain is one data URI the browser rasterizes once.
  */
 const GRAIN =
   'url("data:image/svg+xml,' +
@@ -289,123 +331,258 @@ const GRAIN =
   "%3Crect width='160' height='160' filter='url(%23g)'/%3E%3C/svg%3E" +
   '")'
 
+/**
+ * The sky, generated once.
+ *
+ * ── SEEDED, AND THAT IS A CORRECTNESS REQUIREMENT ───────────────────────
+ *
+ * `mulberry32` from a fixed seed, not `Math.random()`. A random sky would
+ * be a DIFFERENT sky on every mount: the stars would jump whenever React
+ * re-rendered the page, every visitor would see a different arrangement,
+ * and no visual check or snapshot could ever be compared against anything.
+ * Seeded, the sky is a fixed asset that happens to be computed rather than
+ * drawn, which is what it should be.
+ *
+ * ── The distribution is the whole job ───────────────────────────────────
+ *
+ * Uniform random points do not look like a sky. They look like noise,
+ * because a real sky has two features a uniform scatter lacks:
+ *
+ *   STRUCTURE. Most stars sit near the galactic plane. 62 percent of these
+ *   are placed within a narrow spread of the band axis, which runs from the
+ *   lower left to the upper right at roughly twenty degrees. The rest are
+ *   scattered, so the band reads as a density rather than as a stripe.
+ *
+ *   A MAGNITUDE CURVE. Real brightness is heavily skewed: thousands of
+ *   faint stars for every bright one. `r ** 2.4` on a uniform variate gives
+ *   that shape, so most points are 0.5px and dim and a handful are large
+ *   and bright. A uniform brightness distribution is the thing that makes
+ *   a CSS starfield look like a CSS starfield.
+ *
+ * Positions are percentages so the sky scales with the viewport, but radii
+ * are in pixels so the stars stay points rather than stretching into
+ * ellipses on a wide monitor.
+ */
+function mulberry32(seed: number) {
+  let a = seed
+  return () => {
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+const STARS = (() => {
+  const rand = mulberry32(0x7e55e2ac)
+  const out: { x: number; y: number; r: number; o: number }[] = []
+  for (let i = 0; i < 220; i++) {
+    const x = rand()
+    // The galactic plane: lower left to upper right, about 20 degrees.
+    const bandY = 0.84 - 0.62 * x
+    const nearBand = rand() < 0.62
+    // Two uniforms averaged approximate a normal, which keeps the band
+    // soft-edged instead of a hard ribbon.
+    const spread = (rand() + rand() - 1) * 0.17
+    const y = nearBand ? bandY + spread : rand()
+    if (y < -0.02 || y > 1.02) continue
+    const mag = rand() ** 2.4
+    out.push({
+      x: Math.round(x * 10000) / 100,
+      y: Math.round(y * 10000) / 100,
+      r: Math.round((0.45 + mag * 1.35) * 100) / 100,
+      o: Math.round((0.16 + mag * 0.64) * 100) / 100,
+    })
+  }
+  return out
+})()
+
 function PageAtmosphere() {
   return (
     <>
-      <style>{`
-        @keyframes tsrAuroraA {
-          0%   { transform: translate3d(0,0,0) scale(1); }
-          50%  { transform: translate3d(4%,3%,0) scale(1.08); }
-          100% { transform: translate3d(0,0,0) scale(1); }
-        }
-        @keyframes tsrAuroraB {
-          0%   { transform: translate3d(0,0,0) scale(1.05); }
-          50%  { transform: translate3d(-5%,2%,0) scale(1); }
-          100% { transform: translate3d(0,0,0) scale(1.05); }
-        }
-        .tsr-aurora-a { animation: tsrAuroraA 48s ease-in-out infinite; }
-        .tsr-aurora-b { animation: tsrAuroraB 64s ease-in-out infinite; }
-        @media (prefers-reduced-motion: reduce) {
-          .tsr-aurora-a, .tsr-aurora-b { animation: none; }
-        }
-      `}</style>
-
-      {/* 1. Aurora. The two drifting fields are separate elements because a
-             transform on a multi-stop background would move every stop.
-
-             NO PURPLE, by instruction. The family is blue to cyan to teal,
-             which is also the better call for this product: purple is the
-             default accent of every developer-tool landing page of the last
-             five years, and an institutional buy-side audience reads cool
-             blues as infrastructure rather than as a launch announcement.
-             With a hue range this narrow the interest has to come from
-             STRUCTURE, which is what the column grid and `TesseractField`
-             are for. */}
       {/*
-        SIZED IN PERCENT, NOT vh/vw, and that is not a style preference.
+        1. DEEP FIELD. A vignette, not a glow: the edges of the frame fall
+        away so the centre has air.
 
-        These were sized in viewport-height and viewport-width units, and
-        `guard:unit` rejected them:
-        `src/lib/mobile/__tests__/viewport-sizing.test.ts` bans a bare
-        viewport-height class anywhere in the codebase, because that unit
-        resolves against the LARGE viewport and does not shrink when mobile
-        browser chrome or the keyboard appears, so anything sized with it
-        ends up taller than the screen it is on.
+        This is what the aurora was pretending to be. A coloured blob adds a
+        hue the composition never asked for; a luminance figure states where
+        the light is and where it is not. Only the second makes a flat
+        rectangle read as space.
 
-        The parent is `fixed inset-0`, so a percentage resolves against the
-        viewport: identical on desktop, and correct on a phone. The right
-        fix was to stop needing the unit, not to switch to the dynamic one
-        because the gate's regex would not have caught that spelling.
-
-        Note for whoever reads the gate next: it scans raw source text, so
-        it cannot tell a violation from a comment describing one. That is
-        why this note spells nothing out literally.
+        All stops are pure white or pure black at low alpha, so the base
+        colour is never tinted. No viewport units anywhere: see the note in
+        `src/lib/mobile/__tests__/viewport-sizing.test.ts`.
       */}
-      <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          background:
+            'radial-gradient(70rem 42rem at 26% -14%, rgba(255,255,255,0.040), transparent 66%),' +
+            'radial-gradient(90rem 55rem at 50% 50%, transparent 38%, rgba(0,0,0,0.38) 100%),' +
+            'radial-gradient(60rem 30rem at 50% 116%, rgba(0,0,0,0.34), transparent 70%)',
+        }}
+      />
+
+      {/*
+        2. GALACTIC BAND. One soft diagonal of dust across the frame.
+
+        A starfield with no structure is a scatter of dots. The band is what
+        makes it read as a sky, and it is also what the stars are clustered
+        along, so the two layers describe the same object rather than
+        sitting on top of each other.
+
+        White at three percent, feathered at both edges by the gradient's
+        own transparent stops. `rotate` on a generously oversized element,
+        so the band's ends are off-frame and it never reads as a stripe with
+        two visible terminations.
+      */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
+      >
         <div
-          className="tsr-aurora-a absolute -left-[15%] -top-[25%] h-[85%] w-[75%] will-change-transform"
+          className="absolute left-[-30%] top-[-30%] h-[160%] w-[160%] rotate-[-21deg]"
           style={{
-            background: 'radial-gradient(closest-side, rgba(56,118,246,0.28), transparent 72%)',
-          }}
-        />
-        <div
-          className="tsr-aurora-b absolute -right-[18%] -top-[12%] h-[80%] w-[65%] will-change-transform"
-          style={{
-            background: 'radial-gradient(closest-side, rgba(14,165,233,0.22), transparent 72%)',
-          }}
-        />
-        {/* Two static fields low in the frame, so the lower half of the
-            viewport is never an unmodulated void on a long page. */}
-        <div
-          className="absolute -bottom-[30%] left-[5%] h-[70%] w-[60%]"
-          style={{
-            background: 'radial-gradient(closest-side, rgba(13,148,136,0.13), transparent 70%)',
-          }}
-        />
-        <div
-          className="absolute -bottom-[25%] -right-[10%] h-[60%] w-[55%]"
-          style={{
-            background: 'radial-gradient(closest-side, rgba(56,118,246,0.12), transparent 70%)',
+            background:
+              'linear-gradient(to bottom,' +
+              'transparent 38%,' +
+              'rgba(255,255,255,0.012) 44%,' +
+              'rgba(255,255,255,0.030) 50%,' +
+              'rgba(255,255,255,0.012) 56%,' +
+              'transparent 62%)',
           }}
         />
       </div>
 
-      {/* 2. Column grid, aligned to the content column. The outer two lines
-             land on the text edge, which is what ties the structure to the
-             type rather than laying a grid over it. */}
+      {/*
+        3. STARFIELD. One SVG, 220 circles, seeded. See `STARS` for why the
+        distribution is skewed and clustered rather than uniform, and why it
+        must not be random.
+      */}
+      <svg
+        aria-hidden="true"
+        data-starfield=""
+        className="pointer-events-none fixed inset-0 z-0 h-full w-full"
+        focusable="false"
+      >
+        {STARS.map((s, i) => (
+          <circle key={i} cx={`${s.x}%`} cy={`${s.y}%`} r={s.r} fill="#fff" opacity={s.o} />
+        ))}
+      </svg>
+
+      {/*
+        4. COLUMN GRID, dimmed from 5.5% to 3.5%.
+
+        Kept on purpose, and the tension is the point: an observatory grid
+        over a photograph of space is precisely this product's register. It
+        is also the layer that stops the sky becoming a wallpaper, because
+        it keeps asserting that the page is an instrument. The outer two
+        lines land on the text edge, which ties the structure to the type
+        rather than laying a grid over it.
+      */}
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 flex justify-center">
         <div className={`flex h-full w-full max-w-7xl ${GUTTER} justify-between`}>
           {[0, 1, 2, 3, 4].map(i => (
             <div
               key={i}
-              className="h-full w-px bg-gradient-to-b from-transparent via-white/[0.055] to-transparent"
+              className="h-full w-px bg-gradient-to-b from-transparent via-white/[0.035] to-transparent"
             />
           ))}
         </div>
       </div>
 
-      {/* 3. Grain. The layer that turns a value into a material. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 opacity-[0.035]"
-        style={{ backgroundImage: GRAIN, backgroundRepeat: 'repeat' }}
-      />
+      {/* 5. Grain, which in this context reads as sensor noise, which is
+             what it would be.
 
-      {/* 4. Dot grid, masked so it reinforces the top of the frame rather
-             than tiling evenly over everything. `inset-0` plus the mask
-             rather than an explicit viewport height: see the note on the
-             aurora above for why no layer here uses viewport units. */}
+             The opacity is INLINE rather than an `opacity-[0.035]` class,
+             on purpose: the visibility of this layer is the exact thing
+             that has been wrong twice, so it has to be assertable. A
+             Tailwind class is invisible to jsdom, which has no stylesheet,
+             so a gate on it could only ever check source text. */}
       <div
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-0"
-        style={{
-          backgroundImage: 'radial-gradient(rgba(255,255,255,0.026) 1px, transparent 0)',
-          backgroundSize: '26px 26px',
-          maskImage: 'linear-gradient(to bottom, black 0%, transparent 85%)',
-          WebkitMaskImage: 'linear-gradient(to bottom, black 0%, transparent 85%)',
-        }}
+        style={{ backgroundImage: GRAIN, backgroundRepeat: 'repeat', opacity: 0.035 }}
       />
     </>
+  )
+}
+
+/**
+ * Gargantua, behind the hero mark.
+ *
+ * ── Why this is here at all ─────────────────────────────────────────────
+ *
+ * A tesseract is what you find inside a black hole, so putting the mark
+ * inside one is the one piece of imagery on this page that could not be
+ * lifted from anywhere else. It is the whole argument for the space
+ * direction: not that space looks nice, but that this specific object is
+ * already the product's name.
+ *
+ * ── Why it does not look like a poster ──────────────────────────────────
+ *
+ * Four restraints, and removing any one of them makes it kitsch:
+ *
+ *   NO FIRE. The accretion ring is warm WHITE, a trace off-neutral, not
+ *   orange and not a rainbow. The film's disk reads as white hot; the
+ *   posters are the ones that turned it amber.
+ *   THIN RING. One pixel, at 22 percent. The moment the ring gets thick it
+ *   becomes a logo for a hard seltzer.
+ *   DEEP CORE. The event horizon is darker than the page background, which
+ *   is the detail that sells it: a hole has to be a hole, so it cannot be
+ *   the same value as the sky it sits in.
+ *   RESTRAINED IN SCALE, and `hidden md:block`. It was 44rem across, which
+ *   was too big: at that size it stopped reading as a distant object and
+ *   became a shape competing with the headline. 28rem, pulled further off
+ *   the right edge, reads as something far away, which is the only way an
+ *   object like this is impressive. On a phone it is absent entirely.
+ *
+ * The lensed halo is a single soft shadow rather than a real gravitational
+ * lens. An approximation that knows it is one looks better here than a
+ * simulation would, and it costs one element.
+ *
+ * ── The mark is a CHILD of this, not a sibling ──────────────────────────
+ *
+ * It used to be a separate absolutely-positioned element whose offsets were
+ * hand-matched to the hole's, so the two were concentric only at one size
+ * and every resize was a chance to knock them apart. Nesting it and
+ * centring with `inset-0` plus flex makes concentricity structural: the
+ * geometry is inside the horizon because it is inside the element.
+ */
+function BlackHole({ children }: { children?: React.ReactNode }) {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute -right-28 -top-16 hidden h-[28rem] w-[28rem] md:block lg:-right-20"
+    >
+      {/* The lensed halo: light bent around the far side. Scaled down with
+          the hole, or a smaller object keeps an oversized glow. */}
+      <div
+        className="absolute inset-0 rounded-full"
+        style={{ boxShadow: '0 0 9rem 2rem rgba(255,255,255,0.045)' }}
+      />
+      {/* The disk, edge-on: a thin bright ring with a soft inner falloff. */}
+      <div
+        className="absolute inset-0 rounded-full"
+        style={{
+          border: '1px solid rgba(255,250,240,0.22)',
+          boxShadow:
+            '0 0 3.5rem 0.2rem rgba(255,248,235,0.10),' +
+            'inset 0 0 4.5rem 1rem rgba(255,250,240,0.055)',
+        }}
+      />
+      {/* The event horizon, darker than the page so it reads as absence. */}
+      <div className="absolute inset-[3%] rounded-full bg-[#01020a]" />
+      {/* And the photon ring, just inside it. */}
+      <div
+        className="absolute inset-[3%] rounded-full"
+        style={{ boxShadow: 'inset 0 0 1rem 0.05rem rgba(255,250,240,0.14)' }}
+      />
+      {/* The mark, concentric by construction. */}
+      <div className="absolute inset-0 flex items-center justify-center">{children}</div>
+      
+    </div>
   )
 }
 
@@ -492,8 +669,21 @@ function TesseractField() {
 /* `SHELL` and `GUTTER` are declared above `PageAtmosphere`, which needs
    `GUTTER` to align the background grid to the text column. */
 
-/** Accent gradient, used for rules, the hero line and the icon wash. */
-const ACCENT_TEXT = 'bg-gradient-to-r from-sky-200 via-primary-200 to-teal-200 bg-clip-text text-transparent'
+/**
+ * The hero's second line.
+ *
+ * Was a three-stop sky to blue to teal gradient across the type. Gradient
+ * text is the same category of thing as the aurora: it arrives with the
+ * template, and once the background stopped shouting it was the loudest
+ * remaining decoration on the page.
+ *
+ * It is now a monochrome fall from white to a cool grey. The sentence still
+ * has two halves and a turn, which was the only job the colour was doing,
+ * and a headline that recedes slightly on its second clause reads as
+ * typeset rather than as filled in.
+ */
+const ACCENT_TEXT =
+  'bg-gradient-to-br from-white via-slate-200 to-slate-400 bg-clip-text text-transparent'
 
 /** The 1px inner highlight that makes a translucent panel read as glass. */
 const GLASS =
@@ -502,59 +692,62 @@ const GLASS =
   'before:bg-gradient-to-r before:from-transparent before:via-white/25 before:to-transparent'
 
 /**
- * Per-section accent.
+ * ONE ACCENT HUE, used sparingly.
  *
- * A long page where every section is the same blue reads as one section
- * repeated. Each band gets its own hue on the eyebrow rule and its icons,
- * which is enough to make the page feel like it progresses without
- * introducing a second design language. All four are Tailwind defaults.
- */
-/*
- * NO PURPLE ANYWHERE. The previous palette ran blue, violet, cyan,
- * emerald, which put a violet wash behind the lifecycle section and a
- * violet-to-fuchsia rule on its eyebrow. Both are gone by instruction.
+ * ── What this replaced, and why four hues was the wrong idea ────────────
  *
- * The replacement progression is blue, sky, teal, emerald: a single cool
- * sweep from the brand blue towards green rather than a trip around the
- * wheel. It is a narrower range than before, which is why the background
- * work had to carry more of the load, and it is the right range for the
- * audience. Purple is the house accent of consumer AI launches; cool blues
- * and teals read as infrastructure.
+ * There was an `ACCENTS` map with four entries: blue, sky, teal and
+ * emerald, each supplying an eyebrow gradient, an icon colour, a numeral
+ * colour and a large coloured background wash, applied per section. The
+ * reasoning was that a long page in one hue reads as one section repeated.
+ *
+ * The reasoning was fine and the conclusion was wrong. Four hues does not
+ * read as progression, it reads as a page that has not decided, and the
+ * four background washes were four more soft coloured fields on a page that
+ * had just had its soft coloured fields removed for looking vibe coded.
+ * A palette that walks from blue to green across a scroll is a thing a
+ * generator does.
+ *
+ * So: one hue, the product's own blue, on small marks only. The ONLY
+ * coloured elements left on the dark page are the eyebrow rules, the
+ * lifecycle icons and numerals, the diagram's spine, and the three
+ * assistant icons. Everything else is white, grey or near-black.
+ *
+ * The rhythm that the four hues were supposed to provide now comes from
+ * three things that do it better: the inverted light band, the per-section
+ * LUMINANCE step in `Section` below, and the tesseract field changing
+ * behind each band as you scroll.
  */
-const ACCENTS = {
-  blue: {
-    rule: 'from-primary-400 to-sky-400',
-    icon: 'text-primary-300',
-    num: 'text-primary-400/70',
-    glow: 'radial-gradient(50rem 30rem at 12% 45%, rgba(56,118,246,0.11), transparent 70%)',
-  },
-  sky: {
-    rule: 'from-sky-400 to-cyan-300',
-    icon: 'text-sky-300',
-    num: 'text-sky-400/70',
-    glow: 'radial-gradient(52rem 32rem at 88% 40%, rgba(2,132,199,0.13), transparent 70%)',
-  },
-  teal: {
-    rule: 'from-teal-400 to-primary-400',
-    icon: 'text-teal-300',
-    num: 'text-teal-400/70',
-    glow: 'radial-gradient(48rem 30rem at 8% 55%, rgba(13,148,136,0.12), transparent 70%)',
-  },
-  emerald: {
-    rule: 'from-emerald-400 to-teal-400',
-    icon: 'text-emerald-300',
-    num: 'text-emerald-400/70',
-    glow: 'radial-gradient(48rem 30rem at 92% 50%, rgba(16,185,129,0.09), transparent 70%)',
-  },
+const ACCENT_RULE = 'from-primary-400/90 to-primary-400/0'
+const ACCENT_ICON = 'text-primary-300'
+const ACCENT_NUM = 'text-primary-400/70'
+
+/**
+ * Section tone: a LUMINANCE step, not a hue.
+ *
+ * `raised` lifts a band a little over one percent toward white. That is
+ * barely perceptible as brightness and quite perceptible as separation,
+ * which is the whole trick, and it is what the coloured per-section washes
+ * were reaching for without introducing a colour the page did not choose.
+ */
+const TONES = {
+  base: null,
+  raised: 'linear-gradient(to bottom, rgba(255,255,255,0.012), rgba(255,255,255,0.004))',
 } as const
 
-type Accent = keyof typeof ACCENTS
+type Tone = keyof typeof TONES
 
-/** An eyebrow label with a short accent rule, instead of flat coloured caps. */
-function Eyebrow({ children, accent = 'blue' }: { children: React.ReactNode; accent?: Accent }) {
+/**
+ * An eyebrow label with a short accent rule.
+ *
+ * The rule fades to transparent rather than running between two hues. A
+ * two-colour 32px gradient is detail nobody can resolve at that size; a
+ * line that fades out reads as deliberate at any size.
+ */
+function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3">
-      <span aria-hidden="true" className={`h-px w-8 bg-gradient-to-r ${ACCENTS[accent].rule}`} />
+      <span aria-hidden="true" className={`h-px w-8 bg-gradient-to-r ${ACCENT_RULE}`} />
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{children}</p>
     </div>
   )
@@ -575,7 +768,7 @@ function Eyebrow({ children, accent = 'blue' }: { children: React.ReactNode; acc
  * intentional.
  */
 function Section({
-  id, label, title, lead, children, divide = true, accent = 'blue',
+  id, label, title, lead, children, divide = true, tone = 'base',
 }: {
   id: string
   label?: string
@@ -583,30 +776,37 @@ function Section({
   lead?: string
   children?: React.ReactNode
   divide?: boolean
-  accent?: Accent
+  tone?: Tone
 }) {
   return (
     <section id={id} className="relative isolate">
       {/*
-        The section's own colour field, anchored to the section rather than
-        to the viewport.
+        The section's own tone: a LUMINANCE step, not a colour field.
 
-        This is the other half of the answer to "the background needs to be
-        more interesting". The fixed aurora gives the page life but it is
-        the same everywhere, so scrolling a long page passes through one
-        unchanging wash. These glows are absolutely positioned inside each
-        band in that band's accent hue, so the ambient colour genuinely
-        progresses as you read: blue at the problem, sky through the
-        lifecycle, teal across the product, emerald at the assistant.
+        This was `ACCENTS[accent].glow`, a large coloured radial per band,
+        so the ambient hue walked blue to sky to teal to emerald down the
+        page. It went when the aurora went, and for the same reason: they
+        were the same device at a different scale, and four of them meant
+        the page gave up its coloured blobs everywhere except in four
+        places.
 
-        `isolate` on the section and `-z-10` here keep it behind the
-        content without participating in the page's stacking context.
+        A band now separates by being a shade lighter, which is
+        imperceptible as brightness and clearly legible as separation. The
+        progression the hues were for comes from the inverted light band,
+        the starfield, and the tesseract geometry moving behind each
+        section.
+
+        `isolate` on the section and `-z-10` here keep it behind the content
+        without participating in the page's stacking context. `base` renders
+        no element at all rather than a transparent one.
       */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{ background: ACCENTS[accent].glow }}
-      />
+      {TONES[tone] && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 -z-10"
+          style={{ background: TONES[tone] as string }}
+        />
+      )}
       {divide && (
         <div
           aria-hidden="true"
@@ -616,7 +816,7 @@ function Section({
       <div className={`${SHELL} py-20 sm:py-28`}>
         <div className="grid gap-x-16 gap-y-6 lg:grid-cols-12">
           <div className="lg:col-span-7">
-            {label && <Eyebrow accent={accent}>{label}</Eyebrow>}
+            {label && <Eyebrow>{label}</Eyebrow>}
             <h2
               className={`text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-white sm:text-4xl ${
                 label ? 'mt-5' : ''
@@ -703,14 +903,21 @@ function RecordChain() {
               {/* The spine: a continuous line through every row but the last. */}
               <div className="flex w-5 shrink-0 flex-col items-center">
                 <span
-                  className={`h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-[#070b16] ${
-                    frozen ? 'bg-cyan-300' : 'bg-primary-400'
+                  className={`h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-[#050710] ${
+                    /*
+                     * The frozen record was marked in cyan against the
+                     * blue spine. With the page down to one accent hue, it
+                     * is distinguished by VALUE instead: solid white
+                     * against the accent, which is a bigger contrast step
+                     * than two adjacent blues ever was.
+                     */
+                    frozen ? 'bg-white' : 'bg-primary-400'
                   }`}
                 />
                 {i < CHAIN.length - 1 && (
                   <span
                     aria-hidden="true"
-                    className={`w-px flex-1 ${frozen ? 'bg-cyan-300/30' : 'bg-primary-400/25'}`}
+                    className={`w-px flex-1 ${frozen ? 'bg-white/30' : 'bg-primary-400/25'}`}
                   />
                 )}
               </div>
@@ -723,7 +930,7 @@ function RecordChain() {
                   </p>
                 )}
                 {frozen && (
-                  <p className="mt-1.5 max-w-[46ch] text-[12px] leading-relaxed text-cyan-200/70">
+                  <p className="mt-1.5 max-w-[46ch] text-[12px] leading-relaxed text-slate-300">
                     Immutable. Later edits to the research create new versions
                     and never alter what the PM actually read.
                   </p>
@@ -883,9 +1090,9 @@ const INTELLIGENCE: [typeof Sparkles, string, string][] = [
 
 /** Primary and secondary button classes, so every CTA matches exactly. */
 const BTN_PRIMARY =
-  'inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary-950/50 transition-all hover:bg-primary-500 hover:shadow-primary-900/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#070b16]'
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary-950/50 transition-all hover:bg-primary-500 hover:shadow-primary-900/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]'
 const BTN_GHOST =
-  'inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-200 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/5 hover:ring-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#070b16]'
+  'inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-200 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/5 hover:ring-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]'
 
 export function LandingPage() {
   const markRef = useRef<HTMLDivElement>(null)
@@ -927,7 +1134,7 @@ export function LandingPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-[#070b16] text-slate-200 antialiased">
+    <div className="min-h-screen bg-[#050710] text-slate-200 antialiased">
       <PageAtmosphere />
 
       <div className="relative z-10">
@@ -936,7 +1143,7 @@ export function LandingPage() {
         <TesseractField />
 
         {/* ── Nav ─────────────────────────────────────────────────────────── */}
-        <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#070b16]/80 backdrop-blur-xl">
+        <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#050710]/80 backdrop-blur-xl">
           <nav className={`${SHELL} flex items-center justify-between py-4`} aria-label="Main">
             <a href="#top" className="flex items-center gap-3 text-white">
               {/*
@@ -986,36 +1193,56 @@ export function LandingPage() {
         {/* ── 1. Hero ─────────────────────────────────────────────────────── */}
         <section id="top" className="relative isolate overflow-hidden">
           {/*
-            The brand mark as the hero's figure, at rest.
+            THE HERO FIGURE: the mark inside the black hole.
 
-            Replaces a generic blue radial. A large still rendering of the
-            actual mark is quieter and more specific than a glow, and it is
-            the same geometry as the nav logo, so the page has one ornament
-            at three scales rather than an unrelated decoration. Held static
-            deliberately: motion belongs to hover.
+            This is the one image on the page that is ours by construction,
+            and the mark is passed as a CHILD of `BlackHole` rather than
+            positioned beside it, so the two are concentric structurally
+            instead of by matched offsets that only agreed at one size.
+
+            The mark is 300px inside a 28rem hole, a little over two
+            thirds of the diameter, which keeps a clear margin of horizon
+            around the geometry. The hole itself came down from 44rem: at
+            that size it stopped reading as a distant object and became a
+            shape competing with the headline.
+
+            The mark is still, as everywhere else on this page: motion
+            belongs to hover. It is the same geometry as the nav logo and
+            the background field, so the page has exactly one ornament, at
+            several scales, rather than a set of unrelated decorations.
+
+            `hidden md:block`. At phone width this would be a graphic
+            sitting on top of the headline.
           */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -right-32 -top-20 hidden opacity-[0.11] md:block lg:-right-20"
-          >
-            <TesseractMark size={660} periodMs={15000} animate={false} weight={0.9} fill={1.25} showNodes={false} />
-          </div>
+          <BlackHole>
+            <div className="opacity-[0.20]">
+              <TesseractMark
+                size={300}
+                periodMs={15000}
+                animate={false}
+                weight={1.05}
+                fill={1.25}
+                showNodes={false}
+              />
+            </div>
+          </BlackHole>
 
           {/*
-            A light shaft down the centre of the hero.
+            A cold light down the centre of the hero.
 
-            A wide, very soft ellipse bled off the top edge. It does what a
-            spotlight does in a photograph: it tells the eye where the top
-            of the composition is, so the headline sits in light rather than
-            floating in an evenly lit field. At 7% it is not identifiable as
-            a shape, which is the point.
+            Was a blue-tinted ellipse. It is neutral white now, like
+            everything else in the atmosphere, because a tint here was the
+            last place a stray hue was entering the composition. Its job is
+            what a spotlight does in a photograph: tell the eye where the
+            top of the frame is, so the headline sits in light rather than
+            floating in an evenly lit field.
           */}
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 -top-40 h-[60rem]"
             style={{
               background:
-                'radial-gradient(45rem 28rem at 50% 0%, rgba(186,220,255,0.07), transparent 70%)',
+                'radial-gradient(45rem 28rem at 50% 0%, rgba(255,255,255,0.055), transparent 70%)',
             }}
           />
 
@@ -1101,7 +1328,7 @@ export function LandingPage() {
         {/* ── 3. The connected decision lifecycle ─────────────────────────── */}
         <Section
           id="lifecycle"
-          accent="sky"
+          tone="raised"
           label="The connected decision lifecycle"
           title="Research, recommend, decide, execute, review. Linked, not filed."
           lead="Each stage is a typed record that points at the one before it. That linkage is the product: it is what makes a decision reviewable a year later rather than merely archived."
@@ -1126,16 +1353,16 @@ export function LandingPage() {
               />
               {LIFECYCLE.map(({ icon: Icon, stage, record, line, keeps, so }, i) => (
                 <li key={stage} className="relative flex gap-5 pb-10 last:pb-0">
-                  <span className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#070b16] ring-1 ring-inset ring-white/10">
+                  <span className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#050710] ring-1 ring-inset ring-white/10">
                     <span
                       aria-hidden="true"
-                      className="absolute inset-0 rounded-xl bg-gradient-to-br from-sky-500/20 to-primary-500/10"
+                      className="absolute inset-0 rounded-xl bg-gradient-to-br from-white/[0.07] to-transparent"
                     />
-                    <Icon className="relative h-[18px] w-[18px] text-sky-200" aria-hidden="true" />
+                    <Icon className={`relative h-[18px] w-[18px] ${ACCENT_ICON}`} aria-hidden="true" />
                   </span>
                   <div className="min-w-0 pt-1">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="text-[11px] font-semibold tabular-nums tracking-[0.12em] text-sky-400/70">
+                      <span className={`text-[11px] font-semibold tabular-nums tracking-[0.12em] ${ACCENT_NUM}`}>
                         {String(i + 1).padStart(2, '0')}
                       </span>
                       <h3 className="text-[15px] font-semibold tracking-tight text-white">{stage}</h3>
@@ -1204,8 +1431,19 @@ export function LandingPage() {
               className="pointer-events-none absolute inset-0 -z-10"
               style={{
                 background:
-                  'radial-gradient(45rem 28rem at 85% 0%, rgba(56,118,246,0.09), transparent 70%),' +
-                  'radial-gradient(40rem 26rem at 5% 100%, rgba(14,165,233,0.07), transparent 70%)',
+                  /*
+                   * Two NEUTRAL shadows, not two tints.
+                   *
+                   * These were a blue and a cyan wash, and they were the
+                   * light band's own version of the aurora. On a near-white
+                   * surface the way to get depth is shadow rather than
+                   * colour, so the band is now lit the same way the dark
+                   * page is: a soft fall in the top right and the bottom
+                   * left, in black at very low alpha. The paper stays
+                   * paper-coloured.
+                   */
+                  'radial-gradient(45rem 28rem at 85% 0%, rgba(15,23,42,0.055), transparent 70%),' +
+                  'radial-gradient(40rem 26rem at 5% 100%, rgba(15,23,42,0.045), transparent 70%)',
               }}
             />
             <div
@@ -1223,8 +1461,8 @@ export function LandingPage() {
             </div>
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 -z-10 opacity-[0.028]"
-              style={{ backgroundImage: GRAIN, backgroundRepeat: 'repeat' }}
+              className="pointer-events-none absolute inset-0 -z-10"
+              style={{ backgroundImage: GRAIN, backgroundRepeat: 'repeat', opacity: 0.028 }}
             />
             <div className={`${SHELL} pb-20 pt-4 sm:pb-28`}>
               <div className="grid gap-x-16 gap-y-6 lg:grid-cols-12">
@@ -1232,7 +1470,7 @@ export function LandingPage() {
                   <div className="flex items-center gap-3">
                     <span
                       aria-hidden="true"
-                      className="h-px w-8 bg-gradient-to-r from-primary-600 to-teal-600"
+                      className="h-px w-8 bg-gradient-to-r from-primary-600/90 to-primary-600/0"
                     />
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Research and capture
@@ -1286,7 +1524,6 @@ export function LandingPage() {
         {/* ── 5. The product ─────────────────────────────────────────────── */}
         <Section
           id="product"
-          accent="teal"
           divide={false}
           label="The product"
           title="One workspace, built around the security and the decision"
@@ -1299,7 +1536,7 @@ export function LandingPage() {
                 className="border-t border-white/[0.07] py-7 first:border-t-0 sm:[&:nth-child(2)]:border-t-0"
               >
                 <div className="flex items-baseline gap-3">
-                  <span className="font-mono text-[11px] tabular-nums text-teal-400/60">
+                  <span className="font-mono text-[11px] tabular-nums text-primary-400/60">
                     {String(i + 1).padStart(2, '0')}
                   </span>
                   <h3 className="text-[15px] font-semibold tracking-tight text-white">{title}</h3>
@@ -1360,7 +1597,7 @@ export function LandingPage() {
         {/* ── 7. ACT AI ──────────────────────────────────────────────────── */}
         <Section
           id="act-ai"
-          accent="emerald"
+          tone="raised"
           label="ACT AI"
           title="An assistant whose advantage is that your record is structured"
           lead="ACT AI sits over the decision corpus. A general model can read a folder of documents; it cannot tell you which recommendation a decision approved, because that relationship does not exist in a folder. Here it does."
@@ -1370,8 +1607,8 @@ export function LandingPage() {
               const I = Icon as typeof Sparkles
               return (
                 <div key={h} className={`${GLASS} p-7`}>
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-400/10 ring-1 ring-inset ring-emerald-400/20">
-                    <I className="h-[17px] w-[17px] text-emerald-300" aria-hidden="true" />
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.05] ring-1 ring-inset ring-white/10">
+                    <I className={`h-[17px] w-[17px] ${ACCENT_ICON}`} aria-hidden="true" />
                   </span>
                   <h3 className="mt-5 text-[15px] font-semibold tracking-tight text-white">{h}</h3>
                   <p className="mt-2.5 text-[14px] leading-[1.75] text-slate-400">{p}</p>
@@ -1420,7 +1657,17 @@ export function LandingPage() {
                 className="pointer-events-none absolute inset-0"
                 style={{
                   background:
-                    'radial-gradient(40rem 20rem at 50% -20%, rgba(56,118,246,0.20), transparent 65%)',
+                    /*
+                     * The one place a coloured wash survives, and it is
+                     * deliberate: this is the conversion panel, the single
+                     * block on the page that should be the most luminous.
+                     * It is the brand blue rather than a second hue, and
+                     * it is the ONLY coloured field left anywhere on the
+                     * page, which is what makes it read as emphasis
+                     * instead of as decoration. Everything else is white,
+                     * grey or near-black.
+                     */
+                    'radial-gradient(40rem 20rem at 50% -20%, rgba(56,118,246,0.17), transparent 65%)',
                 }}
               />
               <div className="relative mx-auto max-w-3xl text-center">
@@ -1441,7 +1688,7 @@ export function LandingPage() {
                   <ContactCta
                     subject={PARTNER_SUBJECT}
                     label="Become a design partner"
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-black/30 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#070b16]"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-black/30 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]"
                   />
                 </div>
               </div>
