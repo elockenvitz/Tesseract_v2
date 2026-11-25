@@ -208,6 +208,144 @@ describe('the research and capture section', () => {
 })
 
 /*
+ * ── The background, which took three rounds ──────────────────────────────
+ *
+ * "The background still needs to be more interesting" was said twice. The
+ * first attempt was a dot grid at 1.5% white, which is below the threshold
+ * where a person sees it, so the page was effectively flat. These cases pin
+ * the layers that replaced it, and the two constraints that came with the
+ * second round, because the constraints are the part most likely to be
+ * undone by a later edit that reaches for a purple gradient out of habit.
+ */
+describe('the background is built, not just dark', () => {
+  it('carries no purple anywhere, in a wash, a gradient or an accent', async () => {
+    await renderConfigured()
+    const html = document.getElementById('root')?.innerHTML ?? document.body.innerHTML
+    for (const pattern of [
+      /\bviolet-/,
+      /\bfuchsia-/,
+      /\bpurple-/,
+      /rgba?\(\s*139\s*,\s*92\s*,\s*246/,
+      /rgba?\(\s*99\s*,\s*102\s*,\s*241/,
+      /rgba?\(\s*168\s*,\s*85\s*,\s*247/,
+      /#(8b5cf6|a855f7|6366f1|7c3aed)/i,
+    ]) {
+      expect(html, `purple: ${String(pattern)}`).not.toMatch(pattern)
+    }
+  })
+
+  /*
+   * The tesseract field, which the founder asked for by name: the brand
+   * geometry behind the content, lightly. It is anchored to the DOCUMENT
+   * rather than the viewport on purpose, so the geometry behind the text
+   * changes as you scroll; a fixed field shows the same shapes for the
+   * whole page, which was the flaw in the version before it.
+   */
+  it('puts the tesseract geometry behind the page, lightly and still', async () => {
+    await renderConfigured()
+    /*
+     * Selected by `data-tesseract-field`, not by `[style*="opacity"]`.
+     *
+     * The first version of this did the latter, and in a real browser it
+     * also matched an unrelated mark whose inline `animation` shorthand
+     * contains the substring "opacity": five elements, one at full opacity.
+     * jsdom matched only four, so this test went green while the assertion
+     * it makes was false on the page a visitor sees. That is the "gate
+     * green for the wrong reason" failure this codebase has a standing rule
+     * about, and it is why the hook is explicit now.
+     */
+    const hosts = [...document.querySelectorAll<HTMLElement>('[data-tesseract-field]')]
+    expect(hosts.length, 'the background field must render marks').toBeGreaterThanOrEqual(4)
+
+    for (const host of hosts) {
+      expect(host.querySelector('svg'), 'each field slot renders the mark').not.toBeNull()
+      // Lightly: well under 15%, and never fully transparent either, since
+      // a field at 0 is the same as no field at all.
+      const o = Number.parseFloat(host.style.opacity)
+      expect(o, `opacity ${o} is not "lightly"`).toBeLessThan(0.15)
+      expect(o, 'a field at zero opacity is not a field').toBeGreaterThan(0)
+    }
+
+    // Still. The founder's standing instruction is that the mark moves on
+    // hover only, and four rotating wireframes behind the text would be the
+    // exact tell this whole exercise has been removing.
+    for (const mark of document.querySelectorAll('[data-animating]')) {
+      expect(mark.getAttribute('data-animating')).toBe('false')
+    }
+  })
+
+  it('aligns a column grid to the same gutter as the text', async () => {
+    await renderConfigured()
+    /*
+     * The grid must use the shared GUTTER rather than its own padding, or
+     * the outer two lines drift off the text edge at one breakpoint only,
+     * which is the kind of thing nobody notices until a screenshot.
+     *
+     * The rail carrying `justify-between` is the INNER element; the outer
+     * one centres it with `justify-center`. My first version of this test
+     * looked for aria-hidden + justify-between on one element and matched
+     * nothing, so it failed for the wrong reason.
+     */
+    const rails = [...document.querySelectorAll('div.justify-between')]
+      .filter(el => el.querySelectorAll(':scope > .w-px').length >= 4)
+    expect(rails.length, 'a column grid layer must exist').toBeGreaterThanOrEqual(2)
+    for (const rail of rails) {
+      expect(rail.className).toMatch(/px-6/)
+      expect(rail.className).toMatch(/sm:px-8/)
+      expect(rail.className).toMatch(/lg:px-12/)
+      expect(rail.className).toMatch(/max-w-7xl/)
+      expect(rail.querySelectorAll(':scope > .w-px').length).toBe(5)
+    }
+  })
+
+  /*
+   * Ambient motion must be switchable off. It is a vestibular trigger for
+   * some people and a marketing page is the last place to argue about it.
+   * The drift is the only motion on the page that is not hover-driven.
+   */
+  it('disables the drift under prefers-reduced-motion', async () => {
+    await renderConfigured()
+    const css = [...document.querySelectorAll('style')].map(s => s.textContent ?? '').join('\n')
+    expect(css).toMatch(/@keyframes\s+tsrAurora/)
+    expect(css).toMatch(/prefers-reduced-motion:\s*reduce/)
+    // The guard must actually name the animated classes, not just exist.
+    const guard = css.slice(css.indexOf('prefers-reduced-motion'))
+    expect(guard).toMatch(/tsr-aurora-a/)
+    expect(guard).toMatch(/tsr-aurora-b/)
+    expect(guard).toMatch(/animation:\s*none/)
+  })
+
+  /*
+   * The texture layers have to be ABOVE the visibility threshold, which is
+   * the specific thing that was wrong twice. 1.5% is not subtlety.
+   */
+  it('pitches its texture where a person can actually see it', async () => {
+    await renderConfigured()
+    // jsdom has no #root: testing-library renders into its own container
+    // under body, so this reads body. My first version read #root, got
+    // null, and failed against an empty string.
+    const html = document.body.innerHTML
+    // Grain, from the inline SVG turbulence filter.
+    expect(html).toMatch(/feTurbulence/)
+    /*
+     * The dot grid, raised from 0.015. Anything back at 0.01x is invisible
+     * and this gate exists precisely because that shipped once.
+     *
+     * jsdom normalizes the colour when it reparses the style attribute, so
+     * `rgba(255,255,255,0.026)` comes back as `rgba(255, 255, 255, 0.026)`.
+     * The whitespace has to be optional or this matches nothing, which is
+     * how my first version of this failed.
+     */
+    const dots = html.match(/rgba\(\s*255\s*,\s*255\s*,\s*255\s*,\s*(0\.\d+)\s*\)\s*1px/)
+    expect(dots, 'the dot grid must still be present').not.toBeNull()
+    expect(
+      Number.parseFloat(dots?.[1] ?? '0'),
+      'a dot grid below 2% white is invisible, which is the bug this gate is for',
+    ).toBeGreaterThanOrEqual(0.02)
+  })
+})
+
+/*
  * ── The inverted rule: no status confessions ──────────────────────────────
  *
  * REPLACES, by inversion, five cases that REQUIRED this language:

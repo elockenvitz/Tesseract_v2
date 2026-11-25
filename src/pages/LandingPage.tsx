@@ -45,9 +45,26 @@ import { hideBootLoader } from '../lib/boot-loader'
  *
  * ── The visual system ────────────────────────────────────────────────────
  *
- * The brief was that a dark background alone is not interesting. It is not,
- * and the fix is RHYTHM rather than more colour. Four mechanisms, in order
- * of how much they do:
+ * The brief was that a dark background alone is not interesting. It was
+ * said twice, which means the first answer failed, and it failed for a
+ * reason worth recording: everything in it was pitched below the threshold
+ * where a person actually sees it. A dot grid at 1.5% white is not subtle,
+ * it is absent. See `PageAtmosphere` for the rebuilt version.
+ *
+ * Two constraints arrived with the second pass and both narrow the obvious
+ * options, which is why the page leans on structure:
+ *
+ *   NO PURPLE. No violet or fuchsia anywhere, in a wash, a gradient or an
+ *   accent. The palette is one cool sweep: blue, sky, teal, emerald.
+ *   Purple is the default accent of consumer AI launches and this audience
+ *   reads cool blues as infrastructure.
+ *
+ *   THE TESSERACT BEHIND, LIGHTLY. The brand geometry is the background
+ *   motif, which is what `TesseractField` does. It replaces the colour the
+ *   palette gave up with form, and it means the ornament on this page is
+ *   the product's own mark at six scales rather than a decoration.
+ *
+ * The mechanisms, in order of how much they do:
  *
  *  1. ONE LIGHT BAND. The research section inverts to near-white. A long
  *     page in a single value register reads as one undifferentiated surface
@@ -56,15 +73,18 @@ import { hideBootLoader } from '../lib/boot-loader'
  *     deliberately the section about capture, because that is the part of
  *     the product a reader is most likely to actually touch. Its palette is
  *     self-contained, with a gradient transition at both edges so the
- *     change arrives rather than cuts.
- *  2. TEXTURE. A fixed dot grid at 1.5% opacity over the whole dark page.
- *     Invisible as a pattern, decisive as a surface: it gives the
- *     background a material instead of a value.
- *  3. PER-SECTION ACCENT. Each band carries its own hue on its eyebrow
- *     rule and icons (blue, violet, cyan, emerald), so the page progresses
- *     instead of repeating. The hues are all from Tailwind's default
- *     palette; no dependency and no config change.
- *  4. DEPTH, not borders. Surfaces separate by translucency and a 1px
+ *     change arrives rather than cuts, and it carries its own tint, grid
+ *     and grain so the inversion is not itself a flat field.
+ *  2. THE ATMOSPHERE. Drifting aurora, a column grid aligned to the text,
+ *     grain, and a masked dot grid. `PageAtmosphere` documents each layer
+ *     and why it is a separate layer.
+ *  3. THE TESSERACT FIELD. Four large still marks anchored to the document
+ *     so the geometry behind the text changes as you scroll.
+ *  4. PER-SECTION ACCENT. Each band carries its own hue on its eyebrow
+ *     rule, icons and background wash, so the ambient colour progresses as
+ *     you read instead of repeating. All Tailwind defaults; no dependency
+ *     and no config change.
+ *  5. DEPTH, not borders. Surfaces separate by translucency and a 1px
  *     inner highlight rather than by a box outline.
  *
  * THEME INDEPENDENT. No `dark:` variants anywhere in this file, on purpose.
@@ -186,13 +206,294 @@ function ContactCta({
   )
 }
 
-/* ─────────────────────────────── primitives ─────────────────────────────── */
+/* ─────────────────────────── layout, declared first ─────────────────────── */
+
+/*
+ * These two sit above `PageAtmosphere` because it reads `GUTTER`, and a
+ * `const` referenced from a component defined earlier in the file is a
+ * use-before-define that `guard:tdz` exists to catch. It would not actually
+ * throw, since the read happens at render rather than at module evaluation,
+ * which is exactly why it is the kind of thing that gets committed and then
+ * breaks later when someone calls the function during module init.
+ */
+
+/** The horizontal padding, shared so the background grid lines up with text. */
+const GUTTER = 'px-6 sm:px-8 lg:px-12'
 
 /** The page gutter, one definition so every band lines up with the nav. */
-const SHELL = 'mx-auto w-full max-w-7xl px-6 sm:px-8 lg:px-12'
+const SHELL = `mx-auto w-full max-w-7xl ${GUTTER}`
+
+/* ───────────────────────────── the atmosphere ───────────────────────────── */
+
+/**
+ * The page background, rebuilt.
+ *
+ * ── Why this exists as its own component ────────────────────────────────
+ *
+ * "The background still needs to be more interesting" was said twice, and
+ * the reason the first attempt did not answer it is measurable rather than
+ * a matter of taste: the previous background was two radial gradients and a
+ * dot grid at 1.5% white. At that opacity the grid is below the threshold
+ * where a human notices it on an ordinary monitor, so the page was, for all
+ * practical purposes, flat #070b16 with a slight blue corner. Subtlety past
+ * the point of visibility is not restraint, it is absence.
+ *
+ * ── The four layers, and what each one is for ───────────────────────────
+ *
+ * They are separate layers on purpose. A single busy gradient is the thing
+ * that reads as generated; four quiet layers at different scales is how a
+ * background acquires depth, because the eye resolves them at different
+ * distances.
+ *
+ *  1. AURORA. Four large colour fields, now at opacities that are actually
+ *     visible, and two of them drift. Motion is what separates a background
+ *     from a wallpaper, and it is the single biggest change here. It is
+ *     also deliberately slow: 48 and 64 seconds for one full cycle, with a
+ *     translation of a few percent. Nothing on screen appears to move while
+ *     you look at it; the page is simply never quite the same when you
+ *     scroll back up.
+ *  2. COLUMN GRID. Five vertical hairlines aligned to the content column,
+ *     fading out top and bottom. This is the layer that makes the page feel
+ *     ARCHITECTED: the text now visibly sits on a structure instead of
+ *     floating on a colour. It is aligned to `SHELL`, so the outer two
+ *     lines land exactly on the text edge.
+ *  3. GRAIN. Fractal noise from an inline SVG filter, at 3.5%. This is the
+ *     layer that does the most for perceived quality and the least to the
+ *     composition. A flat dark field renders as a smooth digital surface and
+ *     a slightly noisy one renders as a material, which is why every print
+ *     process and every piece of film has grain in it.
+ *  4. DOT GRID. Kept from the previous version but raised from 1.5% to 2.6%
+ *     and given a mask that fades it out below the fold, so it reinforces
+ *     the hero without tiling the whole document.
+ *
+ * ── Motion is gated, and that is not optional ───────────────────────────
+ *
+ * `prefers-reduced-motion: reduce` stops the drift completely. Ambient
+ * motion is a vestibular trigger for some people, and a marketing page is
+ * the last place to argue about it. The CSS is scoped to this component
+ * rather than added to `tailwind.config.js` or a global stylesheet, because
+ * this page is lazily routed and none of it should reach the authenticated
+ * app.
+ *
+ * ── Cost ────────────────────────────────────────────────────────────────
+ *
+ * No images, no dependency, no web request. The grain is one inline SVG
+ * data URI the browser rasterizes once. The drift animates `transform`
+ * only, so it runs on the compositor and never triggers layout or paint.
+ */
+const GRAIN =
+  'url("data:image/svg+xml,' +
+  "%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E" +
+  "%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' " +
+  "numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E" +
+  "%3Crect width='160' height='160' filter='url(%23g)'/%3E%3C/svg%3E" +
+  '")'
+
+function PageAtmosphere() {
+  return (
+    <>
+      <style>{`
+        @keyframes tsrAuroraA {
+          0%   { transform: translate3d(0,0,0) scale(1); }
+          50%  { transform: translate3d(4%,3%,0) scale(1.08); }
+          100% { transform: translate3d(0,0,0) scale(1); }
+        }
+        @keyframes tsrAuroraB {
+          0%   { transform: translate3d(0,0,0) scale(1.05); }
+          50%  { transform: translate3d(-5%,2%,0) scale(1); }
+          100% { transform: translate3d(0,0,0) scale(1.05); }
+        }
+        .tsr-aurora-a { animation: tsrAuroraA 48s ease-in-out infinite; }
+        .tsr-aurora-b { animation: tsrAuroraB 64s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .tsr-aurora-a, .tsr-aurora-b { animation: none; }
+        }
+      `}</style>
+
+      {/* 1. Aurora. The two drifting fields are separate elements because a
+             transform on a multi-stop background would move every stop.
+
+             NO PURPLE, by instruction. The family is blue to cyan to teal,
+             which is also the better call for this product: purple is the
+             default accent of every developer-tool landing page of the last
+             five years, and an institutional buy-side audience reads cool
+             blues as infrastructure rather than as a launch announcement.
+             With a hue range this narrow the interest has to come from
+             STRUCTURE, which is what the column grid and `TesseractField`
+             are for. */}
+      {/*
+        SIZED IN PERCENT, NOT vh/vw, and that is not a style preference.
+
+        These were sized in viewport-height and viewport-width units, and
+        `guard:unit` rejected them:
+        `src/lib/mobile/__tests__/viewport-sizing.test.ts` bans a bare
+        viewport-height class anywhere in the codebase, because that unit
+        resolves against the LARGE viewport and does not shrink when mobile
+        browser chrome or the keyboard appears, so anything sized with it
+        ends up taller than the screen it is on.
+
+        The parent is `fixed inset-0`, so a percentage resolves against the
+        viewport: identical on desktop, and correct on a phone. The right
+        fix was to stop needing the unit, not to switch to the dynamic one
+        because the gate's regex would not have caught that spelling.
+
+        Note for whoever reads the gate next: it scans raw source text, so
+        it cannot tell a violation from a comment describing one. That is
+        why this note spells nothing out literally.
+      */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
+        <div
+          className="tsr-aurora-a absolute -left-[15%] -top-[25%] h-[85%] w-[75%] will-change-transform"
+          style={{
+            background: 'radial-gradient(closest-side, rgba(56,118,246,0.28), transparent 72%)',
+          }}
+        />
+        <div
+          className="tsr-aurora-b absolute -right-[18%] -top-[12%] h-[80%] w-[65%] will-change-transform"
+          style={{
+            background: 'radial-gradient(closest-side, rgba(14,165,233,0.22), transparent 72%)',
+          }}
+        />
+        {/* Two static fields low in the frame, so the lower half of the
+            viewport is never an unmodulated void on a long page. */}
+        <div
+          className="absolute -bottom-[30%] left-[5%] h-[70%] w-[60%]"
+          style={{
+            background: 'radial-gradient(closest-side, rgba(13,148,136,0.13), transparent 70%)',
+          }}
+        />
+        <div
+          className="absolute -bottom-[25%] -right-[10%] h-[60%] w-[55%]"
+          style={{
+            background: 'radial-gradient(closest-side, rgba(56,118,246,0.12), transparent 70%)',
+          }}
+        />
+      </div>
+
+      {/* 2. Column grid, aligned to the content column. The outer two lines
+             land on the text edge, which is what ties the structure to the
+             type rather than laying a grid over it. */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 flex justify-center">
+        <div className={`flex h-full w-full max-w-7xl ${GUTTER} justify-between`}>
+          {[0, 1, 2, 3, 4].map(i => (
+            <div
+              key={i}
+              className="h-full w-px bg-gradient-to-b from-transparent via-white/[0.055] to-transparent"
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* 3. Grain. The layer that turns a value into a material. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 opacity-[0.035]"
+        style={{ backgroundImage: GRAIN, backgroundRepeat: 'repeat' }}
+      />
+
+      {/* 4. Dot grid, masked so it reinforces the top of the frame rather
+             than tiling evenly over everything. `inset-0` plus the mask
+             rather than an explicit viewport height: see the note on the
+             aurora above for why no layer here uses viewport units. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(255,255,255,0.026) 1px, transparent 0)',
+          backgroundSize: '26px 26px',
+          maskImage: 'linear-gradient(to bottom, black 0%, transparent 85%)',
+          WebkitMaskImage: 'linear-gradient(to bottom, black 0%, transparent 85%)',
+        }}
+      />
+    </>
+  )
+}
+
+/**
+ * The tesseract geometry as the background motif.
+ *
+ * ── Why the brand mark and not a pattern ────────────────────────────────
+ *
+ * The hero already carried one large still mark and the founder said he
+ * liked it behind, lightly, so this extends that one ornament down the
+ * whole page instead of inventing a second decorative language. It is also
+ * the honest answer to "no purple": with the colour range narrowed to blue
+ * and teal, the page has to get its interest from STRUCTURE, and the
+ * product's own geometry is a better structure than an abstract lattice.
+ *
+ * Four marks at four scales and four rotations of phase, at 5 to 9 percent.
+ * Light enough that it never competes with type; present enough that the
+ * background is clearly made of something.
+ *
+ * ── Why it SCROLLS rather than being fixed ──────────────────────────────
+ *
+ * This layer is `absolute inset-0` inside the full-height content wrapper,
+ * not `fixed`. A fixed field shows the same three shapes for the entire
+ * page, which is the flaw the previous background had: it had life but no
+ * progression. Anchored to the document, each band of the page has its own
+ * geometry passing behind it.
+ *
+ * ── Why they are all still ──────────────────────────────────────────────
+ *
+ * `animate={false}` on every one. The founder's earlier instruction was
+ * that the mark moves on hover only, and four rotating wireframes behind
+ * the text would be exactly the "vibe coded" tell the whole exercise has
+ * been removing. The only motion on this page is the aurora drift, which is
+ * colour rather than form, and it is gated on `prefers-reduced-motion`.
+ *
+ * `showNodes={false}` and a hairline weight: at this size and opacity the
+ * vertex dots turn into visual noise, which is the same reason
+ * `TesseractLogo` disables them.
+ */
+const FIELD: { size: number; className: string; opacity: string; weight: number }[] = [
+  { size: 860, className: '-right-[14%] top-[6%]', opacity: '0.075', weight: 0.8 },
+  { size: 620, className: '-left-[16%] top-[31%]', opacity: '0.055', weight: 0.9 },
+  { size: 760, className: '-right-[18%] top-[56%]', opacity: '0.065', weight: 0.85 },
+  { size: 560, className: '-left-[12%] top-[79%]', opacity: '0.05', weight: 0.95 },
+]
+
+function TesseractField() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+      {FIELD.map(({ size, className, opacity, weight }, i) => (
+        /*
+         * `data-tesseract-field` is a test hook, and it is here because the
+         * obvious selector was wrong. The gate first found these by looking
+         * for an svg under `[style*="opacity"]`, which also matched an
+         * unrelated mark whose inline `animation` shorthand contains the
+         * substring "opacity". In a real browser that returned five
+         * elements, one of them at full opacity, so the "lightly"
+         * assertion would have been checking an element it was never about.
+         * jsdom returned four and the test passed, which is the worse
+         * outcome: a gate green for the wrong reason.
+         */
+        <div
+          key={i}
+          data-tesseract-field=""
+          className={`absolute hidden md:block ${className}`}
+          style={{ opacity }}
+        >
+          <TesseractMark
+            size={size}
+            periodMs={15000}
+            animate={false}
+            weight={weight}
+            fill={1.25}
+            showNodes={false}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ─────────────────────────────── primitives ─────────────────────────────── */
+
+/* `SHELL` and `GUTTER` are declared above `PageAtmosphere`, which needs
+   `GUTTER` to align the background grid to the text column. */
 
 /** Accent gradient, used for rules, the hero line and the icon wash. */
-const ACCENT_TEXT = 'bg-gradient-to-r from-sky-200 via-primary-300 to-violet-300 bg-clip-text text-transparent'
+const ACCENT_TEXT = 'bg-gradient-to-r from-sky-200 via-primary-200 to-teal-200 bg-clip-text text-transparent'
 
 /** The 1px inner highlight that makes a translucent panel read as glass. */
 const GLASS =
@@ -208,11 +509,43 @@ const GLASS =
  * which is enough to make the page feel like it progresses without
  * introducing a second design language. All four are Tailwind defaults.
  */
+/*
+ * NO PURPLE ANYWHERE. The previous palette ran blue, violet, cyan,
+ * emerald, which put a violet wash behind the lifecycle section and a
+ * violet-to-fuchsia rule on its eyebrow. Both are gone by instruction.
+ *
+ * The replacement progression is blue, sky, teal, emerald: a single cool
+ * sweep from the brand blue towards green rather than a trip around the
+ * wheel. It is a narrower range than before, which is why the background
+ * work had to carry more of the load, and it is the right range for the
+ * audience. Purple is the house accent of consumer AI launches; cool blues
+ * and teals read as infrastructure.
+ */
 const ACCENTS = {
-  blue: { rule: 'from-primary-400 to-violet-400', icon: 'text-primary-300', num: 'text-primary-400/70' },
-  violet: { rule: 'from-violet-400 to-fuchsia-400', icon: 'text-violet-300', num: 'text-violet-400/70' },
-  cyan: { rule: 'from-cyan-400 to-primary-400', icon: 'text-cyan-300', num: 'text-cyan-400/70' },
-  emerald: { rule: 'from-emerald-400 to-cyan-400', icon: 'text-emerald-300', num: 'text-emerald-400/70' },
+  blue: {
+    rule: 'from-primary-400 to-sky-400',
+    icon: 'text-primary-300',
+    num: 'text-primary-400/70',
+    glow: 'radial-gradient(50rem 30rem at 12% 45%, rgba(56,118,246,0.11), transparent 70%)',
+  },
+  sky: {
+    rule: 'from-sky-400 to-cyan-300',
+    icon: 'text-sky-300',
+    num: 'text-sky-400/70',
+    glow: 'radial-gradient(52rem 32rem at 88% 40%, rgba(2,132,199,0.13), transparent 70%)',
+  },
+  teal: {
+    rule: 'from-teal-400 to-primary-400',
+    icon: 'text-teal-300',
+    num: 'text-teal-400/70',
+    glow: 'radial-gradient(48rem 30rem at 8% 55%, rgba(13,148,136,0.12), transparent 70%)',
+  },
+  emerald: {
+    rule: 'from-emerald-400 to-teal-400',
+    icon: 'text-emerald-300',
+    num: 'text-emerald-400/70',
+    glow: 'radial-gradient(48rem 30rem at 92% 50%, rgba(16,185,129,0.09), transparent 70%)',
+  },
 } as const
 
 type Accent = keyof typeof ACCENTS
@@ -253,7 +586,27 @@ function Section({
   accent?: Accent
 }) {
   return (
-    <section id={id} className="relative">
+    <section id={id} className="relative isolate">
+      {/*
+        The section's own colour field, anchored to the section rather than
+        to the viewport.
+
+        This is the other half of the answer to "the background needs to be
+        more interesting". The fixed aurora gives the page life but it is
+        the same everywhere, so scrolling a long page passes through one
+        unchanging wash. These glows are absolutely positioned inside each
+        band in that band's accent hue, so the ambient colour genuinely
+        progresses as you read: blue at the problem, sky through the
+        lifecycle, teal across the product, emerald at the assistant.
+
+        `isolate` on the section and `-z-10` here keep it behind the
+        content without participating in the page's stacking context.
+      */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{ background: ACCENTS[accent].glow }}
+      />
       {divide && (
         <div
           aria-hidden="true"
@@ -351,13 +704,13 @@ function RecordChain() {
               <div className="flex w-5 shrink-0 flex-col items-center">
                 <span
                   className={`h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-[#070b16] ${
-                    frozen ? 'bg-violet-400' : 'bg-primary-400'
+                    frozen ? 'bg-cyan-300' : 'bg-primary-400'
                   }`}
                 />
                 {i < CHAIN.length - 1 && (
                   <span
                     aria-hidden="true"
-                    className={`w-px flex-1 ${frozen ? 'bg-violet-400/30' : 'bg-primary-400/25'}`}
+                    className={`w-px flex-1 ${frozen ? 'bg-cyan-300/30' : 'bg-primary-400/25'}`}
                   />
                 )}
               </div>
@@ -370,7 +723,7 @@ function RecordChain() {
                   </p>
                 )}
                 {frozen && (
-                  <p className="mt-1.5 max-w-[46ch] text-[12px] leading-relaxed text-violet-200/70">
+                  <p className="mt-1.5 max-w-[46ch] text-[12px] leading-relaxed text-cyan-200/70">
                     Immutable. Later edits to the research create new versions
                     and never alter what the PM actually read.
                   </p>
@@ -575,41 +928,13 @@ export function LandingPage() {
 
   return (
     <div className="min-h-screen bg-[#070b16] text-slate-200 antialiased">
-      {/*
-        Two gradient fields over the whole page, fixed so they do not scroll
-        with the content. This is what stops a dark page reading as flat
-        black: the base never appears unmodulated. Both are far below the
-        threshold where a gradient becomes a decoration you notice.
-      */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0"
-        style={{
-          background:
-            'radial-gradient(60rem 40rem at 12% -10%, rgba(59,130,246,0.13), transparent 60%),' +
-            'radial-gradient(50rem 36rem at 88% 8%, rgba(139,92,246,0.10), transparent 62%)',
-        }}
-      />
-
-      {/*
-        A dot grid, fixed, at 1.5% white.
-
-        This is the cheapest meaningful answer to "more interesting than a
-        dark background". It is not visible as a pattern at any normal
-        viewing distance; what it does is give the background a MATERIAL
-        rather than a value, so large empty areas read as a surface instead
-        of as absence. 28px pitch, 1px dots, pure CSS, no asset.
-      */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0"
-        style={{
-          backgroundImage: 'radial-gradient(rgba(255,255,255,0.015) 1px, transparent 0)',
-          backgroundSize: '28px 28px',
-        }}
-      />
+      <PageAtmosphere />
 
       <div className="relative z-10">
+        {/* The tesseract field, anchored to the document so it scrolls with
+            the content rather than sitting still behind it. */}
+        <TesseractField />
+
         {/* ── Nav ─────────────────────────────────────────────────────────── */}
         <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#070b16]/80 backdrop-blur-xl">
           <nav className={`${SHELL} flex items-center justify-between py-4`} aria-label="Main">
@@ -620,10 +945,20 @@ export function LandingPage() {
                 a nav logo that printed "Loading" under the navigation bar
                 permanently. This one is still at rest and turns on hover.
               */}
+              {/*
+                Raised from 30px to 40px by request.
+
+                The wordmark goes up with it, from 15px to 18px, because
+                scaling the mark alone unbalances the lockup: a 40px mark
+                beside 15px type reads as an oversized icon with a caption
+                rather than as a brand. The nav's vertical padding is
+                unchanged, so the bar grows by the 10px difference and the
+                sticky header stays shallow.
+              */}
               <div ref={markRef} className="shrink-0">
-                <TesseractLogo size={30} />
+                <TesseractLogo size={40} />
               </div>
-              <span className="text-[15px] font-semibold tracking-[-0.01em]">Tesseract</span>
+              <span className="text-[18px] font-semibold tracking-[-0.015em]">Tesseract</span>
             </a>
             <div className="flex items-center gap-1">
               <a href="#lifecycle" className="hidden rounded-md px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
@@ -661,10 +996,28 @@ export function LandingPage() {
           */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute -right-32 -top-20 hidden opacity-[0.09] md:block lg:-right-20"
+            className="pointer-events-none absolute -right-32 -top-20 hidden opacity-[0.11] md:block lg:-right-20"
           >
             <TesseractMark size={660} periodMs={15000} animate={false} weight={0.9} fill={1.25} showNodes={false} />
           </div>
+
+          {/*
+            A light shaft down the centre of the hero.
+
+            A wide, very soft ellipse bled off the top edge. It does what a
+            spotlight does in a photograph: it tells the eye where the top
+            of the composition is, so the headline sits in light rather than
+            floating in an evenly lit field. At 7% it is not identifiable as
+            a shape, which is the point.
+          */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 -top-40 h-[60rem]"
+            style={{
+              background:
+                'radial-gradient(45rem 28rem at 50% 0%, rgba(186,220,255,0.07), transparent 70%)',
+            }}
+          />
 
           <div className={`${SHELL} relative pb-24 pt-20 sm:pb-32 sm:pt-28`}>
             <Eyebrow>A decision operating system for investment teams</Eyebrow>
@@ -748,7 +1101,7 @@ export function LandingPage() {
         {/* ── 3. The connected decision lifecycle ─────────────────────────── */}
         <Section
           id="lifecycle"
-          accent="violet"
+          accent="sky"
           label="The connected decision lifecycle"
           title="Research, recommend, decide, execute, review. Linked, not filed."
           lead="Each stage is a typed record that points at the one before it. That linkage is the product: it is what makes a decision reviewable a year later rather than merely archived."
@@ -776,13 +1129,13 @@ export function LandingPage() {
                   <span className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#070b16] ring-1 ring-inset ring-white/10">
                     <span
                       aria-hidden="true"
-                      className="absolute inset-0 rounded-xl bg-gradient-to-br from-violet-500/20 to-primary-500/10"
+                      className="absolute inset-0 rounded-xl bg-gradient-to-br from-sky-500/20 to-primary-500/10"
                     />
-                    <Icon className="relative h-[18px] w-[18px] text-violet-200" aria-hidden="true" />
+                    <Icon className="relative h-[18px] w-[18px] text-sky-200" aria-hidden="true" />
                   </span>
                   <div className="min-w-0 pt-1">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="text-[11px] font-semibold tabular-nums tracking-[0.12em] text-violet-400/70">
+                      <span className="text-[11px] font-semibold tabular-nums tracking-[0.12em] text-sky-400/70">
                         {String(i + 1).padStart(2, '0')}
                       </span>
                       <h3 className="text-[15px] font-semibold tracking-tight text-white">{stage}</h3>
@@ -837,14 +1190,49 @@ export function LandingPage() {
             aria-hidden="true"
             className="h-24 bg-gradient-to-b from-transparent to-[#f7f8fa] sm:h-32"
           />
-          <div className="bg-[#f7f8fa]">
+          <div className="relative isolate bg-[#f7f8fa]">
+            {/*
+              The light band needs its own atmosphere for exactly the same
+              reason the dark page did. Inverting to a flat #f7f8fa solves
+              the monotony of a long dark page and then recreates it over
+              one screen. Three layers, the mirror image of the dark ones:
+              a warm and a cool tint so the white is not neutral, the same
+              column grid in a dark ink, and grain.
+            */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 -z-10"
+              style={{
+                background:
+                  'radial-gradient(45rem 28rem at 85% 0%, rgba(56,118,246,0.09), transparent 70%),' +
+                  'radial-gradient(40rem 26rem at 5% 100%, rgba(14,165,233,0.07), transparent 70%)',
+              }}
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 -z-10 flex justify-center"
+            >
+              <div className={`flex h-full w-full max-w-7xl ${GUTTER} justify-between`}>
+                {[0, 1, 2, 3, 4].map(i => (
+                  <div
+                    key={i}
+                    className="h-full w-px bg-gradient-to-b from-transparent via-slate-900/[0.06] to-transparent"
+                  />
+                ))}
+              </div>
+            </div>
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 -z-10 opacity-[0.028]"
+              style={{ backgroundImage: GRAIN, backgroundRepeat: 'repeat' }}
+            />
             <div className={`${SHELL} pb-20 pt-4 sm:pb-28`}>
               <div className="grid gap-x-16 gap-y-6 lg:grid-cols-12">
                 <div className="lg:col-span-7">
                   <div className="flex items-center gap-3">
                     <span
                       aria-hidden="true"
-                      className="h-px w-8 bg-gradient-to-r from-primary-600 to-violet-600"
+                      className="h-px w-8 bg-gradient-to-r from-primary-600 to-teal-600"
                     />
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Research and capture
@@ -898,7 +1286,7 @@ export function LandingPage() {
         {/* ── 5. The product ─────────────────────────────────────────────── */}
         <Section
           id="product"
-          accent="cyan"
+          accent="teal"
           divide={false}
           label="The product"
           title="One workspace, built around the security and the decision"
@@ -911,7 +1299,7 @@ export function LandingPage() {
                 className="border-t border-white/[0.07] py-7 first:border-t-0 sm:[&:nth-child(2)]:border-t-0"
               >
                 <div className="flex items-baseline gap-3">
-                  <span className="font-mono text-[11px] tabular-nums text-cyan-400/60">
+                  <span className="font-mono text-[11px] tabular-nums text-teal-400/60">
                     {String(i + 1).padStart(2, '0')}
                   </span>
                   <h3 className="text-[15px] font-semibold tracking-tight text-white">{title}</h3>
@@ -1032,7 +1420,7 @@ export function LandingPage() {
                 className="pointer-events-none absolute inset-0"
                 style={{
                   background:
-                    'radial-gradient(40rem 20rem at 50% -20%, rgba(99,102,241,0.18), transparent 65%)',
+                    'radial-gradient(40rem 20rem at 50% -20%, rgba(56,118,246,0.20), transparent 65%)',
                 }}
               />
               <div className="relative mx-auto max-w-3xl text-center">
