@@ -47,6 +47,10 @@ const run = (cmd, args, env = {}) =>
 // for production. Propagated as unverified rather than collapsed into a failure.
 const GUARD_EXIT_UNVERIFIED = 3
 
+// Exit 2 is "the gate could not run at all": the committed capture is missing, malformed, truncated,
+// or too old a schema for the detectors to read. Also unverified — see where it is handled.
+const GUARD_EXIT_BROKEN = 2
+
 let failed = 0
 const unverified = []
 const section = (name) => console.log(`\n=== ${name} ===`)
@@ -81,6 +85,12 @@ section('tier1 static: unconditional-policy guard')
 const guardStatus = run('node', ['scripts/unconditional-policy-guard.mjs'])
 if (guardStatus === GUARD_EXIT_UNVERIFIED) {
   unverified.push('unconditional-policy guard: the committed policy capture is stale — it does not speak for production')
+} else if (guardStatus === GUARD_EXIT_BROKEN) {
+  // This used to land in `failed++`, which printed "This is a real finding, not missing
+  // infrastructure" over a run that had established nothing at all. That is the same error as
+  // passing vacuously, pointed the other way: it invents a finding instead of inventing a clean
+  // bill of health. Missing evidence is UNVERIFIED in both directions.
+  unverified.push('unconditional-policy guard: could not read or classify the committed capture (exit 2) — no policy question was asked')
 } else if (guardStatus) {
   failed++
 }
@@ -107,6 +117,17 @@ function verdict(label) {
     return 3
   }
   summary(`### ${label}: PASSED`)
+  // What a pass here does and does not mean. The tier-1 checks read committed files and source
+  // text; not one of them connects to a database or assumes a role. So this line has to say which
+  // question was answered, or a green entry in a check list reads as "authorization is proven".
+  if (staticOnly) {
+    summary('STATIC ONLY: every tier-1 check ran clean. No database was contacted and no role was')
+    summary('assumed, so this does NOT establish effective authorization. Cross-org and anon denial')
+    summary('are proven only by the tier-2/tier-3 role-context suites, which need staging')
+    summary('credentials (SECURITY_SUPABASE_REF + SECURITY_SUPABASE_SERVICE_KEY + SECURITY_SUPABASE_TOKEN).')
+  } else {
+    summary('Every tier ran, tier-1 static and tier-2/tier-3 live, and all were clean.')
+  }
   return 0
 }
 
