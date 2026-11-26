@@ -56,7 +56,7 @@ Nothing else on this page is urgent today.
 
 ## Before the first paying customer or signed contract
 
-- [ ] DPA ready to sign — `DPA.draft.md`, lawyer-reviewed.
+- [ ] DPA ready to sign — `contracts/dpa-draft.md`, lawyer-reviewed.
 - [ ] Incident response plan adopted and **rehearsed once**
       (`INCIDENT-RESPONSE.draft.md`). The 72-hour Reg S-P notification
       obligation arrives with the first customer contract, not later.
@@ -70,17 +70,24 @@ Nothing else on this page is urgent today.
 
 ## Publishing the legal pages
 
-The pages live at `docs/legal/site/`. They are not served today.
-
-1. Move them back to `public/legal/`.
-2. Restore the two redirect rules — the commented block at the top of
-   `public/_redirects` has them, and they must sit **above** the catch-all.
-3. Fill in every highlighted placeholder: legal entity, jurisdiction, privacy
-   contact email, postal address, governing law and forum, effective date.
-   Unfilled ones render in yellow on the live page on purpose.
-4. Re-enable the assertions in `src/lib/storage/legal-pages.test.ts`.
-5. Have a lawyer read them first. They are accurate to the software; that is
-   not the same as being sufficient.
+> **Superseded, 2026-11-25.** This section described moving hand-written HTML
+> from `docs/legal/site/` into `public/legal/`. Those two files are retired:
+> they were a second copy of legal text that overlapped the markdown drafts
+> with no rule about which governed, which is the one thing legal documents
+> must never be.
+>
+> **The procedure is now
+> [`legal-release-checklist.md`](./legal-release-checklist.md).** In outline:
+> the markdown in `policies/` is the single source, `src/legal/documents.ts`
+> carries each document's status and version, `src/legal/entity.ts` holds the
+> entity's details in one place, and `npm run legal:publish` copies approved
+> documents into `public/legal/` — refusing while any document is a draft or
+> any entity field is null.
+>
+> What has not changed is the rule: **a policy naming a legal entity which
+> does not exist is a false statement, which is worse than publishing
+> nothing.** The mechanism is stronger than it was, because it no longer
+> depends on nobody moving a file.
 
 ## What is already done and does not need revisiting
 

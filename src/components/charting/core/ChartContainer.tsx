@@ -18,6 +18,7 @@ import {
 import { chartDataService, timeframeToParams, CandlestickData } from '../../../lib/chartData'
 import { useMarketDataEntitlement } from '../../../lib/market-data/provider-routing'
 import { failureMessage } from '../../../lib/market-data/eodhd-series'
+import { ContextualDisclosure } from '../../legal/ContextualDisclosure'
 
 export type ChartType = 'candlestick' | 'line' | 'bar' | 'area'
 export type TimeFrame = '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'ALL'
@@ -451,6 +452,23 @@ export function ChartContainer({
 
       {/* Chart container */}
       <div ref={containerRef} className="flex-1 w-full" />
+
+      {/*
+        The market-data disclosure, at the point of use.
+
+        Here rather than on ChartingPage: this is the component every chart
+        mounts, so a new chart surface gets the disclosure without anyone
+        remembering to add it. The alternative was one line inside
+        ChartingPage's 1,800-line render, which would have covered exactly one
+        of the places a price is drawn.
+
+        It says the prices are third-party, may be delayed, and are not an
+        execution quote. Those are facts about what the data IS. It is not a
+        substitute for a redistribution licence -- that question is open and
+        tracked as item L in docs/legal/counsel-review-checklist.md, and a
+        disclaimer does not create a right the vendor has not granted.
+      */}
+      <ContextualDisclosure kind="market-data" inline className="px-2 pb-1" />
     </div>
   )
 }
