@@ -77,7 +77,11 @@ describe('impact is measured from the execution price', () => {
     // The comparison removed from `impact_proxy` is not lost -- it is what
     // delay cost exists to report, and it answers a different question.
     expect(src).toContain('delay_cost_pct: delayCost')
-    expect(src).toContain('computeDelayCost(direction, decisionPrice, executionPrice)')
+    // `observedDirection` is the direction the POSITION moved, taken from the
+    // execution's signed quantity, with the idea's thesis word as fallback.
+    // Delay cost still compares the two decision-side prices; only the name of
+    // the direction it is signed by changed.
+    expect(src).toContain('computeDelayCost(observedDirection, decisionPrice, executionPrice)')
   })
 
   it('agrees with shares times the price change, on a real row', () => {

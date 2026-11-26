@@ -315,7 +315,15 @@ const MAX_ERRORS = 0
 // 8569 -> 8568 on 2026-11-16. Replacing `(supabase.rpc as any)` in
 // `useObjectSearch.ts` with the typed `callGlobalSearch` helper removed
 // another one. Ratcheted because the gate asked.
-const MAX_REPO_ERRORS = 8563
+//
+// 8568 -> 8563 on the charting stack (#338) and 8568 -> 8562 on the
+// decision-integrity stack (#344), independently, which is the one conflict
+// this release had. Both are CEILINGS, so neither branch's number is right
+// for the combination: the two sets of removals overlap unpredictably and the
+// only honest value is the one measured against the merged tree.
+//
+// Resolved to the stricter of the two, 8562, pending measurement.
+const MAX_REPO_ERRORS = 8562
 
 /**
  * A floor on real source files, now that they are counted as source files.

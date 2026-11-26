@@ -60,6 +60,7 @@
     "guard:policies": "node scripts/unconditional-policy-guard.mjs",
     "guard:mcp-readonly": "node scripts/guard-mcp-readonly.mjs",
     "sec:suite": "node scripts/security-suite.mjs",
+    "sec:pilot-seed": "node scripts/pilot-seed-test.mjs",
     "sec:messages": "node scripts/security-suite.mjs messages-tenant-isolation",
     "sec:audit": "node scripts/security-suite.mjs audit-events-integrity",
     "sec:notifications": "node scripts/security-suite.mjs notifications-authorization",
