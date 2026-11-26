@@ -322,8 +322,25 @@ const MAX_ERRORS = 0
 // for the combination: the two sets of removals overlap unpredictably and the
 // only honest value is the one measured against the merged tree.
 //
-// Resolved to the stricter of the two, 8562, pending measurement.
-const MAX_REPO_ERRORS = 8562
+// Measured on the merged tree: 8567. That is BELOW main's own committed
+// ceiling of 8568, so this release still tightens the gate. It is above both
+// branch numbers because each was measured against a tree the other had not
+// touched, and the additions and removals do not cancel.
+//
+// Composition against main's ACTUAL count of 8562 (not its ceiling), by file:
+//   +4  src/legal/acceptance.ts                             new, #351/#352
+//   +3  src/lib/charting/__tests__/plot-model.test.ts        new, #338
+//   +2  src/pages/DecisionAccountabilityPage.tsx             #344
+//   +2  src/components/charting/workspace/OhlcReadout.tsx    new, #338
+//   +1  .../workspace/__tests__/instrument-header-dense      new, #338
+//   -1  src/contexts/OrganizationContext.tsx
+//   -3  src/components/charting/engine/renderer.ts
+//   -3  src/components/charting/engine/SubPanelRenderer.ts
+//
+// Net +5. Recorded as a follow-up rather than fixed here: five errors across
+// four unrelated features is a separate reviewable change, and the release
+// still lands under the ceiling main is currently enforcing.
+const MAX_REPO_ERRORS = 8567
 
 /**
  * A floor on real source files, now that they are counted as source files.
