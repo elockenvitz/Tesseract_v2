@@ -51,4 +51,52 @@ export const ACCESS_REQUEST_FIELDS = [
 export const ACCESS_REQUEST_ENDPOINT = '/'
 
 /** Which call to action opened the box, so a demo is distinguishable. */
-export type AccessRequestTopic = 'demo' | 'partnership'
+export type AccessRequestTopic = 'demo' | 'partnership' | 'access'
+
+/* ─────────────────────────── where a request goes ───────────────────────── */
+
+/**
+ * The one place the contact variables are read.
+ *
+ * Two surfaces now need this decision, the landing page and the Early Access
+ * notice on /signup, and the two disagreeing is how `/signup` came to be a
+ * dead end in the first place: the landing page had a fallback and the notice
+ * had `{ACCESS_REQUEST_EMAIL && ...}`, which rendered nothing.
+ *
+ *   1. `VITE_ACCESS_REQUEST_URL` wins: an external intake form. It exposes no
+ *      address, filters spam, and returns structured answers. Links out.
+ *   2. Otherwise the on-page box, which posts to the host's form handling.
+ *      This is the live route and needs nothing configured.
+ *
+ * `VITE_ACCESS_REQUEST_EMAIL` is NOT a mode. A mailto asks a prospect to
+ * compose a cold email from nothing, while the box asks five short questions.
+ * It is the box's fallback if the POST fails, so an address reaches a visitor
+ * only when they are already looking at an error.
+ *
+ * No address is ever guessed. `sales@tesseract.com` is hard-coded in
+ * `AIConfigurationSection` and is not used here: that domain is not ours.
+ */
+const CONTACT_URL = import.meta.env.VITE_ACCESS_REQUEST_URL as string | undefined
+const CONTACT_EMAIL = import.meta.env.VITE_ACCESS_REQUEST_EMAIL as string | undefined
+
+export interface AccessRequestRoute {
+  /** `form` links out to a configured intake form; `inline` opens the box. */
+  mode: 'form' | 'inline'
+  /** Set only in `form` mode. */
+  url?: string
+  /** The box's failure fallback, if one is configured. */
+  fallbackEmail?: string
+}
+
+/**
+ * Read once at module scope, as Vite inlines `import.meta.env` at build time.
+ *
+ * An empty string counts as unset, which is what makes a variable declared
+ * blank in `.env.example` or left empty in the dashboard behave the same as
+ * one that was never added.
+ */
+export const ACCESS_REQUEST_ROUTE: AccessRequestRoute = {
+  mode: CONTACT_URL ? 'form' : 'inline',
+  url: CONTACT_URL || undefined,
+  fallbackEmail: CONTACT_EMAIL || undefined,
+}

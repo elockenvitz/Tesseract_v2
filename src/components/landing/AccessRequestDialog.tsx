@@ -45,8 +45,12 @@
  * that is true of the code: what is typed is used to reply.
  */
 
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useId, useRef, useState } from 'react'
 import { Check, Loader2, X } from 'lucide-react'
+/* The modal behaviour: role, aria-modal, Escape, focus in, focus trap,
+   focus restore and the scroll lock. See that file on why nothing existing
+   could be adopted for it. */
+import { Dialog } from '../ui/Dialog'
 /* The field names, the form name and the endpoint. They live in their own
    module because exporting a constant from a component file breaks fast
    refresh, and because the parity test reads them without rendering React. */
@@ -69,7 +73,20 @@ interface AccessRequestDialogProps {
    * does not read the environment and never guesses an address.
    */
   fallbackEmail?: string
+  /**
+   * Which page it is sitting on.
+   *
+   * `dark` is the landing page. `light` is the auth pages, which are a white
+   * card on `bg-gray-50`, and `darkMode: 'class'` means a signed-out visitor
+   * has no theme class, so there is no variant that covers both: a near-black
+   * panel over the signup page reads as pasted in from somewhere else. The
+   * structure, the copy and the submission are identical; only the surface
+   * changes.
+   */
+  tone?: Tone
 }
+
+type Tone = 'dark' | 'light'
 
 const HEADINGS: Record<AccessRequestTopic, { title: string; blurb: string }> = {
   demo: {
@@ -82,14 +99,75 @@ const HEADINGS: Record<AccessRequestTopic, { title: string; blurb: string }> = {
     blurb:
       'A small number of investment teams are shaping how Tesseract reaches the institutional market. Tell us about your process and we will follow up.',
   },
+  /* /signup, where the visitor arrived asking for an account rather than
+     clicking a marketing CTA, so the ask is the account and not a meeting. */
+  access: {
+    title: 'Request access',
+    blurb:
+      'Tesseract is in Professional Early Access. Tell us who you are and we will follow up about an invitation.',
+  },
 }
 
-const FIELD_CLASS =
-  'w-full rounded-lg border-0 bg-white/[0.04] px-3.5 py-2.5 text-sm text-white shadow-inner shadow-black/20 ring-1 ring-inset ring-white/10 transition-colors placeholder:text-slate-500 hover:ring-white/20 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-400 disabled:opacity-60'
+/** Everything that differs between the two surfaces, and nothing else. */
+const TONES: Record<Tone, {
+  overlay: string
+  panel: string
+  title: string
+  blurb: string
+  label: string
+  field: string
+  close: string
+  cancel: string
+  sentIcon: string
+  sentCheck: string
+  sentTitle: string
+  sentBlurb: string
+  done: string
+  invalid: string
+  failed: string
+}> = {
+  dark: {
+    overlay: 'fixed inset-0 z-[100] flex items-end justify-center overflow-y-auto bg-[#050710]/80 p-4 backdrop-blur-sm sm:items-center',
+    panel: 'relative w-full max-w-lg rounded-2xl bg-[#0a0d18] p-6 shadow-2xl shadow-black/60 ring-1 ring-inset ring-white/10 focus:outline-none sm:p-8',
+    title: 'pr-8 text-xl font-semibold tracking-[-0.01em] text-white',
+    blurb: 'mt-2.5 text-sm leading-relaxed text-slate-400',
+    label: 'block text-xs font-medium uppercase tracking-wider text-slate-400',
+    field: 'w-full rounded-lg border-0 bg-white/[0.04] px-3.5 py-2.5 text-sm text-white shadow-inner shadow-black/20 ring-1 ring-inset ring-white/10 transition-colors placeholder:text-slate-500 hover:ring-white/20 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-400 disabled:opacity-60',
+    /* h-10 w-10, not p-1.5. Measured at 390 CSS pixels in a browser: padding
+       around a 16px icon gave a 28x28 tap target, against 40 for every other
+       control in the panel. A thumb misses it. */
+    close: 'absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50',
+    cancel: 'rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-300 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50',
+    sentIcon: 'mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-primary-500/15 ring-1 ring-inset ring-primary-400/30',
+    sentCheck: 'h-5 w-5 text-primary-300',
+    sentTitle: 'mt-5 text-xl font-semibold text-white',
+    sentBlurb: 'mx-auto mt-3 max-w-[40ch] text-sm leading-relaxed text-slate-400',
+    done: 'mt-7 text-sm font-semibold text-primary-300 hover:text-primary-200',
+    invalid: 'text-sm text-amber-300',
+    failed: 'rounded-lg bg-amber-400/10 p-3 text-sm leading-relaxed text-amber-200 ring-1 ring-inset ring-amber-400/20',
+  },
+  light: {
+    overlay: 'fixed inset-0 z-[100] flex items-end justify-center overflow-y-auto bg-gray-900/50 p-4 sm:items-center',
+    panel: 'relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl ring-1 ring-inset ring-gray-200 focus:outline-none sm:p-8',
+    title: 'pr-8 text-xl font-semibold tracking-[-0.01em] text-gray-900',
+    blurb: 'mt-2.5 text-sm leading-relaxed text-gray-600',
+    label: 'block text-xs font-medium uppercase tracking-wider text-gray-500',
+    field: 'w-full rounded-lg border-0 bg-gray-50 px-3.5 py-2.5 text-sm text-gray-900 ring-1 ring-inset ring-gray-300 transition-colors placeholder:text-gray-400 hover:ring-gray-400 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary-500 disabled:opacity-60',
+    close: 'absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+    cancel: 'rounded-lg px-4 py-2.5 text-sm font-semibold text-gray-600 transition-colors hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
+    sentIcon: 'mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-primary-50 ring-1 ring-inset ring-primary-200',
+    sentCheck: 'h-5 w-5 text-primary-600',
+    sentTitle: 'mt-5 text-xl font-semibold text-gray-900',
+    sentBlurb: 'mx-auto mt-3 max-w-[40ch] text-sm leading-relaxed text-gray-600',
+    done: 'mt-7 text-sm font-semibold text-primary-600 hover:text-primary-700',
+    invalid: 'text-sm text-amber-700',
+    failed: 'rounded-lg bg-amber-50 p-3 text-sm leading-relaxed text-amber-800 ring-1 ring-inset ring-amber-200',
+  },
+}
 
-const LABEL_CLASS = 'block text-xs font-medium uppercase tracking-wider text-slate-400'
-
-export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessRequestDialogProps) {
+export function AccessRequestDialog({
+  topic, onClose, fallbackEmail, tone = 'dark',
+}: AccessRequestDialogProps) {
   const [status, setStatus] = useState<Status>('idle')
   const [invalid, setInvalid] = useState<string[]>([])
   const [values, setValues] = useState({
@@ -104,34 +182,10 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
 
   const titleId = useId()
   const blurbId = useId()
+  /* Focus goes to the first field, not the first focusable element, which is
+     the close button in the corner. The primitive takes the ref rather than
+     guessing. */
   const firstFieldRef = useRef<HTMLInputElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  /*
-   * Focus moves into the dialog on open and back to the opener on close.
-   *
-   * Without the restore, closing leaves focus on `document.body` and the next
-   * Tab starts again from the top of the page, which on a page this long is
-   * indistinguishable from the control having done nothing.
-   */
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null
-    firstFieldRef.current?.focus()
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = previousOverflow
-      opener?.focus?.()
-    }
-  }, [])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
 
   const set = (field: string) => (event: { target: { value: string } }) =>
     setValues(previous => ({ ...previous, [field]: event.target.value }))
@@ -176,58 +230,53 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
 
   const heading = HEADINGS[topic]
   const sending = status === 'sending'
+  const t = TONES[tone]
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-end justify-center overflow-y-auto bg-[#050710]/80 p-4 backdrop-blur-sm sm:items-center"
-      data-testid="access-request-overlay"
-      onMouseDown={event => {
-        if (event.target === event.currentTarget) onClose()
-      }}
+    <Dialog
+      labelledBy={titleId}
+      describedBy={blurbId}
+      onClose={onClose}
+      initialFocusRef={firstFieldRef}
+      overlayClassName={t.overlay}
+      panelClassName={t.panel}
+      data-testid="access-request-dialog"
     >
-      <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        aria-describedby={blurbId}
-        data-testid="access-request-dialog"
-        className="relative w-full max-w-lg rounded-2xl bg-[#0a0d18] p-6 shadow-2xl shadow-black/60 ring-1 ring-inset ring-white/10 sm:p-8"
-      >
+      <>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close"
-          className="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+          className={t.close}
         >
           <X className="h-4 w-4" aria-hidden="true" />
         </button>
 
         {status === 'sent' ? (
           <div className="py-4 text-center" data-testid="access-request-sent">
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-primary-500/15 ring-1 ring-inset ring-primary-400/30">
-              <Check className="h-5 w-5 text-primary-300" aria-hidden="true" />
+            <div className={t.sentIcon}>
+              <Check className={t.sentCheck} aria-hidden="true" />
             </div>
-            <h2 id={titleId} className="mt-5 text-xl font-semibold text-white">
+            <h2 id={titleId} className={t.sentTitle}>
               Request received
             </h2>
-            <p id={blurbId} className="mx-auto mt-3 max-w-[40ch] text-sm leading-relaxed text-slate-400">
+            <p id={blurbId} className={t.sentBlurb}>
               Thank you. We will follow up at the address you gave us.
             </p>
             {/* "Done", not "Close". The corner control is already named
                 Close, and two buttons with the same accessible name in one
                 dialog is read out twice with nothing to tell them apart.
                 Verified in a browser: the success panel had exactly that. */}
-            <button type="button" onClick={onClose} className="mt-7 text-sm font-semibold text-primary-300 hover:text-primary-200">
+            <button type="button" onClick={onClose} className={t.done}>
               Done
             </button>
           </div>
         ) : (
           <>
-            <h2 id={titleId} className="pr-8 text-xl font-semibold tracking-[-0.01em] text-white">
+            <h2 id={titleId} className={t.title}>
               {heading.title}
             </h2>
-            <p id={blurbId} className="mt-2.5 text-sm leading-relaxed text-slate-400">
+            <p id={blurbId} className={t.blurb}>
               {heading.blurb}
             </p>
 
@@ -250,7 +299,7 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label htmlFor={`${titleId}-name`} className={LABEL_CLASS}>
+                  <label htmlFor={`${titleId}-name`} className={t.label}>
                     Name
                   </label>
                   <input
@@ -262,11 +311,11 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
                     aria-invalid={invalid.includes('name') || undefined}
                     value={values.name}
                     onChange={set('name')}
-                    className={`mt-1.5 ${FIELD_CLASS}`}
+                    className={`mt-1.5 ${t.field}`}
                   />
                 </div>
                 <div>
-                  <label htmlFor={`${titleId}-email`} className={LABEL_CLASS}>
+                  <label htmlFor={`${titleId}-email`} className={t.label}>
                     Work email
                   </label>
                   <input
@@ -278,11 +327,11 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
                     aria-invalid={invalid.includes('email') || undefined}
                     value={values.email}
                     onChange={set('email')}
-                    className={`mt-1.5 ${FIELD_CLASS}`}
+                    className={`mt-1.5 ${t.field}`}
                   />
                 </div>
                 <div>
-                  <label htmlFor={`${titleId}-firm`} className={LABEL_CLASS}>
+                  <label htmlFor={`${titleId}-firm`} className={t.label}>
                     Firm
                   </label>
                   <input
@@ -292,11 +341,11 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
                     disabled={sending}
                     value={values.firm}
                     onChange={set('firm')}
-                    className={`mt-1.5 ${FIELD_CLASS}`}
+                    className={`mt-1.5 ${t.field}`}
                   />
                 </div>
                 <div>
-                  <label htmlFor={`${titleId}-role`} className={LABEL_CLASS}>
+                  <label htmlFor={`${titleId}-role`} className={t.label}>
                     Role
                   </label>
                   <input
@@ -306,13 +355,13 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
                     disabled={sending}
                     value={values.role}
                     onChange={set('role')}
-                    className={`mt-1.5 ${FIELD_CLASS}`}
+                    className={`mt-1.5 ${t.field}`}
                   />
                 </div>
               </div>
 
               <div>
-                <label htmlFor={`${titleId}-note`} className={LABEL_CLASS}>
+                <label htmlFor={`${titleId}-note`} className={t.label}>
                   Anything we should know
                 </label>
                 <textarea
@@ -322,12 +371,12 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
                   disabled={sending}
                   value={values.note}
                   onChange={set('note')}
-                  className={`mt-1.5 resize-none ${FIELD_CLASS}`}
+                  className={`mt-1.5 resize-none ${t.field}`}
                 />
               </div>
 
               {invalid.length > 0 && (
-                <p role="alert" className="text-sm text-amber-300" data-testid="access-request-invalid">
+                <p role="alert" className={t.invalid} data-testid="access-request-invalid">
                   {invalid.includes('name') && invalid.includes('email')
                     ? 'Please add your name and a work email so we can reply.'
                     : invalid.includes('name')
@@ -337,7 +386,7 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
               )}
 
               {status === 'failed' && (
-                <div role="alert" className="rounded-lg bg-amber-400/10 p-3 text-sm leading-relaxed text-amber-200 ring-1 ring-inset ring-amber-400/20" data-testid="access-request-failed">
+                <div role="alert" className={t.failed} data-testid="access-request-failed">
                   <p>That did not send. Nothing has been lost, so you can try again.</p>
                   {fallbackEmail && (
                     <p className="mt-1.5">
@@ -356,7 +405,7 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
                   type="button"
                   onClick={onClose}
                   disabled={sending}
-                  className="rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-300 transition-colors hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+                  className={t.cancel}
                 >
                   Cancel
                 </button>
@@ -372,8 +421,8 @@ export function AccessRequestDialog({ topic, onClose, fallbackEmail }: AccessReq
             </form>
           </>
         )}
-      </div>
-    </div>
+      </>
+    </Dialog>
   )
 }
 

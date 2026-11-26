@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 /* The registry, so the footer-link case asserts against the real document
    list rather than a copy of it that can go stale. */
-import { LEGAL_DOCUMENTS } from '../../legal/documents'
+import { LEGAL_DOCUMENTS, legalPath } from '../../legal/documents'
 
 /**
  * The public landing page, and the claims it is not allowed to make.
@@ -1047,6 +1047,54 @@ describe('the contact route', () => {
     expect(t).not.toContain('sales@tesseract.com')
     expect(t).not.toMatch(/@tesseract\.com/)
     expect(document.body.innerHTML).not.toMatch(/mailto:/)
+  })
+})
+
+/*
+ * ── Every link goes somewhere real ───────────────────────────────────────
+ *
+ * The `/login` bug was one control pointing at a page that could not do what
+ * the control promised, and the only reason it survived review is that
+ * nothing checked destinations against what is actually at them. These two
+ * cases are the general form of that check.
+ *
+ * The anchors are the easy half to get wrong: renaming a section's `id`
+ * leaves the nav link pointing at nothing, the click does nothing at all,
+ * and no error appears anywhere.
+ */
+describe('every link on the page resolves', () => {
+  it('points every in-page anchor at a section that exists and has content', async () => {
+    await renderLanding()
+    const anchors = [...document.querySelectorAll('a[href^="#"]')]
+    expect(anchors.length).toBeGreaterThanOrEqual(5)
+
+    for (const a of anchors) {
+      const id = (a.getAttribute('href') ?? '').slice(1)
+      const target = document.getElementById(id)
+      expect(target, `no element with id "${id}" for ${a.textContent?.trim()}`).not.toBeNull()
+      // Present but empty is the same dead end as absent: the page scrolls
+      // to a blank band and the visitor concludes the site is broken.
+      expect((target?.textContent ?? '').trim().length, `#${id} is empty`).toBeGreaterThan(40)
+    }
+  })
+
+  it('links no route outside the set this suite covers', async () => {
+    await renderLanding()
+    // `legalPath`, not a constructed string: the registry owns the shape of
+    // a legal URL, and duplicating it here is how the two drift apart.
+    const allowed = new Set(['/login', ...LEGAL_DOCUMENTS.map(d => legalPath(d.id))])
+    const offsite = [...document.querySelectorAll('a[href]')]
+      .map(a => a.getAttribute('href') ?? '')
+      .filter(href => href.startsWith('/'))
+      .filter(href => !allowed.has(href))
+
+    /*
+     * A new link to a route nobody has checked fails here rather than in
+     * production. `/login` is covered by the sign-in case below; the legal
+     * paths are generated from the registry and covered in both directions.
+     * Adding a destination means adding a case for it, not an entry here.
+     */
+    expect(offsite).toEqual([])
   })
 })
 

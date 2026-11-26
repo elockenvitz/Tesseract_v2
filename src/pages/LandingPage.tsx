@@ -10,7 +10,10 @@ import {
 // error here, so the icon list is a quiet check on content that left.
 /* The request-access box, and the one type that says which CTA opened it. */
 import { AccessRequestDialog } from '../components/landing/AccessRequestDialog'
-import type { AccessRequestTopic } from '../components/landing/access-request-contract'
+import {
+  ACCESS_REQUEST_ROUTE,
+  type AccessRequestTopic,
+} from '../components/landing/access-request-contract'
 import { TesseractLogo } from '../components/ui/TesseractLogo'
 import { TesseractMark } from '../components/ui/TesseractMark'
 import { hideBootLoader } from '../lib/boot-loader'
@@ -224,13 +227,14 @@ import { LEGAL_DOCUMENTS, legalPath, FOOTER_LABELS } from '../legal/documents'
  *
  * `data-contact-mode` carries which branch rendered, so the test suite can
  * assert the route without any of it being visible to a visitor.
+ *
+ * The decision itself now lives in `access-request-contract.ts`, because
+ * `/signup` makes the same one and the two of them disagreeing is what made
+ * `/signup` a dead end. One module reads the variables.
  */
-const CONTACT_URL = import.meta.env.VITE_ACCESS_REQUEST_URL as string | undefined
-const CONTACT_EMAIL = import.meta.env.VITE_ACCESS_REQUEST_EMAIL as string | undefined
-
-type ContactMode = 'form' | 'inline'
-
-const CONTACT_MODE: ContactMode = CONTACT_URL ? 'form' : 'inline'
+const CONTACT_MODE = ACCESS_REQUEST_ROUTE.mode
+const CONTACT_URL = ACCESS_REQUEST_ROUTE.url
+const CONTACT_EMAIL = ACCESS_REQUEST_ROUTE.fallbackEmail
 
 /**
  * One CTA component for every call to action on the page.
