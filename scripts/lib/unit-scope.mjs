@@ -609,6 +609,27 @@ export const GATED_DIRS = [
    */
   'src/components/landing/__tests__',
 
+  /*
+   * NOT GATED, on purpose, and worth recording why it was attempted.
+   *
+   *   'scripts/__tests__'
+   *
+   * That directory holds the tests OF THE GATES — including, since 2026-11-26,
+   * the regression tests for the unconditional-policy guard's inventory
+   * resolution. CI's required `Unit tests` job DOES collect them, through
+   * `TOOLING_TESTS` in vitest.config.ts, so they are not decoration. What they
+   * are not is part of `guard:unit`, the pre-push subset.
+   *
+   * Adding them here needs two changes this accounting will not accept
+   * piecemeal: `TEST_FILE` matches only `.test.tsx?`, so the directory
+   * resolves to zero files and is rejected as contributing nothing; and
+   * `allTestFiles` walks `SOURCE_ROOT` ('src') alone, so any gated file
+   * outside `src` makes the two scans disagree and the guard fails closed.
+   * Both were tried and reverted — the second check is correct to refuse an
+   * inconsistent scope, and rewiring the dual-root accounting is a change of
+   * its own with the self-test to re-prove.
+   */
+
 ]
 
 /**
