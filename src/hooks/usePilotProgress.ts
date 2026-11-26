@@ -272,34 +272,61 @@ export function usePilotProgress() {
     ...(query.data ?? {}),
   }
 
-  /**
-   * The freshest picture of the column, read at WRITE time rather than render
-   * time: the live cache (which already carries every optimistic flip made in
-   * this tick, including ones from other components) over the auth snapshot.
+  /*
+   * `readLatestProgress` used to live here: the freshest LOCAL picture of the
+   * column, assembled from the cache over the auth snapshot, used as the base
+   * for a whole-column write.
+   *
+   * Deleted rather than left unused. "Freshest local" is still only as fresh
+   * as this session, which is the whole defect — a backgrounded tab's picture
+   * is unbounded in age — and a helper that hands a writer a base document is
+   * an invitation to write the whole column again. There is no base any more:
+   * `mark_pilot_progress` merges one key server-side.
    */
-  const readLatestProgress = useCallback((): PilotProgress => {
-    const cached = user?.id
-      ? queryClient.getQueryData<PilotProgress>(['pilot-progress', user.id])
-      : undefined
-    return { ...(userPilotProgress ?? {}), ...(cached ?? {}) }
-  }, [user?.id, queryClient, userPilotProgress])
 
-  /** Write the whole column, then reconcile the cache by MERGING rather than
-   *  replacing — a sibling write that landed while this one was in flight keeps
-   *  its key instead of being clobbered by this writer's older picture. */
+  /**
+   * Record ONE key, server-side, atomically.
+   *
+   * This used to write the whole column from `nextProgress` — the caller's
+   * picture of it — and that is what lost production data. Serialising the
+   * writes inside a tab was never enough, because the picture is per-session:
+   * `pilot-progress` has `staleTime: 60_000` and the app sets
+   * `refetchOnWindowFocus: false`, so a backgrounded tab holds its snapshot
+   * indefinitely and its next mark writes that snapshot back over everything
+   * recorded anywhere else since. Quick Quest lost six marks that way on
+   * 2026-10-05, to a write an hour stale.
+   *
+   * `mark_pilot_progress` merges one key in one statement, so there is no
+   * window and no snapshot involved. It is set-once, so a duplicate
+   * concurrent mark keeps the first value rather than replacing it.
+   *
+   * The cache is REPLACED with what the function returned, not merged into:
+   * the returned document is the authoritative row, and merging the local
+   * picture on top of it would put back the very keys this is meant to stop
+   * resurrecting.
+   */
   const userId = user?.id
-  const commitProgress = useCallback(
-    async (nextProgress: PilotProgress) => {
-      if (!userId) return
-      const { error } = await supabase
-        .from('users')
-        .update({ pilot_progress: nextProgress } as never)
-        .eq('id', userId)
+  const commitProgressKey = useCallback(
+    async (key: string, value: string): Promise<PilotProgress | null> => {
+      if (!userId) return null
+      /*
+       * Cast because `Database` is generated from the live schema and this
+       * function does not exist there until the migration is applied — until
+       * then `rpc()` types its own argument as `undefined`. Narrow and local:
+       * the key and value are both `string` above, and the return is read back
+       * as `PilotProgress` below. Drop the cast once types are regenerated.
+       */
+      const { data, error } = await (supabase.rpc as unknown as (
+        fn: string, args: { p_key: string; p_value: string },
+      ) => Promise<{ data: unknown; error: { message: string } | null }>)(
+        'mark_pilot_progress', { p_key: key, p_value: value },
+      )
       if (error) throw error
-      queryClient.setQueryData<PilotProgress>(['pilot-progress', userId], (old) => ({
-        ...(old ?? {}),
-        ...nextProgress,
-      }))
+      const merged = (data ?? null) as PilotProgress | null
+      if (merged) {
+        queryClient.setQueryData<PilotProgress>(['pilot-progress', userId], merged)
+      }
+      return merged
     },
     [userId, queryClient],
   )
@@ -325,18 +352,21 @@ export function usePilotProgress() {
       inFlight.add(guard)
 
       return enqueueProgressWrite(queryClient, async () => {
-        // Built here, inside the queue, from whatever the column looks like
-        // NOW — so a mark that was queued behind a sibling carries the
-        // sibling's key forward instead of writing it back out of existence.
-        // Reuse the optimistic timestamp when onMutate already set one, so the
-        // cache and the row agree to the millisecond.
-        const base = readLatestProgress()
-        const nextProgress: PilotProgress = {
-          ...base,
-          [key]: base[key] ?? new Date().toISOString(),
-        }
+        /*
+         * One key, merged server-side. No base, no snapshot.
+         *
+         * This used to build the whole column from `readLatestProgress()` and
+         * write it back, which is what erased marks made in other sessions.
+         * The queue is kept — it still stops a burst of sibling writes racing
+         * each other's telemetry and cache updates — but correctness no
+         * longer depends on it, because the merge is atomic in one statement.
+         *
+         * The timestamp proposed here is only a proposal: if the key already
+         * exists the function keeps the value it has, so the first mark's
+         * timestamp is the one that stands.
+         */
         try {
-          await commitProgress(nextProgress)
+          await commitProgressKey(key, new Date().toISOString())
         } catch (err) {
           // Allow retry on failure — keeping the guard locked here would
           // leave the user stuck if the first attempt errored.
@@ -404,11 +434,11 @@ export function usePilotProgress() {
       })
     },
     onSuccess: (result) => {
-      // The cache reconcile now happens inside commitProgress, as a merge,
-      // the moment the row is written. Replacing the whole object here was
-      // the second half of the clobber: a writer whose picture predated a
-      // sibling's key wrote that picture back over the cache even when the
-      // row itself was fine.
+      // The cache is set inside `commitProgressKey`, to the document the
+      // function RETURNED — the authoritative row, not a local reconstruction
+      // of it. Replacing the whole object here was the second half of the
+      // clobber: a writer whose picture predated a sibling's key wrote that
+      // picture back over the cache even when the row itself was fine.
       if (result?.stage) {
         // Telemetry is logged here (not in mutationFn) so it only fires
         // when mutationFn actually wrote to the DB — duplicate-burst
@@ -489,12 +519,21 @@ export function usePilotProgress() {
     }))
 
     try {
-      // Through the same queue as the stage marks, for the same reason: this
-      // writes the whole column too, and a capture can land in the same tick
-      // as a mark.
+      /*
+       * Same atomic merge as the stage marks, through the same queue.
+       *
+       * This wrote the whole column too, so it could erase a sibling mark —
+       * and being the mission ANCHOR, losing it resets four steps at once.
+       * `mark_pilot_progress` is set-once, which is exactly the write-once
+       * semantics this needed and was enforcing client-side with
+       * `if (progress[key]) return` over a snapshot that could be stale.
+       *
+       * Anchor BEHAVIOUR is unchanged on purpose: a second idea still does
+       * not become the tutorial, and a missing row still sends the mission
+       * back to step one. Only the durability of the write changes here.
+       */
       await enqueueProgressWrite(queryClient, async () => {
-        const base = readLatestProgress()
-        await commitProgress({ ...base, [key]: ideaId })
+        await commitProgressKey(key, ideaId)
       })
       logPilotEvent({ eventType: 'pilot_mission_idea_created', organizationId: currentOrgId })
     } catch (err) {
@@ -507,7 +546,7 @@ export function usePilotProgress() {
       })
       Sentry.captureException(err)
     }
-  }, [user?.id, currentOrgId, progress, queryClient, readLatestProgress, commitProgress])
+  }, [user?.id, currentOrgId, progress, queryClient, commitProgressKey])
 
   const hasGraduated = !!progress[graduatedKey(currentOrgId)]
 
