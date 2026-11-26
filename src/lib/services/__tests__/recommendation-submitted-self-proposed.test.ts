@@ -75,6 +75,16 @@ vi.mock('../../supabase', () => ({
         } else if (table === 'decision_requests' && has(call.ops, 'select')
                    && call.ops.some(([op, a]) => op === 'in' && a[0] === 'status')) {
           data = []
+        }
+        // The proposal and the frozen version the self-proposed path now
+        // writes before it inserts the request. Both are keyed off `insert`
+        // so the lookups that precede them (an existing proposal for this
+        // idea, an existing version by fingerprint, the next version number)
+        // still fall through to null and drive the create branch.
+        else if (table === 'trade_proposals' && has(call.ops, 'insert')) {
+          data = { id: 'tp-self-1', proposal_type: 'pm_initiated' }
+        } else if (table === 'trade_proposal_versions' && has(call.ops, 'insert')) {
+          data = { id: 'tpv-self-1', proposal_id: 'tp-self-1', version_number: 1 }
         } else if (table === 'portfolios') data = { holdings_source: 'live_feed' }
         else if (table === 'trade_queue_items' && has(call.ops, 'insert')) data = { id: 'tq-adhoc-1' }
         else if (has(call.ops, 'select') && !has(call.ops, 'single') && !has(call.ops, 'maybeSingle')) data = []
@@ -225,18 +235,31 @@ describe('a self-proposed recommendation is recorded, not only the ruling on it'
     expect(event.assetId).toBe('a-aapl')
   })
 
-  it('points at NO proposal and NO frozen version, because neither exists', async () => {
+  it('points at the proposal and the frozen version, which now exist', async () => {
     await executeSimVariants({ variants: [variant()], portfolioId: 'p1', context: ctx })
 
     const event = recommendations()[0]
 
-    // This path creates no `trade_proposals` row and freezes no version. A
-    // reader must be able to tell "self-proposed, nothing frozen" from
-    // "submitted with an immutable snapshot"; a placeholder id would destroy
-    // exactly that distinction and point at a row that does not exist.
-    expect(event.proposalId).toBeNull()
-    expect(event.proposalVersionId).toBeNull()
-    expect(selfProposedInsert()!.proposal_id).toBeUndefined()
+    // ── This assertion was INVERTED on 2026-11-26, deliberately ───────────
+    //
+    // It used to require both ids to be null, and that was a correct
+    // description of the code: this path created no proposal and froze no
+    // version. It was also a test certifying the defect. A self-proposed
+    // decision whose reasoning is never frozen cannot be explained afterwards
+    // — the variant is deleted on execute and the idea's thesis keeps moving
+    // — so "neither exists" was the thing to fix, not the thing to protect.
+    //
+    // The distinction the old comment was defending is still available, and
+    // is now carried by something true rather than by an absence: the
+    // provenance `ui:trade-lab:self-proposed` and the proposal's
+    // `pm_initiated` type.
+    expect(event.proposalId).toBe('tp-self-1')
+    expect(event.proposalVersionId).toBe('tpv-self-1')
+
+    // And the row the event describes carries the same two ids, from the same
+    // object, so the event cannot claim a version the request does not name.
+    expect(selfProposedInsert()!.proposal_id).toBe('tp-self-1')
+    expect(selfProposedInsert()!.proposal_version_id).toBe('tpv-self-1')
   })
 
   it('carries no rationale, because the note is boilerplate this code wrote', async () => {

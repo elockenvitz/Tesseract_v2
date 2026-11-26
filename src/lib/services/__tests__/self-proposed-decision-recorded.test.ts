@@ -89,6 +89,14 @@ vi.mock('../../supabase', () => ({
         } else if (table === 'decision_requests' && has(call.ops, 'select')
                    && call.ops.some(([op, a]) => op === 'in' && a[0] === 'status')) {
           data = [] // no siblings
+        }
+        // The proposal and frozen version the self-proposed path now writes
+        // before the request. Keyed on `insert` so the lookups that precede
+        // them still return null and drive the create branch.
+        else if (table === 'trade_proposals' && has(call.ops, 'insert')) {
+          data = { id: 'tp-self-1', proposal_type: 'pm_initiated' }
+        } else if (table === 'trade_proposal_versions' && has(call.ops, 'insert')) {
+          data = { id: 'tpv-self-1', proposal_id: 'tp-self-1', version_number: 1 }
         } else if (table === 'portfolios') data = { holdings_source: 'live_feed' }
         else if (table === 'trade_queue_items' && has(call.ops, 'insert')) data = { id: 'tq-adhoc-1' }
         else if (has(call.ops, 'select') && !has(call.ops, 'single') && !has(call.ops, 'maybeSingle')) data = []
