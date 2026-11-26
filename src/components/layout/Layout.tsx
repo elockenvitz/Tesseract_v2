@@ -77,8 +77,17 @@ interface LayoutProps {
   `dashboard-next` was the one such surface missing from this list, which is
   why it alone sat inset while `dashboard`, `ideas` and `today` -- the lenses
   it is a replacement for -- did not.
+
+  `charting` was the other. It owns its frame as plainly as any surface here
+  -- its own command bar, its own drawing rail, its own canvas that sizes
+  itself to whatever box it is given -- and it was still being handed the
+  content wrapper. Measured at 1920x889 before this: the canvas got 1812x680,
+  94% of the width and 76% of the height, with 32px of white down each side
+  and 24px top and bottom. A chart is the one surface where that white is
+  never decoration: every pixel taken from the canvas is a bar the analyst
+  cannot see.
 */
-const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'dashboard-next', 'audit', 'lists', 'idea-generator', 'today', 'ideas', 'ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2']
+const FULL_WIDTH_TAB_TYPES = ['trade-lab', 'trade-queue', 'trade-book', 'coverage', 'organization', 'templates', 'dashboard', 'dashboard-next', 'audit', 'lists', 'idea-generator', 'today', 'ideas', 'ideas-v2', 'research-v2', 'portfolio-v2', 'decisions-v2', 'charting']
 
 export function Layout({
   children,

@@ -66,12 +66,26 @@ export interface Dimensions {
  * to disagree.
  */
 export type Gesture =
-  | { kind: 'pan' }
+  | { kind: 'pan'; axis: PanAxis }
   | { kind: 'zoom-price' }
   | { kind: 'zoom-time' }
   | { kind: 'draw'; tool: AnnotationType; from: Pixel }
   /** Outside the canvas entirely: the press belongs to nothing. */
   | { kind: 'none' }
+
+/**
+ * Which axes a pan is allowed to move.
+ *
+ * A press on the price plot moves both: time, and the price range under the
+ * cursor. A press on a study pane moves time ONLY.
+ *
+ * The panes share the chart's time axis, so panning time there is exactly
+ * right. But they do not share its value scale -- an RSI runs 0..100 -- and
+ * the pan arithmetic can only shift the MAIN chart's price range. Carrying
+ * `dy` from a drag in the RSI pane would therefore rescale a price plot the
+ * reader never touched.
+ */
+export type PanAxis = 'both' | 'time'
 
 export interface BeginGestureInput {
   at: Pixel
@@ -79,6 +93,17 @@ export interface BeginGestureInput {
   dimensions: Dimensions
   /** The selected drawing tool, or null when the pointer is a pointer. */
   activeTool: AnnotationType | null
+  /**
+   * The bottom of the whole plotted stack in canvas pixels: the main chart
+   * plus every study pane drawn under it.
+   *
+   * `dimensions.height` is the MAIN chart alone, because the transform is
+   * built from `mainChartDimensions`. Without this field every pane below
+   * it falls outside all three regions and a press there belongs to
+   * nothing -- which is precisely the defect this parameter exists to fix.
+   * Defaults to `dimensions.height`, the no-panes case.
+   */
+  stackBottom?: number
 }
 
 /**
@@ -92,6 +117,7 @@ export interface BeginGestureInput {
  */
 export function beginGesture(input: BeginGestureInput): Gesture {
   const { at, chartArea: area, dimensions: dims, activeTool } = input
+  const stackBottom = input.stackBottom ?? dims.height
 
   const onPriceAxis = at.x > area.x + area.width && at.x <= dims.width
   if (onPriceAxis) return { kind: 'zoom-price' }
@@ -99,15 +125,29 @@ export function beginGesture(input: BeginGestureInput): Gesture {
   const onTimeAxis = at.y > area.y + area.height && at.y <= dims.height
   if (onTimeAxis) return { kind: 'zoom-time' }
 
-  const insidePlot =
-    at.x >= area.x &&
-    at.x <= area.x + area.width &&
-    at.y >= area.y &&
-    at.y <= area.y + area.height
+  const inColumn = at.x >= area.x && at.x <= area.x + area.width
 
-  if (!insidePlot) return { kind: 'none' }
-  if (activeTool) return { kind: 'draw', tool: activeTool, from: at }
-  return { kind: 'pan' }
+  const insidePlot = inColumn && at.y >= area.y && at.y <= area.y + area.height
+  if (insidePlot) {
+    if (activeTool) return { kind: 'draw', tool: activeTool, from: at }
+    return { kind: 'pan', axis: 'both' }
+  }
+
+  /*
+   * Below the main chart and its time axis: the study panes.
+   *
+   * They share the time axis, so a drag here pans time like any other drag.
+   * Only time, though -- see `PanAxis`.
+   *
+   * A drawing tool does NOT draw here. A mark is stored as a time and a
+   * PRICE, projected through the main chart's value scale; these panes do
+   * not use that scale, so a mark begun in one would be placed against a
+   * price the reader never pointed at. A tool press pans instead.
+   */
+  const inPanes = inColumn && at.y > dims.height && at.y <= stackBottom
+  if (inPanes) return { kind: 'pan', axis: 'time' }
+
+  return { kind: 'none' }
 }
 
 export interface CompleteDrawInput {

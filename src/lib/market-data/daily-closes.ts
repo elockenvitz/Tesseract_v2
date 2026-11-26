@@ -40,6 +40,7 @@
  */
 
 import { supabase } from '../supabase'
+import { coalescedCloses } from './closes-coalescer'
 
 /** What PostgREST will return at most, whatever we ask for. */
 export const ROW_CAP = 1000
@@ -66,7 +67,15 @@ export function floorFor(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
 }
 
-export async function fetchDailyCloses(
+/**
+ * The uncoalesced fetch: issues real requests for exactly what it is given.
+ *
+ * Exported for the coalescer to drive and for tests that need to observe a
+ * request actually going out. Surfaces call `fetchDailyCloses` below, which
+ * shares a request across the callers that overlap; see `./closes-coalescer`
+ * for the 46-requests-per-dashboard-load measurement that motivated it.
+ */
+export async function fetchDailyClosesDirect(
   symbols: readonly string[],
   { days, chunk = chunkFor(days) }: { days: number; chunk?: number },
 ): Promise<DailyClose[]> {
@@ -101,6 +110,22 @@ export async function fetchDailyCloses(
   }))
 
   return pages.flat()
+}
+
+/**
+ * Daily closes, sharing one request with every caller that overlaps.
+ *
+ * Same signature, same return shape and same row-cap guarantee as before --
+ * the chunking above still decides request sizing, and this wrapper only
+ * decides WHICH symbols still need asking for. A dozen surfaces call this
+ * with their own symbol lists and their own windows; without coalescing the
+ * Dashboard issued 46 requests for 37 overlapping groups on a cold load.
+ */
+export function fetchDailyCloses(
+  symbols: readonly string[],
+  opts: { days: number; chunk?: number },
+): Promise<DailyClose[]> {
+  return coalescedCloses(symbols, opts, fetchDailyClosesDirect)
 }
 
 /*

@@ -83,6 +83,23 @@ const DAY = 86_400_000
 export const ASSET_WORKSPACE_KEY = 'asset-workspace' as const
 
 /**
+ * Price history, cached on its own.
+ *
+ * Deliberately a SEPARATE top-level key rather than a segment under
+ * ASSET_WORKSPACE_KEY. The workspace prefix is asserted to hold exactly one
+ * entry per asset -- that is how `returning-does-not-rebuild-the-pane` catches
+ * a key segment that resets with the pane -- and burying a second, differently
+ * shaped entry under the same prefix would have quietly cost that check its
+ * meaning.
+ *
+ * Shape: `[prefix, symbol, days]`. No organisation segment: `price_history_cache`
+ * is keyed on symbol and is not organisation-scoped, which is the same posture
+ * this read had when it sat inside the workspace query with no organisation
+ * filter on it. A close is a close.
+ */
+export const ASSET_PRICE_HISTORY_KEY = 'asset-price-history' as const
+
+/**
  * Mark the dashboard pane's read stale after writing something it shows.
  *
  * Call it from any mutation touching the case, the evidence, the targets, the
@@ -97,6 +114,12 @@ export function invalidateAssetWorkspace(queryClient: {
   invalidateQueries: (filters: { queryKey: unknown[] }) => unknown
 }): void {
   queryClient.invalidateQueries({ queryKey: [ASSET_WORKSPACE_KEY] })
+  /*
+   * Price history moved to its own key, so the one call every writer already
+   * makes has to reach it too -- otherwise splitting the query would have
+   * silently narrowed what "invalidate the workspace" means.
+   */
+  queryClient.invalidateQueries({ queryKey: [ASSET_PRICE_HISTORY_KEY] })
 }
 
 /** Deep enough to anchor a chart at a case written a year ago. */
@@ -246,7 +269,29 @@ export function useAssetWorkspace(
   const { currentOrgId } = useOrganization()
 
   const { data, isLoading, error } = useQuery<AssetWorkspaceData>({
-    queryKey: [ASSET_WORKSPACE_KEY, assetId, symbol, days, currentOrgId],
+    /*
+     * `days` is deliberately NOT in this key.
+     *
+     * It used to be, and it fragmented the cache for no benefit. `days` takes
+     * exactly two values -- SHALLOW_HISTORY_DAYS for most focuses and
+     * DEEP_HISTORY_DAYS for research/framework/position (or any caller passing
+     * `deepHistory`) -- but only ONE of the nine reads below ever looked at it:
+     * the `price_history_cache` window. The other eight are identical whatever
+     * `days` says.
+     *
+     * Eight components call this hook, and an asset page routinely mounts a
+     * shallow consumer and a deep one at the same time (InvestmentSnapshot on
+     * 'overview' beside a RequirementWorkspace asking for deep history). Two
+     * `days` values meant two cache entries, and two cache entries meant
+     * eighteen requests where ten would do -- eight of them byte-for-byte
+     * duplicates issued concurrently.
+     *
+     * Price history now lives in its own query keyed on (symbol, days), below,
+     * and this one is keyed on what it actually varies with. The key still
+     * starts with ASSET_WORKSPACE_KEY so the prefix invalidation at the top of
+     * this file continues to cover both.
+     */
+    queryKey: [ASSET_WORKSPACE_KEY, assetId, symbol, currentOrgId],
     enabled: !!assetId && !!currentOrgId,
     staleTime: 60_000,
     /*
@@ -264,9 +309,7 @@ export function useAssetWorkspace(
      */
     gcTime: ASSET_SURFACE_GC_TIME,
     queryFn: async () => {
-      const floor = new Date(Date.now() - days * DAY).toISOString().slice(0, 10)
-
-      const [contribs, notes, history, mine, targets, outcomes, ideas, decisions] = await Promise.all([
+      const [contribs, notes, mine, targets, outcomes, ideas, decisions] = await Promise.all([
         supabase.from('asset_contributions')
           .select('section, content, supporting_detail, updated_at, users:created_by(first_name, last_name, email)')
           .eq('organization_id', currentOrgId!)
@@ -276,11 +319,6 @@ export function useAssetWorkspace(
           .eq('organization_id', currentOrgId!)
           .eq('asset_id', assetId!).eq('is_deleted', false)
           .order('created_at', { ascending: false }),
-        symbol
-          ? supabase.from('price_history_cache')
-              .select('date, close').eq('symbol', symbol).gte('date', floor)
-              .order('date', { ascending: true })
-          : Promise.resolve({ data: [] as any[], error: null }),
         // Which books hold it. The second read below needs the whole of those
         // books, because a weight is a share of the book's own market value.
         supabase.from('portfolio_holdings')
@@ -373,12 +411,6 @@ export function useAssetWorkspace(
         isNewSinceReview: !!out.caseWrittenAt && r.created_at > out.caseWrittenAt,
       }))
 
-      /* ----------------------------------------------------------- price */
-      out.history = (((history as any).data ?? []) as any[])
-        .map(r => ({ date: r.date, close: Number(r.close) }))
-        .filter(p => Number.isFinite(p.close) && p.close > 0)
-      out.spot = out.history.length ? out.history[out.history.length - 1].close : null
-
       /* ------------------------------------------------------- framework */
       const targetRows = (targets.data ?? []) as TargetRow[]
       /* `targetRows` is already one asset, so this yields at most one ladder.
@@ -469,7 +501,78 @@ export function useAssetWorkspace(
     },
   })
 
-  return { data: data ?? EMPTY, isLoading, error: error as Error | null }
+  /*
+   * Price history, alone, keyed on the two things it actually varies with.
+   *
+   * This is the one read that `days` ever changed. Splitting it out is what
+   * lets the eight organisation-scoped reads above be shared by every consumer
+   * of this hook regardless of focus, instead of being refetched wholesale
+   * because a sibling component wanted a longer price window.
+   *
+   * Keyed under ASSET_WORKSPACE_KEY so the existing prefix invalidation keeps
+   * covering it. Not keyed on `currentOrgId`: `price_history_cache` is keyed on
+   * symbol and is deliberately not organisation-scoped -- a close is a close.
+   * That is the same posture the previous code had, since this exact read sat
+   * inside the workspace query with no organisation filter on it.
+   */
+  const { data: priceRows, isLoading: priceLoading } = useQuery({
+    queryKey: [ASSET_PRICE_HISTORY_KEY, symbol, days],
+    enabled: !!symbol,
+    staleTime: 60_000,
+    gcTime: ASSET_SURFACE_GC_TIME,
+    queryFn: async () => {
+      const floor = new Date(Date.now() - days * DAY).toISOString().slice(0, 10)
+      const { data } = await supabase.from('price_history_cache')
+        .select('date, close').eq('symbol', symbol!).gte('date', floor)
+        .order('date', { ascending: true })
+      return ((data ?? []) as { date: string; close: number | string }[])
+        .map(r => ({ date: r.date, close: Number(r.close) }))
+        .filter(p => Number.isFinite(p.close) && p.close > 0)
+    },
+  })
+
+  /*
+   * One object, as every caller already expects. `history` and `spot` were the
+   * only day-dependent fields the query produced -- nothing else derived from
+   * them, `ladder` and `rungs` come off `targetRows` -- so merging them back
+   * here reproduces the previous shape exactly.
+   */
+  const merged = useMemo<AssetWorkspaceData>(() => {
+    /*
+     * No workspace yet means the shared blank shell, BY REFERENCE.
+     *
+     * `EMPTY` is a singleton and callers compare against it with `toBe` to
+     * prove a cold mount is showing nothing rather than the previous asset's
+     * or the previous organisation's rows -- see
+     * `returning-does-not-rebuild-the-pane`. Spreading it into a fresh object
+     * here would have broken that identity, and with it the only cheap way a
+     * consumer can tell "not loaded" from "loaded and genuinely empty".
+     *
+     * It also matters for renders: a new object every pass would invalidate
+     * every downstream memo that depends on `data`, which is the opposite of
+     * what splitting these queries is for.
+     */
+    if (!data) return EMPTY
+
+    const history = priceRows ?? []
+    return {
+      ...data,
+      history,
+      spot: history.length ? history[history.length - 1].close : null,
+    }
+  }, [data, priceRows])
+
+  /*
+   * Still loading while EITHER is in flight. A caller that renders a skeleton
+   * on `isLoading` would otherwise paint a chart from an empty history for one
+   * frame and call it "no data", which is the generic-status-mapping defect
+   * this project keeps hitting: an absent field reported as a real answer.
+   */
+  return {
+    data: merged,
+    isLoading: isLoading || priceLoading,
+    error: error as Error | null,
+  }
 }
 
 /**

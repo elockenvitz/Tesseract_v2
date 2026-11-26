@@ -408,6 +408,26 @@ export const GATED_DIRS = [
    * Gated on arrival.
    */
   'src/lib/charting/__tests__',
+  /*
+   * The drawing palette's own contract: that every tool the engine can build
+   * is offered, that no two claim a key, that a one-point tool's instruction
+   * says click rather than drag, and that the inspector never attaches a
+   * currency the chart surface was never given. Gated because all four fail
+   * silently -- a tool that quietly stops being listed looks exactly like a
+   * tool that was never built, which is the state this whole surface was
+   * found in. Gated on arrival.
+   */
+  'src/components/charting/workspace/__tests__',
+
+  /*
+   * The canvas engine. Nothing here throws when it is wrong -- a scale
+   * computed against the whole series instead of the visible window draws a
+   * chart that is complete, correct in every value, and unreadable, which
+   * is exactly how split-adjusted volume reached a user. A renderer defect
+   * has no stack trace and no failing request; the only way it fails loudly
+   * is a test that reads the geometry back. Gated on arrival.
+   */
+  'src/components/charting/engine/__tests__',
   // What a file type means, what a size reads as, and what the repository
   // refuses to store. Desktop and mobile both import these, so a drift here
   // is two surfaces disagreeing about the same file. Gated on arrival.
