@@ -315,7 +315,32 @@ const MAX_ERRORS = 0
 // 8569 -> 8568 on 2026-11-16. Replacing `(supabase.rpc as any)` in
 // `useObjectSearch.ts` with the typed `callGlobalSearch` helper removed
 // another one. Ratcheted because the gate asked.
-const MAX_REPO_ERRORS = 8568
+//
+// 8568 -> 8563 on the charting stack (#338) and 8568 -> 8562 on the
+// decision-integrity stack (#344), independently, which is the one conflict
+// this release had. Both are CEILINGS, so neither branch's number is right
+// for the combination: the two sets of removals overlap unpredictably and the
+// only honest value is the one measured against the merged tree.
+//
+// Measured on the merged tree: 8567. That is BELOW main's own committed
+// ceiling of 8568, so this release still tightens the gate. It is above both
+// branch numbers because each was measured against a tree the other had not
+// touched, and the additions and removals do not cancel.
+//
+// Composition against main's ACTUAL count of 8562 (not its ceiling), by file:
+//   +4  src/legal/acceptance.ts                             new, #351/#352
+//   +3  src/lib/charting/__tests__/plot-model.test.ts        new, #338
+//   +2  src/pages/DecisionAccountabilityPage.tsx             #344
+//   +2  src/components/charting/workspace/OhlcReadout.tsx    new, #338
+//   +1  .../workspace/__tests__/instrument-header-dense      new, #338
+//   -1  src/contexts/OrganizationContext.tsx
+//   -3  src/components/charting/engine/renderer.ts
+//   -3  src/components/charting/engine/SubPanelRenderer.ts
+//
+// Net +5. Recorded as a follow-up rather than fixed here: five errors across
+// four unrelated features is a separate reviewable change, and the release
+// still lands under the ceiling main is currently enforcing.
+const MAX_REPO_ERRORS = 8567
 
 /**
  * A floor on real source files, now that they are counted as source files.

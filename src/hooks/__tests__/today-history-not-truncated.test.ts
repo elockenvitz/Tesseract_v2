@@ -68,8 +68,26 @@ vi.mock('../../lib/supabase', () => ({
 }))
 
 const { fetchHistory, CHUNK, ROW_CAP, HISTORY_DAYS } = await import('../useTodayEnrichment')
+const { __resetCoalescer } = await import('../../lib/market-data/closes-coalescer')
 
-beforeEach(() => { asked = []; rowsPerRequest = 10 })
+/*
+ * ── Why the coalescer is reset between these cases ────────────────────────
+ *
+ * `fetchDailyCloses` now coalesces: a symbol already fetched at an
+ * equal-or-greater depth inside the hold window is served from what is held,
+ * without reaching the table. In the application that is correct -- held rows
+ * exist only because a chunk-guaranteed request returned them, so a held
+ * answer cannot be a truncated one.
+ *
+ * But every case below counts requests AT THE TABLE, and the hold is module
+ * state that outlives a test. Without this reset, cases after the first asked
+ * for symbols the first had already held, `asked` stayed empty, and three
+ * cases failed -- including `refuses a full page`, which resolved from the
+ * hold instead of reaching the mock that returns a full page. A truncation
+ * guard that a previous test's leftovers can satisfy is not a guard, so the
+ * hold is cleared and each case faces the table itself.
+ */
+beforeEach(() => { asked = []; rowsPerRequest = 10; __resetCoalescer() })
 
 describe('Today asks for price history in windows that cannot be truncated', () => {
   it('is sized so a close on every calendar day still fits under the cap', () => {

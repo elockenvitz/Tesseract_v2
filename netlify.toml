@@ -20,7 +20,26 @@
 # docs/tickets/netlify-branch-deploy-gate-unproven.md). The layout rules are
 # enforced instead as a required status check on main, which blocks the merge
 # rather than the deploy — a strictly earlier gate.
-command = "npm run guard:unit && npm run guard:tdz && npm run build"
+# legal:publish:build copies the APPROVED legal documents from docs/legal/
+# into public/legal/ so Vite picks them up as static assets. public/legal/ is
+# gitignored, so those documents exist in a deploy only because this step ran —
+# there is no commit that can put draft legal text on the CDN by accident.
+#
+# Today it publishes nothing and exits 0: every document is still status
+# 'draft', so the legal pages serve the in-preparation notice. That is the
+# intended state. It is wired up NOW rather than on launch day precisely so
+# that the person who flips the documents to 'approved' does not also have to
+# know to come and edit this file — see
+# docs/legal/legal-release-checklist.md stage 1.
+#
+# The `:build` variant, not `legal:publish`. The plain command exits 1 while
+# anything is a draft, which is right for a human about to publish by mistake
+# and wrong for a deploy: it would turn every build red for months, and a gate
+# that is permanently red gets deleted. The `:build` variant is quiet-and-zero
+# for the expected unfinished state and still non-zero for a real fault (an
+# unparseable registry, a document pointing at a missing file), which is what
+# makes the `&&` below worth writing.
+command = "npm run legal:publish:build && npm run guard:unit && npm run guard:tdz && npm run build"
 
   # Whether to build at all.
   #

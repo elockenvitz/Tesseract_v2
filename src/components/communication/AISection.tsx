@@ -43,6 +43,7 @@ import { clsx } from 'clsx'
  * other.
  */
 import { AiMessage, AiThinking, AiErrorNotice, AiPrompts, AiContextAttach, AiEntryOrientation, AiKeep, AiComposer, AiSlashMenu, AiArtifactSave, slashRowText } from '../ai'
+import { ContextualDisclosure } from '../legal/ContextualDisclosure'
 import { AIConversationList } from './AIConversationList'
 import { AISuggestedActions } from './AISuggestedActions'
 import type { AiAction } from '../../lib/ai'
@@ -1645,6 +1646,26 @@ export function AISection({
           />
           <p data-testid="ai-context-summary" className="sr-only">{contextSummary}</p>
         </AiComposer>
+
+        {/*
+          The AI disclosure, at the point of use.
+
+          Below the composer rather than above the transcript, because the
+          thing it qualifies is the output, and because a notice at the top of
+          a scrolling transcript is read once and then never in view again.
+          This sits in the reading column, under the control that produces the
+          text, where it stays visible for every answer.
+
+          `inline` because this is a line of UI chrome in a dense pane, not a
+          notice panel. The wording is identical in both variants -- a
+          disclosure that gets shorter in the places it is most needed is the
+          failure mode this component was written to avoid.
+
+          Not duplicated onto the briefing or prose surfaces: those render
+          inside this pane. A second copy per answer reads as boilerplate, and
+          boilerplate is not read.
+        */}
+        <ContextualDisclosure kind="ai" inline className="mt-2" />
         </div> {/* reading column */}
       </div>
       </div> {/* main pane */}

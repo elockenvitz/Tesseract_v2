@@ -60,6 +60,7 @@
     "guard:policies": "node scripts/unconditional-policy-guard.mjs",
     "guard:mcp-readonly": "node scripts/guard-mcp-readonly.mjs",
     "sec:suite": "node scripts/security-suite.mjs",
+    "sec:pilot-seed": "node scripts/pilot-seed-test.mjs",
     "sec:messages": "node scripts/security-suite.mjs messages-tenant-isolation",
     "sec:audit": "node scripts/security-suite.mjs audit-events-integrity",
     "sec:notifications": "node scripts/security-suite.mjs notifications-authorization",
@@ -67,7 +68,11 @@
     "sec:asset-workspace": "node scripts/security-suite.mjs asset-workspace-tenant-isolation",
     "sec:platform-baseline": "node scripts/security-suite.mjs platform-rls-baseline",
     "security:check": "node scripts/security-check.mjs",
-    "security:check:static": "node scripts/security-check.mjs --static"
+    "security:check:static": "node scripts/security-check.mjs --static",
+    "legal:publish": "node scripts/publish-legal.mjs",
+    "legal:publish:build": "node scripts/publish-legal.mjs --if-approved",
+    "legal:unpublish": "node scripts/publish-legal.mjs --unpublish",
+    "guard:legal": "vitest run --config vitest.config.ts --project unit --project unit-node src/legal src/components/legal src/lib/storage/legal-pages.test.ts scripts/__tests__/publish-legal.test.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

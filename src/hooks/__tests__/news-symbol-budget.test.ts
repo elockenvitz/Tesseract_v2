@@ -11,9 +11,10 @@ import { MAX_NEWS_SYMBOLS } from '../useMarketNews'
  * `useMarketNews` capped the list at 12 and said each name "costs a call at
  * two of the three providers". `MobileDashboard` passed 24 and said "the
  * marginal cost of a name is a longer query string". Both cannot be true,
- * and the edge function settles it: `market-news` fans out to FOUR sources,
- * and three of them loop the symbol list one name at a time. Only
- * AlphaVantage batches, which is the one the mobile comment described.
+ * and the edge function settles it: `market-news` fans out to THREE sources,
+ * and every one of them loops the symbol list a name at a time. Alpha
+ * Vantage, the one that batched and the one the mobile comment described, is
+ * retired.
  *
  * The 24 never took effect. The hook sliced to 12 on the line after, so half
  * of what the feed built was discarded and its budgeting was against a
@@ -31,7 +32,7 @@ describe('the fan-out is per symbol, which is what sets the cap', () => {
    * If a provider is ever changed to batch, this fails and the cap can be
    * revisited with evidence instead of a guess.
    */
-  it('loops the symbol list in three of the four sources', () => {
+  it('loops the symbol list in every remaining source', () => {
     if (!existsSync(resolve(ROOT, FN))) {
       throw new Error(`${FN} is missing; the cap below has no evidence behind it`)
     }
@@ -42,10 +43,20 @@ describe('the fan-out is per symbol, which is what sets the cap', () => {
       // The per-symbol loop, inside that function's first 40 lines.
       expect(fn.slice(at, at + 2000), source).toMatch(/for \(const symbol of symbols\)/)
     }
-    // And the one that does not, which is where the false comment came from.
-    const av = fn.indexOf('async function fromAlphaVantage(')
-    expect(av).toBeGreaterThan(-1)
-    expect(fn.slice(av, av + 1200)).toMatch(/tickers=\$\{encodeURIComponent\(symbols\.join\(','\)\)\}/)
+    /*
+     * This used to add "and the one that does not": Alpha Vantage batched the
+     * whole symbol list into one `tickers=` parameter, and it was the source
+     * the false mobile comment described.
+     *
+     * It is retired (NEWS_SENTIMENT is a premium endpoint this plan does not
+     * include; see `news-source-notes`), so the batching exception is gone and
+     * ALL THREE remaining sources are per-symbol. That makes the cap below
+     * strictly more load-bearing than it was, not less: there is no longer a
+     * source whose cost is flat in the number of symbols.
+     */
+    // The DECLARATION, not the identifier: the function's own comments
+    // explain the retirement by name, and prose must not fail this.
+    expect(fn).not.toContain('async function fromAlphaVantage(')
   })
 })
 

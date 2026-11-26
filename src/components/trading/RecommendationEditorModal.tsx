@@ -10,7 +10,7 @@ import {
   getProposalVersions,
 } from '../../lib/services/trade-lab-service'
 import { submitRecommendation } from '../../lib/services/recommendation-service'
-import { FINAL_STAGE } from '../../lib/ideas/stage-model'
+import { isAwaitingDesk } from '../../lib/ideas/stage-model'
 import { parseSizingWithConflictCheck, mapFrameworkToLegacyMode } from '../../lib/trade-lab/proposal-sizing'
 import { ConflictBadgeV3, ConflictExplanation, SizingHelpText } from './VariantStatusBadges'
 import { invalidateAfterSubmit } from '../../lib/services/submit-invalidations'
@@ -56,6 +56,16 @@ export function RecommendationEditorModal({
   onSaved,
   onAddPosition,
 }: RecommendationEditorModalProps) {
+  /**
+   * Is the desk actually waiting on this idea?
+   *
+   * Normalized, not compared raw. `stage === FINAL_STAGE` was false for an
+   * idea stored as `ready_for_decision` — the gen-2 spelling of the very same
+   * stage, and the most common stage in production — so the heading read
+   * "Your Recommendation" and the "Goes to the Decision Inbox" line was
+   * hidden for ideas that were genuinely ready to submit.
+   */
+  const isAtFinalStage = isAwaitingDesk(tradeIdea?.stage)
   const { user } = useAuth()
   const queryClient = useQueryClient()
 
@@ -295,9 +305,9 @@ export function RecommendationEditorModal({
             <Scale className="h-5 w-5 text-primary-600" />
             <div>
               <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                {tradeIdea.stage === FINAL_STAGE ? 'Submit Recommendation' : 'Your Recommendation'}
+                {isAtFinalStage ? 'Submit Recommendation' : 'Your Recommendation'}
               </h2>
-              {tradeIdea.stage === FINAL_STAGE && (
+              {isAtFinalStage && (
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   Goes to the Decision Inbox for PM review
                 </p>

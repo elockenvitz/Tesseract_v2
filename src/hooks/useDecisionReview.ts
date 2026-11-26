@@ -65,6 +65,36 @@ export function isReviewComplete(review: DecisionReview | null | undefined): boo
   return !!review?.decision_quality && review.decision_quality !== 'unrated'
 }
 
+/**
+ * Does this patch say anything, and so complete the review?
+ *
+ * This is what stamps `reviewed_at`, and it is deliberately NOT
+ * `isReviewComplete`. That predicate asks for `decision_quality`, which the
+ * Outcomes UI no longer collects -- it "remains in the schema for future
+ * system-derived use but is no longer exposed as a user input". Gating the
+ * timestamp on it meant no review recorded through the UI could ever be
+ * stamped.
+ *
+ * `getReviewState` already treats the existence of a review row as
+ * 'reviewed'. This matches that: any substantive answer -- a thesis verdict,
+ * a note, or a quality call if one is ever supplied again -- completes it.
+ *
+ * An empty or whitespace-only patch does not. That is the draft case: a row
+ * created before anything has been answered, which must stay distinguishable
+ * from a review somebody actually wrote.
+ *
+ * `unknown` ("Too early") counts. Choosing it IS an answer -- the reviewer
+ * looked and judged that it is too soon to call -- and it is a value the
+ * segmented control writes deliberately, not an absence.
+ */
+export function hasReviewContent(patch: DecisionReviewPatch): boolean {
+  if (patch.decision_quality != null && patch.decision_quality !== 'unrated') return true
+  if (patch.thesis_played_out != null) return true
+  if (patch.sizing_quality != null) return true
+  if (patch.process_note != null && patch.process_note.trim() !== '') return true
+  return false
+}
+
 export function useDecisionReview(decisionId: string | null | undefined) {
   return useQuery({
     queryKey: ['decision-review', decisionId],
@@ -163,7 +193,33 @@ export function useUpsertDecisionReview() {
         sizing_quality: patch.sizing_quality ?? null,
         process_note: patch.process_note ?? null,
         reviewed_by: userId,
-        reviewed_at: patch.decision_quality ? new Date().toISOString() : null,
+        /*
+         * ── A completed review must carry when it was completed ───────────
+         *
+         * This was `patch.decision_quality ? now : null`, which stopped being
+         * reachable when the UI retired that field. `decision_quality` and
+         * `sizing_quality` "remain in the schema for future system-derived
+         * use but are no longer exposed as user inputs"
+         * (DecisionAccountabilityPage), so nothing a reviewer can type sets
+         * them -- and the ternary therefore wrote NULL every time.
+         *
+         * Measured in the QA org, 2026-11-20: a review recorded through the
+         * UI, displayed as REVIEWED and surviving a reload, had
+         * `reviewed_at = NULL`. The Outcomes row said the decision had been
+         * reviewed; the record could not say when.
+         *
+         * Worse, the old expression is an UPSERT payload, so it did not
+         * merely fail to set the timestamp -- it actively overwrote an
+         * existing one with NULL on every later edit.
+         *
+         * `getReviewState` already treats the EXISTENCE of a review row as
+         * 'reviewed'. This aligns the timestamp with that same meaning: any
+         * substantive answer completes the review. An empty patch -- the
+         * draft case, where a row is created before anything is answered --
+         * still leaves it null, which is what distinguishes a draft from a
+         * completed review.
+         */
+        reviewed_at: hasReviewContent(patch) ? new Date().toISOString() : null,
       }
       const { data, error } = await supabase
         .from('decision_reviews')

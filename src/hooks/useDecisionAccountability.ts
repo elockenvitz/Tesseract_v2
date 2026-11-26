@@ -30,6 +30,7 @@ import { supabase } from '../lib/supabase'
 import { currentPriceFor, type CachedClose, type CurrentPrice } from '../lib/outcomes/current-price'
 import { subDays, differenceInDays, parseISO } from 'date-fns'
 import { batchesByDecision } from '../lib/outcomes/batch-groups'
+import { attributionWindow, positionDirection } from '../lib/outcomes/attribution-window'
 import { useDecisionReviewsByIds } from './useDecisionReview'
 import type {
   AccountabilityRow,
@@ -42,6 +43,10 @@ import type {
   UnmatchedExecution,
   SizeBasis,
 } from '../types/decision-accountability'
+import {
+  dropIdeaRowsSupersededByRequest,
+  stageFromRequestStatus,
+} from '../lib/outcomes/decision-stage-identity'
 
 // ============================================================
 // Constants
@@ -599,6 +604,13 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     })
 
     const decisionRows = decisionData.map((item: any): AccountabilityRow => {
+      /*
+       * The IDEA's thesis word. This is what the fuzzy matcher below needs --
+       * it is choosing among candidate events, so it can only match on the
+       * direction that was INTENDED. It is NOT what the position actually
+       * did; `observedDirection` below corrects that once an execution is
+       * matched.
+       */
       const direction = mapActionToDirection(item.action)
       const approvedAt = item.approved_at ? parseISO(item.approved_at) : null
       const daysSinceDecision = approvedAt
@@ -767,9 +779,62 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
       // ── Derive impact metrics using centralized helpers ──
       const executionPrice = matched.length > 0 ? matched[0].execution_price : null
 
-      const moveSinceDecision = computeDirectionalMove(direction, decisionPrice, currentPrice)
-      const moveSinceExecution = computeDirectionalMove(direction, executionPrice, currentPrice)
-      const delayCost = computeDelayCost(direction, decisionPrice, executionPrice)
+      /*
+       * ── The direction of a position change is the sign of the shares ─────
+       *
+       * `mapActionToDirection(item.action)` reads the idea's BUY/SELL thesis
+       * word. A `buy` idea sized from 6.14% down to 4.00% cuts the position,
+       * and the thesis word still says buy -- which is how Outcomes narrated
+       * a 1,674-share MSFT reduction as "You increased exposure to MSFT".
+       *
+       * The execution event records what actually moved, so prefer it. PR
+       * #341 fixed the WRITE side (`executionActionType`); this is the read
+       * side, and it is still needed: rows written before that fix carry the
+       * old `action_type`, and `quantity_before`/`quantity_after` are the
+       * durable fact underneath either way.
+       *
+       * The thesis word remains the fallback for a decision with no matched
+       * execution -- a rejected or deferred one, where no shares moved and
+       * the intended direction is the only direction there is.
+       *
+       * Declared AFTER matching on purpose. `direction` above is still what
+       * the fuzzy matcher uses, because that runs before any event is chosen
+       * and can only match on intent.
+       */
+      const firstMatched = matched.length > 0 ? matched[0] : null
+      const observedDirection =
+        positionDirection(firstMatched?.quantity_before, firstMatched?.quantity_after)
+        ?? direction
+
+      /*
+       * ── Nothing is attributed to a decision until the market has spoken ──
+       *
+       * `attributionWindow` asks the only question the recorded facts can
+       * answer: is the price we are measuring TO dated after the decision?
+       *
+       * It has to be asked, because the price we measure FROM cannot defend
+       * itself. The decision snapshot is copied from `assets.current_price`,
+       * a column with no observation timestamp at all, so a four-month-old
+       * mark arrives looking exactly like a fresh one. MSFT's did: $385.20
+       * against a $523.10 close, reported as +35.8% twenty minutes after the
+       * decision was taken. That was MSFT's July-to-November move, charged to
+       * a decision that did not exist for any of it.
+       *
+       * When the newest observation predates the decision, every move is
+       * null. Not zero -- null. Zero is a claim that nothing happened; null
+       * is the truth, which is that nothing has been observed yet.
+       */
+      const window = attributionWindow(
+        item.approved_at || item.created_at,
+        priceAsOf(item.asset_id),
+      )
+      const attributablePrice = window.canAttribute ? currentPrice : null
+
+      const moveSinceDecision = computeDirectionalMove(observedDirection, decisionPrice, attributablePrice)
+      const moveSinceExecution = computeDirectionalMove(observedDirection, executionPrice, attributablePrice)
+      // Delay cost compares two decision-side prices and never reads the
+      // market, so the attribution window does not apply to it.
+      const delayCost = computeDelayCost(observedDirection, decisionPrice, executionPrice)
       const resultDir = computeResultDirection(moveSinceDecision, moveSinceExecution)
 
       // ── Size-aware impact (from first matched execution) ──
@@ -828,7 +893,10 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         approved_at: item.approved_at,
         source: 'decision' as const,
         category: 'acted' as const,
-        direction,
+        // What the position DID, not what the idea proposed. Everything
+        // downstream -- the narrative in `decision-insights`, the chips, the
+        // result direction -- reads this field.
+        direction: observedDirection,
         stage: effectiveStage as any,
         ...historicalRationale(item),
         decision_note: null,
@@ -978,7 +1046,21 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
         source: 'decision' as const,
         category: 'passed' as const,
         direction,
-        stage: (d.status === 'deferred' ? 'rejected' : d.status) as any,
+        /*
+         * The PM's answer, as the PM gave it.
+         *
+         * This was `d.status === 'deferred' ? 'rejected' : d.status`, because
+         * `DecisionStage` had no `deferred` member and the cast through `any`
+         * hid that it was lying. A PM who deferred META saw the Outcomes log
+         * of record say they REJECTED it.
+         *
+         * A deferral is not a rejection. It keeps the idea alive and says
+         * "not yet"; a rejection closes it. Attributing the harsher answer to
+         * a PM who never gave it is exactly the kind of claim this surface
+         * exists to get right. `deferred` is now a stage, so the status
+         * passes through untouched and the `any` is gone.
+         */
+        stage: stageFromRequestStatus(d.status),
         /*
          * What the analyst said WHEN THEY RECOMMENDED, for a decision the PM
          * rejected or deferred.
@@ -1045,7 +1127,36 @@ export function useDecisionAccountability(options: UseDecisionAccountabilityOpti
     const batchMap = batchesByDecision(outcomesPayloadQuery.data?.acceptedTrades ?? [])
     const withBatches = decisionRows.map(r => ({ ...r, batches: batchMap.get(r.decision_id) ?? [] }))
 
-    return [...withBatches, ...discretionaryRows, ...passedRows]
+    /*
+     * ── One decision, one row ────────────────────────────────────────────
+     *
+     * A rejected decision was listed TWICE in Outcomes. Rejecting a
+     * recommendation writes the outcome onto the idea AND leaves the
+     * `decision_requests` row in `rejected`, so both sources emit a row for
+     * the same decision. Measured in the QA org, 2026-11-20: CRWD appeared
+     * twice, while MSFT (accepted) and META (deferred) appeared once each.
+     *
+     * The two rows cannot be deduplicated by `decision_id`, which is the
+     * reason this went unnoticed: `decisionRows` key on the
+     * `trade_queue_items` id and `passedRows` on the `decision_requests` id,
+     * so the same decision carries two different ids and nothing collides.
+     * The shared identity is the IDEA, which `passedRows` already joins as
+     * `trade_idea`.
+     *
+     * The decision request wins, because it is the record of the PM's answer:
+     * it has the reviewer, the review timestamp, the frozen
+     * `proposal_version`, and the true `deferred`/`rejected` status. The idea
+     * row carries the outcome copied onto the idea, which is why a deferral
+     * read as `rejected` there at all.
+     *
+     * Only `passed` idea rows are dropped. An approved or executed row is
+     * never a duplicate of a passed request, and dropping one would take its
+     * matched executions with it. A rejected idea with no request of its own
+     * still has no request in this set, so it is still listed.
+     */
+    const deduped = dropIdeaRowsSupersededByRequest(withBatches, passedData ?? [])
+
+    return [...deduped, ...discretionaryRows, ...passedRows]
   }, [decisionData, eventData, passedData, rationalesQuery.data, pricesQuery.data, snapshotsQuery.data, acceptedTradesQuery.data, outcomesPayloadQuery.data?.acceptedTrades])
 
   /*

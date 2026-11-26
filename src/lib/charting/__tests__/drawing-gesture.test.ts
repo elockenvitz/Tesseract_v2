@@ -31,7 +31,7 @@ const begin = (p: { x: number; y: number }, activeTool: AnnotationType | null = 
 
 describe('with no tool selected, the chart behaves as it always did', () => {
   it('pans from inside the plot', () => {
-    expect(begin(at(400, 300))).toEqual({ kind: 'pan' })
+    expect(begin(at(400, 300))).toEqual({ kind: 'pan', axis: 'both' })
   })
 
   it('zooms the price axis from the right gutter', () => {
@@ -155,5 +155,61 @@ describe('the gesture kinds match the modes ProChart already had', () => {
       begin(at(400, 580)).kind,
     ])
     expect(kinds).toEqual(new Set(['pan', 'zoom-price', 'zoom-time']))
+  })
+})
+
+/**
+ * The study panes under the main chart.
+ *
+ * `dimensions` describes the MAIN chart only, because ProChart builds the
+ * transform from `mainChartDimensions`. Once plots existed, the main chart
+ * shrank to `mainChartHeightRatio` of the canvas -- as little as 0.3 -- and
+ * every press in the remaining 70% fell outside all three regions and
+ * returned `none`. Dragging an RSI or MACD pane did nothing at all.
+ */
+describe('a press in a study pane', () => {
+  /* Main chart 600 tall inside an 1100-tall canvas: 500px of panes. */
+  const STACK = 1100
+  const inPanes = (p: { x: number; y: number }, activeTool: AnnotationType | null = null) =>
+    beginGesture({ at: p, chartArea: AREA, dimensions: DIMS, activeTool, stackBottom: STACK })
+
+  it('pans, rather than belonging to nothing', () => {
+    expect(inPanes(at(400, 800)).kind).toBe('pan')
+  })
+
+  it('pans time only, so it cannot move the price plot it is not touching', () => {
+    expect(inPanes(at(400, 800))).toEqual({ kind: 'pan', axis: 'time' })
+  })
+
+  it('reaches the very bottom of the stack', () => {
+    expect(inPanes(at(400, STACK))).toEqual({ kind: 'pan', axis: 'time' })
+  })
+
+  it('still belongs to nothing below the stack', () => {
+    expect(inPanes(at(400, STACK + 1))).toEqual({ kind: 'none' })
+  })
+
+  it('pans instead of drawing, because a pane has no price scale to place a mark on', () => {
+    expect(inPanes(at(400, 800), 'trend-line')).toEqual({ kind: 'pan', axis: 'time' })
+  })
+
+  it('leaves the price plot drawing, and panning both axes, exactly as it was', () => {
+    expect(inPanes(at(400, 300), 'trend-line').kind).toBe('draw')
+    expect(inPanes(at(400, 300))).toEqual({ kind: 'pan', axis: 'both' })
+  })
+
+  it('does not capture the gutters, which still zoom their own axis', () => {
+    expect(inPanes(at(960, 300)).kind).toBe('zoom-price')
+    expect(inPanes(at(400, 580)).kind).toBe('zoom-time')
+  })
+
+  it('ignores a press left or right of the plotted column', () => {
+    expect(inPanes(at(AREA.x - 1, 800))).toEqual({ kind: 'none' })
+  })
+
+  /* Without `stackBottom` there are no panes: the no-plots chart, whose
+     behaviour must not have changed at all. */
+  it('is absent when the caller reports no panes', () => {
+    expect(begin(at(400, 800))).toEqual({ kind: 'none' })
   })
 })

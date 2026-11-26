@@ -253,6 +253,15 @@ export const GATED_DIRS = [
   'src/components/notes',
   'src/components/tabs',
   /*
+   * `src/components/common` — the shared company mark.
+   *
+   * Gated rather than deferred because the suite's load-bearing case is a
+   * NEGATIVE: that no application caller passes a logo URL. There is no
+   * licensed company-logo source, so the first caller to add one needs that
+   * assertion to fail in front of a reviewer, not to go unrun.
+   */
+  'src/components/common',
+  /*
    * The Asset page's own surfaces: the Snapshot, the Decision Memory summary
    * and Our View.
    *
@@ -408,6 +417,26 @@ export const GATED_DIRS = [
    * Gated on arrival.
    */
   'src/lib/charting/__tests__',
+  /*
+   * The drawing palette's own contract: that every tool the engine can build
+   * is offered, that no two claim a key, that a one-point tool's instruction
+   * says click rather than drag, and that the inspector never attaches a
+   * currency the chart surface was never given. Gated because all four fail
+   * silently -- a tool that quietly stops being listed looks exactly like a
+   * tool that was never built, which is the state this whole surface was
+   * found in. Gated on arrival.
+   */
+  'src/components/charting/workspace/__tests__',
+
+  /*
+   * The canvas engine. Nothing here throws when it is wrong -- a scale
+   * computed against the whole series instead of the visible window draws a
+   * chart that is complete, correct in every value, and unreadable, which
+   * is exactly how split-adjusted volume reached a user. A renderer defect
+   * has no stack trace and no failing request; the only way it fails loudly
+   * is a test that reads the geometry back. Gated on arrival.
+   */
+  'src/components/charting/engine/__tests__',
   // What a file type means, what a size reads as, and what the repository
   // refuses to store. Desktop and mobile both import these, so a drift here
   // is two surfaces disagreeing about the same file. Gated on arrival.
@@ -543,6 +572,42 @@ export const GATED_DIRS = [
    * nothing, a rail that loses the reader's place. None of them throws.
    */
   'src/components/ideas-app/__tests__',
+  /*
+   * The legal publication and acceptance gates.
+   *
+   * Gated rather than deferred because both failure modes are silent and
+   * neither is a crash:
+   *
+   *   - The publication gate decides whether draft legal text is served to
+   *     the public. Opening it early publishes a policy naming a legal entity
+   *     that does not exist, which is a false statement rather than a missing
+   *     one.
+   *   - The acceptance gate decides whether a consent record is written. Open
+   *     it early and it manufactures an acceptance row for an unapproved
+   *     draft, which is worse than having no record, because it looks like
+   *     consent.
+   *
+   * The gates are environment flags, so a regression is a one-character edit
+   * with no visible symptom in the app. `envFlag` reading `value === 'true'`
+   * instead of `Boolean(value)` is the whole difference between closed and
+   * open-whenever-anyone-sets-it-to-"false"; that case is asserted in
+   * src/legal/__tests__/gates.test.ts.
+   */
+  'src/legal/__tests__',
+  'src/components/legal/__tests__',
+
+  /*
+   * The landing page's request-access box.
+   *
+   * Gated because of one failure mode with no runtime signal at all: the host
+   * records only the fields declared in `public/forms/access-request.html`, so
+   * a field the dialog posts without declaring there is dropped on arrival
+   * with a 200 response. The visitor is thanked, the data is gone, and nothing
+   * logs anything. The parity test is the only place that mismatch can be
+   * seen, and it cannot be reproduced by running the app, because the endpoint
+   * does not exist outside a real deploy.
+   */
+  'src/components/landing/__tests__',
 
 ]
 

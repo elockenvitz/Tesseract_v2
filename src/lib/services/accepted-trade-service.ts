@@ -1523,6 +1523,35 @@ async function applyTradeToHoldings(
  * accountability hook's `eventsByLinkedIdea` lookup finds it as an
  * explicit match.
  */
+/**
+ * Which direction an execution event records, from the shares that moved.
+ *
+ * Direction NEVER comes from `trade.action`. That is the IDEA's thesis word;
+ * the trade is a weight move, and the two disagree whenever a position is
+ * already heavier than the target a bullish idea asks for. A `buy` sized from
+ * 6.14% down to 4.00% REDUCES the holding, and `action` still says `buy`.
+ *
+ * Reading the thesis word wrote `action_type='add'` on a row whose own
+ * `quantity_delta` was -1674 (MSFT, 4800 -> 3126 shares, 2026-11-20). The
+ * event contradicted itself, and any consumer trusting the typed action over
+ * the delta sign had a real position change backwards.
+ *
+ * `sharesAfter - sharesBefore` is ground truth: it is what was applied to the
+ * book. The endpoints then separate a full exit from a partial trim, and an
+ * initiation from an add.
+ *
+ * Exported for `__tests__/execution-event-direction.test.ts`, which pins the
+ * invariant that the returned type never disagrees with the sign of the delta
+ * it is stored beside.
+ */
+export function executionActionType(
+  { sharesBefore, sharesAfter }: { sharesBefore: number; sharesAfter: number },
+): 'initiate' | 'add' | 'trim' | 'exit' {
+  const delta = sharesAfter - sharesBefore
+  if (delta < 0) return sharesAfter <= 0 ? 'exit' : 'trim'
+  return sharesBefore <= 0 ? 'initiate' : 'add'
+}
+
 async function emitPaperTradeEvent(
   trade: AcceptedTradeWithJoins,
   apply: ApplyTradeResult,
@@ -1541,18 +1570,7 @@ async function emitPaperTradeEvent(
   const delta = sharesAfter - sharesBefore
   if (delta === 0) return
 
-  let actionType: 'initiate' | 'add' | 'trim' | 'exit'
-  const action = trade.action as TradeAction
-  if (action === 'sell') {
-    actionType = sharesAfter <= 0 ? 'exit' : 'trim'
-  } else if (action === 'trim') {
-    actionType = sharesAfter <= 0 ? 'exit' : 'trim'
-  } else if (action === 'buy') {
-    actionType = sharesBefore <= 0 ? 'initiate' : 'add'
-  } else {
-    // 'add'
-    actionType = 'add'
-  }
+  const actionType = executionActionType({ sharesBefore, sharesAfter })
 
   const mvBefore = sharesBefore * priceUsed
   const mvAfter = sharesAfter * priceUsed

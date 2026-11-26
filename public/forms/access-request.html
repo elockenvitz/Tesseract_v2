@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Access request</title>
+    <!--
+      This page exists so the host's build-time form detection finds a form.
+
+      ── Why a separate static file ──────────────────────────────────────────
+
+      Form detection parses the HTML files in a deploy. It cannot see a form
+      that React creates at runtime, because at build time index.html contains
+      an empty `#root` and nothing else. The documented pattern for a single
+      page app is therefore to ship a static copy of the form, hidden, and have
+      the real dialog POST to it.
+
+      The field names here are the contract. A field the dialog posts that is
+      NOT declared here is dropped on arrival, silently, with a 200 response:
+      the visitor sees "thank you" and the firm name never arrives. That is the
+      exact failure this file's existence creates, so it is covered by a test
+      that compares this markup against ACCESS_REQUEST_FIELDS and fails if the
+      two ever disagree. Do not add a field to the dialog without adding it
+      here, and do not rename one in either place alone.
+
+      `hidden` keeps it out of the rendered page; detection reads the markup,
+      not the computed style. `noindex` keeps the file out of search results,
+      since it is a real URL in the deploy.
+    -->
+    <meta name="robots" content="noindex" />
+  </head>
+  <body>
+    <form name="access-request" data-netlify="true" netlify-honeypot="bot-field" hidden>
+      <input type="text" name="bot-field" />
+      <input type="text" name="topic" />
+      <input type="text" name="name" />
+      <input type="email" name="email" />
+      <input type="text" name="firm" />
+      <input type="text" name="role" />
+      <textarea name="note"></textarea>
+    </form>
+  </body>
+</html>
