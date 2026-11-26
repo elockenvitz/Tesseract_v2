@@ -89,6 +89,24 @@ export function useGalleryCloses(symbols: readonly (string | null | undefined)[]
     queryKey: ['gallery-closes', key],
     enabled: wanted.length > 0,
     staleTime: 5 * 60_000,
+    /*
+     * The symbol list IS the key, and the list grows as the surface's own
+     * source query resolves -- measured on a cold Dashboard load: 9, then
+     * 12, then 56, then 65, then 66 symbols, five keys for one gallery.
+     * Without this, each growth step is a cache MISS, so `status` falls
+     * back to 'pending', `pending` goes true, and the field returns to its
+     * skeleton with every tile that had drawn a sparkline losing it again.
+     *
+     * That is the grid reassembling under the cursor -- the exact defect
+     * the one-batched-read above was written to remove, reintroduced one
+     * level up by the key rather than by the request.
+     *
+     * Keeping the previous map means a superset renders the tiles it
+     * already has while the rest arrive. It cannot show a WRONG sparkline:
+     * every key is a superset of the one before, so a symbol's closes are
+     * the same closes under either key.
+     */
+    placeholderData: prev => prev,
     queryFn: async () => {
       const rows = await fetchDailyCloses(wanted, {
         days: TILE_HISTORY_DAYS,
@@ -138,6 +156,11 @@ export function useYearRanges(symbols: readonly (string | null | undefined)[]) {
     enabled: wanted.length > 0,
     // An extreme over a year does not move the way a last price does.
     staleTime: 30 * 60_000,
+    /* Same growing-key churn as the gallery above. Here it is the axis
+       marks that vanish and come back rather than the sparkline, because
+       this hook's result falls back to an empty Map. A year's high and low
+       under a superset key are the same high and low. */
+    placeholderData: prev => prev,
     queryFn: () => fetchYearRange(wanted),
   })
 
