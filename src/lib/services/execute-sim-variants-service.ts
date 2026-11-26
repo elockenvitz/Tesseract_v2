@@ -45,7 +45,9 @@ import {
   recordRecommendationSubmitted,
   resolveOrganizationIdForPortfolio,
 } from '../memory/lifecycle-events'
+import { captureRecommendationVersion } from '../recommendations/recommendation-version'
 import { createAcceptedTrade, type CreateAcceptedTradeInput } from './accepted-trade-service'
+import { upsertProposal } from './trade-lab-service'
 import { archiveCommittedVariant } from './intent-variant-service'
 import { resolveIdeaAfterDecision, type FanInResult } from '../decisions/decision-fan-in'
 import type {
@@ -54,6 +56,7 @@ import type {
   ActionContext,
   TradeAction,
   TradeBatch,
+  TradeSizingMode,
   ComputedValues,
 } from '../../types/trading'
 
@@ -163,6 +166,49 @@ async function findExistingPendingDR(v: IntentVariantWithDetails): Promise<strin
  *
  * The DR is inserted directly with status='accepted' so we don't need a
  * second update step. The PM is both the requester and the reviewer.
+ *
+ * ── Why this freezes a version before it writes the request ──────────────
+ *
+ * This INSERT writes both halves of the chain at once: `requested_by` is the
+ * recommendation, `reviewed_by` is the ruling on it. Until 2026-11-26 it
+ * carried no `proposal_id`, no `proposal_version_id` and no
+ * `submission_snapshot`, so the recommendation half preserved NOTHING about
+ * what was actually recommended.
+ *
+ * That is not a display defect. `resolveHistoricalRecommendation` is honest
+ * about it — the row resolves to tier `'none'`, `reasoningUnavailable: true`,
+ * and no surface substitutes today's thesis for it. The loss is that the
+ * investment case behind the decision becomes UNRECONSTRUCTABLE: the variant
+ * is deleted on execute, the idea's thesis, conviction and target keep moving,
+ * and nothing anywhere records what they said at the moment the PM committed.
+ * Two such decisions exist in production (2026-10-12 and 2026-10-21) and
+ * neither can ever be explained.
+ *
+ * `submitRecommendation` already solves this, so this path now uses the same
+ * two writers rather than a second copy of the logic:
+ *
+ *   `upsertProposal`                 the proposal a version must hang from
+ *                                    (`trade_proposal_versions.proposal_id`
+ *                                    is NOT NULL with an FK, so there is no
+ *                                    version without one)
+ *   `captureRecommendationVersion`   the append-only freeze, deduped by
+ *                                    fingerprint and numbered per proposal
+ *
+ * ORDER, and which partial failure it chooses. Proposal, then version, then
+ * the request — the same order and the same reasoning as Step 2b of
+ * `submitRecommendation`. Both of the first two THROW, and a throw here
+ * propagates to the per-variant catch in `executeSimVariants`, so the variant
+ * is reported as a failure and NO `accepted_trade` is written. The reachable
+ * partial failure is therefore a stranded proposal or version row that
+ * nothing renders, and that the next Execute adopts: `upsertProposal` finds
+ * the existing proposal by (idea, actor, portfolio) and
+ * `captureRecommendationVersion` finds the existing version by fingerprint.
+ * The alternative order would commit a trade whose decision cannot say what
+ * was recommended, which is the defect this closes.
+ *
+ * `proposal_type: 'pm_initiated'` is the honest label: a PM proposing their
+ * own trade is not an analyst submission, and the two should stay
+ * distinguishable in the record.
  */
 async function createSelfProposedAcceptedDR(
   v: IntentVariantWithDetails,
@@ -170,6 +216,54 @@ async function createSelfProposedAcceptedDR(
   ctx: ActionContext,
 ): Promise<string> {
   const now = new Date().toISOString()
+
+  // Resolved BEFORE the insert now, because the version freeze below needs it.
+  // It used to be read after, for the memory emits alone.
+  const organizationId = await resolveOrganizationIdForPortfolio(v.portfolio_id)
+
+  const sizingWeight = v.computed?.target_weight ?? null
+  const sizingShares = v.computed?.target_shares ?? null
+  const sizingMode = v.sizing_spec?.kind ?? null
+
+  // A variant promoted from an inbox recommendation already has a proposal;
+  // reuse it so the version lands on the existing lineage and gets the next
+  // version_number rather than starting a parallel one. Only an ad-hoc or
+  // logged-idea variant needs a proposal created here.
+  const proposalId =
+    v.proposal_id ??
+    (
+      await upsertProposal(
+        {
+          trade_queue_item_id: tradeQueueItemId,
+          portfolio_id: v.portfolio_id,
+          weight: sizingWeight,
+          shares: sizingShares,
+          sizing_mode: sizingMode as TradeSizingMode | null,
+          sizing_context: (v.sizing_spec ?? {}) as Record<string, unknown>,
+          notes: v.notes ?? null,
+          lab_id: v.lab_id ?? null,
+          proposal_type: 'pm_initiated',
+        },
+        ctx,
+      )
+    ).id
+
+  // Throws on failure, deliberately. A committed trade whose decision cannot
+  // say what was recommended is the thing being prevented, so this must fail
+  // the variant rather than succeed into an unreconstructable history.
+  const version = await captureRecommendationVersion({
+    proposalId,
+    tradeQueueItemId,
+    portfolioId: v.portfolio_id,
+    organizationId,
+    actorId: ctx.actorId,
+    weight: sizingWeight,
+    shares: sizingShares,
+    sizingMode,
+    sizingContext: (v.sizing_spec ?? {}) as Record<string, unknown>,
+    notes: v.notes ?? null,
+    action: v.action ?? null,
+  })
 
   // Built as a value rather than inline so the memory event below can be
   // derived from the SAME object that was written. Reading the variant twice
@@ -181,14 +275,16 @@ async function createSelfProposedAcceptedDR(
     portfolio_id: v.portfolio_id,
     requested_by: ctx.actorId,
     requested_action: v.action,
-    sizing_weight: v.computed?.target_weight ?? null,
-    sizing_shares: v.computed?.target_shares ?? null,
-    sizing_mode: v.sizing_spec?.kind ?? null,
+    sizing_weight: sizingWeight,
+    sizing_shares: sizingShares,
+    sizing_mode: sizingMode,
     status: 'accepted',
     reviewed_by: ctx.actorId,
     reviewed_at: now,
     decision_note: 'Self-proposed via Trade Lab Execute',
     context_note: v.notes ?? null,
+    proposal_id: proposalId,
+    proposal_version_id: version.id,
   }
 
   const { data, error } = await supabase
@@ -238,7 +334,9 @@ async function createSelfProposedAcceptedDR(
   // `decision_note` above is boilerplate this code composed, not a reason the
   // PM gave. Non-fatal, like every other emit here: a failed history write
   // must not undo a committed trade.
-  const organizationId = await resolveOrganizationIdForPortfolio(v.portfolio_id)
+  //
+  // `organizationId` is resolved at the top of this function now, because the
+  // version freeze needs it before the insert.
   if (organizationId) {
     // ── The recommendation, before the decision on it ────────────────────
     //
@@ -260,12 +358,15 @@ async function createSelfProposedAcceptedDR(
     //   timestamp  implicit in the event; the row's own `now`
     //   evidence   the variant's action and sizing, as inserted above
     //
-    // `proposalId` and `proposalVersionId` are genuinely null here: this
-    // path creates no `trade_proposals` row and freezes no version, so there
-    // is no immutable snapshot to point at. A reader must be able to tell
-    // "self-proposed, no frozen version" from "submitted with a version" —
-    // writing a placeholder would destroy exactly that distinction. The
-    // `ui:trade-lab:self-proposed` provenance carries the rest.
+    // `proposalId` and `proposalVersionId` were null here until 2026-11-26,
+    // because this path created no `trade_proposals` row and froze no version.
+    // Both are now real ids, pointing at the proposal and the immutable
+    // version frozen above — the same ids written to the decision request, not
+    // a second read, so the event and the row cannot disagree. A reader can
+    // still tell a self-proposed decision from an analyst submission: the
+    // `ui:trade-lab:self-proposed` provenance and the proposal's
+    // `pm_initiated` type both say so, which is the honest distinction rather
+    // than an absent version standing in for one.
     //
     // ORDER MATTERS, and it is recommendation-then-decision. Both emits are
     // non-fatal, so either can be lost independently; losing the decision
@@ -278,8 +379,8 @@ async function createSelfProposedAcceptedDR(
       actorId: ctx.actorId,
       tradeQueueItemId,
       decisionRequestId,
-      proposalId: null,
-      proposalVersionId: null,
+      proposalId: row.proposal_id,
+      proposalVersionId: row.proposal_version_id,
       portfolioId: row.portfolio_id ?? null,
       assetId: v.asset_id ?? null,
       action: row.requested_action ?? null,
@@ -296,7 +397,7 @@ async function createSelfProposedAcceptedDR(
       status: 'accepted',
       reviewedAt: now,
       tradeQueueItemId,
-      proposalId: null,
+      proposalId: row.proposal_id,
       portfolioId: v.portfolio_id ?? null,
       provenance: 'ui:trade-lab:self-proposed',
     })
