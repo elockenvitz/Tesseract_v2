@@ -292,6 +292,78 @@ export const LEGACY_STAGE_MAP: Readonly<Record<string, IdeaStage>> = {
   deciding: 'ready_to_recommend',
 }
 
+/**
+ * Every raw stage label a row might carry whose canonical meaning is one of
+ * `wanted` — the four canonical values plus every legacy spelling of them.
+ *
+ * ── Why a query needs this ────────────────────────────────────────────────
+ *
+ * `toIdeaStage` normalizes a value the application has already read. A filter
+ * runs in PostgREST, BEFORE the application sees anything, so it cannot
+ * normalize — it has to name every raw label it wants, in all three
+ * vocabularies. Hand-writing that list is what broke the dashboard Recommend
+ * picker: it asked for `['idea','simulating','deciding']`, which is the gen-1
+ * vocabulary, while `/ops/clients` seeds a new org into the gen-2 one
+ * (`aware`, `investigate`, `deep_research`, `thesis_forming`,
+ * `ready_for_decision`). Every idea in a freshly provisioned pilot org was
+ * invisible to it, including the 58 rows sitting in `ready_for_decision` —
+ * the most common stage in the database and the one that means the desk is
+ * waiting.
+ *
+ * Deriving the list from `LEGACY_STAGE_MAP` is the point. A caller names the
+ * canonical stages it cares about and gets every spelling of them for free,
+ * so adding a label to the map widens every filter at once and no caller can
+ * fall behind the data again.
+ *
+ * Order is canonical-first, then legacy, so the result reads sensibly in a
+ * log. Callers must not depend on it.
+ */
+export function rawStageValuesFor(wanted: readonly IdeaStage[]): string[] {
+  const want = new Set<string>(wanted)
+  const out: string[] = []
+  for (const stage of IDEA_STAGES) {
+    if (want.has(stage)) out.push(stage)
+  }
+  for (const [legacy, canonical] of Object.entries(LEGACY_STAGE_MAP)) {
+    if (want.has(canonical)) out.push(legacy)
+  }
+  return out
+}
+
+/**
+ * The stages an idea can be recommended from: all of them.
+ *
+ * Deliberately the whole pipeline rather than `ready_to_recommend` alone.
+ * `RecommendationEditorModal` is what decides whether the action is a draft
+ * ("Your Recommendation") or an actual submission to the desk ("Submit
+ * Recommendation"), and it already gates the latter on the final stage. The
+ * picker's job is to find the idea, not to re-make that decision in a second
+ * place — a rule expressed twice is a rule that will disagree with itself.
+ *
+ * What stops this being "every idea that exists" is maturity's companion
+ * filter, not the stage list: a concluded idea is excluded by its status and
+ * outcome. See `TERMINAL_IDEA_STATUSES`.
+ */
+export const RECOMMENDABLE_STAGES: readonly IdeaStage[] = IDEA_STAGES
+
+/**
+ * Statuses that mean the idea is finished and must not be offered for a new
+ * recommendation.
+ *
+ * The old filter had no status condition at all, so an executed idea that
+ * happened to sit in stage `deciding` was listed as recommendable alongside
+ * live work. `status` and `stage` are independent columns here: production
+ * holds `status='executed'` rows across several stages, which is why
+ * excluding by stage cannot do this job.
+ */
+export const TERMINAL_IDEA_STATUSES: readonly string[] = [
+  'executed',
+  'approved',
+  'rejected',
+  'cancelled',
+  'archived',
+]
+
 // ============================================================
 // Maturity projection
 // ============================================================
