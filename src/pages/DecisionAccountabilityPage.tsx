@@ -175,7 +175,58 @@ const DIRECTION_CONFIG: Record<string, { color: string; bgColor: string }> = {
 const STAGE_CONFIG: Record<string, { label: string; color: string; bgColor: string }> = {
   approved:  { label: 'Approved',  color: 'text-emerald-700', bgColor: 'bg-emerald-50' },
   rejected:  { label: 'Rejected',  color: 'text-red-700',     bgColor: 'bg-red-50' },
+  // Amber: a deferral is still open, where Rejected and Cancelled are closed.
+  deferred:  { label: 'Deferred',  color: 'text-amber-700',   bgColor: 'bg-amber-50' },
   cancelled: { label: 'Cancelled', color: 'text-gray-500 dark:text-gray-400',    bgColor: 'bg-gray-100 dark:bg-gray-800' },
+}
+
+/**
+ * Why no trade was made, in the PM's own terms.
+ *
+ * One helper for what were three separate `stage === 'rejected' ? … : …`
+ * ternaries. Each of them put every non-rejected row in the "cancelled"
+ * branch, so when `deferred` stopped being coerced to `rejected` a deferred
+ * decision would have started reading as "cancelled before reaching a
+ * decision" instead. Both are wrong about a deferral, and three copies of the
+ * same two-way choice is how the next stage would get mislabelled too.
+ *
+ * `withMove` is off where the caller renders the move itself, so the figure
+ * is not stated twice.
+ */
+function notTradedCopy(row: AccountabilityRow, withMove = true): string {
+  const move = withMove && row.move_since_decision_pct != null
+    ? ` The stock has moved ${row.move_since_decision_pct > 0 ? '+' : ''}${row.move_since_decision_pct.toFixed(1)}% since then.`
+    : ''
+  if (row.stage === 'rejected') return `This idea was rejected. No trade was made.${move}`
+  if (row.stage === 'deferred') {
+    return `This idea was deferred, not rejected. No trade was made yet and it is still open.${move}`
+  }
+  return 'This idea was cancelled before reaching a decision.'
+}
+
+/**
+ * What the move since the decision implies, where the decision is closed.
+ *
+ * A deferral is NOT scored. "Rejecting this was the right call" is a verdict,
+ * and a deferral has not been called yet, so the same sentence would be
+ * grading a decision the PM has not finished making. Deferred rows get the
+ * move reported and no judgment attached.
+ *
+ * Previously the non-rejected branch read "Cancelling avoided a loss", which
+ * a deferred row would have inherited once `deferred` stopped being coerced
+ * to `rejected`.
+ */
+function counterfactualCopy(row: AccountabilityRow, directionalMove: number | null): string {
+  if (row.stage === 'deferred') return 'Still open, so there is no call to grade yet.'
+  if (directionalMove != null && directionalMove > 0.5) {
+    return row.stage === 'rejected'
+      ? `The ${row.direction} would have been the right call.`
+      : 'This would have worked in your favor.'
+  }
+  if (directionalMove != null && directionalMove < -0.5) {
+    return row.stage === 'rejected' ? 'Rejecting this was the right call.' : 'Cancelling avoided a loss.'
+  }
+  return 'Minimal movement, so no material impact either way.'
 }
 
 const RESULT_CONFIG: Record<ResultDirection, { color: string; icon: typeof TrendingUp; label: string }> = {
@@ -528,6 +579,12 @@ function getExecStatusExplanation(row: AccountabilityRow): string {
           : ''
         return `This ${row.direction} idea for ${sym} was rejected${approvedDate ? ` on ${approvedDate}` : ''}. No trade was made.${moveNote}`
       }
+      if (row.stage === 'deferred') {
+        const moveNote = row.move_since_decision_pct != null
+          ? ` Since then, ${sym} has moved ${row.move_since_decision_pct > 0 ? '+' : ''}${row.move_since_decision_pct.toFixed(1)}%.`
+          : ''
+        return `This ${row.direction} idea for ${sym} was deferred${approvedDate ? ` on ${approvedDate}` : ''}, not rejected. No trade was made yet and the recommendation is still open.${moveNote}`
+      }
       return `This ${row.direction} idea for ${sym} was cancelled${approvedDate ? ` on ${approvedDate}` : ''} before a decision was reached. No trade was made.`
 
     default:
@@ -552,6 +609,11 @@ function ExecStatusPill({ status, interactive = false, row }: {
       displayLabel = 'Not traded'
       displayColor = 'text-gray-500 dark:text-gray-400'
       displayBg = 'bg-gray-100 dark:bg-gray-800'
+    } else if (row.stage === 'deferred') {
+      // "Not yet traded", not "Not traded": the decision is still open.
+      displayLabel = 'Not yet traded'
+      displayColor = 'text-amber-700'
+      displayBg = 'bg-amber-50'
     } else if (row.stage === 'cancelled') {
       displayLabel = 'Withdrawn'
       displayColor = 'text-gray-400'
@@ -1578,7 +1640,8 @@ function LoopFooter({ row }: { row: AccountabilityRow }) {
   ]
 
   let currentStage: 'idea' | 'decision' | 'execution' | 'outcome' = 'idea'
-  if (row.stage === 'rejected') {
+  // Both are answers given AT the decision step, so the chain stops there.
+  if (row.stage === 'rejected' || row.stage === 'deferred') {
     currentStage = 'decision'
   } else if (row.execution_status === 'executed' || row.execution_status === 'possible_match') {
     currentStage = 'outcome'
@@ -2228,10 +2291,7 @@ export function DetailPanel({
             <p className="text-[11px] text-gray-500 leading-snug mb-3 dark:text-gray-400">{getExecStatusExplanation(row)}</p>
           )}
           {row.execution_status === 'not_applicable' ? (
-            <EmptyField text={row.stage === 'rejected'
-              ? `This idea was rejected — no trade was made.${row.move_since_decision_pct != null ? ` The stock has moved ${row.move_since_decision_pct > 0 ? '+' : ''}${row.move_since_decision_pct.toFixed(1)}% since then.` : ''}`
-              : 'This idea was cancelled before reaching a decision.'
-            } />
+            <EmptyField text={notTradedCopy(row)} />
           ) : row.matched_executions.length === 0 ? (
             <div className="space-y-2.5">
               <p className="text-[11px] text-gray-500 dark:text-gray-400">
@@ -2514,9 +2574,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
       }>
         <div className="space-y-2.5">
           <p className="text-[11px] text-gray-500 dark:text-gray-400">
-            {row.stage === 'rejected'
-              ? 'This idea was rejected — no trade was made.'
-              : 'This idea was cancelled before a decision was reached.'}
+            {notTradedCopy(row, false)}
           </p>
 
           {rawMove != null && (
@@ -2527,15 +2585,7 @@ function OutcomeSection({ row }: { row: AccountabilityRow }) {
                 <span className={`text-[12px] font-bold tabular-nums ${pnlColor(rawMove)}`}>{fmtPct(rawMove)}</span>
               </div>
               <p className="text-[9px] text-gray-400">
-                {directionalMove != null && directionalMove > 0.5
-                  ? row.stage === 'rejected'
-                    ? `The ${row.direction} would have been the right call.`
-                    : 'This would have worked in your favor.'
-                  : directionalMove != null && directionalMove < -0.5
-                    ? row.stage === 'rejected'
-                      ? 'Rejecting this was the right call.'
-                      : 'Cancelling avoided a loss.'
-                    : 'Minimal movement — no material impact either way.'}
+                {counterfactualCopy(row, directionalMove)}
               </p>
             </div>
           )}

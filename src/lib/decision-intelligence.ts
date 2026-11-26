@@ -22,6 +22,7 @@ export type DecisionVerdict =
   | 'needs_review'   // executed but no rationale text yet (Add Rationale)
   | 'evaluate'       // rationale exists but no decision-quality evaluation yet (Evaluate Decision)
   | 'rejected'       // decision was rejected
+  | 'deferred'       // PM deferred: still open, answered "not yet"
   | 'withdrawn'      // decision was cancelled
   | 'discretionary'  // trade without decision
   | 'resolved'       // executed AND reviewed — decision quality captured
@@ -76,6 +77,8 @@ export const VERDICT_EXPLANATIONS: Record<DecisionVerdict, string> = {
     'Tesseract is monitoring this decision. Add a short reflection when you have a view on whether the thesis played out.',
   rejected:
     'The decision was rejected at approval. No trade was made, but it is kept on the log for accountability.',
+  deferred:
+    'The decision was deferred, not rejected. No trade was made yet and the recommendation is still open, so revisit it when the timing or the evidence changes.',
   withdrawn:
     'The decision was cancelled before execution. No trade was made.',
   discretionary:
@@ -97,6 +100,9 @@ export const VERDICT_DISPLAY: Record<DecisionVerdict, {
   needs_review:  { label: 'Needs Context', color: 'text-orange-700',  bgColor: 'bg-orange-50',   borderColor: 'border-l-orange-400' },
   evaluate:      { label: 'Monitoring',    color: 'text-blue-700',    bgColor: 'bg-blue-50',     borderColor: 'border-l-blue-400' },
   rejected:      { label: 'Rejected',      color: 'text-gray-500',    bgColor: 'bg-gray-100',    borderColor: 'border-l-gray-300' },
+  // Amber, not grey: a deferral is still open and still owed an answer,
+  // where a rejection and a withdrawal are both closed.
+  deferred:      { label: 'Deferred',      color: 'text-amber-700',   bgColor: 'bg-amber-50',    borderColor: 'border-l-amber-300' },
   withdrawn:     { label: 'Withdrawn',     color: 'text-gray-400',    bgColor: 'bg-gray-50',     borderColor: 'border-l-gray-200' },
   discretionary: { label: 'Ad Hoc',        color: 'text-violet-700',  bgColor: 'bg-violet-50',   borderColor: 'border-l-violet-400' },
 }
@@ -182,6 +188,37 @@ export function inferDecisionIntelligence(row: AccountabilityRow): DecisionIntel
       actionNeeded: reviewState === 'needs_review' ? 'Add rationale' : null,
       urgency: reviewState === 'needs_review' ? 'medium' : 'low',
       resultLabel, resultDirection, pnlLabel, returnLabel,
+      ageDays: decisionAge, ageSeverity: null,
+    }
+  }
+
+  /* ── Deferred
+   *
+   * Its own branch, ahead of the rejected one, because a deferral used to be
+   * coerced to `rejected` upstream and so fell into that branch and was read
+   * back as a rejection.
+   *
+   * The move since the decision is reported but NOT scored. "It would have
+   * been right" is a judgment about a closed call; a deferral has not been
+   * called yet, so the same number here would be a verdict on a decision the
+   * PM has not finished making. The figure is still subject to
+   * `attributionWindow`, so it is absent unless a post-decision observation
+   * exists.
+   */
+  if (row.stage === 'deferred') {
+    const sym = row.asset_symbol || 'Stock'
+    return {
+      verdict: 'deferred',
+      verdictLabel: 'Deferred',
+      primaryIssue: bestMove != null
+        ? `${sym} ${bestMove >= 0 ? 'up' : 'down'} ${Math.abs(bestMove).toFixed(1)}% while deferred`
+        : `${sym} still open, no decision yet`,
+      actionNeeded: null,
+      urgency: 'none',
+      resultLabel: null,
+      resultDirection: null,
+      pnlLabel: null,
+      returnLabel: null,
       ageDays: decisionAge, ageSeverity: null,
     }
   }

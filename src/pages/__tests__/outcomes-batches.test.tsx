@@ -165,7 +165,12 @@ describe('batch model', () => {
   it('is fed from the payload by the Outcomes hook, for decision rows only', () => {
     const hook = readFileSync(path.join(process.cwd(), 'src/hooks/useDecisionAccountability.ts'), 'utf8')
     expect(hook).toContain('const batchMap = batchesByDecision(outcomesPayloadQuery.data?.acceptedTrades ?? [])')
-    expect(hook).toContain('return [...withBatches, ...discretionaryRows, ...passedRows]')
+    // `withBatches` is now filtered through `dropIdeaRowsSupersededByRequest`
+    // before being returned, so the spread names `deduped`. What this test
+    // guards is unchanged: batches are attached to the decision rows only,
+    // and `deduped` is `withBatches` with duplicate passed rows removed.
+    expect(hook).toContain('const deduped = dropIdeaRowsSupersededByRequest(withBatches, passedData ?? [])')
+    expect(hook).toContain('return [...deduped, ...discretionaryRows, ...passedRows]')
     const sql = readFileSync(path.join(process.cwd(), 'supabase/migrations/20260915020244_outcomes_payload_batches.sql'), 'utf8')
     expect(sql).toContain('at.batch_id,')
     expect(sql).toContain('tb.name AS batch_name,')
