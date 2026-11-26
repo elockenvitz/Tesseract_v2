@@ -567,6 +567,19 @@ export const GATED_DIRS = [
   'src/legal/__tests__',
   'src/components/legal/__tests__',
 
+  /*
+   * The landing page's request-access box.
+   *
+   * Gated because of one failure mode with no runtime signal at all: the host
+   * records only the fields declared in `public/forms/access-request.html`, so
+   * a field the dialog posts without declaring there is dropped on arrival
+   * with a 200 response. The visitor is thanked, the data is gone, and nothing
+   * logs anything. The parity test is the only place that mismatch can be
+   * seen, and it cannot be reproduced by running the app, because the endpoint
+   * does not exist outside a real deploy.
+   */
+  'src/components/landing/__tests__',
+
 ]
 
 /**

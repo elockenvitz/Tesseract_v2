@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeftRight, ArrowRight, BookOpen, Boxes, FileSignature, Gavel, History,
@@ -8,6 +8,9 @@ import {
 // `LineChart` was dropped with the "Review and learning" memory item, which
 // was the lifecycle's Review stage restated. An unused import is an eslint
 // error here, so the icon list is a quiet check on content that left.
+/* The request-access box, and the one type that says which CTA opened it. */
+import { AccessRequestDialog } from '../components/landing/AccessRequestDialog'
+import type { AccessRequestTopic } from '../components/landing/access-request-contract'
 import { TesseractLogo } from '../components/ui/TesseractLogo'
 import { TesseractMark } from '../components/ui/TesseractMark'
 import { hideBootLoader } from '../lib/boot-loader'
@@ -188,79 +191,98 @@ import { LEGAL_DOCUMENTS, legalPath, FOOTER_LABELS } from '../legal/documents'
  * ── The order, and why ───────────────────────────────────────────────────
  *
  *  1. `VITE_ACCESS_REQUEST_URL` wins if set: an external intake form
- *     (Typeform, Tally, a Google Form). This is the chosen route. A form
- *     exposes no address to scrapers, filters spam, and returns structured
- *     responses instead of free-text email.
- *  2. `VITE_ACCESS_REQUEST_EMAIL` is the existing variable, already read by
- *     the login page's `EarlyAccessNotice`. Kept so one address still
- *     governs every inbound path if a mailbox is preferred later.
- *  3. Otherwise the buttons go to `/login`, which is a REAL working page
- *     with a real access-request path on it. A visitor reaches somewhere
- *     that functions, the label changes to match the destination, and
- *     nothing on the page says anything about configuration.
+ *     (Typeform, Tally, a Google Form). A form exposes no address to
+ *     scrapers, filters spam, and returns structured responses instead of
+ *     free-text email.
+ *  2. Otherwise the CTA opens `AccessRequestDialog`, an on-page box that
+ *     posts to the host's own form handling. This is the live route.
+ *
+ * ── Why `/login` is gone, which was a real bug ───────────────────────────
+ *
+ * The third branch used to send every CTA to `/login`, and the comment here
+ * called that "a REAL working page with a real access-request path on it".
+ * Both halves were false:
+ *
+ *   - the request-access affordance lives in `EarlyAccessNotice`, which
+ *     renders on `/signup`, not `/login`; and
+ *   - even there it is wrapped in `{ACCESS_REQUEST_EMAIL && ...}`, so with
+ *     the variable unset, which is the live state, it renders nothing.
+ *
+ * So a stranger who clicked "Request a demo" landed on a password prompt
+ * with no way to ask for anything. The suite did not catch it because it
+ * asserted the href was `/login` and stopped: a link to a page is not a
+ * route to an outcome, and checking the href proves only the former.
+ *
+ * `VITE_ACCESS_REQUEST_EMAIL` is still read, but it is no longer a mode. A
+ * mailto CTA asks a prospect to compose a cold email from nothing; the box
+ * asks five short questions. The address is now the box's fallback if the
+ * POST fails, and nothing else, so it is never rendered to a visitor who is
+ * not already looking at an error.
  *
  * No address is ever guessed. `sales@tesseract.com` appears hard-coded in
  * `AIConfigurationSection` and is NOT used here: that domain is not ours.
  *
  * `data-contact-mode` carries which branch rendered, so the test suite can
- * assert the fallback without any of it being visible to a visitor.
+ * assert the route without any of it being visible to a visitor.
  */
 const CONTACT_URL = import.meta.env.VITE_ACCESS_REQUEST_URL as string | undefined
 const CONTACT_EMAIL = import.meta.env.VITE_ACCESS_REQUEST_EMAIL as string | undefined
 
-type ContactMode = 'form' | 'email' | 'signin'
+type ContactMode = 'form' | 'inline'
 
-const CONTACT_MODE: ContactMode = CONTACT_URL ? 'form' : CONTACT_EMAIL ? 'email' : 'signin'
-
-function contactHref(subject: string): string {
-  if (CONTACT_URL) return CONTACT_URL
-  if (CONTACT_EMAIL) return `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}`
-  return '/login'
-}
-
-const DEMO_SUBJECT = 'Tesseract demo request'
-const PARTNER_SUBJECT = 'Tesseract design partnership'
+const CONTACT_MODE: ContactMode = CONTACT_URL ? 'form' : 'inline'
 
 /**
  * One CTA component for every call to action on the page.
  *
- * It resolves the destination, picks the label to match it, and renders a
- * router `<Link>` for the internal fallback but a plain `<a>` for an
- * external form or a mailto, because a `<Link>` to an off-site URL would be
- * pushed onto the SPA history and render nothing.
+ * In `form` mode it is a plain `<a>`, not a router `<Link>`, because a
+ * `<Link>` to an off-site URL would be pushed onto the SPA history and
+ * render nothing. In `inline` mode it is a `<button>`, because it opens a
+ * dialog rather than navigating, and a link that does not navigate is a lie
+ * to anyone reading the status bar or using a screen reader.
+ *
+ * `onOpen` is required rather than defaulted. A no-op default would render a
+ * button that silently does nothing if a future call site forgot to wire it,
+ * which is the same class of failure as the `/login` fallback this replaced.
+ * Required means the compiler catches it.
  */
 function ContactCta({
-  subject, label, className, children,
+  topic, label, className, children, onOpen,
 }: {
-  subject: string
+  topic: AccessRequestTopic
   label: string
   className: string
   children?: React.ReactNode
+  onOpen: (topic: AccessRequestTopic) => void
 }) {
-  const href = contactHref(subject)
-  const text = CONTACT_MODE === 'signin' ? 'Request access' : label
   const body = (
     <>
-      {text}
+      {label}
       {children ?? <ArrowRight className="h-4 w-4" aria-hidden="true" />}
     </>
   )
-  if (CONTACT_MODE === 'signin') {
+  if (CONTACT_MODE === 'form') {
     return (
-      <Link to={href} className={className} data-contact-mode={CONTACT_MODE}>
+      <a
+        href={CONTACT_URL}
+        className={className}
+        data-contact-mode={CONTACT_MODE}
+        target="_blank"
+        rel="noreferrer"
+      >
         {body}
-      </Link>
+      </a>
     )
   }
   return (
-    <a
-      href={href}
+    <button
+      type="button"
       className={className}
       data-contact-mode={CONTACT_MODE}
-      {...(CONTACT_MODE === 'form' ? { target: '_blank', rel: 'noreferrer' } : {})}
+      onClick={() => onOpen(topic)}
     >
       {body}
-    </a>
+    </button>
   )
 }
 
@@ -1183,6 +1205,18 @@ export function LandingPage() {
   const markRef = useRef<HTMLDivElement>(null)
 
   /*
+   * Which request box is open, or null.
+   *
+   * The topic is the state rather than a boolean plus a separate field,
+   * because an open dialog always has one and a closed one never does, and
+   * two pieces of state that must agree are two pieces of state that can
+   * disagree.
+   */
+  const [requestTopic, setRequestTopic] = useState<AccessRequestTopic | null>(null)
+  const openRequest = useCallback((topic: AccessRequestTopic) => setRequestTopic(topic), [])
+  const closeRequest = useCallback(() => setRequestTopic(null), [])
+
+  /*
    * Release the static boot loader.
    *
    * `#tesseract-boot-loader` is painted by index.html OUTSIDE `#root` at
@@ -1359,7 +1393,7 @@ export function LandingPage() {
             </p>
 
             <div className="mt-11 flex flex-wrap items-center gap-3">
-              <ContactCta subject={DEMO_SUBJECT} label="Request a demo" className={BTN_PRIMARY} />
+              <ContactCta topic="demo" label="Request a demo" className={BTN_PRIMARY} onOpen={openRequest} />
               <a href="#lifecycle" className={BTN_GHOST}>
                 Explore the platform
               </a>
@@ -1844,7 +1878,8 @@ export function LandingPage() {
 
                 <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
                   <ContactCta
-                    subject={PARTNER_SUBJECT}
+                    topic="partnership"
+                    onOpen={openRequest}
                     label="Become a design partner"
                     className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-black/30 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]"
                   />
@@ -1871,7 +1906,7 @@ export function LandingPage() {
                 authorized, and the record it leaves behind.
               </p>
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-                <ContactCta subject={DEMO_SUBJECT} label="Request a demo" className={BTN_PRIMARY} />
+                <ContactCta topic="demo" label="Request a demo" className={BTN_PRIMARY} onOpen={openRequest} />
                 <Link to="/login" className={BTN_GHOST}>
                   Sign in
                 </Link>
@@ -1958,6 +1993,25 @@ export function LandingPage() {
           </div>
         </footer>
       </div>
+
+      {/*
+        The request box, mounted last so it paints above the sticky header
+        and the atmosphere layers, and mounted only while open so the first
+        field can take focus on mount rather than needing a focus effect
+        that fires on a prop change.
+
+        `CONTACT_EMAIL` is passed, not read inside the dialog. One place in
+        this codebase reads the contact variables, and this is it; the dialog
+        renders the address only in its failure state, so a visitor who never
+        sees an error never sees an address.
+      */}
+      {requestTopic && (
+        <AccessRequestDialog
+          topic={requestTopic}
+          onClose={closeRequest}
+          fallbackEmail={CONTACT_EMAIL || undefined}
+        />
+      )}
     </div>
   )
 }

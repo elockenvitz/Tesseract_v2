@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 /* The registry, so the footer-link case asserts against the real document
    list rather than a copy of it that can go stale. */
@@ -912,10 +913,33 @@ describe('the assistant is described by what it does', () => {
 /*
  * ── Where a request goes ─────────────────────────────────────────────────
  *
- * Three branches, in priority order: an external intake form, then a
- * mailbox, then `/login`. The founder chose the form route; the URL is not
- * set yet, so the live page is in the third branch, and the third branch is
- * the one that was visibly broken, so it gets the most coverage.
+ * TWO branches now, and the change was a bug fix. An external intake form if
+ * one is configured; otherwise the on-page request box. No URL is set, so the
+ * live page is the box, and the box gets the most coverage.
+ *
+ * ── What was wrong, and why these cases are inverted rather than deleted ─
+ *
+ * The third branch used to send every CTA to `/login`. The founder reported
+ * it in one line: "request access goes to login screen and not a request
+ * access box."
+ *
+ * The code's own comment claimed `/login` was "a real page with a real
+ * access-request path on it", and both halves were false. The affordance
+ * lives in `EarlyAccessNotice`, which renders on `/signup`; and even there it
+ * is wrapped in `{ACCESS_REQUEST_EMAIL && ...}`, so with the variable unset,
+ * which is the live state, it renders nothing at all. A stranger clicking
+ * "Request a demo" reached a password prompt with no way to ask for anything.
+ *
+ * This suite PASSED throughout, because it asserted `href === '/login'` and
+ * stopped there. That is the lesson worth keeping: an href is a destination,
+ * not an outcome, and checking one proves only that a link points somewhere.
+ * So the cases below are inverted in place rather than removed, and they now
+ * assert the outcome, which is that a box opens and can be filled in.
+ *
+ * The mailbox branch is gone as a CTA mode for a separate reason: a mailto
+ * asks a prospect to compose a cold email from nothing, while the box asks
+ * five short questions. The address is now the box's failure fallback, which
+ * `src/components/landing/__tests__/access-request-dialog.test.tsx` covers.
  */
 describe('the contact route', () => {
   it('sends every CTA to the intake form when a form URL is set', async () => {
@@ -939,45 +963,80 @@ describe('the contact route', () => {
     expect(pageText()).not.toContain('demo@example.test')
   })
 
-  it('links the configured mailbox with a per-path subject when only an email is set', async () => {
+  /*
+   * INVERTED. This used to require two or more mailto links when a mailbox
+   * was set, and the per-path subject lines in their hrefs.
+   *
+   * A configured mailbox no longer turns the CTAs into mailto links. It is
+   * the box's fallback if the POST fails, so an address reaches the page only
+   * when a visitor is already looking at an error. The requirement it
+   * protected has not gone away: the founder still has to be able to tell a
+   * demo request from a partnership enquiry. That is now the `topic` field in
+   * the submission, asserted in the dialog's own suite.
+   */
+  it('does not turn a configured mailbox into the call to action', async () => {
     await renderLanding({ email: 'partners@example.test' })
-    const links = [...document.querySelectorAll('a[href^="mailto:"]')]
-      .map(a => a.getAttribute('href') ?? '')
-    expect(links.length).toBeGreaterThanOrEqual(2)
-    for (const href of links) expect(href).toContain('partners@example.test')
-    // Each inbound path carries its own subject, so the founder can tell a
-    // demo request from a partnership enquiry without asking.
-    expect(links.join(' ')).toContain('Tesseract%20demo%20request')
-    expect(links.join(' ')).toContain('Tesseract%20design%20partnership')
+    expect(document.querySelectorAll('a[href^="mailto:"]').length).toBe(0)
+    // Not rendered anywhere a scraper reading the page would find it.
+    expect(pageText()).not.toContain('partners@example.test')
+    // And the CTAs are still the box, not a dead control.
+    const ctas = [...document.querySelectorAll('[data-contact-mode]')]
+    expect(ctas.length).toBeGreaterThanOrEqual(3)
+    for (const cta of ctas) expect(cta.getAttribute('data-contact-mode')).toBe('inline')
   })
 
   /**
-   * THE case, and the regression the founder reported.
+   * THE case, and it has now been wrong twice.
    *
-   * With nothing configured the page used to render a panel reading
-   * "Contact route not configured. Set VITE_ACCESS_REQUEST_EMAIL ...", and
-   * the hero button scrolled to that panel. So the visible result of
-   * clicking "Request a demo" was an instruction to the site's own
-   * operator.
+   * First the page rendered a panel reading "Contact route not configured.
+   * Set VITE_ACCESS_REQUEST_EMAIL ...", so clicking "Request a demo" showed
+   * the visitor an instruction meant for the site's own operator.
    *
-   * Now every CTA goes to `/login`, which is a real page with a real
-   * access-request path on it, and the label changes to match the
-   * destination so the button does not promise a demo form and deliver a
-   * sign-in screen.
+   * Then it sent every CTA to `/login`, a password prompt with no
+   * access-request path on it, which is what the founder reported next.
+   *
+   * Now it opens a box. The assertion is the outcome rather than the href,
+   * because asserting the href is exactly what let the second bug through.
    */
-  it('routes every CTA to a real working page when nothing is configured', async () => {
+  it('opens a request box, not a sign-in screen, when nothing is configured', async () => {
+    const user = userEvent.setup()
     await renderLanding()
-    const ctas = [...document.querySelectorAll('a[data-contact-mode]')]
+
+    const ctas = [...document.querySelectorAll('[data-contact-mode]')]
     expect(ctas.length).toBeGreaterThanOrEqual(3)
-    for (const a of ctas) {
-      expect(a.getAttribute('data-contact-mode')).toBe('signin')
-      expect(a.getAttribute('href')).toBe('/login')
-      expect(a.textContent).toMatch(/request access/i)
-      // Not a dead control, and not a scroll to an apology.
-      expect(a.getAttribute('href')).not.toBe('#partners')
+    for (const cta of ctas) {
+      expect(cta.getAttribute('data-contact-mode')).toBe('inline')
+      // A control that opens a dialog is a button. A link that does not
+      // navigate misleads the status bar and the accessibility tree alike.
+      expect(cta.tagName).toBe('BUTTON')
+      expect(cta.getAttribute('href')).toBeNull()
     }
     expect(document.querySelectorAll('a[href^="mailto:"]').length).toBe(0)
     expect(screen.queryByTestId('contact-unconfigured')).toBeNull()
+    // Nothing is open until a visitor asks for it.
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    await user.click(screen.getAllByRole('button', { name: /request a demo/i })[0])
+
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveAccessibleName('Request a demo')
+    // The fields a reply actually needs. If this renders and these are
+    // missing, the box is decoration.
+    expect(screen.getByLabelText('Name')).toBeTruthy()
+    expect(screen.getByLabelText('Work email')).toBeTruthy()
+    expect(screen.getByRole('button', { name: /send request/i })).toBeTruthy()
+  })
+
+  it('opens the partnership box from the design-partner section', async () => {
+    const user = userEvent.setup()
+    await renderLanding()
+
+    await user.click(screen.getByRole('button', { name: /become a design partner/i }))
+
+    // A different heading, because the two CTAs ask for different things and
+    // a box that says "Request a demo" to someone who clicked "Become a
+    // design partner" reads as a dead end.
+    expect(screen.getByRole('dialog')).toHaveAccessibleName('Become a design partner')
   })
 
   it('never falls back to a guessed address', async () => {
