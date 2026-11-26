@@ -7,6 +7,10 @@ import type { StripCell } from '../../lib/asset-workspace/strip-targets'
 import { AssetAttentionBand } from './AssetAttentionBand'
 import { useAssetHeaderContext } from '../../hooks/useAssetHeaderContext'
 import { askAI, type EngagementTarget } from '../../lib/engagement'
+import { CompanyMark } from '../common/CompanyMark'
+import { presentQuote, provenanceCaption } from '../../lib/market-data/quote-provenance'
+import { identityFacts } from '../../lib/asset-workspace/identity-facts'
+import type { RoutedQuote } from '../../lib/market-data/routed-quote'
 import type { WorkspaceDestination, SignalFocus } from '../../lib/asset-workspace/context'
 
 type CoverageProps = ComponentProps<typeof CoverageDisplay>
@@ -18,6 +22,14 @@ interface AssetLike {
   portfolioId?: string | null
   portfolioName?: string | null
   origin?: string | null
+  /* Instrument identity, straight off `assets`. All optional and all
+     rendered only when present — a security that has not been enriched
+     shows fewer facts, never a guessed exchange or a default currency. */
+  exchange?: string | null
+  currency?: string | null
+  asset_type?: string | null
+  mic?: string | null
+  isin?: string | null
 }
 
 type ListFocus = 'portfoliosContent' | 'listsContent' | 'themesContent' | 'projectsContent'
@@ -25,7 +37,16 @@ type ListFocus = 'portfoliosContent' | 'listsContent' | 'themesContent' | 'proje
 interface Props {
   asset: AssetLike
   sector?: string | null
-  quote: { price?: number | null; change?: number | null; changePercent?: number | null } | null
+  /**
+   * The routed quote, with its provenance intact.
+   *
+   * Was narrowed to `{ price, change, changePercent }`, which threw away the
+   * currency, the unit, the delivery term and the as-of before the header
+   * could render them — so the band had no way to be honest about the number
+   * it was showing even in principle. `RoutedQuote` is what the caller
+   * already holds.
+   */
+  quote: RoutedQuote | null
   spot: number | null
   headerContext: ReturnType<typeof useAssetHeaderContext>
   coverage: CoverageProps['coverage']
@@ -50,7 +71,6 @@ interface Props {
   onToggleCollapse: () => void
 }
 
-const money = (n: number) => '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 /**
  * UX2 Phase 1 — the deep-navy asset identity band.
@@ -68,10 +88,23 @@ export function AssetWorkspaceHeader({
 }: Props) {
   const [showTickerDropdown, setShowTickerDropdown] = useState(false)
 
-  const price = quote?.price ?? null
-  const change = quote?.change ?? null
-  const changePct = quote?.changePercent ?? null
-  const up = (change ?? 0) >= 0
+  // All price presentation decisions in one place, including the refusals.
+  const p = presentQuote(quote, asset.currency)
+  const caption = provenanceCaption(p)
+  const up = p.direction === 'up'
+
+  /* Venue, currency, security type — placeholders dropped rather than
+     printed. `assets.exchange` is the literal string 'Unknown' for every
+     security in this database, so rendering the column verbatim would put a
+     venue we never checked into the most prominent line on the page. */
+  const facts = identityFacts({
+    exchange: asset.exchange,
+    quoteCurrency: p.currencyCode,
+    assetCurrency: asset.currency,
+    assetType: asset.asset_type,
+  })
+
+  const portfolioCount = headerContext?.portfolios?.length ?? 0
 
   const askTarget: EngagementTarget = {
     objectType: 'asset',
@@ -97,31 +130,89 @@ export function AssetWorkspaceHeader({
     <div className="ux2-band -mx-8 -mt-4 px-8 pt-4 pb-3">
       <div className="flex items-start justify-between gap-6">
         {/* Identity: ticker + company together, then price/change */}
-        <div className="relative flex flex-col min-w-0">
-          <div className="flex items-baseline gap-3 flex-wrap">
-            <button
-              onClick={() => setShowTickerDropdown(v => !v)}
-              aria-haspopup="dialog"
-              aria-expanded={showTickerDropdown}
-              className="ux2-band-ink text-2xl font-bold tracking-tight flex items-baseline gap-1.5 group hover:opacity-90"
-            >
-              {/* No chevron. The ticker is the control — it underlines on
-                  hover, which says "this does something" without spending
-                  a glyph beside the asset's name to say it. */}
-              <span className="group-hover:underline underline-offset-4 decoration-white/30">{asset.symbol}</span>
-            </button>
-            <span className="ux2-band-muted text-base font-normal truncate max-w-[34ch]">{asset.company_name}</span>
-            {price != null && (
-              <span className="flex items-baseline gap-2 ml-1">
-                <span className="ux2-band-ink text-xl font-semibold tabular-nums tracking-tight">{money(price)}</span>
-                {change != null && (
-                  <span className={clsx('text-sm font-semibold tabular-nums', up ? 'ux2-pos' : 'ux2-neg')}>
-                    {up ? '+' : ''}{change.toFixed(2)}
-                    {changePct != null && <> ({up ? '+' : ''}{changePct.toFixed(2)}%)</>}
+        <div className="relative flex min-w-0 gap-3">
+          {/* The mark sits OUTSIDE the text column so the two text rows align
+              to each other rather than each indenting past the logo. */}
+          <CompanyMark symbol={asset.symbol} name={asset.company_name} size="lg" className="mt-0.5" />
+
+          <div className="flex flex-col min-w-0">
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <button
+                onClick={() => setShowTickerDropdown(v => !v)}
+                aria-haspopup="dialog"
+                aria-expanded={showTickerDropdown}
+                className="ux2-band-ink text-2xl font-bold tracking-tight flex items-baseline gap-1.5 group hover:opacity-90"
+              >
+                {/* No chevron. The ticker is the control — it underlines on
+                    hover, which says "this does something" without spending
+                    a glyph beside the asset's name to say it. */}
+                <span className="group-hover:underline underline-offset-4 decoration-white/30">{asset.symbol}</span>
+              </button>
+              <span className="ux2-band-muted text-base font-normal truncate max-w-[34ch]">{asset.company_name}</span>
+
+              {p.priceText ? (
+                <span className="flex items-baseline gap-2 ml-1">
+                  <span className="ux2-band-ink text-xl font-semibold tabular-nums tracking-tight">{p.priceText}</span>
+                  {/* Absent when the provider gave no usable previous close.
+                      The price stands alone rather than carrying a change
+                      computed against a zero. */}
+                  {p.changeText && (
+                    <span className={clsx('text-sm font-semibold tabular-nums', up ? 'ux2-pos' : 'ux2-neg')}>
+                      {p.changeText}{p.changePercentText && <> {p.changePercentText}</>}
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span className="ux2-band-muted text-sm ml-1" data-testid="asset-price-unavailable">
+                  {p.unavailable}
+                </span>
+              )}
+            </div>
+
+            {/* The metadata row. One line, muted, fixed order: venue,
+                currency, security type, then exposure and the price's
+                provenance. Everything here is either read off a column or
+                stated by the provider. Nothing is inferred. */}
+            <div className="mt-1 flex items-center gap-2 flex-wrap text-xs ux2-band-muted">
+              {facts.length > 0 && (
+                <span className="tracking-wide">{facts.join(' · ')}</span>
+              )}
+
+              {/* Held or not held, which is the first thing a PM looks for
+                  and was previously only reachable by opening a popover. */}
+              {!headerContext?.isLoading && !headerContext?.isError && (
+                <>
+                  {facts.length > 0 && <span aria-hidden="true">·</span>}
+                  <button
+                    type="button"
+                    onClick={() => portfolioCount > 0 && onOpenList('portfoliosContent')}
+                    disabled={portfolioCount === 0}
+                    className={clsx(
+                      'tracking-wide',
+                      portfolioCount > 0
+                        ? 'underline-offset-4 hover:underline cursor-pointer'
+                        : 'cursor-default',
+                    )}
+                  >
+                    {portfolioCount > 0
+                      ? `Held in ${portfolioCount} portfolio${portfolioCount === 1 ? '' : 's'}`
+                      : 'Not held'}
+                  </button>
+                </>
+              )}
+
+              {caption && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span
+                    className={clsx('tracking-wide', p.isStale && 'ux2-neg font-medium')}
+                    title={p.asOfISO ?? undefined}
+                  >
+                    {p.isStale ? `Stale: ${caption}` : caption}
                   </span>
-                )}
-              </span>
-            )}
+                </>
+              )}
+            </div>
           </div>
 
           {showTickerDropdown && (
