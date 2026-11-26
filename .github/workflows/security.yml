@@ -33,11 +33,44 @@ name: security
 # CREDENTIALS: every value arrives from `secrets.*` as a step env var. Nothing is written to a file in the
 # repository, echoed, or interpolated into a `run:` line where it would land in the log.
 
+# ── Why `main` is in the push list ─────────────────────────────────────────────────────────────────────
+#
+# `static` is a REQUIRED check and until 2026-11-26 it ran on `pull_request` only. So main's security
+# posture was asserted once, before a merge, and never again after one. Two consequences, both real:
+#
+#   - Capture freshness (the 7-day window) is a property of WALL-CLOCK TIME, not of a diff. Main could
+#     sit for a fortnight with a capture that no longer spoke for production and nothing would say so,
+#     because nothing re-ran. The 2026-11-26 consolidation found exactly this: every open PR carried a
+#     green `static` from a run that predated the expiry.
+#   - Branch protection has `strict: false`, so a PR merges with its checks evaluated against an older
+#     base. Post-merge is the only place the merged tree is ever checked as a whole.
+#
+# `static` reads committed files and source text — no database, no secrets, no staging project — so
+# running it on main costs one cheap job, and it is the only way this gate ever speaks about main.
+#
+# ── What this does and does not duplicate ──────────────────────────────────────────────────────────────
+#
+# `ci.yml`'s `policy-guard` job ("Tenant policy guard") already runs on push to main, and it runs the
+# SAME script — but it recaptures the inventory from production first when SUPABASE_ACCESS_TOKEN is
+# present. So the two ask different questions of the same code:
+#
+#   ci.yml policy-guard   is PRODUCTION clean right now?        (fresh capture, needs the secret)
+#   security.yml static    does the COMMITTED capture speak      (committed file, no secret)
+#                          for production, and are the frontend
+#                          tenant lint and edge-authz guard clean?
+#
+# Only the second is what the required check enforces, and the frontend tenant lint and edge-authz guard
+# do not run on main at all today. The overlap is one script that takes about two seconds and reads a
+# different input each time, which is not redundancy.
+#
+# It also explains how main stayed green while every PR went red: `policy-guard` refreshes the capture
+# inside the runner and never commits it, so the committed file kept ageing. A scheduled job that
+# recaptures AND commits is the durable fix and has not been built.
 on:
   pull_request:
     branches: [main]
   push:
-    branches: [security/asset-workspace-ci-harness, security/guardrails-c1]
+    branches: [main, security/asset-workspace-ci-harness, security/guardrails-c1]
   workflow_dispatch: {}
 
 jobs:
@@ -58,9 +91,20 @@ jobs:
 
   db:
     name: db (live role-context verification)
-    # No `if:`. See the header: an event filter here made this job skip on every PR, and a skipped job is
-    # green-adjacent grey in the check list. It runs on every trigger now and reports UNVERIFIED when it
-    # cannot reach a database.
+    # ── This `if:` is NOT the filter that was removed before ─────────────────────────────────────────
+    #
+    # The old one was `github.event_name == 'workflow_dispatch' || github.event_name == 'push'`, which
+    # excluded `pull_request` — the one event where this job gates anything. It skipped on every PR, and
+    # a skipped job is green-adjacent grey in the check list, so three security releases merged showing a
+    # `db` entry that had never executed.
+    #
+    # This one excludes exactly one case: a push to main. On a PR it still runs, still reports UNVERIFIED
+    # with no staging credentials, and still gates review. What it does not do is add a permanently-red
+    # job to main, where there is no merge to gate and where "Alert on red main" would fire on every
+    # commit forever — which is how a team learns to ignore a red main.
+    #
+    # Delete this `if:` the moment SECURITY_SUPABASE_* exist. Then it can be green on main, and should be.
+    if: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

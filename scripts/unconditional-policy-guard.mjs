@@ -168,7 +168,7 @@
  *   node scripts/unconditional-policy-guard.mjs --json
  */
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { CLASS, BROAD, resolveClass, resolveBindingProfile } from './lib/policy-predicate.mjs'
 
@@ -1039,42 +1039,124 @@ export function coverage(inventory) {
 // ---------------------------------------------------------------------------
 
 /**
- * In preference order.
+ * The ONE authoritative baseline: the committed CI capture.
  *
- * The full inventory is gitignored and is what a local capture produces, so it
- * wins when present — it is the richer artifact and a developer who just
- * captured one should be measuring it. The minimal one is the committed
- * fallback that lets this run in CI with no credentials; it carries only the
- * tables and policies this guard reads. See docs/audit/baselines/README.md.
+ * ── Why this is no longer a preference list ───────────────────────────────
  *
- * Not finding EITHER is still exit 2. A missing input is never a pass.
+ * It used to be, with `production-security-inventory.json` first, on the
+ * reasoning that a developer who had just captured one should be measuring it.
+ * That file is gitignored, so it exists only on a developer machine, and the
+ * consequence measured on 2026-11-26 was:
+ *
+ *   same commit, same guard, primary checkout   FAIL, 103 findings
+ *   same commit, same guard, fresh worktree/CI  PASS, 14 known, 0 new
+ *
+ * The local file was `schema_version: 2`, captured 2026-08-29. So the verdict
+ * depended on untracked local state, the alarming answer was the local one,
+ * and it was the wrong one: an August snapshot classified against a November
+ * `KNOWN_UNRESOLVED` list. It also printed a RATCHET instruction to delete six
+ * exception entries that were only "clean" because the snapshot predated them.
+ *
+ * A gate whose answer changes with untracked local state is not a gate. The
+ * committed capture is now the only implicit input, so this says the same
+ * thing everywhere. A richer local inventory is still usable, but only when
+ * named explicitly.
+ *
+ * Not finding it is still exit 2. A missing input is never a pass.
  */
-const DEFAULT_INVENTORIES = [
-  'docs/audit/baselines/production-security-inventory.json',
-  'docs/audit/baselines/ci-policy-inventory.json',
-]
+const AUTHORITATIVE_INVENTORY = 'docs/audit/baselines/ci-policy-inventory.json'
+
+/**
+ * Inventories that must never be picked up implicitly.
+ *
+ * Silently ignoring a file a developer just captured is its own trap, so the
+ * guard names it and prints how to use it on purpose.
+ */
+const SHADOWING_INVENTORIES = ['docs/audit/baselines/production-security-inventory.json']
+
+/**
+ * Which inventory this run reads, and what it is deliberately not reading.
+ *
+ * Pure and injectable so the decision is testable without touching a
+ * filesystem: a regression test must be able to assert "an untracked inventory
+ * is present and was NOT chosen" without creating one.
+ */
+export function chooseInventory(explicit, { exists = existsSync } = {}) {
+  if (explicit) return { path: explicit, explicit: true, shadowed: [] }
+  return {
+    path: AUTHORITATIVE_INVENTORY,
+    explicit: false,
+    shadowed: SHADOWING_INVENTORIES.filter(p => exists(p)),
+  }
+}
+
+/**
+ * The exit code for a run: trustworthiness of the capture FIRST, findings
+ * SECOND.
+ *
+ * ── The ordering bug this exists to kill ──────────────────────────────────
+ *
+ * The old code returned `EXIT.FAIL` on `fresh.length` BEFORE checking
+ * `schemaOk`. So a schema_version 2 capture produced 103 "findings" from
+ * detectors that cannot run on that schema, and reported them as a real
+ * failure. Findings computed from an inventory the guard has already decided
+ * it cannot analyse are not findings; they are noise wearing a severity label.
+ *
+ * So: a capture too old in SCHEMA to analyse is BROKEN and claims nothing
+ * either way. A capture merely old in TIME can still be classified, so new
+ * findings there are still reported — fail closed — but as of the capture
+ * date, never as the state of production.
+ *
+ * Both callers (`--json` and the printed report) go through this, so the two
+ * cannot drift apart.
+ */
+export function verdictFor({ freshness: fr, freshCount }) {
+  if (!fr.schemaOk) return { exit: EXIT.BROKEN, state: 'broken-schema' }
+  if (freshCount > 0) return { exit: EXIT.FAIL, state: fr.ok ? 'fail' : 'fail-stale' }
+  if (!fr.ok) return { exit: EXIT.UNVERIFIED, state: 'unverified-stale' }
+  return { exit: EXIT.PASS, state: 'pass' }
+}
 
 function main(argv) {
   const asJson = argv.includes('--json')
   const explicit = argv.find(a => a.endsWith('.json') && a !== '--json')
-  const candidates = explicit ? [explicit] : DEFAULT_INVENTORIES
+  const chosen = chooseInventory(explicit)
+  const path = chosen.path
 
-  let inventory, path, errors = []
-  for (const c of candidates) {
-    try {
-      inventory = JSON.parse(readFileSync(c, 'utf8'))
-      path = c
-      break
-    } catch (e) {
-      errors.push(`${c}: ${e.message}`)
-    }
-  }
-  if (!inventory) {
-    console.error('FAIL: could not read a security inventory.')
-    for (const e of errors) console.error(`      ${e}`)
-    console.error('      Generate one with: node scripts/audit/schema-baseline.mjs')
-    console.error('      ...or the committed CI subset:  --ci-minimal')
+  let inventory
+  try {
+    inventory = JSON.parse(readFileSync(path, 'utf8'))
+  } catch (e) {
+    // No fallback. Falling back is how a malformed authoritative capture used
+    // to be papered over by whatever else happened to be on disk.
+    // Wording held deliberately: `src/lib/security/__tests__/decision-reviews-isolation.test.ts`
+    // asserts this string as part of proving the guard fails closed with no inventory. Rewording it
+    // to suit this change would have meant editing a security test to accommodate the code.
+    console.error('BROKEN: could not read a security inventory.')
+    console.error(`        ${path}: ${e.message}`)
+    console.error('        Generate the committed CI subset with:')
+    console.error('        node scripts/audit/schema-baseline.mjs --ci-minimal')
     return EXIT.BROKEN
+  }
+
+  // Valid JSON is not enough: an array, a string or null all parse.
+  if (inventory === null || typeof inventory !== 'object' || Array.isArray(inventory)) {
+    console.error(`BROKEN: ${path} parsed, but is not an inventory object.`)
+    console.error('        Refusing to classify, and refusing to report a pass.')
+    return EXIT.BROKEN
+  }
+
+  if (chosen.shadowed.length) {
+    const lines = [
+      '',
+      'NOTE: an untracked inventory is present and was NOT used:',
+      ...chosen.shadowed.map(p => `        ${p}`),
+      `      This run reads the committed ${path}, so it says the same thing`,
+      '      here as it does in CI. To measure the local one on purpose:',
+      `        node scripts/unconditional-policy-guard.mjs ${chosen.shadowed[0]}`,
+      '',
+    ]
+    for (const l of lines) (asJson ? console.error : console.log)(l)
   }
 
   // Positive proof of work — an empty inventory must not read as a pass.
@@ -1093,12 +1175,22 @@ function main(argv) {
   const cov = coverage(inventory)
   const fr = freshness(inventory)
 
+  const verdict = verdictFor({ freshness: fr, freshCount: fresh.length })
+
   if (asJson) {
-    console.log(JSON.stringify({ findings, fresh, stale, resolved, coverage: cov, freshness: fr }, null, 2))
-    if (fresh.length > 0) return EXIT.FAIL
-    if (!fr.schemaOk) return EXIT.BROKEN
-    if (!fr.ok) return EXIT.UNVERIFIED
-    return EXIT.PASS
+    // `inventory` and `verdict.state` are part of the payload because a
+    // consumer that cannot tell WHICH capture produced a verdict, or whether
+    // the findings were classifiable at all, is in the position this guard was
+    // in before: reading a number without knowing what it counted.
+    console.log(JSON.stringify({
+      inventory: path,
+      verdict: verdict.state,
+      trustworthy: fr.schemaOk && fr.ok,
+      findings: verdict.state === 'broken-schema' ? [] : findings,
+      fresh: verdict.state === 'broken-schema' ? [] : fresh,
+      stale, resolved, coverage: cov, freshness: fr,
+    }, null, 2))
+    return verdict.exit
   }
 
   console.log(`Unconditional-policy guard — ${path}`)
@@ -1118,6 +1210,22 @@ function main(argv) {
   }
   console.log('')
 
+  // Before any finding is printed. On a schema the detectors cannot read, the
+  // findings list is not a weaker answer than usual — it is a different
+  // question's answer, and the RATCHET suggestion below would tell a reader to
+  // delete real exception entries on the strength of it.
+  if (verdict.state === 'broken-schema') {
+    console.log(`BROKEN: inventory is schema_version ${Number.isFinite(fr.version) ? fr.version : 'absent'},`)
+    console.log(`        and this guard needs >= ${MIN_SCHEMA_VERSION} to tell a wholly caller-free`)
+    console.log('        predicate from an unanalysed one. Recapture:')
+    console.log('        node scripts/audit/schema-baseline.mjs --ci-minimal')
+    console.log('')
+    console.log(`        ${findings.length} finding(s) were computed and are NOT reported:`)
+    console.log('        detectors that cannot run on this schema cannot produce a')
+    console.log('        finding worth acting on. This claims nothing either way.')
+    return verdict.exit
+  }
+
   const bySeverity = {}
   for (const f of findings) (bySeverity[f.severity] ??= []).push(f)
   for (const sev of Object.keys(bySeverity).sort()) {
@@ -1136,31 +1244,28 @@ function main(argv) {
     console.log(`  Allowlist entries no longer needed: ${stale.join(', ')}\n`)
   }
 
-  if (fresh.length) {
+  if (verdict.state === 'fail' || verdict.state === 'fail-stale') {
     console.log(`FAIL: ${fresh.length} finding(s) not in KNOWN_UNRESOLVED.`)
     console.log('      Either fix the policy, or — if the table is genuinely global')
     console.log('      reference data — add it to GLOBAL_READ_ALLOWLIST with a reason.')
-    return EXIT.FAIL
+    if (verdict.state === 'fail-stale') {
+      console.log('')
+      console.log(`      AS OF THE CAPTURE, NOT AS OF NOW: ${fr.reason}.`)
+      console.log('      These findings were true when the capture was taken. Treat them')
+      console.log('      as real and fail closed, but recapture before concluding')
+      console.log('      anything about what production looks like today.')
+    }
+    return verdict.exit
   }
 
-  // A capture too old a schema to analyse is a broken gate, not a stale one:
-  // detector 4 cannot run at all, so the run has not asked the question.
-  if (!fr.schemaOk) {
-    console.log(`BROKEN: inventory is schema_version ${Number.isFinite(fr.version) ? fr.version : 'absent'},`)
-    console.log(`        and this guard needs >= ${MIN_SCHEMA_VERSION} to tell a wholly caller-free`)
-    console.log('        predicate from an unanalysed one. Recapture:')
-    console.log('        node scripts/audit/schema-baseline.mjs --ci-minimal')
-    return EXIT.BROKEN
-  }
-
-  if (!fr.ok) {
+  if (verdict.state === 'unverified-stale') {
     console.log(`UNVERIFIED: ${findings.length} known finding(s), 0 new — but ${fr.reason}.`)
     console.log('            This gate reads a committed FILE; it never connects to the')
     console.log('            database. A clean result against an old capture says the last')
     console.log('            capture was clean, NOT that production is. Recapture:')
     console.log('            node scripts/audit/schema-baseline.mjs --ci-minimal')
     console.log('            This is not a pass. It is a refusal to claim one.')
-    return EXIT.UNVERIFIED
+    return verdict.exit
   }
 
   console.log(`PASS: ${findings.length} known finding(s), 0 new.`)
@@ -1172,7 +1277,7 @@ function main(argv) {
   console.log('      anon denial are proven only by the role-context suites in')
   console.log('      supabase/tests/.')
   console.log('      KNOWN_UNRESOLVED is a ratchet, not a baseline. It must shrink.')
-  return EXIT.PASS
+  return verdict.exit
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
