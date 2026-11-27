@@ -767,6 +767,38 @@ function TesseractField() {
 const ACCENT_TEXT =
   'bg-gradient-to-br from-white via-slate-200 to-slate-400 bg-clip-text text-transparent'
 
+/*
+ * ── THE TYPE SCALE, raised on 2026-11-27 ───────────────────────────────
+ *
+ * The report was that the page is hard to digest. Measured in the browser
+ * at 1440px, 183 of 201 text elements rendered BELOW 16px, and the sizes
+ * in use below 16 were 9, 10, 11, 12, 13, 14 and 15. Seven steps inside
+ * seven pixels is not a scale, it is drift: nothing was deliberately
+ * smaller than anything else, so the whole page read as uniformly quiet.
+ *
+ * It is now five steps, and the smallest is 12:
+ *
+ *   18px  sub-headings (h3)
+ *   17px  lead paragraphs
+ *   16px  BODY COPY — the default, and the number that mattered most
+ *   14px  secondary copy, nav, record chips, figure captions
+ *   12px  the floor: mono field tags, eyebrow text, diagram labels
+ *
+ * The first pass of this landed body copy at 15 and a 13px tier holding 67
+ * elements, which was still most of the page under 16. 15 and 13 are the
+ * sizes a designer reaches for to make something look tidy, and tidy at
+ * arm's length is what "hard to digest" means when a reader says it.
+ *
+ * NOTHING below 12. A 9px or 10px label is decoration that happens to
+ * contain words; it is unreadable to anyone over about forty and it was
+ * carrying real content here, including the "Rejection / Review /
+ * Decision" labels in the memory ledger.
+ *
+ * Headings moved with it: section titles 36 -> 40, h3 15 -> 18, so the
+ * step between a heading and its body stays legible now the body is
+ * bigger.
+ */
+
 /** The 1px inner highlight that makes a translucent panel read as glass. */
 const GLASS =
   'relative rounded-2xl bg-white/[0.035] ring-1 ring-inset ring-white/10 ' +
@@ -844,7 +876,7 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3">
       <span aria-hidden="true" className={`h-px w-8 bg-gradient-to-r ${ACCENT_RULE}`} />
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{children}</p>
+      <p className="text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-400">{children}</p>
     </div>
   )
 }
@@ -914,7 +946,9 @@ function Section({
           <div className="lg:col-span-7">
             {label && <Eyebrow>{label}</Eyebrow>}
             <h2
-              className={`text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-white sm:text-4xl ${
+              /* sm:text-[2.5rem] = 40px, up from text-4xl's 36, so the step
+                 from a section title to its now-17px lead still reads. */
+              className={`text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-white sm:text-[2.5rem] ${
                 label ? 'mt-5' : ''
               }`}
             >
@@ -923,7 +957,7 @@ function Section({
           </div>
           {lead && (
             <div className="lg:col-span-5 lg:pt-2">
-              <p className="max-w-[56ch] text-[15px] leading-[1.75] text-slate-400">{lead}</p>
+              <p className="max-w-[56ch] text-[17px] leading-[1.75] text-slate-400">{lead}</p>
             </div>
           )}
         </div>
@@ -1003,7 +1037,7 @@ function RecordChain() {
         left and a pill reading "Record shape" on the right, which are the
         same statement twice with a piece of chrome around the second.
       */}
-      <figcaption className="text-[13px] font-semibold tracking-tight text-white">
+      <figcaption className="text-[16px] font-semibold tracking-tight text-white">
         How one decision is stored
       </figcaption>
 
@@ -1054,11 +1088,11 @@ function RecordChain() {
                   frozen ? 'bg-white' : 'bg-amber-400'
                 }`}
               />
-              <p className="mt-3.5 text-[13px] font-semibold leading-snug tracking-tight text-white">
+              <p className="mt-3.5 text-[16px] font-semibold leading-snug tracking-tight text-white">
                 {record}
               </p>
               {via && (
-                <p className="mt-1.5 font-mono text-[11px] leading-relaxed text-slate-500">
+                <p className="mt-1.5 font-mono text-[14px] leading-relaxed text-slate-500">
                   {via}
                 </p>
               )}
@@ -1076,12 +1110,12 @@ function RecordChain() {
         link, so it reads correctly as a footnote.
       */}
       <div className="mt-9 grid gap-x-10 gap-y-4 border-t border-white/[0.07] pt-6 sm:grid-cols-2">
-        <p className="text-[12px] leading-relaxed text-slate-300">
+        <p className="text-[14px] leading-relaxed text-slate-300">
           <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-white align-middle" />
           Later edits create new versions and never alter what the PM
           actually read.
         </p>
-        <p className="flex items-start gap-2.5 text-[12px] leading-relaxed text-slate-500">
+        <p className="flex items-start gap-2.5 text-[14px] leading-relaxed text-slate-500">
           <RotateCcw className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           The review returns to the note, so the next decision on this name
           starts from what the firm already learned.
@@ -1314,14 +1348,14 @@ function LifecycleWalk() {
                 }`}
               />
               <span
-                className={`mt-2.5 block text-[10px] font-semibold tabular-nums tracking-[0.12em] ${
+                className={`mt-2.5 block text-[12px] font-semibold tabular-nums tracking-[0.12em] ${
                   on ? ACCENT_NUM : 'text-slate-600'
                 }`}
               >
                 {String(i + 1).padStart(2, '0')}
               </span>
               <span
-                className={`mt-0.5 block text-[13px] font-semibold tracking-tight transition-colors ${
+                className={`mt-0.5 block text-[16px] font-semibold tracking-tight transition-colors ${
                   on ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'
                 }`}
               >
@@ -1350,8 +1384,8 @@ function LifecycleWalk() {
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/10 ring-1 ring-inset ring-amber-300/25">
               <Icon className={`h-[17px] w-[17px] ${ACCENT_ICON}`} aria-hidden="true" />
             </span>
-            <h3 className="text-[17px] font-semibold tracking-tight text-white">{stage}</h3>
-            <span className="text-[13px] text-slate-500">
+            <h3 className="text-[18px] font-semibold tracking-tight text-white">{stage}</h3>
+            <span className="text-[16px] text-slate-500">
               you open{' '}
               <span className="font-medium text-slate-300">{screen}</span>
             </span>
@@ -1387,19 +1421,19 @@ function LifecycleWalk() {
             </div>
 
             <div className="lg:col-span-5">
-              <p className="max-w-[58ch] text-[15px] leading-[1.75] text-slate-300">{line}</p>
+              <p className="max-w-[58ch] text-[17px] leading-[1.75] text-slate-300">{line}</p>
 
               {/*
                 The linkage, named. This is the sentence the static stack
                 could not say: every stage after the first hangs off a
                 record that already exists, and the first is where it starts.
               */}
-              <p className="mt-5 flex items-center gap-2 text-[12px] text-slate-500">
+              <p className="mt-5 flex items-center gap-2 text-[14px] text-slate-500">
                 <span aria-hidden="true" className="text-amber-300">&#8627;</span>
                 {upstream ? (
                   <>
                     Points back at the{' '}
-                    <span className="font-mono text-[11px] text-slate-300">{upstream.record}</span>
+                    <span className="font-mono text-[14px] text-slate-300">{upstream.record}</span>
                     {' '}it came from.
                   </>
                 ) : (
@@ -1407,7 +1441,7 @@ function LifecycleWalk() {
                 )}
               </p>
 
-              <p className="mt-6 max-w-[58ch] border-l border-amber-300/30 pl-4 text-[13px] leading-[1.75] text-slate-400">
+              <p className="mt-6 max-w-[58ch] border-l border-amber-300/30 pl-4 text-[16px] leading-[1.75] text-slate-400">
                 {so}
               </p>
 
@@ -1419,15 +1453,15 @@ function LifecycleWalk() {
                 than as two cards competing for the same glance.
               */}
               <div className="mt-7 rounded-xl bg-white/[0.02] p-5 ring-1 ring-inset ring-white/[0.06]">
-                <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
+                <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-slate-500">
                   Stored as
                 </p>
-                <p className="mt-2 font-mono text-[12px] text-white">{record}</p>
+                <p className="mt-2 font-mono text-[14px] text-white">{record}</p>
                 <ul className="mt-3.5 flex flex-wrap gap-1.5 border-t border-white/[0.07] pt-3.5">
                   {fields.map(f => (
                     <li
                       key={f}
-                      className="rounded bg-white/[0.04] px-2 py-1 font-mono text-[10px] text-slate-400 ring-1 ring-inset ring-white/[0.07]"
+                      className="rounded bg-white/[0.04] px-2 py-1 font-mono text-[12px] text-slate-400 ring-1 ring-inset ring-white/[0.07]"
                     >
                       {f}
                     </li>
@@ -1642,10 +1676,10 @@ export function LandingPage() {
               <span className="text-[18px] font-semibold tracking-[-0.015em]">Tesseract</span>
             </a>
             <div className="flex items-center gap-1">
-              <a href="#lifecycle" className="hidden rounded-md px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
+              <a href="#lifecycle" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
                 How it works
               </a>
-              <a href="#research" className="hidden rounded-md px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:text-white md:block">
+              <a href="#research" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white md:block">
                 Research
               </a>
               {/*
@@ -1654,15 +1688,15 @@ export function LandingPage() {
                 because "How it works" already goes there and two nav items
                 landing on one section is a nav that lies about the page.
               */}
-              <a href="#memory" className="hidden rounded-md px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:text-white md:block">
+              <a href="#memory" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white md:block">
                 Memory
               </a>
-              <a href="#partners" className="hidden rounded-md px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
+              <a href="#partners" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
                 Design partners
               </a>
               <Link
                 to="/login"
-                className="ml-2 rounded-lg px-3.5 py-2 text-[13px] font-semibold text-slate-200 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/5 hover:ring-white/30"
+                className="ml-2 rounded-lg px-3.5 py-2 text-[16px] font-semibold text-slate-200 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/5 hover:ring-white/30"
               >
                 Sign in
               </Link>
@@ -1814,8 +1848,8 @@ export function LandingPage() {
                   ['Whether the thesis held', 'The outcome judged against the original claim.'],
                 ].map(([term, def]) => (
                   <div key={term} className="border-t border-amber-300/25 pt-4">
-                    <dt className="text-[13px] font-semibold tracking-tight text-white">{term}</dt>
-                    <dd className="mt-1.5 max-w-[34ch] text-[13px] leading-[1.7] text-slate-500">
+                    <dt className="text-[16px] font-semibold tracking-tight text-white">{term}</dt>
+                    <dd className="mt-1.5 max-w-[34ch] text-[16px] leading-[1.7] text-slate-500">
                       {def}
                     </dd>
                   </div>
@@ -1898,7 +1932,7 @@ export function LandingPage() {
             <p className="text-pretty text-2xl leading-[1.25] tracking-[-0.02em] text-slate-100 sm:text-3xl lg:col-span-7 lg:text-[2.5rem]">
               A firm that cannot say why it was right cannot repeat it.
             </p>
-            <p className="max-w-[44ch] text-pretty text-[15px] leading-[1.8] text-slate-400 lg:col-span-5 lg:pt-2">
+            <p className="max-w-[44ch] text-pretty text-[17px] leading-[1.8] text-slate-400 lg:col-span-5 lg:pt-2">
               Judgement is the only thing a firm compounds that it cannot buy.
               Without a record, every name starts over and every lesson is
               learned once.
@@ -2017,7 +2051,7 @@ export function LandingPage() {
                       aria-hidden="true"
                       className="h-px w-8 bg-gradient-to-r from-amber-500/90 to-amber-500/0"
                     />
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    <p className="text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Research and capture
                     </p>
                   </div>
@@ -2029,12 +2063,12 @@ export function LandingPage() {
                     "Work already done" is the general form and it is the
                     stronger promise.
                   */}
-                  <h2 className="mt-5 text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-slate-900 sm:text-4xl">
+                  <h2 className="mt-5 text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-slate-900 sm:text-[2.5rem]">
                     The record assembles itself out of work already done
                   </h2>
                 </div>
                 <div className="lg:col-span-5 lg:pt-2">
-                  <p className="max-w-[56ch] text-[15px] leading-[1.75] text-slate-600">
+                  <p className="max-w-[56ch] text-[17px] leading-[1.75] text-slate-600">
                     No firm adopts a system that asks its people to write
                     things down a second time, after the fact, for somebody
                     else’s benefit. So capture is not a step. It is where the
@@ -2063,7 +2097,7 @@ export function LandingPage() {
                 <CaptureTrade />
               </div>
 
-              <p className="mt-16 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <p className="mt-16 text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Where the writing already happens
               </p>
               <div className="mt-8 grid gap-x-14 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
@@ -2075,8 +2109,8 @@ export function LandingPage() {
                         {/* amber-600, not amber-300: this one is on the LIGHT band. */}
                         <I className="h-[17px] w-[17px] text-amber-600" aria-hidden="true" />
                       </span>
-                      <h3 className="mt-4 text-[15px] font-semibold tracking-tight text-slate-900">{h}</h3>
-                      <p className="mt-2 max-w-[44ch] text-[14px] leading-[1.75] text-slate-600">{p}</p>
+                      <h3 className="mt-4 text-[18px] font-semibold tracking-tight text-slate-900">{h}</h3>
+                      <p className="mt-2 max-w-[44ch] text-[16px] leading-[1.75] text-slate-600">{p}</p>
                     </div>
                   )
                 })}
@@ -2158,9 +2192,9 @@ export function LandingPage() {
                   <li key={h}>
                     <div className="flex items-center gap-3">
                       <I className="h-[18px] w-[18px] shrink-0 text-amber-300" aria-hidden="true" />
-                      <h3 className="text-[15px] font-semibold tracking-tight text-white">{h}</h3>
+                      <h3 className="text-[18px] font-semibold tracking-tight text-white">{h}</h3>
                     </div>
-                    <p className="mt-2.5 max-w-[44ch] text-[14px] leading-[1.75] text-slate-400">{p}</p>
+                    <p className="mt-2.5 max-w-[44ch] text-[16px] leading-[1.75] text-slate-400">{p}</p>
                   </li>
                 )
               })}
@@ -2169,7 +2203,7 @@ export function LandingPage() {
               <MemoryLedger />
             </div>
           </div>
-          <p className="mt-14 max-w-[64ch] text-[13px] leading-[1.75] text-slate-500">
+          <p className="mt-14 max-w-[64ch] text-[16px] leading-[1.75] text-slate-500">
             Tesseract makes a firm's reasoning retrievable. It does not promise
             better returns, and no part of this platform should be read as a
             forecast of investment performance.
@@ -2210,13 +2244,13 @@ export function LandingPage() {
               a label, so the words survive the restyle: dropping them in the
               rewrite is exactly what it exists to catch, and it did.
             */}
-            <p className="max-w-[60ch] text-[14px] leading-[1.75] text-slate-400">
+            <p className="max-w-[60ch] text-[16px] leading-[1.75] text-slate-400">
               It knows where you are, it reads the record, not the internet,
               and it cites what it used. It runs on your organization&rsquo;s own
               provider key, held encrypted, so the firm controls which model
               its reasoning reaches.
             </p>
-            <p className="max-w-[60ch] text-[13px] leading-[1.75] text-slate-500">
+            <p className="max-w-[60ch] text-[16px] leading-[1.75] text-slate-500">
               ACT AI assists the people who make the decisions. It does not
               manage portfolios, place orders, or produce recommendations on
               its own authority.
@@ -2324,13 +2358,13 @@ export function LandingPage() {
                 {/* The mark's third and smallest appearance, closing the page. */}
                 <div className="flex items-center gap-2.5">
                   <TesseractLogo size={22} />
-                  <span className="text-[14px] font-semibold tracking-[-0.01em] text-white">Tesseract</span>
+                  <span className="text-[16px] font-semibold tracking-[-0.01em] text-white">Tesseract</span>
                 </div>
-                <p className="mt-3 text-[13px] text-slate-500">
+                <p className="mt-3 text-[16px] text-slate-500">
                   A decision operating system for investment teams.
                 </p>
               </div>
-              <nav aria-label="Footer" className="flex flex-wrap gap-x-8 gap-y-2 text-[13px] text-slate-500">
+              <nav aria-label="Footer" className="flex flex-wrap gap-x-8 gap-y-2 text-[16px] text-slate-500">
                 <a href="#lifecycle" className="transition-colors hover:text-white">How it works</a>
                 <a href="#research" className="transition-colors hover:text-white">Research</a>
                 <a href="#memory" className="transition-colors hover:text-white">Memory</a>
@@ -2346,7 +2380,13 @@ export function LandingPage() {
               advice or a performance claim. "Pre-release." used to open it
               and has been removed.
             */}
-            <p className="mt-10 border-t border-white/[0.06] pt-6 text-[12px] leading-[1.75] text-slate-600">
+            {/*
+              16px, not 14. This is the page's only legal statement and the
+              one paragraph where small type is a liability rather than a
+              style choice: a disclaimer nobody can read is a disclaimer
+              that does not do its job. The grey is enough to keep it quiet.
+            */}
+            <p className="mt-10 border-t border-white/[0.06] pt-6 text-[16px] leading-[1.75] text-slate-600">
               Tesseract is research and workflow software. It is not an investment adviser or a broker-dealer, it gives no investment advice, and it places no orders. Nothing on this page is an offer of securities, investment advice, or a performance representation.
             </p>
 
@@ -2378,7 +2418,7 @@ export function LandingPage() {
             <nav
               aria-label="Legal"
               data-testid="landing-legal-links"
-              className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[12px] text-slate-600"
+              className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[14px] text-slate-600"
             >
               {LEGAL_DOCUMENTS.map(doc => (
                 <Link

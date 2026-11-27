@@ -123,12 +123,12 @@ function ScatterVisual() {
       />
       <text
         x={CX} y={CY - 4} textAnchor="middle"
-        className="fill-amber-300/90 text-[12px] font-semibold uppercase"
+        className="fill-amber-300/90 text-[14px] font-semibold uppercase"
         style={{ letterSpacing: '0.1em' }}
       >
         the why
       </text>
-      <text x={CX} y={CY + 14} textAnchor="middle" className="fill-slate-500 text-[11px]">
+      <text x={CX} y={CY + 14} textAnchor="middle" className="fill-slate-500 text-[14px]">
         nothing holds it
       </text>
 
@@ -138,7 +138,7 @@ function ScatterVisual() {
             x={cx - 30} y={cy - 12} width="60" height="24" rx="6"
             fill="rgb(255 255 255 / 0.05)" stroke="rgb(255 255 255 / 0.12)"
           />
-          <text x={cx} y={cy + 5} textAnchor="middle" className="fill-slate-300 text-[12px]">
+          <text x={cx} y={cy + 5} textAnchor="middle" className="fill-slate-300 text-[14px]">
             {label}
           </text>
         </g>
@@ -184,14 +184,14 @@ function BrokenChainVisual() {
             )}
             <text
               x="46" y={y + 5}
-              className={kept ? 'fill-slate-200 text-[13px]' : 'fill-slate-600 text-[13px]'}
+              className={kept ? 'fill-slate-200 text-[16px]' : 'fill-slate-600 text-[16px]'}
             >
               {label}
             </text>
             {!kept && (
               <text
                 x="46" y={y + 21}
-                className="fill-slate-700 text-[10px] uppercase"
+                className="fill-slate-700 text-[12px] uppercase"
                 style={{ letterSpacing: '0.1em' }}
               >
                 gone
@@ -219,24 +219,24 @@ function LuckVisual() {
      * 20px band. Each track now owns a horizontal lane.
      */
     <svg viewBox="0 0 280 230" className="h-60 w-full" role="presentation">
-      <text x="2" y="16" className="fill-slate-500 text-[11px] uppercase" style={{ letterSpacing: '0.1em' }}>
+      <text x="2" y="16" className="fill-slate-500 text-[14px] uppercase" style={{ letterSpacing: '0.1em' }}>
         Same thesis, two paths
       </text>
 
       <path d="M6 62 C 90 62, 150 58, 196 56" fill="none" stroke="rgb(251 191 36 / 0.85)" strokeWidth="2" />
-      <text x="6" y="84" className="fill-amber-300 text-[12px]">the thesis played out</text>
+      <text x="6" y="84" className="fill-amber-300 text-[14px]">the thesis played out</text>
 
       <path
         d="M6 162 C 80 162, 130 86, 196 60" fill="none"
         stroke="rgb(255 255 255 / 0.22)" strokeWidth="2" strokeDasharray="4 5"
       />
-      <text x="6" y="184" className="fill-slate-500 text-[12px]">something else did</text>
+      <text x="6" y="184" className="fill-slate-500 text-[14px]">something else did</text>
 
       <circle cx="200" cy="58" r="6" fill="rgb(255 255 255 / 0.9)" />
-      <text x="212" y="62" className="fill-slate-200 text-[12px]">Worked</text>
+      <text x="212" y="62" className="fill-slate-200 text-[14px]">Worked</text>
 
       <line x1="2" y1="204" x2="278" y2="204" stroke="rgb(255 255 255 / 0.08)" />
-      <text x="2" y="222" className="fill-slate-600 text-[10px] uppercase" style={{ letterSpacing: '0.1em' }}>
+      <text x="2" y="222" className="fill-slate-600 text-[12px] uppercase" style={{ letterSpacing: '0.1em' }}>
         Returns cannot separate these
       </text>
     </svg>
@@ -255,8 +255,8 @@ export function CostOfForgetting() {
           a deliberate difference.
         */
         <li key={key} data-cost={key} className="flex flex-col">
-          <h3 className="text-[15px] font-semibold tracking-tight text-white">{title}</h3>
-          <p className="mt-2 max-w-[38ch] text-[13px] leading-[1.75] text-slate-400">{line}</p>
+          <h3 className="text-[18px] font-semibold tracking-tight text-white">{title}</h3>
+          <p className="mt-2 max-w-[38ch] text-[16px] leading-[1.75] text-slate-400">{line}</p>
           <div className="mt-auto pt-6">
             <div className="rounded-xl bg-white/[0.02] p-4 ring-1 ring-inset ring-white/[0.06]">
               <Visual />
@@ -288,23 +288,23 @@ export function CaptureTrade() {
         className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-slate-900/10"
       >
         <figcaption className="flex items-baseline justify-between gap-3">
-          <span className="text-[13px] font-semibold tracking-tight text-slate-900">
+          <span className="text-[16px] font-semibold tracking-tight text-slate-900">
             What somebody writes
           </span>
-          <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
             Illustration
           </span>
         </figcaption>
         <div className="mt-4 rounded-lg bg-slate-50 p-4 ring-1 ring-inset ring-slate-900/[0.06]">
-          <p data-security-name className="font-mono text-[11px] text-slate-500">
+          <p data-security-name className="font-mono text-[14px] text-slate-500">
             NORTHWIND
           </p>
-          <p className="mt-2 text-[13px] leading-[1.7] text-slate-700">
+          <p className="mt-2 text-[16px] leading-[1.7] text-slate-700">
             New plant slipped a quarter. Still think margin recovery lands, but
             the timing case is weaker. Target down to the low fifties.
           </p>
         </div>
-        <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
+        <p className="mt-4 text-[14px] leading-relaxed text-slate-500">
           A note somebody was going to write regardless.
         </p>
       </figure>
@@ -314,7 +314,7 @@ export function CaptureTrade() {
         <span aria-hidden="true" className="text-[18px] text-slate-600 lg:rotate-90">
           &#8594;
         </span>
-        <span className="ml-3 text-[10px] uppercase tracking-[0.14em] text-slate-600 lg:ml-0 lg:[writing-mode:vertical-rl]">
+        <span className="ml-3 text-[12px] uppercase tracking-[0.14em] text-slate-600 lg:ml-0 lg:[writing-mode:vertical-rl]">
           No filing step
         </span>
       </div>
@@ -338,10 +338,10 @@ export function CaptureTrade() {
         className="rounded-2xl bg-slate-900 p-5 ring-1 ring-inset ring-slate-900/10"
       >
         <figcaption className="flex items-baseline justify-between gap-3">
-          <span className="text-[13px] font-semibold tracking-tight text-white">
+          <span className="text-[16px] font-semibold tracking-tight text-white">
             What the firm now has
           </span>
-          <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
             Illustration
           </span>
         </figcaption>
@@ -355,12 +355,12 @@ export function CaptureTrade() {
               key={what}
               className="flex items-baseline justify-between gap-3 rounded-lg bg-white/[0.06] px-3 py-2.5 ring-1 ring-inset ring-white/10"
             >
-              <span className="text-[12px] text-white">{what}</span>
-              <span className="text-[11px] text-slate-400">{how}</span>
+              <span className="text-[14px] text-white">{what}</span>
+              <span className="text-[14px] text-slate-400">{how}</span>
             </li>
           ))}
         </ul>
-        <p className="mt-4 text-[11px] leading-relaxed text-slate-400">
+        <p className="mt-4 text-[14px] leading-relaxed text-slate-400">
           Typed records, created by the writing. Nobody filed anything.
         </p>
       </figure>
@@ -389,15 +389,15 @@ export function MemoryLedger() {
     >
       <figcaption className="flex items-baseline justify-between gap-3">
         {/* Said "One name, one year" while the figure draws three of them. */}
-        <span className="text-[13px] font-semibold tracking-tight text-white">
+        <span className="text-[16px] font-semibold tracking-tight text-white">
           One name, three years
         </span>
-        <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
+        <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-500">
           Illustration
         </span>
       </figcaption>
 
-      <p data-security-name className="mt-4 font-mono text-[12px] tracking-tight text-white">
+      <p data-security-name className="mt-4 font-mono text-[14px] tracking-tight text-white">
         NORTHWIND
       </p>
 
@@ -423,7 +423,7 @@ export function MemoryLedger() {
         ].map(({ year, marks, gold }) => (
           <div key={year} className="flex items-center gap-3">
             {/* w-16 wrapped "Year three" onto two lines and threw the row off its marks. */}
-            <span className="w-20 shrink-0 text-[10px] uppercase tracking-[0.1em] text-slate-500">
+            <span className="w-20 shrink-0 text-[12px] uppercase tracking-[0.1em] text-slate-500">
               {year}
             </span>
             <span className="flex flex-wrap gap-1">
@@ -443,9 +443,9 @@ export function MemoryLedger() {
       <ol className="mt-5 space-y-2 border-t border-white/[0.07] pt-4">
         {rows.map(({ when, what, kind }) => (
           <li key={when} className="flex items-baseline gap-3">
-            <span className="w-7 shrink-0 font-mono text-[10px] text-slate-500">{when}</span>
-            <span className="min-w-0 flex-1 text-[12px] leading-snug text-slate-200">{what}</span>
-            <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-amber-300/80">
+            <span className="w-7 shrink-0 font-mono text-[12px] text-slate-500">{when}</span>
+            <span className="min-w-0 flex-1 text-[14px] leading-snug text-slate-200">{what}</span>
+            <span className="shrink-0 text-[12px] uppercase tracking-[0.12em] text-amber-300/80">
               {kind}
             </span>
           </li>
@@ -457,7 +457,7 @@ export function MemoryLedger() {
         names are the half of its judgement that normally leaves no trace,
         and that is the part this section is actually selling.
       */}
-      <p className="mt-4 border-t border-white/[0.07] pt-4 text-[11px] leading-relaxed text-slate-500">
+      <p className="mt-4 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-500">
         The rejection is a record too, which is why the firm can study what it
         declined and not only what it owns.
       </p>
@@ -509,7 +509,7 @@ export function AssistantFlow() {
               ].map(({ name, on }) => (
                 <div
                   key={name}
-                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-[12px] ring-1 ring-inset ${
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-[14px] ring-1 ring-inset ${
                     on
                       ? 'bg-amber-400/10 text-white ring-amber-300/30'
                       : 'text-slate-500 ring-white/[0.07]'
@@ -517,7 +517,7 @@ export function AssistantFlow() {
                 >
                   {name}
                   {on && (
-                    <span className="text-[10px] uppercase tracking-[0.12em] text-amber-300">
+                    <span className="text-[12px] uppercase tracking-[0.12em] text-amber-300">
                       In use
                     </span>
                   )}
@@ -539,7 +539,7 @@ export function AssistantFlow() {
               ].map(([label, on]) => (
                 <div
                   key={String(label)}
-                  className="flex items-center gap-2.5 text-[12px] text-slate-300"
+                  className="flex items-center gap-2.5 text-[14px] text-slate-300"
                 >
                   <span
                     className={`flex h-4 w-7 shrink-0 items-center rounded-full px-0.5 ${
@@ -569,20 +569,20 @@ export function AssistantFlow() {
           line: 'It attaches to the name, the idea and the note it drew on, so the next person finds it without knowing it exists.',
           Body: () => (
             <div className="rounded-lg bg-white/[0.03] p-3 ring-1 ring-inset ring-white/[0.07]">
-              <p className="text-[12px] leading-relaxed text-slate-300">
+              <p className="text-[14px] leading-relaxed text-slate-300">
                 Where did the margin case first weaken?
               </p>
               <div className="mt-3 flex flex-wrap gap-1.5 border-t border-white/[0.07] pt-3">
                 {['Asset', 'Idea', 'Research note'].map(t => (
                   <span
                     key={t}
-                    className="rounded bg-amber-400/10 px-2 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-inset ring-amber-300/25"
+                    className="rounded bg-amber-400/10 px-2 py-0.5 text-[12px] font-medium text-amber-200 ring-1 ring-inset ring-amber-300/25"
                   >
                     {t}
                   </span>
                 ))}
               </div>
-              <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-500">
+              <p className="mt-3 flex items-start gap-1.5 text-[14px] leading-relaxed text-slate-500">
                 <span aria-hidden="true" className="text-amber-300">&#8627;</span>
                 Opens with the name a year from now, beside the thesis it
                 questioned.
@@ -607,9 +607,9 @@ export function AssistantFlow() {
               aria-hidden="true"
               className={`h-px w-6 shrink-0 ${i === 0 ? 'bg-amber-400' : 'bg-white/20'}`}
             />
-            <h3 className="text-[15px] font-semibold tracking-tight text-white">{step}</h3>
+            <h3 className="text-[18px] font-semibold tracking-tight text-white">{step}</h3>
           </div>
-          <p className="mt-2 max-w-[40ch] text-[13px] leading-[1.75] text-slate-400">{line}</p>
+          <p className="mt-2 max-w-[40ch] text-[16px] leading-[1.75] text-slate-400">{line}</p>
           <div className="mt-auto pt-5">
             <div className="rounded-xl bg-white/[0.02] p-4 ring-1 ring-inset ring-white/[0.06]">
               <Body />
@@ -623,5 +623,5 @@ export function AssistantFlow() {
 
 /* Shared by nothing yet, exported so a section can frame a figure caption. */
 export function VisualNote({ children }: { children: ReactNode }) {
-  return <p className="mt-4 text-[11px] leading-relaxed text-slate-500">{children}</p>
+  return <p className="mt-4 text-[14px] leading-relaxed text-slate-500">{children}</p>
 }

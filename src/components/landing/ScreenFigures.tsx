@@ -49,13 +49,13 @@ function Frame({
         className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
       />
       <figcaption className="flex items-baseline justify-between gap-3">
-        <span className="text-[13px] font-semibold tracking-tight text-white">{caption}</span>
+        <span className="text-[16px] font-semibold tracking-tight text-white">{caption}</span>
         {/*
           The illustration marker is INSIDE the figcaption, so a screen
           reader meets it as part of the figure's label rather than as a
           stray span after the content.
         */}
-        <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
+        <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-500">
           Illustration
         </span>
       </figcaption>
@@ -73,7 +73,7 @@ function Chip({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted
   }
   return (
     <span
-      className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset ${tones[tone]}`}
+      className={`inline-flex items-center rounded-md px-2 py-0.5 text-[14px] font-medium ring-1 ring-inset ${tones[tone]}`}
     >
       {children}
     </span>
@@ -83,7 +83,7 @@ function Chip({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted
 /* A column heading inside a figure. */
 function Col({ children }: { children: ReactNode }) {
   return (
-    <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-500">
+    <span className="text-[12px] font-medium uppercase tracking-[0.12em] text-slate-500">
       {children}
     </span>
   )
@@ -106,10 +106,10 @@ export function IdeaPipelineFigure() {
         {IDEAS.map(({ name, stage, conviction, age, hot }) => (
           <li key={name} className="grid grid-cols-[1fr_auto] items-center gap-x-4 py-3">
             <div className="min-w-0">
-              <p data-security-name className="font-mono text-[12px] tracking-tight text-white">{name}</p>
+              <p data-security-name className="font-mono text-[14px] tracking-tight text-white">{name}</p>
               <p className="mt-1.5 flex flex-wrap items-center gap-2">
                 <Chip tone={hot ? 'accent' : 'muted'}>{stage}</Chip>
-                <span className="text-[11px] text-slate-500">{age}</span>
+                <span className="text-[14px] text-slate-500">{age}</span>
               </p>
             </div>
             <Chip tone={hot ? 'solid' : 'muted'}>{conviction}</Chip>
@@ -122,7 +122,7 @@ export function IdeaPipelineFigure() {
         is a watchlist; one that shows how long a name has gone untouched is
         a management surface.
       */}
-      <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
+      <p className="mt-4 text-[14px] leading-relaxed text-slate-500">
         Age is shown because a stale idea is a finding, not an omission.
       </p>
     </Frame>
@@ -134,8 +134,8 @@ export function AssetWorkspaceFigure() {
     <Frame caption="Asset workspace">
       <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] pb-4">
         <div>
-          <p data-security-name className="font-mono text-[12px] tracking-tight text-white">NORTHWIND</p>
-          <p className="mt-1 text-[11px] text-slate-400">Covered by A. Reyes</p>
+          <p data-security-name className="font-mono text-[14px] tracking-tight text-white">NORTHWIND</p>
+          <p className="mt-1 text-[14px] text-slate-400">Covered by A. Reyes</p>
         </div>
         <Chip tone="accent">Held in Core Equity</Chip>
       </div>
@@ -151,18 +151,18 @@ export function AssetWorkspaceFigure() {
             key={t}
             className={
               i === 0
-                ? 'border-b border-white pb-1 text-[11px] font-medium text-white'
-                : 'pb-1 text-[11px] text-slate-500'
+                ? 'border-b border-white pb-1 text-[14px] font-medium text-white'
+                : 'pb-1 text-[14px] text-slate-500'
             }
           >
             {t}
           </span>
         ))}
       </div>
-      <p className="mt-4 text-[12px] leading-relaxed text-slate-300">
+      <p className="mt-4 text-[14px] leading-relaxed text-slate-300">
         Margin recovery as the new plant reaches scale.
       </p>
-      <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+      <p className="mt-3 text-[14px] leading-relaxed text-slate-500">
         The written case, the firm&rsquo;s exposure and the history sit on the
         name itself, not in a folder.
       </p>
@@ -175,17 +175,17 @@ export function RecommendationFigure() {
     <Frame caption="Recommendation">
       <div className="rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.06]">
         <div className="flex items-start justify-between gap-3">
-          <p data-security-name className="font-mono text-[12px] tracking-tight text-white">NORTHWIND</p>
+          <p data-security-name className="font-mono text-[14px] tracking-tight text-white">NORTHWIND</p>
           <Chip tone="muted">Submitted</Chip>
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
           <div>
             <dt><Col>Conviction</Col></dt>
-            <dd className="mt-1 text-[12px] text-white">High</dd>
+            <dd className="mt-1 text-[14px] text-white">High</dd>
           </div>
           <div>
             <dt><Col>Sizing</Col></dt>
-            <dd className="mt-1 text-[12px] text-white">Overweight</dd>
+            <dd className="mt-1 text-[14px] text-white">Overweight</dd>
           </div>
         </dl>
       </div>
@@ -194,7 +194,7 @@ export function RecommendationFigure() {
         page, so this figure states it as a property OF THE RECORD rather
         than as another sentence of prose underneath.
       */}
-      <p className="mt-4 flex items-center gap-2 text-[11px] leading-relaxed text-slate-500">
+      <p className="mt-4 flex items-center gap-2 text-[14px] leading-relaxed text-slate-500">
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/70" aria-hidden="true" />
         Submitting froze the reasoning behind it. Later edits start a new version.
       </p>
@@ -208,30 +208,30 @@ export function DecisionInboxFigure() {
       <div className="rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.06]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p data-security-name className="font-mono text-[12px] tracking-tight text-white">NORTHWIND</p>
-            <p className="mt-1 text-[11px] text-slate-400">Add to Core Equity, from A. Reyes</p>
+            <p data-security-name className="font-mono text-[14px] tracking-tight text-white">NORTHWIND</p>
+            <p className="mt-1 text-[14px] text-slate-400">Add to Core Equity, from A. Reyes</p>
           </div>
           <Chip tone="accent">Awaiting you</Chip>
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-white/[0.07] pt-4">
           <div>
             <dt><Col>Conviction</Col></dt>
-            <dd className="mt-1 text-[12px] text-white">High</dd>
+            <dd className="mt-1 text-[14px] text-white">High</dd>
           </div>
           <div>
             <dt><Col>Proposed weight</Col></dt>
-            <dd className="mt-1 text-[12px] text-white">Overweight</dd>
+            <dd className="mt-1 text-[14px] text-white">Overweight</dd>
           </div>
         </dl>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <span className="rounded-lg bg-white/90 px-3 py-1.5 text-[12px] font-semibold text-slate-900">
+        <span className="rounded-lg bg-white/90 px-3 py-1.5 text-[14px] font-semibold text-slate-900">
           Accept
         </span>
-        <span className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-slate-300 ring-1 ring-inset ring-white/15">
+        <span className="rounded-lg px-3 py-1.5 text-[14px] font-medium text-slate-300 ring-1 ring-inset ring-white/15">
           Reject
         </span>
-        <span className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-slate-300 ring-1 ring-inset ring-white/15">
+        <span className="rounded-lg px-3 py-1.5 text-[14px] font-medium text-slate-300 ring-1 ring-inset ring-white/15">
           Defer
         </span>
       </div>
@@ -240,7 +240,7 @@ export function DecisionInboxFigure() {
         whole argument of the product is that a rejection is a record. A
         marketing figure that greys them out would contradict the page.
       */}
-      <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
+      <p className="mt-4 text-[14px] leading-relaxed text-slate-500">
         All three are recorded with their rationale. A rejection is a decision.
       </p>
     </Frame>
@@ -257,12 +257,12 @@ export function TradeBookFigure() {
         ].map(({ name, side, book, confirmed }) => (
           <li key={name} className="rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.06]">
             <div className="flex items-center justify-between gap-3">
-              <p data-security-name className="font-mono text-[12px] tracking-tight text-white">{name}</p>
+              <p data-security-name className="font-mono text-[14px] tracking-tight text-white">{name}</p>
               <Chip tone={confirmed ? 'muted' : 'accent'}>
                 {confirmed ? 'Confirmed' : 'Assumed fill'}
               </Chip>
             </div>
-            <p className="mt-2 text-[11px] text-slate-400">
+            <p className="mt-2 text-[14px] text-slate-400">
               {side} into {book}
             </p>
             {/*
@@ -270,7 +270,7 @@ export function TradeBookFigure() {
               is on the page. Drawn as a real affordance, because in the
               product it is one.
             */}
-            <p className="mt-3 flex items-center gap-1.5 border-t border-white/[0.07] pt-3 text-[11px] text-amber-300">
+            <p className="mt-3 flex items-center gap-1.5 border-t border-white/[0.07] pt-3 text-[14px] text-amber-300">
               <span aria-hidden="true">&#8599;</span>
               Opens the decision that authorized it
             </p>
@@ -285,17 +285,17 @@ export function OutcomeFigure() {
   return (
     <Frame caption="Outcomes">
       <div className="rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.06]">
-        <p data-security-name className="font-mono text-[12px] tracking-tight text-white">NORTHWIND</p>
+        <p data-security-name className="font-mono text-[14px] tracking-tight text-white">NORTHWIND</p>
         <dl className="mt-4 space-y-3">
           <div>
             <dt><Col>The thesis that was argued</Col></dt>
-            <dd className="mt-1 text-[12px] leading-relaxed text-slate-300">
+            <dd className="mt-1 text-[14px] leading-relaxed text-slate-300">
               Margin recovery as the new plant reaches scale.
             </dd>
           </div>
           <div className="border-t border-white/[0.07] pt-3">
             <dt><Col>What happened</Col></dt>
-            <dd className="mt-1 text-[12px] leading-relaxed text-slate-300">
+            <dd className="mt-1 text-[14px] leading-relaxed text-slate-300">
               Plant delayed. The position worked on an unrelated re-rating.
             </dd>
           </div>
@@ -311,7 +311,7 @@ export function OutcomeFigure() {
         This verdict is the one that matters and the one a returns-based
         review cannot produce. It is the figure's entire argument.
       */}
-      <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
+      <p className="mt-4 text-[14px] leading-relaxed text-slate-500">
         Scored against the claim that was made, so judgement separates from luck.
       </p>
     </Frame>

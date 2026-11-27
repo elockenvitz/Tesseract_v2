@@ -559,6 +559,98 @@ describe('the page says what a user actually opens', () => {
  */
 describe('the page stays readable', () => {
   /*
+   * ── A TYPE SCALE, because the page had drifted into seven of them ──────
+   *
+   * Measured in the browser at 1440px before this landed: 183 of 201 text
+   * elements rendered below 16px, using 9, 10, 11, 12, 13, 14 and 15.
+   * Seven steps inside seven pixels is not a scale. Nothing was
+   * deliberately smaller than anything else, so the page read as uniformly
+   * quiet and the report was that it was hard to digest.
+   *
+   * ── Why this reads the DOM and not the source files ───────────────────
+   *
+   * jsdom applies no Tailwind, so `getComputedStyle().fontSize` returns the
+   * default for everything and cannot see these at all. The class string IS
+   * the size here, because an arbitrary value is literal.
+   *
+   * It still walks the RENDERED tree rather than grepping the files, which
+   * is the part that matters: a component that stops rendering, or a size
+   * that only exists in a dead branch, is invisible to this gate, where a
+   * source regex would happily pass on code nothing mounts.
+   */
+  const SCALE = new Set([12, 14, 16, 17, 18, 20, 24])
+
+  it('uses one type scale, with nothing under 12px', async () => {
+    await renderConfigured()
+
+    /*
+     * `document.querySelectorAll('[class*="text-["]')` was here and matched
+     * NOTHING, so this gate passed with an injected 11px paragraph on the
+     * page — decoration, caught only because the injection was run.
+     *
+     * The unescaped `[` inside the attribute-selector value is the reason.
+     * Walking every element and reading the class attribute has no such
+     * trap, and the cost is irrelevant on a single page.
+     */
+    const found = new Map<number, string>()
+    for (const el of document.querySelectorAll('*')) {
+      for (const m of (el.getAttribute('class') ?? '').matchAll(/text-\[(\d+)px\]/g)) {
+        const px = Number(m[1])
+        if (!found.has(px)) {
+          found.set(px, `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 36)}"`)
+        }
+      }
+    }
+
+    const tooSmall = [...found.entries()].filter(([px]) => px < 12)
+    expect(
+      tooSmall.map(([px, where]) => `${px}px: ${where}`),
+      'nothing on a page for buyers should be under 12px',
+    ).toEqual([])
+
+    const offScale = [...found.entries()].filter(([px]) => !SCALE.has(px))
+    expect(
+      offScale.map(([px, where]) => `${px}px: ${where}`),
+      `sizes outside the scale ${[...SCALE].join(', ')} — add a step deliberately or use an existing one`,
+    ).toEqual([])
+  })
+
+  it('sets body copy at 16px or more, not 13 to 15', async () => {
+    await renderConfigured()
+
+    /*
+     * The paragraphs that carry the argument, as opposed to captions and
+     * chips. A `<p>` of more than ~80 characters is prose a buyer has to
+     * read, and prose is the thing that was failing at 15px.
+     *
+     * Text INSIDE a `<figure>` is excluded, and this is a scoping decision
+     * rather than a loophole: a caption explaining a drawing is secondary
+     * to it by definition, and setting a caption at the same size as the
+     * argument flattens the difference between them. The gate found three
+     * of these and one real failure — the legal disclaimer at 14px, which
+     * was raised to 16, because a disclaimer nobody can read is a
+     * disclaimer that does not do its job.
+     */
+    const prose = [...document.querySelectorAll('p')]
+      .filter(p => (p.textContent ?? '').trim().length > 80)
+      .filter(p => !p.closest('figure'))
+
+    expect(prose.length, 'the page must still have prose to check').toBeGreaterThan(8)
+
+    const small = prose
+      .map(p => {
+        const px = Number(/text-\[(\d+)px\]/.exec(p.getAttribute('class') ?? '')?.[1] ?? 0)
+        return { px, text: (p.textContent ?? '').trim().slice(0, 40) }
+      })
+      .filter(r => r.px > 0 && r.px < 16)
+
+    expect(
+      small.map(r => `${r.px}px: ${r.text}`),
+      'body copy under 16px is what "hard to digest" means',
+    ).toEqual([])
+  })
+
+  /*
    * A RATCHET, not a round number, in the spirit of this repo's type-error
    * ceiling. It permits a sentence or two and fails on a new section.
    *
