@@ -100,7 +100,12 @@ export function EarlyAccessNotice() {
 
       <p className="text-sm text-gray-600 dark:text-gray-400">
         Already have an account?{' '}
-        <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
+        {/* 44x19 before this, under the 24px touch minimum. inline-flex
+            keeps it on the baseline of the sentence it sits inside. */}
+        <Link
+          to="/login"
+          className="inline-flex min-h-[44px] items-center px-1 font-medium text-primary-600 hover:text-primary-500"
+        >
           Sign in
         </Link>
       </p>

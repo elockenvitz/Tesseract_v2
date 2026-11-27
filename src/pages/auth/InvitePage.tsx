@@ -354,7 +354,11 @@ export function InvitePage() {
           ) : (
             <Link
               to="/login"
-              className="inline-block text-sm font-medium text-primary-600 hover:text-primary-500"
+              /* 81x20 before this, under the 24px touch minimum, and on
+                 the one screen where the visitor has just been told
+                 their invitation did not work — the worst place to make
+                 the only way forward hard to hit. */
+              className="inline-flex min-h-[44px] items-center px-2 text-sm font-medium text-primary-600 hover:text-primary-500"
             >
               Go to sign in
             </Link>
