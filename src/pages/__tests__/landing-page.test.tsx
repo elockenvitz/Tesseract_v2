@@ -171,13 +171,26 @@ describe('the decision lifecycle is complete and closes', () => {
     await renderConfigured()
     const lifecycle = document.getElementById('lifecycle')
     const stages = lifecycle?.querySelectorAll('[data-lifecycle-stage]') ?? []
-    expect(stages.length, 'five stages').toBe(5)
+    /*
+     * Six, not five. `Develop` was added between Research and Recommend: the
+     * lifecycle previously implied a note becomes a recommendation as soon as
+     * it is written, and skipped the pipeline where an analyst spends the
+     * weeks before one.
+     *
+     * Raised rather than loosened to `>= 5`, because the exact number is the
+     * point: a stage disappearing is the regression this catches. The new
+     * stage's own consequence is pinned below, so it is covered by the same
+     * requirement as the other five rather than merely tolerated by a bigger
+     * number.
+     */
+    expect(stages.length, 'six stages').toBe(6)
     for (const li of stages) {
       expect(
         li.querySelectorAll('p').length,
         `${li.querySelector('h3')?.textContent ?? '?'} needs a description AND a consequence`,
       ).toBeGreaterThanOrEqual(2)
     }
+    expect(lifecycle?.textContent).toMatch(/ideas the firm declined stay as retrievable/i)
     expect(lifecycle?.textContent).toMatch(/freezes the reasoning behind it/i)
     expect(lifecycle?.textContent).toMatch(/rejections and deferrals become records/i)
     expect(lifecycle?.textContent).toMatch(/judgement becomes separable from luck/i)

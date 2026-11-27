@@ -1063,6 +1063,23 @@ const LIFECYCLE = [
     so: 'The version that justified the position stays readable after the note has moved on.',
   },
   {
+    /*
+     * The stage the lifecycle used to skip.
+     *
+     * It ran Research -> Recommend, which implied a note becomes a
+     * recommendation the moment it is written. It does not: an idea sits in
+     * the pipeline accumulating conviction, and most of them never graduate.
+     * Leaving the stage out made the product look like a filing system for
+     * decisions already taken, and hid the surface where an analyst actually
+     * spends the weeks before one.
+     */
+    icon: Layers,
+    stage: 'Develop',
+    record: 'Idea',
+    line: 'A name under consideration carries its conviction, stage and age.',
+    so: 'Ideas the firm declined stay as retrievable as those it acted on.',
+  },
+  {
     icon: FileSignature,
     stage: 'Recommend',
     record: 'Recommendation',
@@ -1370,7 +1387,9 @@ export function LandingPage() {
           />
 
           <div className={`${SHELL} relative pb-24 pt-20 sm:pb-32 sm:pt-28`}>
-            <Eyebrow>A decision operating system for investment teams</Eyebrow>
+            {/* "The", not "A". The definite article is the positioning: a
+                category this firm intends to define rather than join. */}
+            <Eyebrow>The decision operating system for investment teams</Eyebrow>
 
             {/*
               The only element on the page allowed this much size. The second
@@ -1390,9 +1409,19 @@ export function LandingPage() {
               over time" — three abstractions in a row, which is the shape a
               reader skips. The claim is the same; it now lands.
             */}
+            {/*
+              Names the five things it connects, rather than asserting that it
+              connects things.
+
+              "Research, ideas, recommendations, portfolio decisions and
+              outcome reviews" are the five stages the lifecycle section then
+              walks through, so the hero sets up the page's spine instead of
+              making a claim the reader has to take on faith. The second
+              sentence is still the payoff and is unchanged.
+            */}
             <p className="mt-9 max-w-[56ch] text-lg leading-[1.7] text-slate-300">
-              It keeps research, recommendations, portfolio-manager decisions
-              and outcomes as one linked record. A year from now, your firm can
+              It brings research, ideas, recommendations, decisions and outcome
+              reviews into one connected record. A year from now, your firm can
               still see why it acted.
             </p>
 
@@ -1473,7 +1502,7 @@ export function LandingPage() {
           id="lifecycle"
           tone="raised"
           label="The connected decision lifecycle"
-          title="Research, recommend, decide, execute, review. Linked, not filed."
+          title="Research, develop, recommend, decide, execute, review. Linked, not filed."
           lead="Each stage is a typed record that points at the one before it. That linkage is the product: it is what makes a decision reviewable a year later rather than merely archived."
         >
           {/*
