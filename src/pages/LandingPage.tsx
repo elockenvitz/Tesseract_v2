@@ -1188,7 +1188,7 @@ const MEMORY: [typeof Lock, string, string][] = [
  */
 const SURFACES: [string, string][] = [
   ['Asset workspace', "The security, the firm's exposure, coverage and the written case in one view."],
-  ['Idea pipeline', 'Ideas moving from exploring to ready-to-recommend, with conviction and staleness visible.'],
+  ['Idea Pipeline', 'Ideas moving from exploring to ready-to-recommend, with conviction and staleness visible.'],
   /*
    * "preserved exactly as the PM received it" was here, and the repetition
    * gate caught it: that is the lifecycle's Recommend stage and the
@@ -1197,9 +1197,16 @@ const SURFACES: [string, string][] = [
    * to the section that owns it.
    */
   ['Recommendation', 'What the analyst submitted, with its conviction, sizing and target.'],
-  ['Decision inbox', 'Recommendations waiting on a portfolio manager, with accept, reject and defer all recorded.'],
-  ['Decision record', 'Every decision the firm has made, with its case, its author and its rationale attached.'],
-  ['Outcome review', 'A structured verdict on whether the thesis played out, attached to the decision.'],
+  ['Decision Inbox', 'Recommendations waiting on a portfolio manager, with accept, reject and defer all recorded.'],
+  /*
+   * Was 'Decision record', which is not a screen. It described the same rows
+   * the Decision Inbox entry above already describes, read historically, and
+   * it left the firm's committed trades off the map entirely -- the one
+   * surface a portfolio manager opens most and the only place the product
+   * says what the firm ACTUALLY DID rather than what it decided to do.
+   */
+  ['Trade Book', 'Every trade the firm committed to, each one carrying the decision that authorized it.'],
+  ['Outcomes', 'A structured verdict on whether the thesis played out, attached to the decision.'],
 ]
 
 /**
@@ -1603,6 +1610,7 @@ export function LandingPage() {
           </div>
         </Section>
 
+
         {/*
           ── 4. Research and capture: THE INVERTED BAND ────────────────────
 
@@ -1735,8 +1743,20 @@ export function LandingPage() {
         <Section
           id="product"
           divide={false}
-          label="The product"
-          title="One workspace, built around the security and the decision"
+          /*
+            Was label "The product", title "One workspace, built around the
+            security and the decision".
+
+            That heading described the product's SHAPE to somebody who had
+            already decided to care. The section underneath it is the only
+            place on the page that says what a user opens, and its heading
+            gave a reader no reason to read it: a visitor could scroll past
+            the one concrete answer on the page because the sign above it
+            was abstract. The label now asks the reader's own question and
+            the title says how many answers follow.
+          */
+          label="What you actually work in"
+          title="Six screens, and what each one holds"
           /*
             Two sentences became one, and both cuts were duplication the
             repetition gate found. "the frozen case" is the fifth statement
@@ -1757,6 +1777,7 @@ export function LandingPage() {
             {SURFACES.map(([title, shows]) => (
               <div
                 key={title}
+                data-surface={title}
                 className="border-t border-white/[0.07] py-6 first:border-t-0 sm:[&:nth-child(2)]:border-t-0"
               >
                 <h3 className="text-[15px] font-semibold tracking-tight text-white">{title}</h3>

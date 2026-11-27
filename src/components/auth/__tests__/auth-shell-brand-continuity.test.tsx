@@ -101,6 +101,84 @@ describe('every auth screen is visibly the same product as the public site', () 
   })
 })
 
+/*
+ * ── The dead end ─────────────────────────────────────────────────────────
+ *
+ * Reported from the deploy preview: "when i click sign in it goes to split
+ * pane but no way to return to nonsplit".
+ *
+ * It was literally true. The shell rendered the lockup as a plain <div>, and
+ * nothing anywhere on the screen linked back to `/`. A visitor who clicked
+ * Sign in from the landing page could only leave with the browser's Back
+ * button, and somebody who arrived on `/login` from an email had no route to
+ * the public site at all.
+ *
+ * Pinned as ROLES rather than as specific markup, because the way out has to
+ * survive a restyle: what matters is that something focusable goes home, at
+ * every viewport, not that it is a particular element in a particular corner.
+ */
+describe('there is always a way back to the public site', () => {
+  it('offers at least one link home from every auth screen', () => {
+    for (const [name, ui] of [
+      ['Login', <LoginPage />],
+      ['Signup', <SignupPage />],
+      ['Reset Password', <ResetPasswordPage />],
+    ] as const) {
+      const { container, unmount } = at(ui)
+      const home = [...container.querySelectorAll('a')]
+        .filter(a => a.getAttribute('href') === '/')
+      expect(home.length, `${name} must offer a way back`).toBeGreaterThan(0)
+      unmount()
+    }
+  })
+
+  it('names that way back in words, not only as a logo', () => {
+    at(<LoginPage />)
+    /*
+      A linked mark is the control people TRY first, but it is not the one
+      they can see is a control. The explicit link is what makes the way out
+      discoverable, so it is asserted separately.
+    */
+    const back = screen.getByRole('link', { name: /back to site/i })
+    expect(back).toHaveAttribute('href', '/')
+  })
+
+  /*
+   * ── This test was VACUOUS on its first draft, and the rewrite is the point
+   *
+   * It first asserted only that SOME mark exists outside the brand panel.
+   * That passed against the old shell as well, because the old shell did
+   * have a mark outside the panel -- carrying `lg:hidden`, so it showed on a
+   * phone and vanished on the wide layout, which is exactly the defect
+   * reported. jsdom does not apply media queries, so the element was in the
+   * DOM either way and the assertion could not tell the versions apart.
+   *
+   * Tailwind's responsive visibility IS the mechanism here, so the class is
+   * the honest subject. The measured proof that it renders lives in the PR:
+   * Playwright at 1440x900 against the built bundle.
+   */
+  it('shows the mark on the form side at EVERY width, not just on a phone', () => {
+    const { container } = at(<LoginPage />)
+    const panel = screen.getByTestId('auth-brand-panel')
+
+    const outside = [...container.querySelectorAll('svg')]
+      .filter(el => !panel.contains(el))
+    expect(outside.length, 'a mark outside the brand panel').toBeGreaterThan(0)
+
+    /* At least one of them must survive the wide layout. */
+    const alwaysVisible = outside.filter(el => {
+      for (let n: Element | null = el; n && n !== container; n = n.parentElement) {
+        if ((n.getAttribute('class') ?? '').includes('lg:hidden')) return false
+      }
+      return true
+    })
+    expect(
+      alwaysVisible.length,
+      'the form column kept a mark that is hidden on the wide layout, which is the reported defect',
+    ).toBeGreaterThan(0)
+  })
+})
+
 describe('the redesign did not break what the screens are for', () => {
   it('Login still renders both credential fields and its submit', () => {
     at(<LoginPage />)

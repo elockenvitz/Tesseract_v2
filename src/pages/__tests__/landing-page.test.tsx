@@ -195,6 +195,76 @@ describe('the decision lifecycle is complete and closes', () => {
     expect(lifecycle?.textContent).toMatch(/rejections and deferrals become records/i)
     expect(lifecycle?.textContent).toMatch(/judgement becomes separable from luck/i)
   })
+
+})
+
+/*
+ * ── The one section that says what you OPEN ─────────────────────────────
+ *
+ * The page argues a lifecycle and a set of record types at length. The
+ * `#product` section is the only place that answers the reader's actual next
+ * question, which is what appears on screen, and it sat five sections down
+ * under the abstract heading "The product".
+ *
+ * The names are asserted as an EXACT, ORDERED set rather than loosely
+ * matched. Each is a surface the application really opens, so a typo or a
+ * well-meant rename here is a claim about software that does not exist under
+ * that name, and the prospect discovers it in the demo. An exact set also
+ * makes adding a seventh surface a deliberate act rather than a drive-by.
+ */
+describe('the page says what a user actually opens', () => {
+  it('names six real screens, in order, each with what it holds', async () => {
+    await renderConfigured()
+    const section = document.querySelector('#product')
+    expect(section, 'the product section must render').toBeTruthy()
+
+    const named = [...(section?.querySelectorAll('[data-surface]') ?? [])]
+      .map(el => el.getAttribute('data-surface'))
+    expect(named).toEqual([
+      'Asset workspace',
+      'Idea Pipeline',
+      'Recommendation',
+      'Decision Inbox',
+      'Trade Book',
+      'Outcomes',
+    ])
+
+    /* A bare name is a nav menu. Each needs the line saying what it holds. */
+    for (const el of section?.querySelectorAll('[data-surface]') ?? []) {
+      expect(
+        (el.querySelector('p')?.textContent ?? '').trim().length,
+        `${el.getAttribute('data-surface')} needs a line saying what it holds`,
+      ).toBeGreaterThan(30)
+    }
+  })
+
+  /*
+   * The heading has to ask the reader's question. "The product" described
+   * the section's subject to somebody already persuaded; a visitor skimming
+   * had no reason to stop at the one concrete answer on the page.
+   */
+  it('heads that section with the question a reader is actually asking', async () => {
+    await renderConfigured()
+    const section = document.querySelector('#product')
+    expect(section?.textContent).toMatch(/what you actually work in/i)
+    expect(section?.textContent).toMatch(/six screens/i)
+  })
+
+  /*
+   * Coverage has almost no adoption, and Trade Lab's sharing tiers are
+   * unpopulated. Both are real tabs. Naming either here would be the page
+   * writing a cheque the demo cannot cash, which is a worse failure than
+   * saying too little.
+   */
+  it('does not advertise the surfaces the product has not earned yet', async () => {
+    await renderConfigured()
+    const section = document.querySelector('#product')
+    expect(section?.textContent).not.toMatch(/\bTrade Lab\b/)
+    expect(
+      [...(section?.querySelectorAll('[data-surface]') ?? [])]
+        .map(el => el.getAttribute('data-surface')),
+    ).not.toContain('Coverage')
+  })
 })
 
 /*
@@ -214,14 +284,25 @@ describe('the decision lifecycle is complete and closes', () => {
 describe('the page stays readable', () => {
   /*
    * A RATCHET, not a round number, in the spirit of this repo's type-error
-   * ceiling. The page measures 1,199 words here, so the bound is 1,250: it
-   * permits a sentence or two and fails on a new section.
+   * ceiling. It permits a sentence or two and fails on a new section.
    *
    * The metric matters. The "1,603 words" figure in the comment above was
    * measured in the browser over the nine content sections only; this reads
    * `document.body.textContent`, which also includes the nav and footer. The
    * two numbers are not directly comparable, so the bound is set against
    * what THIS assertion measures rather than against the browser figure.
+   *
+   * ── Authorized to 1600 on 2026-11-27, and NOT USED ─────────────────────
+   *
+   * The page owner approved raising this to 1,600 to pay for a section
+   * naming the screens the product actually opens. That section already
+   * existed, five sections down the page under the heading "The product",
+   * so the work became making it land rather than writing it again. No
+   * words were added and the ceiling stays where it was.
+   *
+   * Recorded because the authorization is real and still open: a future
+   * section with genuinely new information may spend it. Restatement may
+   * not, which is what this ratchet has caught every time so far.
    */
   it('holds the total word count to a ratchet', async () => {
     await renderConfigured()
@@ -870,16 +951,32 @@ describe('nothing on the page imitates real data', () => {
    * guarantee ("frozen reasoning") was restating the lifecycle stage that
    * owns it, which the repetition gate above caught independently. The count
    * is unchanged at six: nothing was dropped, only renamed.
+   *
+   * ── 2026-11-27: three renames and ONE REPLACEMENT ──────────────────────
+   *
+   *   'Idea pipeline'   → 'Idea Pipeline'   casing, to match the tab title
+   *   'Decision inbox'  → 'Decision Inbox'  casing, to match the tab title
+   *   'Outcome review'  → 'Outcomes'        to match the tab title
+   *   'Decision record' → 'Trade Book'      NOT a rename. A REPLACEMENT.
+   *
+   * 'Decision record' was not a screen. It described the same rows the
+   * 'Decision Inbox' entry above already describes, read historically, while
+   * the firm's committed trades were missing from the map entirely. Trade
+   * Book is a real tab and the only surface that says what the firm ACTUALLY
+   * DID rather than what it decided to do.
+   *
+   * The count stays six and `the page says what a user actually opens`
+   * below pins the full set in order, which is the stricter assertion.
    */
   it('still names every product surface', async () => {
     await renderConfigured()
     for (const surface of [
       'Asset workspace',
-      'Idea pipeline',
+      'Idea Pipeline',
       'Recommendation',
-      'Decision inbox',
-      'Decision record',
-      'Outcome review',
+      'Decision Inbox',
+      'Trade Book',
+      'Outcomes',
     ]) {
       expect(screen.getByRole('heading', { name: surface }), surface).toBeTruthy()
     }

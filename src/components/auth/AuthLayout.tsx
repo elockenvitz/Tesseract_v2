@@ -1,4 +1,6 @@
 import React, { useEffect } from 'react'
+import { Link } from 'react-router-dom'
+import { ArrowLeft } from 'lucide-react'
 import { hideBootLoader } from '../../lib/boot-loader'
 import { LegalFooter } from '../legal/LegalFooter'
 import { TesseractLogo } from '../ui/TesseractLogo'
@@ -101,10 +103,20 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
           className="pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-white/10 to-transparent"
         />
 
-        <div className="relative flex items-center gap-3 text-white">
+        {/*
+          A LINK, not a decoration. Before this, the shell was a dead end: a
+          visitor who clicked Sign in from the landing page had no control
+          anywhere on the screen that went back to it, and the browser's own
+          Back button was the only way out. The lockup is the control people
+          try first, so it is the one that has to work.
+        */}
+        <Link
+          to="/"
+          className="relative inline-flex items-center gap-3 rounded-lg text-white transition hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-400"
+        >
           <TesseractLogo size={40} />
           <span className="text-[18px] font-semibold tracking-[-0.015em]">Tesseract</span>
-        </div>
+        </Link>
 
         <div className="relative max-w-xl">
           <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-primary-300/80">
@@ -154,26 +166,65 @@ export function AuthLayout({ children, title, subtitle }: AuthLayoutProps) {
       {/* ── Form column ───────────────────────────────────────────────────
           Carries its own `min-h-screen` so it still fills the viewport below
           `lg`, where the grid collapses and this is the only column. */}
-      <main className="flex min-h-screen flex-col justify-center bg-gray-50 px-6 py-12 dark:bg-gray-900 sm:px-10">
-        <div className="mx-auto w-full max-w-[400px]">
-          {/* The mark again, compact, for the phone layout that has no panel. */}
-          <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <TesseractLogo size={28} />
-            <span className="text-[16px] font-semibold tracking-[-0.015em] text-gray-900 dark:text-white">
-              Tesseract
-            </span>
+      <main className="relative flex min-h-screen flex-col justify-center overflow-hidden bg-gray-50 px-6 py-12 dark:bg-gray-900 sm:px-10">
+        {/*
+          A brand wash, so the light column is recognisably the same product as
+          the dark panel rather than a bare grey field beside it. Decorative and
+          `pointer-events-none`, so it can never intercept a click on the form.
+        */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(85%_55%_at_50%_0%,rgba(37,99,235,0.08),rgba(255,255,255,0)_70%)] dark:bg-[radial-gradient(85%_55%_at_50%_0%,rgba(59,130,246,0.10),rgba(0,0,0,0)_70%)]"
+        />
+
+        <div className="relative mx-auto w-full max-w-[400px]">
+          {/*
+            The mark shows at EVERY width, not just below `lg`. On the wide
+            layout it previously lived only in the dark panel, which put it
+            diagonally opposite the form: the half of the screen a person is
+            actually using carried no mark at all.
+
+            Both this and the panel lockup go home, so there is a way back from
+            the split layout at every viewport.
+          */}
+          <div className="mb-7 flex items-center justify-between gap-4">
+            <Link
+              to="/"
+              aria-label="Tesseract home"
+              className="flex items-center gap-2.5 rounded-lg transition hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-500"
+            >
+              <TesseractLogo size={30} />
+              <span className="text-[16px] font-semibold tracking-[-0.015em] text-gray-900 dark:text-white">
+                Tesseract
+              </span>
+            </Link>
+
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-[13px] font-medium text-gray-500 transition hover:bg-white hover:text-primary-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-primary-300"
+            >
+              <ArrowLeft size={14} aria-hidden="true" />
+              Back to site
+            </Link>
           </div>
 
-          <h1 className="text-2xl font-semibold tracking-[-0.015em] text-gray-900 dark:text-white">
-            {title}
-          </h1>
-          {subtitle && (
-            <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-              {subtitle}
-            </p>
-          )}
+          {/*
+            The form sits on its own raised surface now. On a flat grey column
+            nothing said where the thing you have to fill in begins and the
+            page ends.
+          */}
+          <div className="rounded-2xl border border-gray-200/90 bg-white p-6 shadow-[0_1px_2px_rgba(16,24,40,0.04),0_8px_24px_-12px_rgba(16,24,40,0.12)] dark:border-gray-800 dark:bg-gray-950/60 sm:p-7">
+            <h1 className="text-2xl font-semibold tracking-[-0.015em] text-gray-900 dark:text-white">
+              {title}
+            </h1>
+            {subtitle && (
+              <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                {subtitle}
+              </p>
+            )}
 
-          <div className="mt-8">{children}</div>
+            <div className="mt-7">{children}</div>
+          </div>
 
           {/*
             Here rather than in each of the six pages using this layout, for the
