@@ -2500,7 +2500,11 @@ export function LandingPage() {
           tone="raised"
           label="ACT AI"
           title="An assistant whose advantage is that your record is structured"
-          lead="ACT AI sits over the decision corpus. A general model can read a folder of documents; it cannot tell you which recommendation a decision approved, because that relationship does not exist in a folder. Here it does."
+          /* Tightened from 37 words. The cut clause argued, abstractly,
+             that a folder cannot express which recommendation a decision
+             approved. The question strip below now demonstrates that,
+             which is both shorter and more convincing. */
+          lead="A general model can read your documents. It cannot tell you which recommendation a decision approved, because in a folder that relationship does not exist. Here it does."
         >
           {/*
             ── Three capability cards became the three STEPS of using it ───
@@ -2528,6 +2532,62 @@ export function LandingPage() {
               a label, so the words survive the restyle: dropping them in the
               rewrite is exactly what it exists to catch, and it did.
             */}
+            {/*
+              ── WHAT THE SECTION WAS MISSING: ACTUAL QUESTIONS ────────────
+
+              Everything above describes the assistant's PROPERTIES —
+              which model, what it reads, where the answer lands. None of
+              it demonstrates that the thing understands an investment
+              process, and for this audience that is the only claim worth
+              making.
+
+              These are chosen because each one is answerable ONLY from a
+              linked record, and a reader in the industry can see that
+              immediately:
+
+                coverage-wide staleness  needs coverage joined to research
+                the case against         needs the rejections kept
+                what we believed then    needs the frozen submission
+
+              A folder of documents answers none of them. That is the
+              section's argument, shown rather than asserted, which is
+              what paid for the shorter lead above.
+
+              Phrased as a desk actually speaks, first person plural, no
+              question mark gimmickry and no invented answers — this
+              shows what you can ASK, not what it would reply.
+            */}
+            {/*
+              THREE, NOT FOUR. "Where has our conviction changed, and on
+              what?" was cut because the page sat six words over its
+              ratchet and the rule here is to cut rather than raise a
+              ceiling that was itself just raised. Conviction-over-time is
+              also the one of the four already shown elsewhere: the
+              reassess figure renders it moving High -> Medium, dated.
+            */}
+            {/*
+              `lg:col-span-2`: the wrapper is a two-column grid, so without
+              it these three landed as a 2+1 orphan in the left column with
+              the closing paragraph crammed alongside. Spanning both gives
+              one clean row of three, which is also the right reading
+              order — three parallel questions, not a list that continues.
+            */}
+            <ul className="grid gap-3 sm:grid-cols-3 lg:col-span-2">
+              {[
+                'Which companies in my coverage need a thesis review?',
+                'What were the strongest arguments against this recommendation?',
+                'What did we believe when we added to this position?',
+              ].map(q => (
+                <li
+                  key={q}
+                  className="flex items-start gap-2.5 rounded-lg bg-white/[0.03] px-4 py-3 ring-1 ring-inset ring-white/[0.07]"
+                >
+                  <span aria-hidden="true" className="mt-[0.45rem] size-1.5 shrink-0 rounded-full bg-amber-300/80" />
+                  <span className="text-[16px] leading-[1.6] text-slate-300">{q}</span>
+                </li>
+              ))}
+            </ul>
+
             <p className="max-w-[60ch] text-[16px] leading-[1.75] text-slate-400">
               It knows where you are, it reads the record, not the internet,
               and it cites what it used. It runs on your organization&rsquo;s own
