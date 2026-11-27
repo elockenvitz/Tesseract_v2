@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 /* The registry, so the footer-link case asserts against the real document
@@ -90,12 +90,26 @@ describe('the positioning a visitor reads in the first screen', () => {
    * require in the same breath, says the product is unfinished. That was
    * removed, and `no status confessions on the page` now forbids it.
    */
+  /*
+   * ── The third assertion was RETARGETED on 2026-11-27, not dropped ──────
+   *
+   * It used to pin the exact words "why you did what you did", which lived
+   * in a 13px grey paragraph at the bottom of the hero. That paragraph is
+   * gone: it stated the most confident thing on the page in the smallest
+   * type on the page, so it read as a caveat.
+   *
+   * The REQUIREMENT behind the assertion is that the hero says what the
+   * product keeps, not merely what it is not, so that the two negatives
+   * above are not the whole of the positioning. That requirement is intact
+   * and this now pins it by meaning rather than by one phrasing: the hero
+   * must still claim the record of WHY the firm acted.
+   */
   it('says which category it is in, on the hero rather than in a footnote', async () => {
     await renderConfigured()
     const hero = document.getElementById('top')
     expect(hero?.textContent).toMatch(/not a market-data terminal/i)
     expect(hero?.textContent).toMatch(/execution system/i)
-    expect(hero?.textContent).toMatch(/why\s+you did what you did/i)
+    expect(hero?.textContent).toMatch(/record of why/i)
   })
 
   it('offers both calls to action named in the brief', async () => {
@@ -116,10 +130,17 @@ describe('the decision lifecycle is complete and closes', () => {
    * the only object in this system representing a committed trade and it
    * carries whether the fill was assumed or confirmed.
    */
+  /*
+   * The role changed from `heading` to `tab` when the lifecycle became a
+   * walk. Only the selected stage renders a heading now, so `heading` would
+   * find exactly one of the five and fail on the rest. The requirement is
+   * untouched: all five stage names must be present and addressable as the
+   * section's own navigation.
+   */
   it('states the five lifecycle stages as the central story', async () => {
     await renderConfigured()
     for (const stage of ['Research', 'Recommend', 'Decide', 'Execute', 'Review']) {
-      expect(screen.getByRole('heading', { name: stage, level: 3 }), stage).toBeTruthy()
+      expect(screen.getByRole('tab', { name: new RegExp(`\\b${stage}\\b`) }), stage).toBeTruthy()
     }
   })
 
@@ -184,16 +205,109 @@ describe('the decision lifecycle is complete and closes', () => {
      * number.
      */
     expect(stages.length, 'six stages').toBe(6)
-    for (const li of stages) {
+
+    /*
+     * ── This test now CLICKS, and that is the point of the change ────────
+     *
+     * The lifecycle used to render all six stages at once, so reading
+     * `lifecycle.textContent` once saw every consequence. It is now a
+     * tablist showing one stage at a time, and a single read would see the
+     * first panel and silently stop covering the other five. That is the
+     * exact vacuity that hit the screens gate twice.
+     *
+     * So each stage is selected and asserted on its own. The requirement is
+     * unchanged and is now stronger: every stage must carry a description
+     * AND a consequence, and this proves it for all six rather than for
+     * whichever one happens to render first.
+     */
+    const consequences = [
+      /the version that justified the position stays readable/i,
+      /ideas the firm declined stay as retrievable/i,
+      /nobody argues later about which draft/i,
+      /rejections and deferrals become records/i,
+      /a position traces back to the argument/i,
+      /judgement becomes separable from luck/i,
+    ]
+
+    for (let i = 0; i < stages.length; i++) {
+      await userEvent.click(stages[i] as HTMLElement)
+      const panel = document.getElementById('stage-panel')
+      expect(panel, 'the selected stage must render a panel').not.toBeNull()
+
+      const label = (stages[i].textContent ?? '').trim()
       expect(
-        li.querySelectorAll('p').length,
-        `${li.querySelector('h3')?.textContent ?? '?'} needs a description AND a consequence`,
+        panel?.querySelectorAll('p').length,
+        `${label} needs a description AND a consequence`,
       ).toBeGreaterThanOrEqual(2)
+      expect(panel?.textContent, `${label} must state its consequence`).toMatch(consequences[i])
     }
-    expect(lifecycle?.textContent).toMatch(/ideas the firm declined stay as retrievable/i)
-    expect(lifecycle?.textContent).toMatch(/freezes the reasoning behind it/i)
-    expect(lifecycle?.textContent).toMatch(/rejections and deferrals become records/i)
-    expect(lifecycle?.textContent).toMatch(/judgement becomes separable from luck/i)
+
+    /*
+     * The frozen-reasoning claim is the Recommend stage's description
+     * rather than its consequence, so it is checked where it actually is.
+     */
+    await userEvent.click(stages[2] as HTMLElement)
+    expect(document.getElementById('stage-panel')?.textContent).toMatch(
+      /freezes the reasoning behind it/i,
+    )
+  })
+
+  /*
+   * The lifecycle rail makes the same `role="tablist"` promise the screens
+   * do, so it owes the same keyboard contract. Without this the section
+   * would have been the one tablist on the page nobody checked.
+   */
+  it('walks the lifecycle with the arrow keys, from one tab stop', async () => {
+    const user = userEvent.setup()
+    await renderConfigured()
+
+    const rail = document.getElementById('lifecycle')
+    const tabs = within(rail as HTMLElement).getAllByRole('tab')
+    expect(tabs.length, 'six stages on the rail').toBe(6)
+    expect(
+      tabs.filter(t => t.getAttribute('tabindex') === '0').length,
+      'exactly one tab stop for the lifecycle',
+    ).toBe(1)
+
+    tabs[0].focus()
+    await user.keyboard('{ArrowRight}')
+    expect(tabs[1], 'ArrowRight selects the next stage').toHaveAttribute('aria-selected', 'true')
+    expect(tabs[1], 'and moves focus to it').toHaveFocus()
+
+    await user.keyboard('{End}')
+    expect(tabs[5], 'End jumps to Review').toHaveAttribute('aria-selected', 'true')
+
+    await user.keyboard('{ArrowRight}')
+    expect(tabs[0], 'and it wraps back to Research').toHaveAttribute('aria-selected', 'true')
+  })
+
+  /*
+   * The linkage claim, which is the reason this section is a walk rather
+   * than a list: every stage after the first must name the record it hangs
+   * off, and the first must say it is where the chain starts.
+   */
+  it('names the record each stage points back at', async () => {
+    const user = userEvent.setup()
+    await renderConfigured()
+
+    const rail = document.getElementById('lifecycle')
+    const tabs = within(rail as HTMLElement).getAllByRole('tab')
+
+    await user.click(tabs[0])
+    expect(
+      document.getElementById('stage-panel')?.textContent,
+      'the first stage must say the chain starts there',
+    ).toMatch(/where the chain starts/i)
+
+    const upstream = ['Research note', 'Idea', 'Recommendation', 'Decision', 'Accepted trade']
+    for (let i = 1; i < tabs.length; i++) {
+      await user.click(tabs[i])
+      const panel = document.getElementById('stage-panel')?.textContent ?? ''
+      expect(panel, `stage ${i + 1} must point back at the ${upstream[i - 1]}`).toContain(
+        upstream[i - 1],
+      )
+      expect(panel, `stage ${i + 1} must say it points back`).toMatch(/points back at/i)
+    }
   })
 
 })
@@ -327,7 +441,22 @@ describe('the page says what a user actually opens', () => {
     const user = userEvent.setup()
     await renderConfigured()
 
-    const tabs = screen.getAllByRole('tab')
+    /*
+     * ── Scoped to #product, because the page now has TWO tablists ────────
+     *
+     * This read `getAllByRole('tab')` across the whole document and asserted
+     * one tab stop among them. When the lifecycle became a tablist of its
+     * own, that found twelve tabs with two stops and failed — correctly, in
+     * the sense that it noticed, and wrongly, in the sense that two
+     * independent tablists SHOULD have one stop each.
+     *
+     * A page-wide selector for a per-widget property was the bug. The
+     * lifecycle's own roving tabindex is covered by its own suite.
+     */
+    const product = document.getElementById('product')
+    expect(product, 'the screens section must exist').not.toBeNull()
+    const tabs = within(product as HTMLElement).getAllByRole('tab')
+    expect(tabs.length, 'six screens').toBe(6)
     expect(
       tabs.filter(t => t.getAttribute('tabindex') === '0').length,
       'exactly one tab stop for the whole group',
@@ -526,7 +655,17 @@ describe('the research and capture section', () => {
     await renderConfigured()
     const research = document.getElementById('research')
     expect(research, 'the research section must exist').not.toBeNull()
-    expect(research?.textContent).toMatch(/document their decisions a second time/i)
+    /*
+     * Was /document their decisions a second time/. The copy was
+     * deliberately generalised off the analyst, because the same claim
+     * covers a PM writing a rationale and a committee leaving a note, and
+     * scoping it to one seat made the section look like a feature for one
+     * seat. The REQUIREMENT is unchanged and is the load-bearing half of
+     * this test: the section must still promise that nothing is written
+     * twice. "a second time" is that promise, and the words before it are
+     * free to describe whoever is writing.
+     */
+    expect(research?.textContent).toMatch(/a second time/i)
     expect(research?.textContent).toMatch(/typed record rather than a document/i)
   })
 

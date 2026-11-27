@@ -28,112 +28,204 @@ import type { ReactNode } from 'react'
  * and the third is the one that matters commercially: a firm that cannot
  * tell a correct call from a lucky one cannot compound its judgement.
  */
+/*
+ * ── "Poor organization" was ACCUSATORY, and it was also wrong ───────────
+ *
+ * It told a prospect their firm is badly run. Nobody buys software that
+ * opens by insulting them, and the diagnosis is not even right: these firms
+ * are not disorganised, they are organised around documents, which is the
+ * correct way to organise documents and the wrong way to keep an argument.
+ *
+ * "Scattered by design" moves the blame to the tool estate, which is where
+ * it belongs, and is the more useful claim: the reader recognises it
+ * instead of defending against it.
+ */
 const COSTS = [
   {
-    key: 'organization',
-    title: 'Poor organization',
-    line: 'The case for a position is spread across tools that do not know about each other.',
+    key: 'scattered',
+    title: 'Scattered by design',
+    line: 'Every tool holds its own piece correctly, and none of them holds the argument that joins the pieces.',
     Visual: ScatterVisual,
   },
   {
     key: 'memory',
-    title: 'No memory',
-    line: 'The analyst leaves and the reasoning leaves with them, because it was never a record.',
+    title: 'It leaves when people leave',
+    line: 'The reasoning was never a record, so it goes home with whoever wrote it.',
     Visual: BrokenChainVisual,
   },
   {
     key: 'alpha',
-    title: 'Lost alpha',
-    line: 'A call that worked for the wrong reason looks identical to one that worked.',
+    title: 'Luck reads as skill',
+    line: 'A call that worked for the wrong reason is indistinguishable from one that worked.',
     Visual: LuckVisual,
   },
 ]
 
+/*
+ * ── Why these are SVG now ───────────────────────────────────────────────
+ *
+ * The first versions were absolutely-positioned text chips. They had no
+ * graphic weight at all: five grey labels floating in a box reads as a
+ * rendering bug, not as a diagram, and the feedback was blunt about it.
+ *
+ * Each of these now draws ONE shape that carries the idea on its own, with
+ * the label subordinate to the drawing rather than the other way round.
+ * Gold is the only colour, and it marks the thing that is missing, so the
+ * accent always points at the problem.
+ */
+
 function ScatterVisual() {
-  /* Deliberately unaligned: the point is that none of these sit together. */
-  const places = [
-    { label: 'Slack thread', x: 'left-0 top-2' },
-    { label: 'Inbox', x: 'right-2 top-0' },
-    { label: 'Deck v7', x: 'left-8 top-16' },
-    { label: 'Shared drive', x: 'right-0 top-20' },
-    { label: 'Someone&rsquo;s head', x: 'left-0 top-32' },
-  ]
+  /*
+   * Five tools, each holding a fragment correctly, with no line between
+   * any of them. The gap in the middle is the subject of the drawing: the
+   * dashed ring is where the argument would live if anything held it.
+   */
+  /*
+   * The nodes sit on a ring well clear of the centre. The first version put
+   * them at arbitrary coordinates and two of them landed on top of the
+   * dashed circle, so the drawing read as a collision rather than as a gap.
+   * Polar placement makes the clearance a property of the layout instead of
+   * something to eyeball.
+   */
+  /*
+   * The viewBox is 280x170 on all three diagrams, which is close to the
+   * aspect the box actually has. They were 196x170 and 220x180, so with the
+   * default `preserveAspectRatio` each drawing scaled to fit the HEIGHT and
+   * sat in the middle with dead space either side. The drawings looked
+   * small and tentative for no reason other than the wrong ratio.
+   */
+  const CX = 140
+  const CY = 84
+  const nodes = ['Notes', 'Chat', 'Model', 'Deck', 'Email'].map((label, i) => {
+    const a = (-Math.PI / 2) + (i * 2 * Math.PI) / 5
+    return { label, cx: CX + 108 * Math.cos(a), cy: CY + 66 * Math.sin(a) }
+  })
+
   return (
-    <div className="relative h-44" aria-hidden="true">
-      {places.map(({ label, x }) => (
-        <span
-          key={label}
-          className={`absolute ${x} rounded-md bg-white/[0.04] px-2.5 py-1 text-[11px] text-slate-400 ring-1 ring-inset ring-white/[0.08]`}
-          dangerouslySetInnerHTML={{ __html: label }}
-        />
+    <svg viewBox="0 0 280 170" className="h-44 w-full" role="presentation">
+      <circle
+        cx={CX} cy={CY} r="40"
+        fill="none" stroke="rgb(251 191 36 / 0.45)" strokeWidth="1" strokeDasharray="3 4"
+      />
+      <text
+        x={CX} y={CY - 3} textAnchor="middle"
+        className="fill-amber-300/90 text-[9px] font-semibold uppercase"
+        style={{ letterSpacing: '0.1em' }}
+      >
+        the why
+      </text>
+      <text x={CX} y={CY + 11} textAnchor="middle" className="fill-slate-500 text-[8px]">
+        nothing holds it
+      </text>
+
+      {nodes.map(({ label, cx, cy }) => (
+        <g key={label}>
+          <rect
+            x={cx - 23} y={cy - 9} width="46" height="18" rx="5"
+            fill="rgb(255 255 255 / 0.05)" stroke="rgb(255 255 255 / 0.12)"
+          />
+          <text x={cx} y={cy + 4} textAnchor="middle" className="fill-slate-300 text-[9px]">
+            {label}
+          </text>
+        </g>
       ))}
-    </div>
+    </svg>
   )
 }
 
 function BrokenChainVisual() {
+  /*
+   * A chain whose middle is missing. The two surviving links are solid and
+   * far apart; the gap between them is drawn AS A GAP rather than as
+   * struck-through text, because the subject is absence.
+   */
+  const rows = [
+    { label: 'The position', y: 20, kept: true },
+    { label: 'Why that size', y: 62, kept: false },
+    { label: 'The pushback', y: 104, kept: false },
+    { label: 'The thesis', y: 146, kept: true },
+  ]
   return (
-    <div className="relative h-44 pt-3" aria-hidden="true">
-      <ol className="space-y-3">
-        {[
-          { label: 'Thesis', gone: false },
-          { label: 'Why it was sized that way', gone: true },
-          { label: 'What the PM pushed back on', gone: true },
-          { label: 'The position', gone: false },
-        ].map(({ label, gone }) => (
-          <li key={label} className="flex items-center gap-3">
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ${
-                gone ? 'bg-transparent ring-1 ring-dashed ring-white/25' : 'bg-primary-400'
-              }`}
-            />
-            <span
-              className={`text-[11px] ${
-                gone ? 'text-slate-600 line-through decoration-slate-700' : 'text-slate-300'
-              }`}
+    <svg viewBox="0 0 280 170" className="h-44 w-full" role="presentation">
+      {rows.map(({ label, y, kept }, i) => {
+        const next = rows[i + 1]
+        const solid = kept && next?.kept
+        return (
+          <g key={label}>
+            {next && (
+              <line
+                x1="18" y1={y + 10} x2="18" y2={next.y - 10}
+                stroke={solid ? 'rgb(251 191 36 / 0.5)' : 'rgb(255 255 255 / 0.1)'}
+                strokeWidth="1"
+                strokeDasharray={solid ? undefined : '2 5'}
+              />
+            )}
+            {kept ? (
+              <rect x="10" y={y - 8} width="16" height="16" rx="4" fill="rgb(251 191 36 / 0.9)" />
+            ) : (
+              <rect
+                x="10" y={y - 8} width="16" height="16" rx="4"
+                fill="none" stroke="rgb(255 255 255 / 0.16)" strokeDasharray="2 3"
+              />
+            )}
+            <text
+              x="38" y={y + 4}
+              className={kept ? 'fill-slate-200 text-[10px]' : 'fill-slate-600 text-[10px]'}
             >
               {label}
-            </span>
-          </li>
-        ))}
-      </ol>
-      <p className="mt-4 text-[10px] uppercase tracking-[0.14em] text-slate-600">
-        Two links gone. The position remains.
-      </p>
-    </div>
+            </text>
+            {!kept && (
+              <text
+                x="38" y={y + 15}
+                className="fill-slate-700 text-[8px] uppercase"
+                style={{ letterSpacing: '0.1em' }}
+              >
+                gone
+              </text>
+            )}
+          </g>
+        )
+      })}
+    </svg>
   )
 }
 
 function LuckVisual() {
+  /*
+   * Two tracks that arrive at the same place. Returns alone cannot tell
+   * them apart, which is why they are drawn as two lines ending on the
+   * same point, with only the REASON differing. The gold track is the one
+   * whose thesis actually played out.
+   */
   return (
-    <div className="h-44 pt-3" aria-hidden="true">
-      <div className="space-y-2.5">
-        {[
-          { claim: 'Margin recovery', result: 'Worked', truth: 'For that reason', good: true },
-          { claim: 'Margin recovery', result: 'Worked', truth: 'For another reason', good: false },
-        ].map(({ claim, result, truth, good }) => (
-          <div
-            key={truth}
-            className="rounded-lg bg-white/[0.03] p-3 ring-1 ring-inset ring-white/[0.07]"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-slate-400">{claim}</span>
-              <span className="text-[11px] font-medium text-slate-200">{result}</span>
-            </div>
-            <p
-              className={`mt-1.5 text-[10px] uppercase tracking-[0.12em] ${
-                good ? 'text-primary-300' : 'text-slate-600'
-              }`}
-            >
-              {truth}
-            </p>
-          </div>
-        ))}
-      </div>
-      <p className="mt-3 text-[10px] uppercase tracking-[0.14em] text-slate-600">
-        Indistinguishable on returns alone.
-      </p>
-    </div>
+    /*
+     * Labels sit BELOW their own curve rather than on it. The first
+     * version put "played out" directly over the gold path and "Both
+     * worked" on top of the end point, so three things occupied the same
+     * 20px band. Each track now owns a horizontal lane.
+     */
+    <svg viewBox="0 0 280 170" className="h-44 w-full" role="presentation">
+      <text x="2" y="12" className="fill-slate-500 text-[8px] uppercase" style={{ letterSpacing: '0.1em' }}>
+        Same thesis, two paths
+      </text>
+
+      <path d="M6 46 C 90 46, 150 42, 212 40" fill="none" stroke="rgb(251 191 36 / 0.85)" strokeWidth="1.5" />
+      <text x="6" y="64" className="fill-amber-300 text-[9px]">the thesis played out</text>
+
+      <path
+        d="M6 120 C 80 120, 130 60, 212 44" fill="none"
+        stroke="rgb(255 255 255 / 0.22)" strokeWidth="1.5" strokeDasharray="3 4"
+      />
+      <text x="6" y="138" className="fill-slate-500 text-[9px]">something else did</text>
+
+      <circle cx="216" cy="42" r="4.5" fill="rgb(255 255 255 / 0.9)" />
+      <text x="228" y="45" className="fill-slate-200 text-[9px]">Worked</text>
+
+      <line x1="2" y1="152" x2="278" y2="152" stroke="rgb(255 255 255 / 0.08)" />
+      <text x="2" y="166" className="fill-slate-600 text-[8px] uppercase" style={{ letterSpacing: '0.1em' }}>
+        Returns cannot separate these
+      </text>
+    </svg>
   )
 }
 
@@ -141,11 +233,20 @@ export function CostOfForgetting() {
   return (
     <ul className="grid gap-x-12 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
       {COSTS.map(({ key, title, line, Visual }) => (
-        <li key={key} data-cost={key}>
+        /*
+          `flex-col` with `mt-auto` on the figure, so the three diagrams
+          share a baseline. The descriptions run two or three lines and
+          without this the first column's figure sat 25px below the other
+          two, which reads as a column that failed to lay out rather than as
+          a deliberate difference.
+        */
+        <li key={key} data-cost={key} className="flex flex-col">
           <h3 className="text-[15px] font-semibold tracking-tight text-white">{title}</h3>
           <p className="mt-2 max-w-[38ch] text-[13px] leading-[1.75] text-slate-400">{line}</p>
-          <div className="mt-6 rounded-xl bg-white/[0.02] p-4 ring-1 ring-inset ring-white/[0.06]">
-            <Visual />
+          <div className="mt-auto pt-6">
+            <div className="rounded-xl bg-white/[0.02] p-4 ring-1 ring-inset ring-white/[0.06]">
+              <Visual />
+            </div>
           </div>
         </li>
       ))}
@@ -174,7 +275,7 @@ export function CaptureTrade() {
       >
         <figcaption className="flex items-baseline justify-between gap-3">
           <span className="text-[13px] font-semibold tracking-tight text-slate-900">
-            What the analyst types
+            What somebody writes
           </span>
           <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400">
             Illustration
@@ -190,7 +291,7 @@ export function CaptureTrade() {
           </p>
         </div>
         <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
-          A note they were going to write regardless.
+          A note somebody was going to write regardless.
         </p>
       </figure>
 
@@ -273,8 +374,9 @@ export function MemoryLedger() {
       className="rounded-2xl bg-white/[0.025] p-5 ring-1 ring-inset ring-white/[0.08] sm:p-6"
     >
       <figcaption className="flex items-baseline justify-between gap-3">
+        {/* Said "One name, one year" while the figure draws three of them. */}
         <span className="text-[13px] font-semibold tracking-tight text-white">
-          One name, one year
+          One name, three years
         </span>
         <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
           Illustration
@@ -285,22 +387,52 @@ export function MemoryLedger() {
         NORTHWIND
       </p>
 
-      <ol className="relative mt-4">
-        <div
-          aria-hidden="true"
-          className="absolute bottom-4 left-[29px] top-4 w-px bg-gradient-to-b from-primary-400/10 via-primary-400/30 to-primary-400/60"
-        />
-        {rows.map(({ when, what, kind }) => (
-          <li key={when} className="relative flex items-start gap-4 py-2.5">
-            <span className="w-7 shrink-0 text-right font-mono text-[11px] text-slate-500">
-              {when}
+      {/*
+        ── A ledger that gets DENSER, not a three-item timeline ───────────
+
+        The first version was three dots down a line, which is a timeline:
+        it says these things happened in this order and nothing about
+        accumulation. The whole argument of this section is that the asset
+        compounds, so the drawing has to show quantity changing.
+
+        Each year is a row of marks. The faint ones are the firm's other
+        activity on the name, the solid gold ones are what this section is
+        selling, and year three has visibly more of both than year one. The
+        three labelled entries hang off the last row, so the detail and the
+        accumulation are the same picture rather than two.
+      */}
+      <div className="mt-5 space-y-2.5">
+        {[
+          { year: 'Year one', marks: 4, gold: 1 },
+          { year: 'Year two', marks: 9, gold: 3 },
+          { year: 'Year three', marks: 16, gold: 6 },
+        ].map(({ year, marks, gold }) => (
+          <div key={year} className="flex items-center gap-3">
+            {/* w-16 wrapped "Year three" onto two lines and threw the row off its marks. */}
+            <span className="w-20 shrink-0 text-[10px] uppercase tracking-[0.1em] text-slate-500">
+              {year}
             </span>
-            <span className="relative z-10 mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary-400 ring-2 ring-[#050710]" />
-            <span className="min-w-0">
-              <span className="block text-[12px] text-white">{what}</span>
-              <span className="mt-0.5 block text-[10px] uppercase tracking-[0.12em] text-slate-500">
-                {kind}
-              </span>
+            <span className="flex flex-wrap gap-1">
+              {Array.from({ length: marks }, (_, i) => (
+                <span
+                  key={i}
+                  className={`h-2.5 w-2.5 rounded-[2px] ${
+                    i < gold ? 'bg-amber-400/90' : 'bg-white/[0.09]'
+                  }`}
+                />
+              ))}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <ol className="mt-5 space-y-2 border-t border-white/[0.07] pt-4">
+        {rows.map(({ when, what, kind }) => (
+          <li key={when} className="flex items-baseline gap-3">
+            <span className="w-7 shrink-0 font-mono text-[10px] text-slate-500">{when}</span>
+            <span className="min-w-0 flex-1 text-[12px] leading-snug text-slate-200">{what}</span>
+            <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-amber-300/80">
+              {kind}
             </span>
           </li>
         ))}
@@ -344,8 +476,16 @@ export function AssistantFlow() {
     <ol className="grid gap-x-10 gap-y-10 lg:grid-cols-3">
       {[
         {
-          step: 'Your model, your key',
-          line: 'Point it at the provider and model your firm already pays for.',
+          /*
+           * Was "Your model, your key", which led with BYOK. That is a
+           * procurement detail and it was carrying the first panel, where
+           * the reader is deciding whether to keep reading. Broadened to
+           * the thing a buyer actually wants to hear: you are not locked to
+           * one vendor's model. The key is still mentioned, as the
+           * mechanism, in the line rather than the heading.
+           */
+          step: 'Use the model you want',
+          line: 'Pick the provider and model the work suits, on your own key. Nothing here is tied to one vendor.',
           Body: () => (
             <div className="space-y-2">
               {[
@@ -357,12 +497,16 @@ export function AssistantFlow() {
                   key={name}
                   className={`flex items-center justify-between rounded-lg px-3 py-2 text-[12px] ring-1 ring-inset ${
                     on
-                      ? 'bg-white/[0.06] text-white ring-white/20'
+                      ? 'bg-amber-400/10 text-white ring-amber-300/30'
                       : 'text-slate-500 ring-white/[0.07]'
                   }`}
                 >
                   {name}
-                  {on && <span className="text-[10px] uppercase tracking-[0.12em]">In use</span>}
+                  {on && (
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-amber-300">
+                      In use
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -385,7 +529,7 @@ export function AssistantFlow() {
                 >
                   <span
                     className={`flex h-4 w-7 shrink-0 items-center rounded-full px-0.5 ${
-                      on ? 'justify-end bg-primary-500/70' : 'justify-start bg-white/10'
+                      on ? 'justify-end bg-amber-400/80' : 'justify-start bg-white/10'
                     }`}
                   >
                     <span className="h-3 w-3 rounded-full bg-white" />
@@ -397,8 +541,18 @@ export function AssistantFlow() {
           ),
         },
         {
-          step: 'The answer stays, and it is tagged',
-          line: 'It is attached to the objects it is about, so it is there next quarter.',
+          /*
+           * The panel that answers "so what". Everywhere else, an assistant
+           * answer is a message in a thread that is gone by Thursday. Here
+           * it lands ON the objects it concerns, which makes it findable
+           * from the name rather than from remembering you once asked.
+           *
+           * Drawn as the answer BECOMING something: the question, then the
+           * tags it attached itself to, then the line about where it turns
+           * up later. That last line is the whole argument of the section.
+           */
+          step: 'The answer becomes part of the record',
+          line: 'It attaches to the name, the idea and the note it drew on, so the next person finds it without knowing it exists.',
           Body: () => (
             <div className="rounded-lg bg-white/[0.03] p-3 ring-1 ring-inset ring-white/[0.07]">
               <p className="text-[12px] leading-relaxed text-slate-300">
@@ -408,17 +562,24 @@ export function AssistantFlow() {
                 {['Asset', 'Idea', 'Research note'].map(t => (
                   <span
                     key={t}
-                    className="rounded bg-primary-500/10 px-2 py-0.5 text-[10px] font-medium text-primary-200 ring-1 ring-inset ring-primary-400/25"
+                    className="rounded bg-amber-400/10 px-2 py-0.5 text-[10px] font-medium text-amber-200 ring-1 ring-inset ring-amber-300/25"
                   >
                     {t}
                   </span>
                 ))}
               </div>
+              <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-relaxed text-slate-500">
+                <span aria-hidden="true" className="text-amber-300">&#8627;</span>
+                Opens with the name a year from now, beside the thesis it
+                questioned.
+              </p>
             </div>
           ),
         },
       ].map(({ step, line, Body }, i) => (
-        <li key={step} data-assistant-step={step}>
+        /* `flex-col` + `mt-auto` below, so the three figures share a
+           baseline however many lines each description runs to. */
+        <li key={step} data-assistant-step={step} className="flex flex-col">
           {/*
             NO NUMERALS, and a gate caught the first draft using them.
             `numbers only the list that has an order` holds the whole page to
@@ -430,13 +591,15 @@ export function AssistantFlow() {
           <div className="flex items-baseline gap-3">
             <span
               aria-hidden="true"
-              className={`h-px w-6 shrink-0 ${i === 0 ? 'bg-primary-400' : 'bg-white/20'}`}
+              className={`h-px w-6 shrink-0 ${i === 0 ? 'bg-amber-400' : 'bg-white/20'}`}
             />
             <h3 className="text-[15px] font-semibold tracking-tight text-white">{step}</h3>
           </div>
           <p className="mt-2 max-w-[40ch] text-[13px] leading-[1.75] text-slate-400">{line}</p>
-          <div className="mt-5 rounded-xl bg-white/[0.02] p-4 ring-1 ring-inset ring-white/[0.06]">
-            <Body />
+          <div className="mt-auto pt-5">
+            <div className="rounded-xl bg-white/[0.02] p-4 ring-1 ring-inset ring-white/[0.06]">
+              <Body />
+            </div>
           </div>
         </li>
       ))}

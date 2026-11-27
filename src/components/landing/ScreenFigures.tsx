@@ -68,7 +68,7 @@ function Frame({
 function Chip({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted' | 'accent' | 'solid' }) {
   const tones = {
     muted: 'bg-white/[0.04] text-slate-300 ring-white/10',
-    accent: 'bg-primary-500/10 text-primary-200 ring-primary-400/25',
+    accent: 'bg-amber-400/10 text-amber-200 ring-amber-300/25',
     solid: 'bg-white/90 text-slate-900 ring-white/40',
   }
   return (
@@ -270,7 +270,7 @@ export function TradeBookFigure() {
               is on the page. Drawn as a real affordance, because in the
               product it is one.
             */}
-            <p className="mt-3 flex items-center gap-1.5 border-t border-white/[0.07] pt-3 text-[11px] text-primary-300">
+            <p className="mt-3 flex items-center gap-1.5 border-t border-white/[0.07] pt-3 text-[11px] text-amber-300">
               <span aria-hidden="true">&#8599;</span>
               Opens the decision that authorized it
             </p>

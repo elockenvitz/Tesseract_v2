@@ -800,9 +800,23 @@ const GLASS =
  * LUMINANCE step in `Section` below, and the tesseract field changing
  * behind each band as you scroll.
  */
-const ACCENT_RULE = 'from-primary-400/90 to-primary-400/0'
-const ACCENT_ICON = 'text-primary-300'
-const ACCENT_NUM = 'text-primary-400/70'
+/*
+ * ── The hue changed from the product blue to GOLD on 2026-11-27 ─────────
+ *
+ * Everything above still holds: ONE hue, on small marks only. What changed
+ * is which one, and the argument for gold is that the page already had it.
+ * The mark in the nav is gold. The black hole behind the hero is gold. The
+ * accent was the product's interface blue, so the two colours on screen
+ * belonged to different things and the page read as careful rather than as
+ * confident.
+ *
+ * Gold against near-black is also simply louder than blue against
+ * near-black, at the same saturation, because nothing else on the page is
+ * warm. That is the whole brief: elevate without adding a second idea.
+ */
+const ACCENT_RULE = 'from-amber-300/90 to-amber-300/0'
+const ACCENT_ICON = 'text-amber-300'
+const ACCENT_NUM = 'text-amber-400/70'
 
 /**
  * Section tone: a LUMINANCE step, not a hue.
@@ -1050,7 +1064,9 @@ function ScreenBrowser() {
           role="tabpanel"
           id={`screen-panel-${active}`}
           aria-labelledby={`screen-tab-${active}`}
-          className="mt-6"
+          /* Pinned too: the descriptions run one to three lines, and that
+             alone was enough to move the figure beside them. */
+          className="mt-6 lg:min-h-[76px]"
         >
           <p className="max-w-[46ch] text-[14px] leading-[1.75] text-slate-400">{shows}</p>
         </div>
@@ -1070,7 +1086,21 @@ function ScreenBrowser() {
         "Illustration", so a screen reader meets it correctly labelled, and
         the content inside is short field labels rather than prose.
       */}
-      <div className="lg:col-span-7">
+      {/*
+        ── A FIXED FLOOR, because the section was resizing under the cursor
+
+        The six figures are different heights, so picking a screen made the
+        whole section grow or shrink and everything below it jumped. On a
+        tab control that is the worst possible behaviour: the reader's next
+        click target moves because of their last click.
+
+        `min-h` on the figure column pins the section to the tallest panel,
+        so switching screens changes only what is inside the frame. The
+        value is the measured height of the tallest figure at this width,
+        and it is a floor rather than a fixed height, so a figure that grows
+        past it still renders in full instead of being clipped.
+      */}
+      <div className="lg:col-span-7 lg:min-h-[330px]">
         <Figure />
       </div>
     </div>
@@ -1109,13 +1139,13 @@ function RecordChain() {
                      * against the accent, which is a bigger contrast step
                      * than two adjacent blues ever was.
                      */
-                    frozen ? 'bg-white' : 'bg-primary-400'
+                    frozen ? 'bg-white' : 'bg-amber-400'
                   }`}
                 />
                 {i < CHAIN.length - 1 && (
                   <span
                     aria-hidden="true"
-                    className={`w-px flex-1 ${frozen ? 'bg-white/30' : 'bg-primary-400/25'}`}
+                    className={`w-px flex-1 ${frozen ? 'bg-white/30' : 'bg-amber-400/25'}`}
                   />
                 )}
               </div>
@@ -1192,6 +1222,20 @@ const LIFECYCLE = [
     icon: BookOpen,
     stage: 'Research',
     record: 'Research note',
+    /*
+     * `fields` are the record's own columns, names only and no values.
+     *
+     * They exist because the section's claim is that every stage is a TYPED
+     * record rather than a document, and that claim was being made entirely
+     * in prose. Naming the fields is the shortest way to show a reader the
+     * difference between a row and a memo.
+     *
+     * NO VALUES, and in particular no numbers: `keeps the schema diagrams
+     * free of invented data` forbids digits in a figure that is not marked
+     * as an illustration, and it is right to. A field list is a schema; a
+     * field list with "conviction 8" in it is a fabricated holding.
+     */
+    fields: ['Security', 'Thesis', 'Evidence', 'Version'],
     line: 'The written case, its evidence and its revisions live on the security itself, not in a folder or a thread.',
     so: 'The version that justified the position stays readable after the note has moved on.',
   },
@@ -1209,6 +1253,7 @@ const LIFECYCLE = [
     icon: Layers,
     stage: 'Develop',
     record: 'Idea',
+    fields: ['Security', 'Conviction', 'Stage', 'Age'],
     line: 'A name under consideration carries its conviction, stage and age.',
     so: 'Ideas the firm declined stay as retrievable as those it acted on.',
   },
@@ -1216,6 +1261,7 @@ const LIFECYCLE = [
     icon: FileSignature,
     stage: 'Recommend',
     record: 'Recommendation',
+    fields: ['Conviction', 'Target', 'Sizing', 'Frozen version'],
     line: 'An analyst puts a view forward with its conviction, sizing and target, and submitting it freezes the reasoning behind it.',
     so: 'Nobody argues later about which draft was the one that got approved.',
   },
@@ -1223,6 +1269,7 @@ const LIFECYCLE = [
     icon: Gavel,
     stage: 'Decide',
     record: 'Decision',
+    fields: ['Verdict', 'Rationale', 'Decided by', 'References'],
     line: 'The portfolio manager accepts, rejects or defers, and the rationale is captured with the decision rather than in a reply.',
     so: 'Rejections and deferrals become records the firm can study, which is where its unexamined judgement sits.',
   },
@@ -1230,6 +1277,7 @@ const LIFECYCLE = [
     icon: ArrowLeftRight,
     stage: 'Execute',
     record: 'Accepted trade',
+    fields: ['Security', 'Side', 'Sizing', 'Fill status', 'Authorized by'],
     line: 'The approval becomes the firm’s committed record of what it did, including whether the fill was assumed or confirmed against the book.',
     so: 'A position traces back to the argument that authorized it, not just to a timestamp.',
   },
@@ -1237,10 +1285,189 @@ const LIFECYCLE = [
     icon: History,
     stage: 'Review',
     record: 'Outcome review',
+    fields: ['Original claim', 'What happened', 'Verdict', 'Links back to'],
     line: 'The decision is revisited against what actually happened, judged on the original thesis rather than the current price.',
     so: 'Judgement becomes separable from luck, because the claim and the result sit in one record.',
   },
 ]
+
+/**
+ * The lifecycle as a WALK: a rail of six stages and one panel.
+ *
+ * The rail is a real tablist with roving focus, matching `ScreenBrowser`
+ * below, because two different keyboard contracts for two things that look
+ * alike is worse than either contract on its own.
+ *
+ * `data-lifecycle-stage` moved from the old list items onto these tabs and
+ * still means "one stage of the lifecycle". Its gate counts six of them.
+ * The attribute exists because `#lifecycle ol > li` also matches the rows
+ * inside `RecordChain`, which is an `ol` in the same section, so a
+ * position-based selector counted eleven stages.
+ */
+function LifecycleWalk() {
+  const [active, setActive] = useState(0)
+  const tabs = useRef<(HTMLButtonElement | null)[]>([])
+  const { stage, record, line, so, fields, icon: Icon } = LIFECYCLE[active]
+  const upstream = active > 0 ? LIFECYCLE[active - 1] : null
+
+  function move(to: number) {
+    const next = (to + LIFECYCLE.length) % LIFECYCLE.length
+    setActive(next)
+    tabs.current[next]?.focus()
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    const k = e.key
+    if (k !== 'ArrowRight' && k !== 'ArrowLeft' && k !== 'Home' && k !== 'End') return
+    e.preventDefault()
+    if (k === 'Home') return move(0)
+    if (k === 'End') return move(LIFECYCLE.length - 1)
+    move(active + (k === 'ArrowRight' ? 1 : -1))
+  }
+
+  return (
+    <div>
+      {/*
+        The rail doubles as the diagram of the sequence: six segments in a
+        row, the travelled ones lit, so position in the lifecycle is visible
+        without reading a numeral.
+      */}
+      <div
+        role="tablist"
+        aria-label="The decision lifecycle"
+        onKeyDown={onKeyDown}
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6"
+      >
+        {LIFECYCLE.map(({ stage: s }, i) => {
+          const on = i === active
+          const past = i < active
+          return (
+            <button
+              key={s}
+              ref={el => { tabs.current[i] = el }}
+              type="button"
+              role="tab"
+              data-lifecycle-stage=""
+              id={`stage-tab-${i}`}
+              aria-selected={on}
+              aria-controls="stage-panel"
+              /*
+               * The accessible name is set explicitly because the button's
+               * own text concatenates to "01Research". A screen reader
+               * should announce the stage, not the stage with its ordinal
+               * welded to the front, and a test matching the stage name
+               * should not have to know about the numeral.
+               */
+              aria-label={s}
+              tabIndex={on ? 0 : -1}
+              onClick={() => setActive(i)}
+              className={`group rounded-lg px-3 pb-3 pt-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710] ${
+                on ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`block h-0.5 w-full rounded-full transition-colors ${
+                  on ? 'bg-amber-400' : past ? 'bg-amber-400/35' : 'bg-white/12'
+                }`}
+              />
+              <span
+                className={`mt-2.5 block text-[10px] font-semibold tabular-nums tracking-[0.12em] ${
+                  on ? ACCENT_NUM : 'text-slate-600'
+                }`}
+              >
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              <span
+                className={`mt-0.5 block text-[13px] font-semibold tracking-tight transition-colors ${
+                  on ? 'text-white' : 'text-slate-400 group-hover:text-slate-200'
+                }`}
+              >
+                {s}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+
+      <div className="mt-10 grid gap-x-16 gap-y-10 lg:grid-cols-12">
+        {/*
+          `lg:min-h` for the same reason `ScreenBrowser` has one: the six
+          stages differ by about two lines, and without a floor the diagram
+          beside them walks up and down the page as you move along the rail.
+        */}
+        <div
+          role="tabpanel"
+          id="stage-panel"
+          aria-labelledby={`stage-tab-${active}`}
+          className="lg:col-span-7 lg:min-h-[260px]"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/10 ring-1 ring-inset ring-amber-300/25">
+              <Icon className={`h-[17px] w-[17px] ${ACCENT_ICON}`} aria-hidden="true" />
+            </span>
+            <h3 className="text-[17px] font-semibold tracking-tight text-white">{stage}</h3>
+            <span className="rounded bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400 ring-1 ring-inset ring-white/[0.08]">
+              {record}
+            </span>
+          </div>
+
+          <p className="mt-5 max-w-[56ch] text-[15px] leading-[1.75] text-slate-300">{line}</p>
+
+          {/*
+            The linkage, named. This is the sentence the static stack could
+            not say: every stage after the first hangs off a specific record
+            that already exists, and the first one is where the chain starts.
+          */}
+          <p className="mt-5 flex items-center gap-2 text-[12px] text-slate-500">
+            <span aria-hidden="true" className="text-amber-300">&#8627;</span>
+            {upstream ? (
+              <>
+                Points back at the{' '}
+                <span className="font-mono text-[11px] text-slate-300">{upstream.record}</span>
+                {' '}it came from.
+              </>
+            ) : (
+              <>Where the chain starts. Everything after this points back at it.</>
+            )}
+          </p>
+
+          <p className="mt-6 max-w-[56ch] border-l border-amber-300/30 pl-4 text-[13px] leading-[1.75] text-slate-400">
+            {so}
+          </p>
+
+          {/*
+            The record's own columns, which is the section's claim made
+            visible rather than asserted. It also fills the left column: the
+            panel ran about 260px against a 570px diagram beside it, and the
+            300px of empty space under it read as a layout that had not
+            finished rather than as breathing room.
+          */}
+          <div className="mt-8 max-w-[34rem] rounded-xl bg-white/[0.02] p-4 ring-1 ring-inset ring-white/[0.06]">
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
+              Stored as
+            </p>
+            <p className="mt-2 font-mono text-[12px] text-white">{record}</p>
+            <ul className="mt-3 flex flex-wrap gap-1.5 border-t border-white/[0.07] pt-3">
+              {fields.map(f => (
+                <li
+                  key={f}
+                  className="rounded bg-white/[0.04] px-2 py-1 font-mono text-[10px] text-slate-400 ring-1 ring-inset ring-white/[0.07]"
+                >
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <div className="lg:col-span-5">
+          <RecordChain />
+        </div>
+      </div>
+    </div>
+  )
+}
 
 /*
  * `PROBLEMS` lived here: four ways the reasoning goes missing, one sentence
@@ -1375,8 +1602,16 @@ const SCREENS: { name: string; shows: string; Figure: () => JSX.Element }[] = [
  */
 
 /** Primary and secondary button classes, so every CTA matches exactly. */
+/*
+ * DARK TEXT ON GOLD, not white.
+ *
+ * `bg-amber-400` with white text is about 1.8:1 and fails every contrast
+ * bar there is. Amber is a light colour however saturated it looks, so the
+ * legible version of a gold button is a dark label on it, which is also the
+ * version that reads as a button rather than as a highlight.
+ */
 const BTN_PRIMARY =
-  'inline-flex items-center justify-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary-950/50 transition-all hover:bg-primary-500 hover:shadow-primary-900/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]'
+  'inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-amber-950/40 transition-all hover:bg-amber-300 hover:shadow-amber-900/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]'
 const BTN_GHOST =
   'inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-200 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/5 hover:ring-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]'
 
@@ -1601,12 +1836,45 @@ export function LandingPage() {
               "early-stage" with a "working core workflow"; that part is
               gone and should not come back.
             */}
-            <p className="mt-14 max-w-[64ch] border-l border-white/10 pl-5 text-[13px] leading-[1.8] text-slate-500">
-              Tesseract is not a market-data terminal, an execution system,
-              or a replacement for the tools your desk already runs. It sits
-              alongside them and keeps the one thing none of them holds: why
-              you did what you did.
-            </p>
+            {/*
+              ── Was a 13px apology in a 64ch column against the left rule ──
+
+              The sentence was right and the setting was wrong. Category
+              positioning is the most confident thing the hero says, and it
+              was set smaller and greyer than everything around it, which
+              made a deliberate claim read as a caveat somebody added later.
+
+              The claim is unchanged and the phrasing is now three short
+              declaratives at size, across the full measure, with the three
+              things the record answers spread beneath them. "Not a
+              market-data terminal" and "execution system" survive verbatim
+              because a gate holds them on the hero, and because they are
+              still the fastest way to stop a PM arriving at a demo
+              expecting a Bloomberg substitute.
+            */}
+            <div className="mt-16 border-t border-white/10 pt-10">
+              <p className="max-w-[46ch] text-pretty text-xl font-medium leading-[1.45] tracking-[-0.01em] text-slate-200 sm:text-2xl">
+                Not a market-data terminal. Not an execution system.
+                <span className="block text-slate-400">
+                  The record of why your firm acted.
+                </span>
+              </p>
+
+              <dl className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-3">
+                {[
+                  ['Why it was bought', 'The case as it stood when the money moved.'],
+                  ['Who decided, and on what', 'The approval with its rationale attached.'],
+                  ['Whether the thesis held', 'The outcome judged against the original claim.'],
+                ].map(([term, def]) => (
+                  <div key={term} className="border-t border-amber-300/25 pt-4">
+                    <dt className="text-[13px] font-semibold tracking-tight text-white">{term}</dt>
+                    <dd className="mt-1.5 max-w-[34ch] text-[13px] leading-[1.7] text-slate-500">
+                      {def}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
           </div>
         </section>
 
@@ -1654,11 +1922,31 @@ export function LandingPage() {
             clause again in different words, and a 42-word sentence set at
             24px loses its reader before the verdict arrives.
           */}
-          <p className="mt-16 max-w-[60ch] text-pretty text-xl leading-[1.6] tracking-[-0.01em] text-slate-200 sm:text-2xl">
-            A firm that cannot reconstruct its own reasoning cannot tell a
-            correct call from a lucky one, and cannot hand a name to the next
-            analyst without starting over.
-          </p>
+          {/*
+            ── Was one 32-word sentence with two subordinate clauses ───────
+
+            "A firm that cannot reconstruct its own reasoning cannot tell a
+            correct call from a lucky one, and cannot hand a name to the
+            next analyst without starting over."
+
+            Both halves were true and the sentence asked a reader to hold a
+            negative subject across two negative predicates before the point
+            arrived. At 24px that loses people mid-clause.
+
+            Now: a short claim, then the consequence as its own line. The
+            compounding idea is the sharper one and it was buried at the
+            end, so it goes last and alone.
+          */}
+          <div className="mt-16 max-w-[52ch]">
+            <p className="text-pretty text-2xl leading-[1.4] tracking-[-0.015em] text-slate-100 sm:text-3xl">
+              A firm that cannot say why it was right cannot repeat it.
+            </p>
+            <p className="mt-5 text-pretty text-[15px] leading-[1.8] text-slate-400">
+              Judgement is the only thing a firm compounds that it cannot buy.
+              Without a record, every name starts over and every lesson is
+              learned once.
+            </p>
+          </div>
         </Section>
 
         {/* ── 3. The connected decision lifecycle ─────────────────────────── */}
@@ -1670,101 +1958,25 @@ export function LandingPage() {
           lead="Each stage is a typed record that points at the one before it. That linkage is the product: it is what makes a decision reviewable a year later rather than merely archived."
         >
           {/*
-            Stages left, the record shape right.
+            ── Was a stack of six headed text blocks beside the diagram ────
 
-            The prose claims linkage; the diagram beside it shows the
-            linkage. Side by side is the whole point, because each is weak
-            alone: the stages without the chain are five abstractions, and
-            the chain without the stages is a schema with no narrative.
+            Six stages, each with a heading, a record chip, a description
+            and a consequence, all on screen at once. 282 words and 1,382px
+            of uniform vertical rhythm, which is a specification, not an
+            argument, and it was the longest section on the page.
 
-            Each stage carries what it KEEPS and the consequence a year
-            later, not just a description. A one-line stage is an assertion.
+            It is now a WALK. The six stages are a rail you move along, and
+            the panel under it shows one stage at a time: what it keeps,
+            what it points back at, and what that buys a year later. The
+            record shape stays beside it, because the prose claims linkage
+            and the diagram is what shows it.
+
+            The "points at" line is the whole product claim, and the static
+            version could not make it: a stack of six asserts linkage in
+            prose, while a walk DEMONSTRATES it, because moving to the next
+            stage names the record the new one hangs off.
           */}
-          <div className="grid gap-x-16 gap-y-12 lg:grid-cols-12">
-            <ol className="relative lg:col-span-7">
-              {/* A spine down the stages, so they read as one run. */}
-              <div
-                aria-hidden="true"
-                className="absolute bottom-6 left-5 top-6 w-px bg-gradient-to-b from-transparent via-white/12 to-transparent"
-              />
-              {LIFECYCLE.map(({ icon: Icon, stage, record, line, so }, i) => (
-                /*
-                 * `data-lifecycle-stage` is a test hook, and it exists
-                 * because the obvious selector was wrong again. A gate on
-                 * `#lifecycle ol > li` also matches the six rows of
-                 * `RecordChain`, which is an `ol` inside the same section,
-                 * so it counted 11 stages. Position-based selectors in this
-                 * file have now been wrong three times; name the thing.
-                 */
-                <li
-                  key={stage}
-                  data-lifecycle-stage=""
-                  className="relative flex gap-5 pb-10 last:pb-0"
-                >
-                  <span className="relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#050710] ring-1 ring-inset ring-white/10">
-                    <span
-                      aria-hidden="true"
-                      className="absolute inset-0 rounded-xl bg-gradient-to-br from-white/[0.07] to-transparent"
-                    />
-                    <Icon className={`relative h-[18px] w-[18px] ${ACCENT_ICON}`} aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0 pt-1">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className={`text-[11px] font-semibold tabular-nums tracking-[0.12em] ${ACCENT_NUM}`}>
-                        {String(i + 1).padStart(2, '0')}
-                      </span>
-                      <h3 className="text-[15px] font-semibold tracking-tight text-white">{stage}</h3>
-                      <span className="rounded bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400 ring-1 ring-inset ring-white/[0.08]">
-                        {record}
-                      </span>
-                    </div>
-                    <p className="mt-2 max-w-[54ch] text-[13px] leading-[1.75] text-slate-400">{line}</p>
-                    {/*
-                      The consequence, set as a quiet second line.
-
-                      This was a `dl` with "Keeps" and "So" as `dt` labels,
-                      which put four pieces of text and two labels under
-                      every stage. Two labels on two single items is chrome
-                      that costs more attention than it directs, and the
-                      indent plus the rule already say "this follows from
-                      the line above". The label is gone; the rule stayed.
-                    */}
-                    <p className="mt-3 max-w-[54ch] border-l border-white/[0.08] pl-4 text-[12px] leading-[1.7] text-slate-500">
-                      {so}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ol>
-
-            {/*
-              Sticky, so the diagram is beside whichever stage you are
-              reading.
-
-              The two columns are very different heights: five stages run
-              about twice the diagram's length, so a static right column
-              finished near the top and left a tall empty gap beside stages
-              three to five, which is the layout reading as unfinished. The
-              stages and the record shape are the same object described two
-              ways, and the whole reason they sit side by side is that each
-              is weak alone.
-
-              `self-start` is required: a grid item stretches by default, so
-              `sticky` on a full-height box has nothing to travel in.
-
-              The travel is BOUNDED, and the bound is inherent rather than a
-              tuning choice: a sticky box cannot leave its own grid area, so
-              it can move by the row height minus its own height and no
-              further. Measured at 1920px that is 847 minus 570, or 277px.
-              That is enough for what this needed — the browser shows the
-              figure still on screen at every scroll position where any
-              stage is on screen — but it is not an unlimited rail, and
-              making the figure taller would eat the travel.
-            */}
-            <div className="lg:col-span-5 lg:sticky lg:top-24 lg:self-start">
-              <RecordChain />
-            </div>
-          </div>
+          <LifecycleWalk />
         </Section>
 
 
@@ -1846,22 +2058,30 @@ export function LandingPage() {
                   <div className="flex items-center gap-3">
                     <span
                       aria-hidden="true"
-                      className="h-px w-8 bg-gradient-to-r from-primary-600/90 to-primary-600/0"
+                      className="h-px w-8 bg-gradient-to-r from-amber-500/90 to-amber-500/0"
                     />
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Research and capture
                     </p>
                   </div>
+                  {/*
+                    Was "out of work an ANALYST was going to do anyway".
+                    Narrowing it to the analyst made the section read as a
+                    feature for one seat, when the same claim covers the PM
+                    writing a rationale and the committee leaving a note.
+                    "Work already done" is the general form and it is the
+                    stronger promise.
+                  */}
                   <h2 className="mt-5 text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-slate-900 sm:text-4xl">
-                    The record assembles itself out of work an analyst was going to do anyway
+                    The record assembles itself out of work already done
                   </h2>
                 </div>
                 <div className="lg:col-span-5 lg:pt-2">
                   <p className="max-w-[56ch] text-[15px] leading-[1.75] text-slate-600">
-                    No firm adopts a system that asks analysts to document
-                    their decisions a second time, after the fact, for
-                    somebody else’s benefit. So capture is not a step. It is
-                    where the writing already happens.
+                    No firm adopts a system that asks its people to write
+                    things down a second time, after the fact, for somebody
+                    else’s benefit. So capture is not a step. It is where the
+                    writing already happens.
                   </p>
                 </div>
               </div>
@@ -1895,7 +2115,8 @@ export function LandingPage() {
                   return (
                     <div key={h}>
                       <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white ring-1 ring-inset ring-slate-900/[0.08]">
-                        <I className="h-[17px] w-[17px] text-primary-600" aria-hidden="true" />
+                        {/* amber-600, not amber-300: this one is on the LIGHT band. */}
+                        <I className="h-[17px] w-[17px] text-amber-600" aria-hidden="true" />
                       </span>
                       <h3 className="mt-4 text-[15px] font-semibold tracking-tight text-slate-900">{h}</h3>
                       <p className="mt-2 max-w-[44ch] text-[14px] leading-[1.75] text-slate-600">{p}</p>
@@ -2018,7 +2239,7 @@ export function LandingPage() {
                 return (
                   <li key={h}>
                     <div className="flex items-center gap-3">
-                      <I className="h-[18px] w-[18px] shrink-0 text-primary-300" aria-hidden="true" />
+                      <I className="h-[18px] w-[18px] shrink-0 text-amber-300" aria-hidden="true" />
                       <h3 className="text-[15px] font-semibold tracking-tight text-white">{h}</h3>
                     </div>
                     <p className="mt-2.5 max-w-[44ch] text-[14px] leading-[1.75] text-slate-400">{p}</p>
