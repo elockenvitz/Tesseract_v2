@@ -70,12 +70,42 @@ beforeEach(() => { vi.resetModules() })
 afterEach(() => { cleanup(); vi.unstubAllEnvs() })
 
 describe('the positioning a visitor reads in the first screen', () => {
-  it('leads with the headline the product is positioned on', async () => {
+  /*
+   * ── RETARGETED 2026-11-27, and this one is a POSITIONING change ───────
+   *
+   * This used to pin "Every investment decision has a story / Make sure
+   * your firm remembers it". That headline was deliberately kept once
+   * before, so changing it needs a reason rather than a preference.
+   *
+   * The reason: it is an imperative about recordkeeping. It asks the
+   * reader to accept a duty before offering them anything, and the duty
+   * it names is the LAST of the three things that sell this product
+   * (people start for their own day, firms pay for the team, firms stay
+   * for the compounding). The line now opens the institutional
+   * intelligence section, where remembering is the subject.
+   *
+   * What this test pins now is the SHAPE, not the words: the headline
+   * must promise an outcome in two horizons, a near one and a far one.
+   * That is the structure the positioning depends on, and it is the thing
+   * that would be lost if someone later trimmed the headline back to a
+   * single clause about decisions.
+   */
+  it('promises an outcome in two horizons, near and far', async () => {
     await renderConfigured()
-    expect(screen.getByRole('heading', { level: 1 }).textContent)
-      .toContain('Every investment decision has a story')
-    expect(screen.getByRole('heading', { level: 1 }).textContent)
-      .toContain('Make sure your firm remembers it')
+    const h1 = screen.getByRole('heading', { level: 1 }).textContent ?? ''
+
+    expect(h1).toMatch(/\btoday\b/i)
+    expect(h1).toMatch(/every year after|tomorrow|over time/i)
+
+    /*
+     * The far horizon must be about the FIRM, not the reader personally.
+     * "Better decisions today, better decisions tomorrow" would pass the
+     * two assertions above and would have thrown away the argument.
+     */
+    expect(h1).toMatch(/\bfirm\b/i)
+
+    /* And it must not go back to leading with the record. */
+    expect(h1).not.toMatch(/remember|record|archive|never lose/i)
   })
 
   /*
@@ -557,6 +587,114 @@ describe('the page says what a user actually opens', () => {
  * and still unreadable in its lists, and it can have short bullets that all
  * say the same thing.
  */
+describe('the role section is three answers, not one answer three times', () => {
+  /*
+   * ── THE BUG THIS EXISTS TO PREVENT HAS ALREADY SHIPPED ONCE ───────────
+   *
+   * A section called "what you actually work in" turned out to be the
+   * lifecycle section with the nouns swapped — same six items, same order,
+   * Research/Research note -> Asset workspace, Develop/Idea -> Idea
+   * Pipeline, and so on. Two commits tried to fix it by rewriting the
+   * heading. No heading fixes a section whose content is another
+   * section's content, and it was eventually deleted.
+   *
+   * A role selector is the easiest place to make that mistake again,
+   * because three tabs of the same component with different strings looks
+   * like three audiences and is one.
+   */
+  it('names the three seats that actually decide', async () => {
+    await renderConfigured()
+    const seats = [...document.querySelectorAll('[data-role-seat]')]
+      .map(el => el.getAttribute('data-role-seat'))
+    expect(seats).toEqual(['Analysts', 'Portfolio managers', 'Investment leadership'])
+  })
+
+  it('gives each role a different shape of artifact', async () => {
+    await renderConfigured()
+    const shapes = [...document.querySelectorAll('[data-role-shape]')]
+      .map(el => el.getAttribute('data-role-shape'))
+
+    expect(shapes.length).toBe(3)
+    expect(
+      new Set(shapes).size,
+      `all three roles render the same shape (${shapes.join(', ')}) — that is the ` +
+        'duplicate-section bug this page already shipped once',
+    ).toBe(3)
+  })
+
+  it('says something different to each role, not the same claim reworded', async () => {
+    const user = userEvent.setup()
+    await renderConfigured()
+
+    const panelsSeen: string[] = []
+    for (const seat of ['Analysts', 'Portfolio managers', 'Investment leadership']) {
+      await user.click(screen.getByRole('tab', { name: seat }))
+      const panel = document.getElementById('role-panel')
+      expect(panel?.textContent ?? '').not.toHaveLength(0)
+      panelsSeen.push((panel?.textContent ?? '').toLowerCase())
+    }
+
+    /*
+     * Each panel must carry a figure, so no role is sold on prose alone.
+     */
+    expect(document.querySelectorAll('[data-role-figure]').length).toBeGreaterThan(0)
+
+    /*
+     * And the three panels must not be near-identical text. Compared on
+     * word overlap rather than string equality, because three reworded
+     * versions of one claim is exactly the failure mode and they would
+     * never be byte-equal.
+     */
+    for (let a = 0; a < panelsSeen.length; a++) {
+      for (let b = a + 1; b < panelsSeen.length; b++) {
+        const wa = new Set(panelsSeen[a].match(/[a-z]{5,}/g) ?? [])
+        const wb = new Set(panelsSeen[b].match(/[a-z]{5,}/g) ?? [])
+        const shared = [...wa].filter(w => wb.has(w)).length
+        const overlap = shared / Math.min(wa.size, wb.size)
+        expect(
+          overlap,
+          `role panels ${a} and ${b} share ${Math.round(overlap * 100)}% of their ` +
+            'vocabulary — they are arguing the same thing twice',
+        ).toBeLessThan(0.5)
+      }
+    }
+  })
+
+  it('reserves a fixed height so picking a role cannot resize the section', async () => {
+    await renderConfigured()
+    /*
+     * Same defect as the lifecycle section, where the container had been
+     * sized from whichever figure happened to be open when it was built,
+     * and one tab in six then jumped the page by 41px.
+     */
+    const col = document.querySelector('[data-role-figure-column]')
+    const min = /min-h-\[(\d+)px\]/.exec(col?.getAttribute('class') ?? '')?.[1]
+    expect(min, 'the figure column must reserve a measured minimum height').toBeTruthy()
+    expect(Number(min)).toBeGreaterThanOrEqual(452)
+  })
+
+  it('walks the roles with the arrow keys, from one tab stop', async () => {
+    const user = userEvent.setup()
+    await renderConfigured()
+
+    const list = document.querySelector('[role="tablist"][aria-label="Who Tesseract is for"]')
+    const tabs = [...(list?.querySelectorAll('[role="tab"]') ?? [])] as HTMLElement[]
+    expect(tabs).toHaveLength(3)
+    expect(
+      tabs.filter(t => t.getAttribute('tabindex') === '0'),
+      'a tablist is ONE tab stop; the arrow keys move within it',
+    ).toHaveLength(1)
+
+    tabs[0].focus()
+    await user.keyboard('{ArrowRight}')
+    expect(tabs[1].getAttribute('aria-selected')).toBe('true')
+    await user.keyboard('{End}')
+    expect(tabs[2].getAttribute('aria-selected')).toBe('true')
+    await user.keyboard('{ArrowRight}')
+    expect(tabs[0].getAttribute('aria-selected'), 'End then Right should wrap').toBe('true')
+  })
+})
+
 describe('the page stays readable', () => {
   /*
    * ── A TYPE SCALE, because the page had drifted into seven of them ──────
@@ -694,7 +832,17 @@ describe('the page stays readable', () => {
     await renderConfigured()
     const offenders: string[] = []
     for (const h of document.querySelectorAll('h3')) {
-      const text = h.parentElement?.querySelector('p')?.textContent ?? ''
+      const p = h.parentElement?.querySelector('p')
+      /*
+       * A paragraph explicitly marked as a section lead is exempt, which
+       * is the exemption this test's own description already claims to
+       * make. The leads it was written against sit under an h2 and so
+       * were never selected here; the role panels put a lead under an h3,
+       * where the selector cannot tell a lead from a bullet. The marker
+       * resolves that rather than widening what counts as a bullet.
+       */
+      if (!p || p.hasAttribute('data-section-lead')) continue
+      const text = p.textContent ?? ''
       const sentences = (text.match(/[.?!](\s|$)/g) ?? []).length
       if (sentences > 1) offenders.push(`${h.textContent}: ${text}`)
     }
@@ -801,13 +949,35 @@ describe('the research and capture section', () => {
     expect(research?.textContent).toMatch(/typed record rather than a document/i)
   })
 
+  /*
+   * ── RETARGETED 2026-11-27 when this section went from six items to four ─
+   *
+   * The count was incidental; the requirement is that this section names
+   * CONCRETE surfaces rather than abstractions about "capture".
+   *
+   * "Notes that belong to the name" was dropped because the platform
+   * canvas now SHOWS thesis, risks, valuation and coverage sitting on one
+   * security, and a sentence restating a picture the reader just looked at
+   * is the repetition this page keeps having to cut. The claim is not
+   * lost, so the second assertion below follows it to where it went —
+   * otherwise this retarget would quietly permit deleting it outright.
+   */
   it('names the capture surfaces an analyst actually touches', async () => {
     await renderConfigured()
     const research = document.getElementById('research')
     const headings = [...(research?.querySelectorAll('h3') ?? [])].map(h => h.textContent ?? '')
-    expect(headings.length).toBeGreaterThanOrEqual(6)
-    expect(headings.join(' | ')).toMatch(/notes that belong to the name/i)
+    expect(headings.length).toBeGreaterThanOrEqual(4)
     expect(headings.join(' | ')).toMatch(/versions instead of overwrites/i)
+    expect(headings.join(' | ')).toMatch(/capture/i)
+  })
+
+  it('still shows research living on the security, now in the canvas', async () => {
+    await renderConfigured()
+    const platform = document.getElementById('platform')
+    expect(platform, 'the platform section carries the claim this test follows').toBeTruthy()
+    const text = platform?.textContent ?? ''
+    expect(text).toMatch(/not filed in a folder|on the security/i)
+    expect(text).toMatch(/thesis/i)
   })
 
   /*

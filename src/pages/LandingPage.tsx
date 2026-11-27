@@ -7,7 +7,10 @@ import {
   OutcomeFigure,
   RecommendationFigure,
   TradeBookFigure,
+  WorkspaceCanvas,
 } from '../components/landing/ScreenFigures'
+import { RoleSwitch } from '../components/landing/RoleSwitch'
+import { ReassessFigure } from '../components/landing/ReassessFigure'
 import {
   AssistantFlow,
   CaptureTrade,
@@ -17,7 +20,7 @@ import {
 import {
   ArrowLeftRight, ArrowRight, BookOpen, FileSignature, Gavel, History,
   Layers, ListChecks, Lock, Quote, RotateCcw, ShieldCheck,
-  Target, Users,
+  Users,
 } from 'lucide-react'
 // `Boxes`, `Link2` and `Sparkles` went with the three assistant capability
 // cards, the same way `LineChart` went below. The icon list keeps working as
@@ -751,21 +754,24 @@ function TesseractField() {
 /* `SHELL` and `GUTTER` are declared above `PageAtmosphere`, which needs
    `GUTTER` to align the background grid to the text column. */
 
-/**
- * The hero's second line.
+/*
+ * ── `ACCENT_TEXT` WAS HERE AND IS DELETED, 2026-11-27 ───────────────────
  *
- * Was a three-stop sky to blue to teal gradient across the type. Gradient
- * text is the same category of thing as the aurora: it arrives with the
- * template, and once the background stopped shouting it was the loudest
- * remaining decoration on the page.
+ * It was `bg-gradient-to-br from-white via-slate-200 to-slate-400` clipped
+ * to the text, and it styled the hero's second line.
  *
- * It is now a monochrome fall from white to a cool grey. The sentence still
- * has two halves and a turn, which was the only job the colour was doing,
- * and a headline that recedes slightly on its second clause reads as
- * typeset rather than as filled in.
+ * It had already survived one correct edit — it replaced a sky/blue/teal
+ * three-stop gradient, and monochrome was the right call then. What broke
+ * it was the new headline being LONGER. A gradient running top-left to
+ * bottom-right puts its faintest value at the end of the last line, which
+ * on "A smarter firm every year after." landed slate-400 on the three
+ * words the whole positioning turns on.
+ *
+ * The lesson worth keeping: gradient text is only safe on a line whose
+ * length you control. The second line is now plain, with a white span on
+ * the payoff, so emphasis is placed deliberately instead of falling where
+ * the box happens to end.
  */
-const ACCENT_TEXT =
-  'bg-gradient-to-br from-white via-slate-200 to-slate-400 bg-clip-text text-transparent'
 
 /*
  * ── THE TYPE SCALE, raised on 2026-11-27 ───────────────────────────────
@@ -1337,14 +1343,26 @@ function LifecycleWalk() {
               aria-label={s}
               tabIndex={on ? 0 : -1}
               onClick={() => setActive(i)}
-              className={`group rounded-lg px-3 pb-3 pt-2.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710] ${
-                on ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'
+              /*
+                Same affordance fix as the role tabs: an unselected tab
+                was bare text with a `bg-white/12` rule above it, which on
+                this background is invisible. A rail of six stages where
+                five look like labels is a diagram, not a control.
+              */
+              className={`group rounded-lg px-3 pb-3 pt-2.5 text-left ring-1 ring-inset transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710] ${
+                on
+                  ? 'bg-white/[0.07] ring-white/15'
+                  : 'ring-white/[0.07] hover:bg-white/[0.035] hover:ring-white/20'
               }`}
             >
               <span
                 aria-hidden="true"
                 className={`block h-0.5 w-full rounded-full transition-colors ${
-                  on ? 'bg-amber-400' : past ? 'bg-amber-400/35' : 'bg-white/12'
+                  on
+                    ? 'bg-amber-400'
+                    : past
+                      ? 'bg-amber-400/45'
+                      : 'bg-white/25 group-hover:bg-amber-400/50'
                 }`}
               />
               <span
@@ -1507,12 +1525,32 @@ function LifecycleWalk() {
  * Every item here is a surface that exists. Nothing aspirational was added
  * to round the list out to six.
  */
+/*
+ * ── SIX ITEMS TO FOUR, 2026-11-27, and the cut is about REDUNDANCY ──────
+ *
+ * Measured: this section was 257 words over 1,478px with six headed
+ * items, the heaviest on the page by both counts, and it was a feature
+ * list — the exact shape a reader has to translate into a benefit
+ * themselves.
+ *
+ * It also stopped being new. The platform canvas above now SHOWS thesis,
+ * risks, valuation, price target and coverage sitting on one name, and
+ * the analyst role panel already says "nothing is re-found". Two of the
+ * six items were restating a picture the reader had just looked at.
+ *
+ * Dropped: "Notes that belong to the name" (the canvas shows it) and
+ * "Price targets with a history" (the canvas lists it, and at 14 rows in
+ * production it is the thinnest claim here).
+ *
+ * Kept: the four that say something no figure on the page says — that
+ * capture happens inside the work, that editing never destroys what a
+ * colleague read, that a cross-name view is its own object, and that a
+ * repeated process has a visible state.
+ */
 const CAPTURE: [typeof BookOpen, string, string][] = [
-  [BookOpen, 'Notes that belong to the name', 'Research is written against the security, so opening a name a year later means the thinking is already there.'],
   [Quote, 'Fast capture, kept in place', 'A thought during a call lands on the right security in a couple of keystrokes and stays attached to it.'],
   [History, 'Versions instead of overwrites', 'Editing a note adds a version, so nothing a colleague relied on is silently replaced.'],
   [Layers, 'Themes across names', 'A view that spans several securities is its own subject, rather than being retyped into four separate notes.'],
-  [Target, 'Price targets with a history', 'A target is a record with a lifecycle, so a revision is visible as a revision.'],
   [ListChecks, 'Structured diligence', 'Checklists and requirements make a repeated process something the firm can see the state of.'],
 ]
 
@@ -1676,20 +1714,33 @@ export function LandingPage() {
               <span className="text-[18px] font-semibold tracking-[-0.015em]">Tesseract</span>
             </a>
             <div className="flex items-center gap-1">
-              <a href="#lifecycle" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
+              {/*
+                ── THE NAV FOLLOWS THE PAGE, 2026-11-27 ───────────────────
+
+                It read Platform-less: "How it works / Research / Memory /
+                Design partners", which was a reasonable index of the old
+                six-section page and a poor one of this one. It opened on
+                mechanics and never named the product or the audience.
+
+                A prospective buyer scanning a nav is asking two
+                questions — what is it, and is it for me — so those are
+                the first two items now. The proposed Platform/Solutions
+                dropdowns were NOT built: they would be menus over
+                anchors on a single page, which is navigation theatre, and
+                the instruction not to invent pages to fill a menu is the
+                right one.
+              */}
+              <a href="#platform" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
+                Platform
+              </a>
+              <a href="#roles" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white md:block">
+                Who it's for
+              </a>
+              <a href="#lifecycle" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white lg:block">
                 How it works
               </a>
-              <a href="#research" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white md:block">
-                Research
-              </a>
-              {/*
-                "Product" pointed at #product, which no longer exists. It is
-                replaced by Memory rather than repointed at #lifecycle,
-                because "How it works" already goes there and two nav items
-                landing on one section is a nav that lies about the page.
-              */}
-              <a href="#memory" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white md:block">
-                Memory
+              <a href="#act-ai" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white lg:block">
+                ACT AI
               </a>
               <a href="#partners" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
                 Design partners
@@ -1769,10 +1820,59 @@ export function LandingPage() {
               The only element on the page allowed this much size. The second
               line takes the accent gradient so the sentence has a subject
               and a turn rather than two equal shouts.
+
+              ── WHY THE HEADLINE CHANGED, 2026-11-27 ─────────────────────
+              It was "Every investment decision has a story. / Make sure
+              your firm remembers it." That line is distinctive and it was
+              deliberately kept once before. It is not kept now, and the
+              reason is worth writing down because the earlier decision was
+              not wrong, it was answering a different question.
+
+              "Make sure your firm remembers it" is an IMPERATIVE about
+              RECORDKEEPING, aimed at the fear of a CIO. It asks the reader
+              to accept a duty before it has offered them anything. An
+              analyst reading it hears more work; a PM hears an audit.
+              Neither of them is the person who feels the loss, which is
+              why the line tested as memorable and still led with the one
+              layer of value that sells last.
+
+              The sentence is not deleted. It moves to the institutional
+              intelligence section, where remembering is the subject and
+              the reader has by then been given a reason to care.
+
+              ── WHY NOT THE OBVIOUS REPLACEMENT ──────────────────────────
+              "Better decisions today. A smarter investment firm tomorrow."
+              has the right SHAPE — two horizons, the near one personal and
+              the far one institutional — and the wrong second half.
+              "Tomorrow" is the reflex pairing for "today" and asserts no
+              mechanism. "Every year after" says the same thing and says
+              HOW: the advantage accrues, which is the actual thesis of the
+              product and the one claim no competitor can copy by shipping
+              a feature.
             */}
-            <h1 className="mt-7 max-w-[20ch] text-pretty text-[2.5rem] font-semibold leading-[1.04] tracking-[-0.03em] text-white sm:text-6xl lg:text-7xl">
-              Every investment decision has a story.
-              <span className={`mt-2 block ${ACCENT_TEXT}`}>Make sure your firm remembers it.</span>
+            {/*
+              ── TWO FIXES FROM LOOKING AT IT, NOT FROM READING IT ────────
+              1. `max-w-[17ch]` broke the first line as "Better decisions /
+                 today.", orphaning the word that carries the near horizon.
+                 18ch holds "Better decisions today." on one line at lg.
+              2. The second line is NOT in ACCENT_TEXT. That gradient runs
+                 white -> slate-400 top-left to bottom-right, so on a line
+                 this long the faintest text in the whole hero landed on
+                 "every year after" — the payoff, and the half of the
+                 headline the positioning depends on. A gradient that
+                 fades out the end of a sentence is only safe on a short
+                 line; this one is not short. Plain white, with the line
+                 break doing the work the colour was doing.
+              3. "investment" is dropped from the second line because the
+                 eyebrow directly above already says "for investment
+                 teams". Saying it twice in six words cost the line its
+                 rhythm and bought nothing.
+            */}
+            <h1 className="mt-7 max-w-[18ch] text-pretty text-[2.5rem] font-semibold leading-[1.04] tracking-[-0.03em] text-white sm:text-6xl lg:text-7xl">
+              Better decisions today.
+              <span className="mt-2 block text-slate-400">
+                A smarter firm <span className="text-white">every year after.</span>
+              </span>
             </h1>
 
             {/*
@@ -1784,19 +1884,26 @@ export function LandingPage() {
               reader skips. The claim is the same; it now lands.
             */}
             {/*
-              Names the five things it connects, rather than asserting that it
-              connects things.
+              THREE READERS, THREE CLAUSES, IN THE ORDER THEY DECIDE.
 
-              "Research, ideas, recommendations, portfolio decisions and
-              outcome reviews" are the five stages the lifecycle section then
-              walks through, so the hero sets up the page's spine instead of
-              making a claim the reader has to take on faith. The second
-              sentence is still the payoff and is unchanged.
+              The analyst is first because the analyst is who has to open
+              the thing every morning, and software a desk resents does not
+              survive its pilot however well it demos to the CIO. The PM is
+              second because the PM signs. The firm is third because the
+              compounding argument is the one that renews the contract, and
+              it is also the one a stranger has least reason to believe in
+              the first ten seconds.
+
+              Each clause names a DIFFERENT benefit — time, context,
+              sharpening — rather than three restatements of "better". The
+              previous lead listed the five stages, which set up the page's
+              spine but asked the reader to care about an architecture
+              before they had been offered an outcome.
             */}
-            <p className="mt-9 max-w-[56ch] text-lg leading-[1.7] text-slate-300">
-              It brings research, ideas, recommendations, decisions and outcome
-              reviews into one connected record. A year from now, your firm can
-              still see why it acted.
+            <p className="mt-9 max-w-[58ch] text-lg leading-[1.7] text-slate-300">
+              Give your analysts more time to think, your portfolio managers
+              the context to act, and your firm an investment process that
+              gets sharper with every decision it makes.
             </p>
 
             <div className="mt-11 flex flex-wrap items-center gap-3">
@@ -1841,28 +1948,91 @@ export function LandingPage() {
                 </span>
               </p>
 
-              <dl className="mt-10 grid gap-x-10 gap-y-6 sm:grid-cols-3">
-                {[
-                  ['Why it was bought', 'The case as it stood when the money moved.'],
-                  ['Who decided, and on what', 'The approval with its rationale attached.'],
-                  ['Whether the thesis held', 'The outcome judged against the original claim.'],
-                ].map(([term, def]) => (
-                  <div key={term} className="border-t border-amber-300/25 pt-4">
-                    <dt className="text-[16px] font-semibold tracking-tight text-white">{term}</dt>
-                    <dd className="mt-1.5 max-w-[34ch] text-[16px] leading-[1.7] text-slate-500">
-                      {def}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
+              {/*
+                ── A THREE-ITEM `dl` WAS HERE AND WAS CUT, 2026-11-27 ──────
+
+                It read: "Why it was bought / Who decided, and on what /
+                Whether the thesis held", each with a line of gloss.
+
+                Every one of those is now SHOWN rather than asserted, and
+                within two screens of here. The platform canvas directly
+                below lists the research note, the recommendation, the
+                decision and the outcome review hanging off one name; the
+                reassess section renders the original case beside what
+                changed eight months later.
+
+                Three abstract promises immediately above the concrete
+                proof of the same three things is the repetition this page
+                keeps paying for. The hero is better for ending on the
+                category line and handing the reader straight to the
+                product.
+
+                The hero also had to lose roughly this many words:
+                the page crossed its 1,600-word ratchet when the roles and
+                reassess sections landed, and the rule on this repo is to
+                cut before raising a ratchet. This was the fat.
+              */}
             </div>
           </div>
         </section>
 
-        {/* ── 2. The problem ──────────────────────────────────────────────── */}
+        {/* ── 2. What it is ───────────────────────────────────────────────
+            THE SECTION THE PAGE DID NOT HAVE.
+
+            A visitor who read the old page from the top met the hero, then
+            a screen explaining what is wrong with their firm, then a
+            lifecycle. Nowhere in the first three screens did the page say
+            PLAINLY WHAT THE THING IS, and nowhere did it show one.
+
+            That is the gap this fills, and it comes before the problem
+            deliberately. Leading with the diagnosis asks a stranger to
+            accept an accusation about their own organization before they
+            have any reason to trust the source. Showing the product first
+            earns the right to describe the problem it solves.
+
+            The canvas is the widest figure on the page and the only one
+            allowed to be. It is three panels on ONE name — coverage,
+            the case, and the records the firm created from it — because
+            the product's whole claim is that those are the same object
+            seen from different seats, and a composition can say that in a
+            second where a paragraph needs forty words and is still
+            believed less.
+        */}
+        <section id="platform" className="relative scroll-mt-24">
+          <div className={`${SHELL} py-24 sm:py-32`}>
+            <Eyebrow>The platform</Eyebrow>
+            <div className="mt-6 grid gap-x-16 gap-y-7 lg:grid-cols-12">
+              {/* Was "Your whole investment process, in one place that
+                  understands how it fits together" — 13 words over three
+                  lines, and the last seven of them were a claim the
+                  canvas underneath proves better than any clause can. */}
+              <h2 className="text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.025em] text-white sm:text-[2.5rem] lg:col-span-7">
+                One name. Every piece of work your firm did on it.
+              </h2>
+              <div className="lg:col-span-5">
+                <p className="max-w-[46ch] text-[17px] leading-[1.75] text-slate-400">
+                  Investment teams do not need another place to put things.
+                  They need the research, the idea, the recommendation, the
+                  decision and the review to be one connected object instead
+                  of five systems that have never met.
+                </p>
+                <p className="mt-5 max-w-[46ch] text-[17px] leading-[1.75] text-slate-400">
+                  From the first question on a name to what you learned from
+                  owning it.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-14">
+              <WorkspaceCanvas />
+            </div>
+          </div>
+        </section>
+
+        {/* ── 3. The problem ──────────────────────────────────────────────── */}
         <Section
           id="problem"
-          label="The problem"
+          label="Why it matters"
           title="The reasoning behind a decision is the first thing a firm loses"
           lead="Investment organizations have research, market data, spreadsheets, notes, chat and trading systems. What they rarely have is one durable record of why a position was taken."
         >
@@ -1940,7 +2110,31 @@ export function LandingPage() {
           </div>
         </Section>
 
-        {/* ── 3. The connected decision lifecycle ─────────────────────────── */}
+        {/* ── 4. Who it is for ────────────────────────────────────────────
+            THREE SEATS, THREE DIFFERENT ARTIFACTS.
+
+            Placed here on purpose: after the reader has seen what the
+            product is and why it matters, and BEFORE the lifecycle. The
+            lifecycle explains the machine; this explains what the machine
+            is worth to the particular person reading, and a stranger
+            needs that answer before they will spend a screen on
+            mechanics.
+
+            The implementation rule is in RoleSwitch.tsx and it is the
+            important part: a queue, an approval and a ledger, because
+            three skins of one component is how this page shipped a
+            duplicate section once before.
+        */}
+        <Section
+          id="roles"
+          label="Built for the desk"
+          title="Three seats. Three different days. One system underneath."
+          lead="An analyst, a portfolio manager and a CIO want different things from the same software, and only one of them signs. The other two decide whether it survives the pilot."
+        >
+          <RoleSwitch />
+        </Section>
+
+        {/* ── 5. The connected decision lifecycle ─────────────────────────── */}
         <Section
           id="lifecycle"
           tone="raised"
@@ -2168,7 +2362,47 @@ export function LandingPage() {
           small ones mapped to six stages is the thing that failed.
         */}
 
-        {/* ── 5. Institutional memory ────────────────────────────────────── */}
+        {/* ── 7. When the facts change ────────────────────────────────────
+            THE DIFFERENTIATOR THE PAGE DID NOT HAVE.
+
+            Every other claim here can be met by a PM saying "we have a
+            research system". This one cannot. Opening a position eight
+            months later and reading what you ACTUALLY believed when you
+            took it — not what you now remember believing — is the thing
+            no folder of documents and no meeting culture produces.
+
+            It is a figure rather than a paragraph because the gap is
+            invisible until the two columns sit side by side. "You can
+            revisit the original reasoning" is a feature sentence; a
+            conviction that moved from High to Medium against a named
+            assumption that failed is an argument.
+
+            Placed immediately before institutional memory, because this
+            is the concrete instance and that section is the general case.
+        */}
+        <Section
+          id="reassess"
+          tone="raised"
+          label="Changing your mind, well"
+          title="When the facts change, know exactly what to revisit"
+          lead="Markets move and theses age. Deciding whether a position is still right means knowing why it was taken, in the words used at the time rather than the ones memory supplies later."
+        >
+          <ReassessFigure />
+
+          <div className="mt-14 grid gap-x-16 gap-y-8 lg:grid-cols-2">
+            <p className="max-w-[48ch] text-pretty text-2xl leading-[1.35] tracking-[-0.015em] text-white sm:text-[2rem]">
+              A bad outcome is not a bad decision.
+            </p>
+            <p className="max-w-[52ch] text-[17px] leading-[1.75] text-slate-400">
+              Separating the two requires the original case, and most firms
+              cannot produce it. Without it every review collapses into
+              whether the position made money, which teaches a desk to avoid
+              being wrong rather than to think well.
+            </p>
+          </div>
+        </Section>
+
+        {/* ── 8. Institutional memory ────────────────────────────────────── */}
         <Section
           id="memory"
           label="Institutional memory"
@@ -2365,9 +2599,12 @@ export function LandingPage() {
                 </p>
               </div>
               <nav aria-label="Footer" className="flex flex-wrap gap-x-8 gap-y-2 text-[16px] text-slate-500">
+                <a href="#platform" className="transition-colors hover:text-white">Platform</a>
+                <a href="#roles" className="transition-colors hover:text-white">Who it's for</a>
                 <a href="#lifecycle" className="transition-colors hover:text-white">How it works</a>
-                <a href="#research" className="transition-colors hover:text-white">Research</a>
+                <a href="#reassess" className="transition-colors hover:text-white">Decision reviews</a>
                 <a href="#memory" className="transition-colors hover:text-white">Memory</a>
+                <a href="#act-ai" className="transition-colors hover:text-white">ACT AI</a>
                 <a href="#partners" className="transition-colors hover:text-white">Design partners</a>
                 <Link to="/login" className="transition-colors hover:text-white">Sign in</Link>
               </nav>

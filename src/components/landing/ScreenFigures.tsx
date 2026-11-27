@@ -317,3 +317,160 @@ export function OutcomeFigure() {
     </Frame>
   )
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+ * THE WIDE CANVAS
+ *
+ * Every figure above is a single surface at card size. They are honest and
+ * they are small, and six small cards in a row is a feature list with
+ * pictures. None of them shows the thing the product is actually FOR,
+ * which is that these surfaces are the same record seen from different
+ * seats.
+ *
+ * This is the one figure allowed to be wide, and it earns the width by
+ * showing three panels that are LOOKING AT THE SAME NAME at once: the
+ * coverage rail on the left (what I own), the workspace in the middle
+ * (what I think), and the linked chain on the right (what the firm did
+ * about it). The connection is the composition, not a caption claiming a
+ * connection.
+ *
+ * Same rules as everything else in this file: fictional eight-letter
+ * names, no invented numbers presented as data, visible illustration
+ * marker, every field corresponds to something really stored.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+const RAIL = [
+  { name: 'NORTHWIND', meta: 'Thesis current', live: true },
+  { name: 'VERIDIAN', meta: 'Review due', live: false },
+  { name: 'HALDEN', meta: 'Untouched 6w', live: false },
+  { name: 'CALDERA', meta: 'Thesis current', live: false },
+]
+
+const LINKED = [
+  { kind: 'Research note', detail: 'Margin recovery as the new plant reaches scale' },
+  { kind: 'Recommendation', detail: 'Initiate, sized to the conviction stated in the note' },
+  { kind: 'Decision', detail: 'Approved, with the reasoning frozen at submission' },
+  { kind: 'Outcome review', detail: 'Graded against the original case, not the return' },
+]
+
+export function WorkspaceCanvas() {
+  return (
+    <figure
+      data-illustration="true"
+      className="relative overflow-hidden rounded-2xl bg-white/[0.025] ring-1 ring-inset ring-white/[0.08]"
+    >
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent"
+      />
+
+      {/* The application's own chrome, reduced to the one bar that tells a
+          visitor this is a workspace and not a document. */}
+      {/* A `figcaption`, not a styled div: the gate requires every figure
+          on the page to carry one, and the application's own breadcrumb is
+          the most honest caption this figure could have. */}
+      <figcaption className="flex items-center justify-between gap-4 border-b border-white/[0.07] px-5 py-3.5 sm:px-7">
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span aria-hidden="true" className="size-2 rounded-full bg-amber-300/80" />
+          <span className="truncate text-[14px] font-medium text-slate-300">
+            Asset workspace
+          </span>
+          <span aria-hidden="true" className="text-slate-700">/</span>
+          <span data-security-name className="truncate font-mono text-[14px] text-white">
+            NORTHWIND
+          </span>
+        </span>
+        <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-500">
+          Illustration
+        </span>
+      </figcaption>
+
+      <div className="grid gap-px bg-white/[0.06] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)_minmax(0,1.25fr)]">
+        {/* ── Left: what I am responsible for ─────────────────────────── */}
+        <div className="bg-[#07090e] p-5 sm:p-6">
+          <Col>Coverage</Col>
+          <ul className="mt-4 space-y-3">
+            {RAIL.map(({ name, meta, live }) => (
+              <li
+                key={name}
+                className={`rounded-lg px-3 py-2.5 ring-1 ring-inset ${
+                  live ? 'bg-white/[0.05] ring-white/15' : 'ring-transparent'
+                }`}
+              >
+                <p
+                  data-security-name
+                  className={`font-mono text-[14px] tracking-tight ${live ? 'text-white' : 'text-slate-400'}`}
+                >
+                  {name}
+                </p>
+                <p className="mt-1 text-[14px] text-slate-500">{meta}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-500">
+            Your names, with the ones that have gone quiet showing it.
+          </p>
+        </div>
+
+        {/* ── Middle: what I think ────────────────────────────────────── */}
+        <div className="bg-[#07090e] p-5 sm:p-6">
+          <Col>Investment case</Col>
+          <p className="mt-4 text-[17px] leading-[1.5] text-white">
+            Margin recovery as the new plant reaches scale.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Chip tone="accent">Conviction High</Chip>
+            <Chip>Version 4</Chip>
+            <Chip>Held in Core Equity</Chip>
+          </div>
+
+          <dl className="mt-6 space-y-3.5 border-t border-white/[0.07] pt-5">
+            {[
+              ['Thesis', 'Written against the security, not filed in a folder'],
+              ['Risks', 'Named, each with what would change the view'],
+              ['Valuation', 'Scenarios kept beside the case they support'],
+              ['Price target', 'Carries the history of what it was before'],
+              ['Coverage', 'Who owns the name, and when it was last touched'],
+            ].map(([term, def]) => (
+              <div key={term} className="grid grid-cols-[6.5rem_1fr] gap-x-4">
+                <dt className="text-[14px] font-medium text-slate-400">{term}</dt>
+                <dd className="text-[14px] leading-relaxed text-slate-300">{def}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+
+        {/* ── Right: what the firm did about it ───────────────────────── */}
+        <div className="bg-[#07090e] p-5 sm:p-6">
+          <Col>Linked to this name</Col>
+          <ol className="mt-4 space-y-4">
+            {LINKED.map(({ kind, detail }, i) => (
+              <li key={kind} className="relative pl-6">
+                <span
+                  aria-hidden="true"
+                  className="absolute left-0 top-[0.45rem] size-2 rounded-full bg-amber-300/80 ring-4 ring-amber-300/10"
+                />
+                {/* The connector was invisible at `bg-white/10` against a
+                    #07090e panel — about a 2% luminance step, which is
+                    below what the display resolves. The chain between the
+                    records IS the argument of this panel, so it is drawn
+                    at an opacity that can actually be seen. */}
+                {i < LINKED.length - 1 && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-[0.22rem] top-[1.15rem] h-[calc(100%+0.55rem)] w-px bg-amber-300/25"
+                  />
+                )}
+                <p className="text-[14px] font-semibold tracking-tight text-white">{kind}</p>
+                <p className="mt-1 text-[14px] leading-relaxed text-slate-400">{detail}</p>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-500">
+            Four records, one name, each pointing at the one before it.
+          </p>
+        </div>
+      </div>
+    </figure>
+  )
+}
