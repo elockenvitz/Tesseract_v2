@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  AssetWorkspaceFigure,
+  DecisionInboxFigure,
+  IdeaPipelineFigure,
+  OutcomeFigure,
+  RecommendationFigure,
+  TradeBookFigure,
+} from '../components/landing/ScreenFigures'
+import {
   ArrowLeftRight, ArrowRight, BookOpen, Boxes, FileSignature, Gavel, History,
   Layers, Link2, ListChecks, Lock, Quote, RotateCcw, ShieldCheck,
   Sparkles, Target, Users,
@@ -944,6 +952,122 @@ const CHAIN: { record: string; via: string | null }[] = [
   { record: 'Outcome review', via: 'graded against the original case' },
 ]
 
+/**
+ * The screen browser: the one operable thing on the page.
+ *
+ * ── Why a tablist and not six stacked figures ────────────────────────────
+ *
+ * Six figures stacked would add six screens of height to a page that is
+ * already 8.9 screens tall, and would restore the exact problem this
+ * section had: a long run of identical blocks. One panel at a time keeps
+ * the section the size of one screen and makes the visitor's own choice
+ * the thing that moves it.
+ *
+ * ── Accessibility is the reason this is hand-rolled rather than six buttons
+ *
+ * `role="tablist"` carries a contract: exactly one tab is in the tab order
+ * at a time (roving `tabIndex`), Left and Right move between tabs, Home and
+ * End jump to the ends, and each tab points at its panel through
+ * `aria-controls`. Six buttons with `onClick` would look identical and meet
+ * none of that, so a keyboard user would tab through six stops to reach the
+ * content instead of one.
+ *
+ * The panel is NOT focusable and does not need to be: it is labelled by its
+ * tab, so a screen reader announces the screen's name on arrival.
+ */
+function ScreenBrowser() {
+  const [active, setActive] = useState(0)
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const last = SCREENS.length - 1
+    const go = (i: number) => {
+      e.preventDefault()
+      setActive(i)
+      tabRefs.current[i]?.focus()
+    }
+    if (e.key === 'ArrowRight') go(active === last ? 0 : active + 1)
+    else if (e.key === 'ArrowLeft') go(active === 0 ? last : active - 1)
+    else if (e.key === 'Home') go(0)
+    else if (e.key === 'End') go(last)
+  }, [active])
+
+  /*
+    `name` is deliberately NOT destructured here. The tab list renders the
+    names from `SCREENS` directly, so binding it at this level left it
+    unread, and the repo type ceiling caught it as a new error. Fixed rather
+    than absorbed by raising the ceiling.
+  */
+  const { shows, Figure } = SCREENS[active]
+
+  return (
+    <div className="grid gap-x-14 gap-y-8 lg:grid-cols-12">
+      <div className="lg:col-span-5">
+        <div
+          role="tablist"
+          aria-label="Tesseract screens"
+          aria-orientation="vertical"
+          onKeyDown={onKeyDown}
+          className="flex flex-wrap gap-2 lg:flex-col lg:gap-0"
+        >
+          {SCREENS.map(({ name: n }, i) => {
+            const selected = i === active
+            return (
+              <button
+                key={n}
+                ref={el => { tabRefs.current[i] = el }}
+                type="button"
+                role="tab"
+                id={`screen-tab-${i}`}
+                aria-selected={selected}
+                aria-controls={`screen-panel-${i}`}
+                /* Roving tabindex: one stop for the whole group. */
+                tabIndex={selected ? 0 : -1}
+                data-surface={n}
+                onClick={() => setActive(i)}
+                className={`rounded-lg px-3 py-2.5 text-left text-[14px] font-medium transition lg:border-l lg:px-4 ${
+                  selected
+                    ? 'bg-white/[0.06] text-white lg:border-white lg:bg-transparent'
+                    : 'text-slate-400 hover:text-white lg:border-white/10'
+                }`}
+              >
+                {n}
+              </button>
+            )
+          })}
+        </div>
+
+        <div
+          role="tabpanel"
+          id={`screen-panel-${active}`}
+          aria-labelledby={`screen-tab-${active}`}
+          className="mt-6"
+        >
+          <p className="max-w-[46ch] text-[14px] leading-[1.75] text-slate-400">{shows}</p>
+        </div>
+      </div>
+
+      {/*
+        The figure is OUTSIDE the tabpanel, and NOT `aria-hidden`.
+
+        It was aria-hidden on the first pass, reasoning that the panel text
+        already describes the screen. That was wrong twice over: it removed
+        the only concrete depiction of the product from every screen reader,
+        and `getAllByRole('figure')` skips aria-hidden subtrees, so the gate
+        that is supposed to check these figures are marked found none and
+        would have passed vacuously once the marker existed.
+
+        It stays exposed. Its `figcaption` names the screen and says
+        "Illustration", so a screen reader meets it correctly labelled, and
+        the content inside is short field labels rather than prose.
+      */}
+      <div className="lg:col-span-7">
+        <Figure />
+      </div>
+    </div>
+  )
+}
+
 function RecordChain() {
   return (
     <figure className="relative overflow-hidden rounded-2xl bg-white/[0.025] p-6 ring-1 ring-inset ring-white/[0.08] sm:p-8">
@@ -1186,18 +1310,34 @@ const MEMORY: [typeof Lock, string, string][] = [
  * section before it already made the argument; this one only has to let a
  * reader picture the screens. Each line is now one clause.
  */
-const SURFACES: [string, string][] = [
-  ['Asset workspace', "The security, the firm's exposure, coverage and the written case in one view."],
-  ['Idea Pipeline', 'Ideas moving from exploring to ready-to-recommend, with conviction and staleness visible.'],
+const SCREENS: { name: string; shows: string; Figure: () => JSX.Element }[] = [
+  {
+    name: 'Asset workspace',
+    shows: "The security, the firm's exposure, coverage and the written case in one view.",
+    Figure: AssetWorkspaceFigure,
+  },
+  {
+    name: 'Idea Pipeline',
+    shows: 'Ideas moving from exploring to ready-to-recommend, with conviction and staleness visible.',
+    Figure: IdeaPipelineFigure,
+  },
   /*
    * "preserved exactly as the PM received it" was here, and the repetition
    * gate caught it: that is the lifecycle's Recommend stage and the
-   * diagram's frozen row, stated a third and fourth time. This section is a
-   * MAP, so this entry says what is on the screen and leaves the guarantee
-   * to the section that owns it.
+   * diagram's frozen row, stated a third and fourth time. This entry says
+   * what is on the screen; the FIGURE now carries the guarantee, as a
+   * property of the record rather than as a fourth sentence about it.
    */
-  ['Recommendation', 'What the analyst submitted, with its conviction, sizing and target.'],
-  ['Decision Inbox', 'Recommendations waiting on a portfolio manager, with accept, reject and defer all recorded.'],
+  {
+    name: 'Recommendation',
+    shows: 'What the analyst submitted, with its conviction, sizing and target.',
+    Figure: RecommendationFigure,
+  },
+  {
+    name: 'Decision Inbox',
+    shows: 'Recommendations waiting on a portfolio manager, with accept, reject and defer all recorded.',
+    Figure: DecisionInboxFigure,
+  },
   /*
    * Was 'Decision record', which is not a screen. It described the same rows
    * the Decision Inbox entry above already describes, read historically, and
@@ -1205,8 +1345,16 @@ const SURFACES: [string, string][] = [
    * surface a portfolio manager opens most and the only place the product
    * says what the firm ACTUALLY DID rather than what it decided to do.
    */
-  ['Trade Book', 'Every trade the firm committed to, each one carrying the decision that authorized it.'],
-  ['Outcomes', 'A structured verdict on whether the thesis played out, attached to the decision.'],
+  {
+    name: 'Trade Book',
+    shows: 'Every trade the firm committed to, each one carrying the decision that authorized it.',
+    Figure: TradeBookFigure,
+  },
+  {
+    name: 'Outcomes',
+    shows: 'A structured verdict on whether the thesis played out, attached to the decision.',
+    Figure: OutcomeFigure,
+  },
 ]
 
 /**
@@ -1767,26 +1915,28 @@ export function LandingPage() {
           lead="Analysts work where the name lives, and portfolio managers decide from a queue rather than from a forwarded document."
         >
           {/*
-            Unnumbered, and read as a two-column list of places rather than
-            as a six-step process. These surfaces are concurrent views onto
-            the same records, so numbering them asserted an order the product
-            does not have. The row rules carry the structure the numerals
-            were pretending to, and the hanging indent goes with them.
+            ── The one thing on this page a visitor can operate ────────────
+
+            This was a two-column list of six headed paragraphs, which was
+            the page's SIXTH consecutive section of that exact shape. The
+            writing was fine and that was the problem: a reader could not
+            tell the sections apart, so good sentences blurred into one
+            surface.
+
+            It is now a screen browser. Picking a name shows a drawn
+            representation of that screen beside its description. The
+            descriptions are unchanged and all six are still here, one per
+            panel, so nothing was traded away for the interaction.
+
+            ONE widget, deliberately. A page where several things look
+            operable and only one is teaches a visitor to stop trying.
+
+            Tabs, not links or a carousel: the six are concurrent views onto
+            the same records, so there is no order to step through, and a
+            tablist is the role that means "pick one of these". Arrow-key
+            handling and roving tabindex come with it, in `ScreenBrowser`.
           */}
-          <div className="grid gap-x-16 gap-y-0 sm:grid-cols-2">
-            {SURFACES.map(([title, shows]) => (
-              <div
-                key={title}
-                data-surface={title}
-                className="border-t border-white/[0.07] py-6 first:border-t-0 sm:[&:nth-child(2)]:border-t-0"
-              >
-                <h3 className="text-[15px] font-semibold tracking-tight text-white">{title}</h3>
-                <p className="mt-1.5 max-w-[50ch] text-[13px] leading-[1.75] text-slate-400">
-                  {shows}
-                </p>
-              </div>
-            ))}
-          </div>
+          <ScreenBrowser />
 
           {/*
             The section-level note that used to live here announced that no
