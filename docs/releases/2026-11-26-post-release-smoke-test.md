@@ -43,13 +43,34 @@ Totals for context: 118 decision requests (accepted 55, pending 32, withdrawn
 29, deferred 1, rejected 1); 54 accepted trades (adhoc 35, simulation 10, inbox
 9).
 
-### A2. Every existing decision review has no completion timestamp
+### A2. Nine decision reviews have no recorded completion timestamp
 
-`decision_reviews`: **9 rows, 9 with `reviewed_at` NULL.** That is the defect
-#343 fixed, and the fix is forward-only. Whether those nine should be
-backfilled, or left as "completed, date unknown", is a product decision rather
-than a bug — but a review with no date cannot answer "when did we conclude
-this", which is the question the record exists for.
+`decision_reviews`: **9 rows, 9 with `reviewed_at` NULL.** Still true on
+2026-11-27.
+
+This section previously attributed that to "the defect #343 fixed". **That
+attribution was never verified and is withdrawn.** What has actually been
+measured:
+
+- `decision_quality`, `sizing_quality` and `process_note` are NULL on all nine.
+- The only substantive field set is `thesis_played_out`: three `yes`, one `no`,
+  five `unknown`. The column has no default, so `unknown` was written
+  deliberately.
+- Six are April 2026 rows with `subject_type = 'unknown'` and no
+  `organization_id`, predating both columns. Eight of the nine were last
+  touched by a bulk backfill on 2026-11-16.
+- The table has no `status`, `is_draft` or `completed_at` column.
+
+**A NULL `reviewed_at` is an unrecorded timestamp, and that is all it is.** It
+does not establish that a review was never completed; it is equally consistent
+with a review that was finished and whose timestamp was never written. An
+earlier version of this document asserted the stronger claim, and the stronger
+claim is not supported by anything measured.
+
+**Do not backfill.** A stamped date would assert a completion time nobody
+recorded. The values are preserved as-is, and NULL should be read as unknown
+wherever it is displayed. If drafts need to be distinguishable from legacy
+rows, that wants an explicit column rather than an inferred date.
 
 ### A3. Pending migration objects are in the state the release assumed
 
@@ -116,8 +137,10 @@ integrated; this is not a regression pass over the product.
 **Decision integrity (#344, #340–#343)**
 6. Open the Decision Inbox. A seeded pilot request still shows as an example
    and cannot be accepted, rejected or deferred.
-7. Open a completed decision review. It shows a completion date for reviews
-   completed from now on — the nine existing rows will not have one (A2).
+7. Open a decision review. Check whether a review completed now records a
+   completion date. The nine pre-existing rows have none, and that is an
+   unrecorded timestamp rather than evidence about whether they were finished
+   (A2).
 8. Record an execution that reduces a position. It reads as a cut, not an add.
 9. Open an outcome for a decision. The attribution window starts at the
    decision, not before it.
