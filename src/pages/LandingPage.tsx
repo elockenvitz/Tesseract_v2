@@ -1100,7 +1100,18 @@ function ScreenBrowser() {
         and it is a floor rather than a fixed height, so a figure that grows
         past it still renders in full instead of being clipped.
       */}
-      <div className="lg:col-span-7 lg:min-h-[330px]">
+      {/*
+        390px, because the TALLEST figure is 387.
+
+        The first attempt at this used 330, which was the height of the
+        figure I happened to be looking at. Five of the six fitted under it
+        and Outcomes did not, so the section still grew by 41px on one tab
+        out of six — a layout shift rare enough to look like a glitch rather
+        than a pattern, which is worse than one that happens every time.
+
+        Measured, not guessed: 246, 353, 236, 317, 337, 387.
+      */}
+      <div data-figure-column="" className="lg:col-span-7 lg:min-h-[390px]">
         <Figure />
       </div>
     </div>
@@ -1123,58 +1134,82 @@ function RecordChain() {
         How one decision is stored
       </figcaption>
 
-      <ol className="mt-7 space-y-0">
+      {/*
+        ── Laid out LEFT TO RIGHT, under the walk, not beside it ──────────
+
+        It was a 570px vertical column in the lifecycle's right third. Two
+        problems followed from that. The chain is a SEQUENCE, and a sequence
+        drawn downward in a narrow column reads as a list of record types
+        rather than as one thing leading to another; and at 570px against a
+        ~340px panel it left 200px of void beside the stage detail.
+
+        Horizontal fixes both. The spine runs the way the chain runs, the
+        figure spans the section instead of competing with it for width, and
+        the lifecycle's two halves stop fighting over the same vertical.
+
+        The grid drops to three and then two columns before the spine is
+        hidden, because a six-across row of 13px labels is unreadable below
+        about 900px and a horizontal scroll to see the end of your own
+        decision chain is worse than a wrap.
+      */}
+      <ol className="mt-8 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
         {CHAIN.map(({ record, via }, i) => {
           const frozen = record === 'Frozen reasoning'
           return (
-            <li key={record} className="relative flex gap-4">
-              {/* The spine: a continuous line through every row but the last. */}
-              <div className="flex w-5 shrink-0 flex-col items-center">
+            <li key={record} className="relative">
+              {/*
+                The connector reaches from this node's dot to the next one.
+                It is `lg` only: once the grid wraps, a line running off the
+                right edge of row one points at nothing.
+              */}
+              {i < CHAIN.length - 1 && (
                 <span
-                  className={`h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-[#050710] ${
-                    /*
-                     * The frozen record was marked in cyan against the
-                     * blue spine. With the page down to one accent hue, it
-                     * is distinguished by VALUE instead: solid white
-                     * against the accent, which is a bigger contrast step
-                     * than two adjacent blues ever was.
-                     */
-                    frozen ? 'bg-white' : 'bg-amber-400'
+                  aria-hidden="true"
+                  className={`absolute left-4 right-[-1.25rem] top-[5px] hidden h-px lg:block ${
+                    frozen ? 'bg-white/30' : 'bg-amber-400/25'
                   }`}
                 />
-                {i < CHAIN.length - 1 && (
-                  <span
-                    aria-hidden="true"
-                    className={`w-px flex-1 ${frozen ? 'bg-white/30' : 'bg-amber-400/25'}`}
-                  />
-                )}
-              </div>
-
-              <div className={i < CHAIN.length - 1 ? 'pb-7' : ''}>
-                <p className="text-[13px] font-semibold tracking-tight text-white">{record}</p>
-                {via && (
-                  <p className="mt-1 font-mono text-[11px] leading-relaxed text-slate-500">
-                    {via}
-                  </p>
-                )}
-                {frozen && (
-                  <p className="mt-1.5 max-w-[46ch] text-[12px] leading-relaxed text-slate-300">
-                    Later edits create new versions and never alter what the
-                    PM actually read.
-                  </p>
-                )}
-              </div>
+              )}
+              <span
+                className={`relative z-10 block h-2.5 w-2.5 rounded-full ring-2 ring-[#050710] ${
+                  /*
+                   * The frozen record is distinguished by VALUE, not hue:
+                   * solid white against the gold spine. That is a bigger
+                   * contrast step than two adjacent blues ever was, and it
+                   * survives the page being down to one accent.
+                   */
+                  frozen ? 'bg-white' : 'bg-amber-400'
+                }`}
+              />
+              <p className="mt-3.5 text-[13px] font-semibold leading-snug tracking-tight text-white">
+                {record}
+              </p>
+              {via && (
+                <p className="mt-1.5 font-mono text-[11px] leading-relaxed text-slate-500">
+                  {via}
+                </p>
+              )}
             </li>
           )
         })}
       </ol>
 
-      {/* The return leg, which is what makes it a loop rather than a list. */}
-      <div className="mt-2 flex items-start gap-4">
-        <div className="flex w-5 shrink-0 justify-center">
-          <RotateCcw className="h-4 w-4 text-slate-500" aria-hidden="true" />
-        </div>
-        <p className="max-w-[48ch] text-[12px] leading-relaxed text-slate-500">
+      {/*
+        The freezing note and the return leg, side by side under the chain.
+
+        The freezing note used to hang off its own node, which a horizontal
+        row cannot carry without one column running three lines longer than
+        the other five. It is a gloss on the whole chain rather than on one
+        link, so it reads correctly as a footnote.
+      */}
+      <div className="mt-9 grid gap-x-10 gap-y-4 border-t border-white/[0.07] pt-6 sm:grid-cols-2">
+        <p className="text-[12px] leading-relaxed text-slate-300">
+          <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-white align-middle" />
+          Later edits create new versions and never alter what the PM
+          actually read.
+        </p>
+        <p className="flex items-start gap-2.5 text-[12px] leading-relaxed text-slate-500">
+          <RotateCcw className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           The review returns to the note, so the next decision on this name
           starts from what the firm already learned.
         </p>
@@ -1390,17 +1425,19 @@ function LifecycleWalk() {
         })}
       </div>
 
-      <div className="mt-10 grid gap-x-16 gap-y-10 lg:grid-cols-12">
+      <div className="mt-10">
         {/*
           `lg:min-h` for the same reason `ScreenBrowser` has one: the six
-          stages differ by about two lines, and without a floor the diagram
-          beside them walks up and down the page as you move along the rail.
+          stages differ by about two lines, and without a floor everything
+          below the panel walks up and down as you move along the rail. The
+          floor is the tallest stage, not the one I happened to be looking
+          at, which was the bug in the screens column.
         */}
         <div
           role="tabpanel"
           id="stage-panel"
           aria-labelledby={`stage-tab-${active}`}
-          className="lg:col-span-7 lg:min-h-[260px]"
+          className="lg:min-h-[300px]"
         >
           <div className="flex flex-wrap items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/10 ring-1 ring-inset ring-amber-300/25">
@@ -1412,56 +1449,66 @@ function LifecycleWalk() {
             </span>
           </div>
 
-          <p className="mt-5 max-w-[56ch] text-[15px] leading-[1.75] text-slate-300">{line}</p>
-
           {/*
-            The linkage, named. This is the sentence the static stack could
-            not say: every stage after the first hangs off a specific record
-            that already exists, and the first one is where the chain starts.
+            Prose left, the record right. The panel runs the full section
+            width now that the chain has moved below it, and a single 56ch
+            column inside a 1440px band is the stacking problem this section
+            just got rid of, one level down.
           */}
-          <p className="mt-5 flex items-center gap-2 text-[12px] text-slate-500">
-            <span aria-hidden="true" className="text-amber-300">&#8627;</span>
-            {upstream ? (
-              <>
-                Points back at the{' '}
-                <span className="font-mono text-[11px] text-slate-300">{upstream.record}</span>
-                {' '}it came from.
-              </>
-            ) : (
-              <>Where the chain starts. Everything after this points back at it.</>
-            )}
-          </p>
+          <div className="mt-6 grid gap-x-14 gap-y-8 lg:grid-cols-12">
+            <div className="lg:col-span-7">
+              <p className="max-w-[58ch] text-[15px] leading-[1.75] text-slate-300">{line}</p>
 
-          <p className="mt-6 max-w-[56ch] border-l border-amber-300/30 pl-4 text-[13px] leading-[1.75] text-slate-400">
-            {so}
-          </p>
+              {/*
+                The linkage, named. This is the sentence the static stack
+                could not say: every stage after the first hangs off a
+                record that already exists, and the first is where it starts.
+              */}
+              <p className="mt-5 flex items-center gap-2 text-[12px] text-slate-500">
+                <span aria-hidden="true" className="text-amber-300">&#8627;</span>
+                {upstream ? (
+                  <>
+                    Points back at the{' '}
+                    <span className="font-mono text-[11px] text-slate-300">{upstream.record}</span>
+                    {' '}it came from.
+                  </>
+                ) : (
+                  <>Where the chain starts. Everything after this points back at it.</>
+                )}
+              </p>
 
-          {/*
-            The record's own columns, which is the section's claim made
-            visible rather than asserted. It also fills the left column: the
-            panel ran about 260px against a 570px diagram beside it, and the
-            300px of empty space under it read as a layout that had not
-            finished rather than as breathing room.
-          */}
-          <div className="mt-8 max-w-[34rem] rounded-xl bg-white/[0.02] p-4 ring-1 ring-inset ring-white/[0.06]">
-            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
-              Stored as
-            </p>
-            <p className="mt-2 font-mono text-[12px] text-white">{record}</p>
-            <ul className="mt-3 flex flex-wrap gap-1.5 border-t border-white/[0.07] pt-3">
-              {fields.map(f => (
-                <li
-                  key={f}
-                  className="rounded bg-white/[0.04] px-2 py-1 font-mono text-[10px] text-slate-400 ring-1 ring-inset ring-white/[0.07]"
-                >
-                  {f}
-                </li>
-              ))}
-            </ul>
+              <p className="mt-6 max-w-[58ch] border-l border-amber-300/30 pl-4 text-[13px] leading-[1.75] text-slate-400">
+                {so}
+              </p>
+            </div>
+
+            {/*
+              The record's own columns: the section's claim made visible
+              rather than asserted.
+            */}
+            <div className="lg:col-span-5">
+              <div className="rounded-xl bg-white/[0.02] p-5 ring-1 ring-inset ring-white/[0.06]">
+                <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
+                  Stored as
+                </p>
+                <p className="mt-2 font-mono text-[12px] text-white">{record}</p>
+                <ul className="mt-3.5 flex flex-wrap gap-1.5 border-t border-white/[0.07] pt-3.5">
+                  {fields.map(f => (
+                    <li
+                      key={f}
+                      className="rounded bg-white/[0.04] px-2 py-1 font-mono text-[10px] text-slate-400 ring-1 ring-inset ring-white/[0.07]"
+                    >
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="lg:col-span-5">
+        {/* Full width, under the walk: the chain runs the way the page reads. */}
+        <div className="mt-14">
           <RecordChain />
         </div>
       </div>
@@ -1937,11 +1984,21 @@ export function LandingPage() {
             compounding idea is the sharper one and it was buried at the
             end, so it goes last and alone.
           */}
-          <div className="mt-16 max-w-[52ch]">
-            <p className="text-pretty text-2xl leading-[1.4] tracking-[-0.015em] text-slate-100 sm:text-3xl">
+          {/*
+            Side by side, not stacked in a 52ch column.
+
+            The claim and its elaboration were two paragraphs down the left
+            third of a 1440px band, which left two thirds of the section's
+            closing statement empty and made the most quotable line on the
+            page look like a caption. Across the full measure the claim gets
+            the scale it is written for, and the elaboration sits beside it
+            as a second voice rather than under it as a footnote.
+          */}
+          <div className="mt-20 grid gap-x-16 gap-y-6 border-t border-white/10 pt-12 lg:grid-cols-12">
+            <p className="text-pretty text-2xl leading-[1.25] tracking-[-0.02em] text-slate-100 sm:text-3xl lg:col-span-7 lg:text-[2.5rem]">
               A firm that cannot say why it was right cannot repeat it.
             </p>
-            <p className="mt-5 text-pretty text-[15px] leading-[1.8] text-slate-400">
+            <p className="max-w-[44ch] text-pretty text-[15px] leading-[1.8] text-slate-400 lg:col-span-5 lg:pt-2">
               Judgement is the only thing a firm compounds that it cannot buy.
               Without a record, every name starts over and every lesson is
               learned once.
@@ -2156,8 +2213,21 @@ export function LandingPage() {
             was abstract. The label now asks the reader's own question and
             the title says how many answers follow.
           */
+          /*
+            ── "Six screens" counted something nobody asked the size of ────
+
+            The count was meant to say "this is a finite, knowable product".
+            It reads instead as a specification, and worse, as a ceiling: a
+            reader who has not seen the product cannot tell whether six is
+            generous or thin, so the number invites a judgement they have no
+            basis to make. It also made the heading about the product's
+            inventory rather than about their day.
+
+            The tabs still show there are six, which is where a count
+            belongs — stated by the control rather than announced.
+          */
           label="What you actually work in"
-          title="Six screens, and what each one holds"
+          title="Pick a screen. This is what is on it."
           /*
             Two sentences became one, and both cuts were duplication the
             repetition gate found. "the frozen case" is the fifth statement

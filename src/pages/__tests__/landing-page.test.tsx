@@ -475,6 +475,43 @@ describe('the page says what a user actually opens', () => {
   })
 
   /*
+   * ── The figure column must reserve room for the TALLEST screen ─────────
+   *
+   * Picking a screen was resizing the section under the cursor, because the
+   * six figures run 236px to 387px. On a tab control that is the worst
+   * available behaviour: the reader's next click target moves because of
+   * their last click.
+   *
+   * jsdom has no layout, so this cannot measure heights. What it CAN check
+   * is that the reservation exists at all, which is the thing that went
+   * missing — the first fix used a floor shorter than one of the six
+   * figures, so the shift survived on one tab in six. The measured heights
+   * live in a comment beside the class, and the number here is the floor
+   * those measurements require.
+   */
+  it('reserves a fixed height for the figure column, so picking a screen cannot resize the section', async () => {
+    await renderConfigured()
+    /*
+     * Targeted by NAME, not by a class pattern. The first version of this
+     * took the first `[class*="min-h-"]` under the panel's parent, which
+     * matched the TABPANEL — it has a 76px floor of its own for the
+     * description text — and read 76 where it meant to read 390. It failed
+     * loudly rather than passing on the wrong element, which is the only
+     * reason it was cheap to find, but a selector that can resolve to two
+     * different things is the same defect as a position-based one.
+     */
+    const column = document.querySelector('#product [data-figure-column]')
+    expect(column, 'the figure column must reserve a minimum height').not.toBeNull()
+
+    const cls = column?.getAttribute('class') ?? ''
+    const floor = Number(/min-h-\[(\d+)px\]/.exec(cls)?.[1] ?? 0)
+    expect(
+      floor,
+      'the floor must clear the tallest figure, measured at 387px',
+    ).toBeGreaterThanOrEqual(387)
+  })
+
+  /*
    * The heading has to ask the reader's question. "The product" described
    * the section's subject to somebody already persuaded; a visitor skimming
    * had no reason to stop at the one concrete answer on the page.
@@ -483,7 +520,23 @@ describe('the page says what a user actually opens', () => {
     await renderConfigured()
     const section = document.querySelector('#product')
     expect(section?.textContent).toMatch(/what you actually work in/i)
-    expect(section?.textContent).toMatch(/six screens/i)
+
+    /*
+     * The second assertion used to require the literal "six screens". That
+     * count read as a specification, and worse as a ceiling: a reader who
+     * has not seen the product cannot tell whether six is generous or thin,
+     * so the number invited a judgement they had no basis to make.
+     *
+     * The REQUIREMENT is that the heading addresses the reader rather than
+     * describing the product's inventory, so it is now pinned that way: the
+     * heading must speak to the reader, and must NOT lead with a count. The
+     * tabs still show there are six, which is where a count belongs.
+     */
+    const heading = section?.querySelector('h2')?.textContent ?? ''
+    expect(heading, 'the heading must address the reader').toMatch(/\byou\b|\bpick\b|\byour\b/i)
+    expect(heading, 'the heading must not count the screens').not.toMatch(
+      /\b(six|6|five|seven)\s+screens?\b/i,
+    )
   })
 
   /*

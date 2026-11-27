@@ -95,36 +95,50 @@ function ScatterVisual() {
    * small and tentative for no reason other than the wrong ratio.
    */
   const CX = 140
-  const CY = 84
+  const CY = 115
   const nodes = ['Notes', 'Chat', 'Model', 'Deck', 'Email'].map((label, i) => {
     const a = (-Math.PI / 2) + (i * 2 * Math.PI) / 5
-    return { label, cx: CX + 108 * Math.cos(a), cy: CY + 66 * Math.sin(a) }
+    return { label, cx: CX + 104 * Math.cos(a), cy: CY + 92 * Math.sin(a) }
   })
 
+  /*
+   * ── Making the BOX taller did not make the DRAWING bigger ─────────────
+   *
+   * First attempt went h-44 to h-60 and changed almost nothing, because an
+   * SVG with the default `preserveAspectRatio` scales to fit whichever axis
+   * binds. The viewBox was 280x170 (1.65:1) inside a box about 290x240
+   * (1.21:1), so WIDTH bound: the drawing scaled by 1.04 either way and the
+   * extra 64px became empty letterbox above and below.
+   *
+   * Two changes make the type actually readable. The viewBox is now
+   * 280x230, which is the box's own ratio, so nothing is letterboxed; and
+   * the type is specified at 12-13 user units instead of 8-9, which at this
+   * scale lands near 12px on screen instead of near 9px.
+   */
   return (
-    <svg viewBox="0 0 280 170" className="h-44 w-full" role="presentation">
+    <svg viewBox="0 0 280 230" className="h-60 w-full" role="presentation">
       <circle
-        cx={CX} cy={CY} r="40"
-        fill="none" stroke="rgb(251 191 36 / 0.45)" strokeWidth="1" strokeDasharray="3 4"
+        cx={CX} cy={CY} r="52"
+        fill="none" stroke="rgb(251 191 36 / 0.45)" strokeWidth="1.25" strokeDasharray="4 5"
       />
       <text
-        x={CX} y={CY - 3} textAnchor="middle"
-        className="fill-amber-300/90 text-[9px] font-semibold uppercase"
+        x={CX} y={CY - 4} textAnchor="middle"
+        className="fill-amber-300/90 text-[12px] font-semibold uppercase"
         style={{ letterSpacing: '0.1em' }}
       >
         the why
       </text>
-      <text x={CX} y={CY + 11} textAnchor="middle" className="fill-slate-500 text-[8px]">
+      <text x={CX} y={CY + 14} textAnchor="middle" className="fill-slate-500 text-[11px]">
         nothing holds it
       </text>
 
       {nodes.map(({ label, cx, cy }) => (
         <g key={label}>
           <rect
-            x={cx - 23} y={cy - 9} width="46" height="18" rx="5"
+            x={cx - 30} y={cy - 12} width="60" height="24" rx="6"
             fill="rgb(255 255 255 / 0.05)" stroke="rgb(255 255 255 / 0.12)"
           />
-          <text x={cx} y={cy + 4} textAnchor="middle" className="fill-slate-300 text-[9px]">
+          <text x={cx} y={cy + 5} textAnchor="middle" className="fill-slate-300 text-[12px]">
             {label}
           </text>
         </g>
@@ -140,13 +154,13 @@ function BrokenChainVisual() {
    * struck-through text, because the subject is absence.
    */
   const rows = [
-    { label: 'The position', y: 20, kept: true },
-    { label: 'Why that size', y: 62, kept: false },
-    { label: 'The pushback', y: 104, kept: false },
-    { label: 'The thesis', y: 146, kept: true },
+    { label: 'The position', y: 26, kept: true },
+    { label: 'Why that size', y: 92, kept: false },
+    { label: 'The pushback', y: 152, kept: false },
+    { label: 'The thesis', y: 210, kept: true },
   ]
   return (
-    <svg viewBox="0 0 280 170" className="h-44 w-full" role="presentation">
+    <svg viewBox="0 0 280 230" className="h-60 w-full" role="presentation">
       {rows.map(({ label, y, kept }, i) => {
         const next = rows[i + 1]
         const solid = kept && next?.kept
@@ -154,30 +168,30 @@ function BrokenChainVisual() {
           <g key={label}>
             {next && (
               <line
-                x1="18" y1={y + 10} x2="18" y2={next.y - 10}
+                x1="22" y1={y + 14} x2="22" y2={next.y - 14}
                 stroke={solid ? 'rgb(251 191 36 / 0.5)' : 'rgb(255 255 255 / 0.1)'}
-                strokeWidth="1"
-                strokeDasharray={solid ? undefined : '2 5'}
+                strokeWidth="1.25"
+                strokeDasharray={solid ? undefined : '3 6'}
               />
             )}
             {kept ? (
-              <rect x="10" y={y - 8} width="16" height="16" rx="4" fill="rgb(251 191 36 / 0.9)" />
+              <rect x="11" y={y - 11} width="22" height="22" rx="6" fill="rgb(251 191 36 / 0.9)" />
             ) : (
               <rect
-                x="10" y={y - 8} width="16" height="16" rx="4"
-                fill="none" stroke="rgb(255 255 255 / 0.16)" strokeDasharray="2 3"
+                x="11" y={y - 11} width="22" height="22" rx="6"
+                fill="none" stroke="rgb(255 255 255 / 0.16)" strokeDasharray="3 4"
               />
             )}
             <text
-              x="38" y={y + 4}
-              className={kept ? 'fill-slate-200 text-[10px]' : 'fill-slate-600 text-[10px]'}
+              x="46" y={y + 5}
+              className={kept ? 'fill-slate-200 text-[13px]' : 'fill-slate-600 text-[13px]'}
             >
               {label}
             </text>
             {!kept && (
               <text
-                x="38" y={y + 15}
-                className="fill-slate-700 text-[8px] uppercase"
+                x="46" y={y + 21}
+                className="fill-slate-700 text-[10px] uppercase"
                 style={{ letterSpacing: '0.1em' }}
               >
                 gone
@@ -204,25 +218,25 @@ function LuckVisual() {
      * worked" on top of the end point, so three things occupied the same
      * 20px band. Each track now owns a horizontal lane.
      */
-    <svg viewBox="0 0 280 170" className="h-44 w-full" role="presentation">
-      <text x="2" y="12" className="fill-slate-500 text-[8px] uppercase" style={{ letterSpacing: '0.1em' }}>
+    <svg viewBox="0 0 280 230" className="h-60 w-full" role="presentation">
+      <text x="2" y="16" className="fill-slate-500 text-[11px] uppercase" style={{ letterSpacing: '0.1em' }}>
         Same thesis, two paths
       </text>
 
-      <path d="M6 46 C 90 46, 150 42, 212 40" fill="none" stroke="rgb(251 191 36 / 0.85)" strokeWidth="1.5" />
-      <text x="6" y="64" className="fill-amber-300 text-[9px]">the thesis played out</text>
+      <path d="M6 62 C 90 62, 150 58, 196 56" fill="none" stroke="rgb(251 191 36 / 0.85)" strokeWidth="2" />
+      <text x="6" y="84" className="fill-amber-300 text-[12px]">the thesis played out</text>
 
       <path
-        d="M6 120 C 80 120, 130 60, 212 44" fill="none"
-        stroke="rgb(255 255 255 / 0.22)" strokeWidth="1.5" strokeDasharray="3 4"
+        d="M6 162 C 80 162, 130 86, 196 60" fill="none"
+        stroke="rgb(255 255 255 / 0.22)" strokeWidth="2" strokeDasharray="4 5"
       />
-      <text x="6" y="138" className="fill-slate-500 text-[9px]">something else did</text>
+      <text x="6" y="184" className="fill-slate-500 text-[12px]">something else did</text>
 
-      <circle cx="216" cy="42" r="4.5" fill="rgb(255 255 255 / 0.9)" />
-      <text x="228" y="45" className="fill-slate-200 text-[9px]">Worked</text>
+      <circle cx="200" cy="58" r="6" fill="rgb(255 255 255 / 0.9)" />
+      <text x="212" y="62" className="fill-slate-200 text-[12px]">Worked</text>
 
-      <line x1="2" y1="152" x2="278" y2="152" stroke="rgb(255 255 255 / 0.08)" />
-      <text x="2" y="166" className="fill-slate-600 text-[8px] uppercase" style={{ letterSpacing: '0.1em' }}>
+      <line x1="2" y1="204" x2="278" y2="204" stroke="rgb(255 255 255 / 0.08)" />
+      <text x="2" y="222" className="fill-slate-600 text-[10px] uppercase" style={{ letterSpacing: '0.1em' }}>
         Returns cannot separate these
       </text>
     </svg>
