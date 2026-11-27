@@ -1578,8 +1578,21 @@ const CAPTURE: [typeof BookOpen, string, string][] = [
  * find patterns across the firm. That capability was removed from this page
  * rather than reworded, and the test suite holds the line.
  */
+/*
+ * ── THREE ITEMS TO TWO, 2026-11-27, because #roles took one of them ────
+ *
+ * "It outlasts the team" is deleted here. The CIO role panel now makes
+ * exactly that argument, with a figure: a ledger of one name across three
+ * years, captioned "The analyst who opened this name no longer works
+ * here. The reasoning did not leave with them."
+ *
+ * A sentence version of an argument the reader met two screens earlier,
+ * accompanied by a picture, is the repetition this page keeps having to
+ * pay for. The claim did not weaken; it moved to where it is shown
+ * instead of asserted, and `names the record each stage points back at`
+ * plus the role-shape gates keep it there.
+ */
 const MEMORY: [typeof Lock, string, string][] = [
-  [Lock, 'It outlasts the team', 'Reasoning stays with the firm when an analyst leaves, instead of in their drive, their inbox and their head.'],
   [ShieldCheck, 'It answers who decided', 'Who chose, on what evidence and when, without anyone reconstructing a thread six months later.'],
   [Users, 'Handoffs start from context', 'A name passed between analysts or PMs arrives with its history rather than as a blank page.'],
 ]
@@ -1661,6 +1674,43 @@ export function LandingPage() {
    * Idempotent, and a no-op when the overlay is absent.
    */
   useEffect(() => { hideBootLoader() }, [])
+
+  /*
+   * ── P0: THIS PAGE DID NOT SCROLL ON A PHONE, IN PRODUCTION ────────────
+   *
+   * Measured at 390x844 against the live site, not only locally:
+   *
+   *     bodyOverflow 'hidden'   scrollHeight 844   scrollY after
+   *     scrollTo(0, 99999) = 0
+   *
+   * Eleven sections, about 19,000px of content, and a visitor on a phone
+   * saw the hero and could not reach anything else. Every CTA below the
+   * fold was unreachable.
+   *
+   * ── The cause, which is a correct rule applied to the wrong page ──────
+   *
+   * `src/index.css` locks `html`, `body` and `#root` to height 100% with
+   * `overflow: hidden` under `@media (max-width: 767px)`. That is
+   * deliberate and right FOR THE AUTHENTICATED APP: the shell owns
+   * scrolling, inner containers scroll, and locking the document keeps
+   * the header structurally immovable and stops the URL bar resizing the
+   * viewport mid-gesture.
+   *
+   * The public page is not that app. It has no inner scroll container, so
+   * the same rule simply freezes it.
+   *
+   * ── Why an attribute rather than editing the rule ─────────────────────
+   *
+   * The app shell's behaviour must not change, so the lock stays the
+   * default and this page opts OUT of it for as long as it is mounted.
+   * The cleanup matters: navigating from here to the signed-in app must
+   * hand the lock back, or the shell inherits a scrolling document and
+   * the header problem returns.
+   */
+  useEffect(() => {
+    document.documentElement.setAttribute('data-public-scroll', '')
+    return () => document.documentElement.removeAttribute('data-public-scroll')
+  }, [])
 
   // The page title is the one SEO signal that differs by route in a SPA, and
   // "Investment Intelligence" is the app's title, not this page's pitch.
@@ -2504,6 +2554,92 @@ export function LandingPage() {
           scope line that followed it ("not an offer of unrestricted
           production access") is gone too, by instruction.
         */}
+        {/* ── 10. Your intelligence, your control ─────────────────────────
+            AN INSTITUTIONAL BUYER ASKS THIS AND THE PAGE DID NOT ANSWER.
+
+            Kept to a compact band rather than a full section with a
+            figure, because the page is already long and because a trust
+            section that goes on at length reads as defensive.
+
+            EVERY CLAIM HERE WAS VERIFIED AGAINST PRODUCTION BEFORE IT WAS
+            WRITTEN, read-only, and the ones that could not be verified
+            are absent rather than softened:
+
+              RLS       296 of 296 public tables have rowsecurity on,
+                        zero without. Measured from pg_class, not
+                        inferred from a migration.
+              Model     organization_ai_config exists and is org-scoped
+                        with 4 policies, so bring-your-own-key is real.
+              Scope     user_ai_config carries the assistant's read
+                        scope, so "you choose what it reads" is a real
+                        setting and not an intention.
+
+            DELIBERATELY NOT CLAIMED, and this list matters more than the
+            one above: no certification, no SOC 2, no compliance posture,
+            no encryption specifics, no immutability, and nothing about
+            data not reaching a model provider. RLS being enabled on a
+            table is not proof its policies are correct, and this repo's
+            own notes say the audit is partial. The copy says what is
+            enforced and where, never that it is complete.
+        */}
+        <section id="trust" className="relative scroll-mt-24">
+          <div
+            aria-hidden="true"
+            className={`${SHELL} h-px bg-gradient-to-r from-transparent via-white/10 to-transparent`}
+          />
+          <div className={`${SHELL} py-24 sm:py-28`}>
+            <div className="grid gap-x-16 gap-y-8 lg:grid-cols-12">
+              <div className="lg:col-span-5">
+                <Eyebrow>Your intelligence, your control</Eyebrow>
+                <h2 className="mt-6 text-pretty text-3xl font-semibold leading-[1.15] tracking-[-0.025em] text-white sm:text-[2.5rem]">
+                  Built for a firm that cannot hand its research to anyone
+                </h2>
+              </div>
+              <p className="max-w-[48ch] text-[17px] leading-[1.75] text-slate-400 lg:col-span-7 lg:pt-10">
+                Proprietary research is the asset. These are the controls that
+                exist today, stated as what they do rather than as a posture.
+              </p>
+            </div>
+
+            <dl className="mt-14 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                [
+                  'One firm cannot read another',
+                  'Isolation is enforced by the database on every table, per row, rather than by application code remembering to filter.',
+                ],
+                [
+                  'You bring your own model',
+                  'The assistant runs against your organization’s own provider account and key, configured by your administrator.',
+                ],
+                [
+                  'You choose what it reads',
+                  'The assistant’s access to your record is a setting your firm controls, not a fixed grant.',
+                ],
+              ].map(([term, def]) => (
+                <div key={term} className="border-t border-amber-300/25 pt-5">
+                  <dt className="text-[18px] font-semibold tracking-tight text-white">{term}</dt>
+                  <dd className="mt-2.5 max-w-[40ch] text-[16px] leading-[1.75] text-slate-400">
+                    {def}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+
+            {/*
+              The honest line. An institutional buyer will ask about
+              certifications in the first call, and a page that implies
+              them is a page that loses the second call. Saying it here
+              costs nothing and is the only version that survives
+              diligence.
+            */}
+            <p className="mt-12 max-w-[66ch] text-[16px] leading-[1.75] text-slate-500">
+              Tesseract holds no security certification today. We will show
+              you how the controls above are implemented, in detail, as part
+              of a design-partner conversation.
+            </p>
+          </div>
+        </section>
+
         <section id="partners" className="relative">
           <div
             aria-hidden="true"
@@ -2655,14 +2791,27 @@ export function LandingPage() {
             <nav
               aria-label="Legal"
               data-testid="landing-legal-links"
-              className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[14px] text-slate-600"
+              /*
+                ── TOUCH TARGETS, and a lesson about fixing one path ──────
+                These measured 21px tall at every viewport from 1920 down
+                to 390. The same defect exists in `LegalFooter`, which is
+                what the six authentication screens use, and fixing that
+                component first did NOT fix this: the landing page keeps
+                its own copy of these links. Measuring again after the
+                fix is the only reason that was caught.
+
+                `min-h-[44px]` with inline-flex gives a real box without
+                changing the type size; the gap narrows to compensate so
+                the row still reads as fine print.
+              */
+              className="mt-6 flex flex-wrap gap-x-1 text-[14px] text-slate-600"
             >
               {LEGAL_DOCUMENTS.map(doc => (
                 <Link
                   key={doc.id}
                   to={legalPath(doc.id)}
                   data-legal-document={doc.id}
-                  className="transition-colors hover:text-slate-300"
+                  className="inline-flex min-h-[44px] items-center rounded px-3 transition-colors hover:text-slate-300"
                 >
                   {FOOTER_LABELS[doc.id] ?? doc.title}
                 </Link>

@@ -876,6 +876,32 @@
     max-width: 100%;
   }
 
+  /* ── The public marketing page opts OUT of the lock above ──────────────
+
+     The rule above is correct for the app shell and wrong for a long
+     public page, which has no inner scroll container to do the scrolling
+     instead. Measured against the LIVE site at 390x844 before this
+     existed: body overflow hidden, scrollHeight 844 against roughly
+     19,000px of content, and window.scrollY stayed 0 after
+     scrollTo(0, 99999). A visitor on a phone saw the hero and could not
+     reach a single call to action below it.
+
+     `LandingPage` sets `data-public-scroll` on the documentElement while
+     it is mounted and removes it on unmount, so the authenticated shell
+     keeps the lock and its header stays structurally immovable.
+
+     `overflow-x: clip` is retained on purpose: horizontal containment was
+     never the problem, and the decorative atmosphere on this page is
+     deliberately drawn outside the viewport. */
+  html[data-public-scroll],
+  html[data-public-scroll] body,
+  html[data-public-scroll] #root {
+    height: auto;
+    overflow-y: visible;
+    overflow-x: clip;
+    overscroll-behavior: auto;
+  }
+
   /* No scrollbars anywhere on a phone.
 
      ── Why this is global rather than a class on each scroller ─────────────
