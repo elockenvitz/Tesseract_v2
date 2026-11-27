@@ -371,14 +371,29 @@ describe('the light band stays legible', () => {
   })
 })
 
+/*
+ * ── This suite used to own the #product section, which no longer exists ──
+ *
+ * That section was a tablist of six screens against the lifecycle's six
+ * stages, one to one and in the same order, so it restated the lifecycle
+ * with the nouns swapped. The screens and their figures moved onto the
+ * matching stage, and the section was deleted.
+ *
+ * The REQUIREMENT this suite exists to protect is untouched and is the
+ * reason it was retargeted rather than deleted with the section: the page
+ * must still say what a user opens, name all six screens, show each one,
+ * and change what is on screen when a visitor picks a different one. All
+ * of that now happens in `#lifecycle`.
+ */
 describe('the page says what a user actually opens', () => {
   it('names six real screens, in order, each with what it holds', async () => {
+    const user = userEvent.setup()
     await renderConfigured()
-    const section = document.querySelector('#product')
-    expect(section, 'the product section must render').toBeTruthy()
+    const section = document.querySelector('#lifecycle')
+    expect(section, 'the lifecycle section must render').toBeTruthy()
 
-    const named = [...(section?.querySelectorAll('[data-surface]') ?? [])]
-      .map(el => el.getAttribute('data-surface'))
+    const named = [...(section?.querySelectorAll('[data-screen]') ?? [])]
+      .map(el => el.getAttribute('data-screen'))
     expect(named).toEqual([
       'Asset workspace',
       'Idea Pipeline',
@@ -389,20 +404,21 @@ describe('the page says what a user actually opens', () => {
     ])
 
     /*
-     * A bare name is a nav menu. Each tab must reach a panel that says what
-     * the screen holds, so this follows `aria-controls` to the real panel
-     * rather than looking for a sibling paragraph.
+     * A bare name is a nav menu. Each stage must reach a panel that names
+     * the screen it opens and draws it, so this CLICKS all six: reading the
+     * panel once would cover the first stage and silently skip five.
      */
-    for (const tab of section?.querySelectorAll('[role="tab"]') ?? []) {
-      const panel = document.getElementById(tab.getAttribute('aria-controls') ?? '')
-      const name = tab.textContent?.trim()
-      if (tab.getAttribute('aria-selected') === 'true') {
-        expect(panel, `${name} must reach its panel`).toBeTruthy()
-        expect(
-          (panel?.textContent ?? '').trim().length,
-          `${name} needs a line saying what it holds`,
-        ).toBeGreaterThan(30)
-      }
+    const tabs = [...(section?.querySelectorAll('[role="tab"]') ?? [])]
+    for (let i = 0; i < tabs.length; i++) {
+      await user.click(tabs[i] as HTMLElement)
+      const panel = document.getElementById('stage-panel')
+      const wanted = named[i] as string
+      expect(panel, `${wanted} must reach its panel`).toBeTruthy()
+      expect(panel?.textContent, `the panel must name ${wanted}`).toContain(wanted)
+      expect(
+        panel?.querySelectorAll('figure').length,
+        `${wanted} must be drawn, not only named`,
+      ).toBeGreaterThan(0)
     }
   })
 
@@ -414,65 +430,37 @@ describe('the page says what a user actually opens', () => {
     const user = userEvent.setup()
     await renderConfigured()
 
-    const inbox = screen.getByRole('tab', { name: 'Decision Inbox' })
-    expect(inbox).toHaveAttribute('aria-selected', 'false')
+    const decide = screen.getByRole('tab', { name: 'Decide' })
+    expect(decide).toHaveAttribute('aria-selected', 'false')
 
-    await user.click(inbox)
+    await user.click(decide)
 
-    expect(inbox).toHaveAttribute('aria-selected', 'true')
+    expect(decide).toHaveAttribute('aria-selected', 'true')
     expect(
-      screen.getByRole('tab', { name: 'Asset workspace' }),
+      screen.getByRole('tab', { name: 'Research' }),
       'picking one must deselect the others',
     ).toHaveAttribute('aria-selected', 'false')
 
-    /* The figure beside it changed too, not just the highlight. */
+    /* The figure changed too, not just the highlight. */
     expect(
-      document.getElementById('product')?.textContent,
+      document.getElementById('stage-panel')?.textContent,
       'the Decision Inbox figure must be on screen',
     ).toMatch(/a rejection is a decision/i)
   })
 
   /*
-   * Roving tabindex and arrow keys are the contract `role="tablist"` makes.
-   * Without them a keyboard user tabs through six stops to reach the
-   * content, which is worse than the plain list this replaced.
+   * `moves between screens with the arrow keys, from one tab stop` was
+   * here. It tested the #product tablist's roving tabindex, and there is
+   * now exactly one tablist on the page, whose keyboard contract is
+   * covered by `walks the lifecycle with the arrow keys, from one tab
+   * stop` in the lifecycle suite. Keeping both would be the same
+   * assertion run twice against the same six buttons.
+   *
+   * Worth remembering if a second tablist is ever added: that test asserted
+   * ONE tab stop using a page-wide `getAllByRole('tab')`, which is wrong
+   * the moment a second widget exists, because two independent tablists
+   * should have one stop EACH. Scope any such gate to its own widget.
    */
-  it('moves between screens with the arrow keys, from one tab stop', async () => {
-    const user = userEvent.setup()
-    await renderConfigured()
-
-    /*
-     * ── Scoped to #product, because the page now has TWO tablists ────────
-     *
-     * This read `getAllByRole('tab')` across the whole document and asserted
-     * one tab stop among them. When the lifecycle became a tablist of its
-     * own, that found twelve tabs with two stops and failed — correctly, in
-     * the sense that it noticed, and wrongly, in the sense that two
-     * independent tablists SHOULD have one stop each.
-     *
-     * A page-wide selector for a per-widget property was the bug. The
-     * lifecycle's own roving tabindex is covered by its own suite.
-     */
-    const product = document.getElementById('product')
-    expect(product, 'the screens section must exist').not.toBeNull()
-    const tabs = within(product as HTMLElement).getAllByRole('tab')
-    expect(tabs.length, 'six screens').toBe(6)
-    expect(
-      tabs.filter(t => t.getAttribute('tabindex') === '0').length,
-      'exactly one tab stop for the whole group',
-    ).toBe(1)
-
-    tabs[0].focus()
-    await user.keyboard('{ArrowRight}')
-    expect(tabs[1], 'ArrowRight selects the next screen').toHaveAttribute('aria-selected', 'true')
-    expect(tabs[1], 'and moves focus to it').toHaveFocus()
-
-    await user.keyboard('{End}')
-    expect(tabs[tabs.length - 1], 'End jumps to the last').toHaveAttribute('aria-selected', 'true')
-
-    await user.keyboard('{ArrowRight}')
-    expect(tabs[0], 'and it wraps').toHaveAttribute('aria-selected', 'true')
-  })
 
   /*
    * ── The figure column must reserve room for the TALLEST screen ─────────
@@ -500,7 +488,7 @@ describe('the page says what a user actually opens', () => {
      * reason it was cheap to find, but a selector that can resolve to two
      * different things is the same defect as a position-based one.
      */
-    const column = document.querySelector('#product [data-figure-column]')
+    const column = document.querySelector('#lifecycle [data-figure-column]')
     expect(column, 'the figure column must reserve a minimum height').not.toBeNull()
 
     const cls = column?.getAttribute('class') ?? ''
@@ -512,31 +500,24 @@ describe('the page says what a user actually opens', () => {
   })
 
   /*
-   * The heading has to ask the reader's question. "The product" described
-   * the section's subject to somebody already persuaded; a visitor skimming
-   * had no reason to stop at the one concrete answer on the page.
+   * `heads that section with the question a reader is actually asking` was
+   * here, requiring the #product heading to address the reader and not to
+   * count the screens. The section it governed is gone, and a heading
+   * requirement cannot be retargeted onto a section with a different job:
+   * the lifecycle's heading names the six stages, which is what that
+   * section is for.
+   *
+   * The count rule is kept below as a page-wide one, because the mistake it
+   * caught — announcing how many screens there are, which reads as a
+   * ceiling to anyone who has not seen the product — is a thing any future
+   * section could do again.
    */
-  it('heads that section with the question a reader is actually asking', async () => {
+  it('never advertises how many screens the product has', async () => {
     await renderConfigured()
-    const section = document.querySelector('#product')
-    expect(section?.textContent).toMatch(/what you actually work in/i)
-
-    /*
-     * The second assertion used to require the literal "six screens". That
-     * count read as a specification, and worse as a ceiling: a reader who
-     * has not seen the product cannot tell whether six is generous or thin,
-     * so the number invited a judgement they had no basis to make.
-     *
-     * The REQUIREMENT is that the heading addresses the reader rather than
-     * describing the product's inventory, so it is now pinned that way: the
-     * heading must speak to the reader, and must NOT lead with a count. The
-     * tabs still show there are six, which is where a count belongs.
-     */
-    const heading = section?.querySelector('h2')?.textContent ?? ''
-    expect(heading, 'the heading must address the reader').toMatch(/\byou\b|\bpick\b|\byour\b/i)
-    expect(heading, 'the heading must not count the screens').not.toMatch(
-      /\b(six|6|five|seven)\s+screens?\b/i,
-    )
+    expect(
+      pageText(),
+      'a screen count reads as a ceiling to a reader who cannot judge it',
+    ).not.toMatch(/\b(six|seven|eight|6|7|8)\s+screens?\b/i)
   })
 
   /*
@@ -547,11 +528,17 @@ describe('the page says what a user actually opens', () => {
    */
   it('does not advertise the surfaces the product has not earned yet', async () => {
     await renderConfigured()
-    const section = document.querySelector('#product')
-    expect(section?.textContent).not.toMatch(/\bTrade Lab\b/)
+    /*
+     * Widened from `#product` to the WHOLE PAGE when that section was
+     * deleted. Scoping it to one section was always the weaker form: it
+     * only ever stopped the claim appearing in the one place somebody
+     * happened to be editing, and Trade Lab named anywhere else on the page
+     * is the same cheque the demo cannot cash.
+     */
+    expect(pageText(), 'Trade Lab sharing tiers have zero rows').not.toMatch(/\bTrade Lab\b/)
     expect(
-      [...(section?.querySelectorAll('[data-surface]') ?? [])]
-        .map(el => el.getAttribute('data-surface')),
+      [...document.querySelectorAll('[data-screen]')].map(el => el.getAttribute('data-screen')),
+      'Coverage has almost no adoption',
     ).not.toContain('Coverage')
   })
 })
@@ -1400,8 +1387,18 @@ describe('nothing on the page imitates real data', () => {
    * their six descriptions all survive, one per panel, so this assertion
    * moved from `heading` to `tab` rather than being weakened.
    */
+  /*
+   * ── And on 2026-11-27 they moved onto the LIFECYCLE stages ─────────────
+   *
+   * The tabs are now named for the stage (Research, Develop, ...) and carry
+   * the screen they open as `data-screen`, so the lookup moved from the
+   * tab's accessible name to that attribute. The requirement is the one
+   * this test has always had: all six surfaces named, none dropped.
+   */
   it('still names every product surface', async () => {
     await renderConfigured()
+    const named = [...document.querySelectorAll('[data-screen]')]
+      .map(el => el.getAttribute('data-screen'))
     for (const surface of [
       'Asset workspace',
       'Idea Pipeline',
@@ -1410,12 +1407,9 @@ describe('nothing on the page imitates real data', () => {
       'Trade Book',
       'Outcomes',
     ]) {
-      expect(screen.getByRole('tab', { name: surface }), surface).toBeTruthy()
+      expect(named, surface).toContain(surface)
     }
-    expect(
-      document.getElementById('product')?.querySelectorAll('[role="tab"]').length,
-      'six surfaces, re-formed but not reduced',
-    ).toBe(6)
+    expect(named.length, 'six surfaces, re-formed but not reduced').toBe(6)
   })
 })
 

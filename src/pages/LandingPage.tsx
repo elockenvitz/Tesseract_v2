@@ -975,149 +975,22 @@ const CHAIN: { record: string; via: string | null }[] = [
   { record: 'Outcome review', via: 'graded against the original case' },
 ]
 
-/**
- * The screen browser: the one operable thing on the page.
+/*
+ * `ScreenBrowser` and `SCREENS` lived here and are gone with the #product
+ * section. Both were a second tablist listing the same six things the
+ * lifecycle lists; see the long note where that section used to be, further
+ * down this file, for why a rewrite could not save it.
  *
- * ── Why a tablist and not six stacked figures ────────────────────────────
+ * Two findings from it are kept in `LifecycleWalk`, because they were paid
+ * for twice and would be paid for a third time if they were not written
+ * down:
  *
- * Six figures stacked would add six screens of height to a page that is
- * already 8.9 screens tall, and would restore the exact problem this
- * section had: a long run of identical blocks. One panel at a time keeps
- * the section the size of one screen and makes the visitor's own choice
- * the thing that moves it.
- *
- * ── Accessibility is the reason this is hand-rolled rather than six buttons
- *
- * `role="tablist"` carries a contract: exactly one tab is in the tab order
- * at a time (roving `tabIndex`), Left and Right move between tabs, Home and
- * End jump to the ends, and each tab points at its panel through
- * `aria-controls`. Six buttons with `onClick` would look identical and meet
- * none of that, so a keyboard user would tab through six stops to reach the
- * content instead of one.
- *
- * The panel is NOT focusable and does not need to be: it is labelled by its
- * tab, so a screen reader announces the screen's name on arrival.
+ *  - the figure column needs a measured floor or the section resizes when
+ *    you pick a stage, and the floor must clear the TALLEST figure;
+ *  - the figures must not be `aria-hidden`, which removed the product's
+ *    only depiction from screen readers AND made the imagery gate vacuous,
+ *    because `getAllByRole('figure')` skips aria-hidden subtrees.
  */
-function ScreenBrowser() {
-  const [active, setActive] = useState(0)
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
-
-  const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    const last = SCREENS.length - 1
-    const go = (i: number) => {
-      e.preventDefault()
-      setActive(i)
-      tabRefs.current[i]?.focus()
-    }
-    if (e.key === 'ArrowRight') go(active === last ? 0 : active + 1)
-    else if (e.key === 'ArrowLeft') go(active === 0 ? last : active - 1)
-    else if (e.key === 'Home') go(0)
-    else if (e.key === 'End') go(last)
-  }, [active])
-
-  /*
-    `name` is deliberately NOT destructured here. The tab list renders the
-    names from `SCREENS` directly, so binding it at this level left it
-    unread, and the repo type ceiling caught it as a new error. Fixed rather
-    than absorbed by raising the ceiling.
-  */
-  const { shows, Figure } = SCREENS[active]
-
-  return (
-    <div className="grid gap-x-14 gap-y-8 lg:grid-cols-12">
-      <div className="lg:col-span-5">
-        <div
-          role="tablist"
-          aria-label="Tesseract screens"
-          aria-orientation="vertical"
-          onKeyDown={onKeyDown}
-          className="flex flex-wrap gap-2 lg:flex-col lg:gap-0"
-        >
-          {SCREENS.map(({ name: n }, i) => {
-            const selected = i === active
-            return (
-              <button
-                key={n}
-                ref={el => { tabRefs.current[i] = el }}
-                type="button"
-                role="tab"
-                id={`screen-tab-${i}`}
-                aria-selected={selected}
-                aria-controls={`screen-panel-${i}`}
-                /* Roving tabindex: one stop for the whole group. */
-                tabIndex={selected ? 0 : -1}
-                data-surface={n}
-                onClick={() => setActive(i)}
-                className={`rounded-lg px-3 py-2.5 text-left text-[14px] font-medium transition lg:border-l lg:px-4 ${
-                  selected
-                    ? 'bg-white/[0.06] text-white lg:border-white lg:bg-transparent'
-                    : 'text-slate-400 hover:text-white lg:border-white/10'
-                }`}
-              >
-                {n}
-              </button>
-            )
-          })}
-        </div>
-
-        <div
-          role="tabpanel"
-          id={`screen-panel-${active}`}
-          aria-labelledby={`screen-tab-${active}`}
-          /* Pinned too: the descriptions run one to three lines, and that
-             alone was enough to move the figure beside them. */
-          className="mt-6 lg:min-h-[76px]"
-        >
-          <p className="max-w-[46ch] text-[14px] leading-[1.75] text-slate-400">{shows}</p>
-        </div>
-      </div>
-
-      {/*
-        The figure is OUTSIDE the tabpanel, and NOT `aria-hidden`.
-
-        It was aria-hidden on the first pass, reasoning that the panel text
-        already describes the screen. That was wrong twice over: it removed
-        the only concrete depiction of the product from every screen reader,
-        and `getAllByRole('figure')` skips aria-hidden subtrees, so the gate
-        that is supposed to check these figures are marked found none and
-        would have passed vacuously once the marker existed.
-
-        It stays exposed. Its `figcaption` names the screen and says
-        "Illustration", so a screen reader meets it correctly labelled, and
-        the content inside is short field labels rather than prose.
-      */}
-      {/*
-        ── A FIXED FLOOR, because the section was resizing under the cursor
-
-        The six figures are different heights, so picking a screen made the
-        whole section grow or shrink and everything below it jumped. On a
-        tab control that is the worst possible behaviour: the reader's next
-        click target moves because of their last click.
-
-        `min-h` on the figure column pins the section to the tallest panel,
-        so switching screens changes only what is inside the frame. The
-        value is the measured height of the tallest figure at this width,
-        and it is a floor rather than a fixed height, so a figure that grows
-        past it still renders in full instead of being clipped.
-      */}
-      {/*
-        390px, because the TALLEST figure is 387.
-
-        The first attempt at this used 330, which was the height of the
-        figure I happened to be looking at. Five of the six fitted under it
-        and Outcomes did not, so the section still grew by 41px on one tab
-        out of six — a layout shift rare enough to look like a glitch rather
-        than a pattern, which is worse than one that happens every time.
-
-        Measured, not guessed: 246, 353, 236, 317, 337, 387.
-      */}
-      <div data-figure-column="" className="lg:col-span-7 lg:min-h-[390px]">
-        <Figure />
-      </div>
-    </div>
-  )
-}
-
 function RecordChain() {
   return (
     <figure className="relative overflow-hidden rounded-2xl bg-white/[0.025] p-6 ring-1 ring-inset ring-white/[0.08] sm:p-8">
@@ -1256,6 +1129,23 @@ const LIFECYCLE = [
   {
     icon: BookOpen,
     stage: 'Research',
+    /*
+     * ── `screen` and `Figure` came from the deleted #product section ─────
+     *
+     * That section listed six screens against these six stages, in this
+     * order, one to one: Research/Asset workspace, Develop/Idea Pipeline,
+     * Recommend/Recommendation, Decide/Decision Inbox, Execute/Trade Book,
+     * Review/Outcomes. It was this list with the nouns swapped, so a reader
+     * who had understood the lifecycle learned only that each stage has a
+     * screen, which they had already assumed.
+     *
+     * The one thing it genuinely added was DEPICTION: the lifecycle draws a
+     * schema, those figures draw the product. That belongs here, against
+     * the stage it illustrates, rather than in a section of its own that
+     * restates the argument in order to have somewhere to put it.
+     */
+    screen: 'Asset workspace',
+    Figure: AssetWorkspaceFigure,
     record: 'Research note',
     /*
      * `fields` are the record's own columns, names only and no values.
@@ -1287,6 +1177,8 @@ const LIFECYCLE = [
      */
     icon: Layers,
     stage: 'Develop',
+    screen: 'Idea Pipeline',
+    Figure: IdeaPipelineFigure,
     record: 'Idea',
     fields: ['Security', 'Conviction', 'Stage', 'Age'],
     line: 'A name under consideration carries its conviction, stage and age.',
@@ -1295,6 +1187,8 @@ const LIFECYCLE = [
   {
     icon: FileSignature,
     stage: 'Recommend',
+    screen: 'Recommendation',
+    Figure: RecommendationFigure,
     record: 'Recommendation',
     fields: ['Conviction', 'Target', 'Sizing', 'Frozen version'],
     line: 'An analyst puts a view forward with its conviction, sizing and target, and submitting it freezes the reasoning behind it.',
@@ -1303,6 +1197,8 @@ const LIFECYCLE = [
   {
     icon: Gavel,
     stage: 'Decide',
+    screen: 'Decision Inbox',
+    Figure: DecisionInboxFigure,
     record: 'Decision',
     fields: ['Verdict', 'Rationale', 'Decided by', 'References'],
     line: 'The portfolio manager accepts, rejects or defers, and the rationale is captured with the decision rather than in a reply.',
@@ -1311,6 +1207,8 @@ const LIFECYCLE = [
   {
     icon: ArrowLeftRight,
     stage: 'Execute',
+    screen: 'Trade Book',
+    Figure: TradeBookFigure,
     record: 'Accepted trade',
     fields: ['Security', 'Side', 'Sizing', 'Fill status', 'Authorized by'],
     line: 'The approval becomes the firm’s committed record of what it did, including whether the fill was assumed or confirmed against the book.',
@@ -1319,6 +1217,8 @@ const LIFECYCLE = [
   {
     icon: History,
     stage: 'Review',
+    screen: 'Outcomes',
+    Figure: OutcomeFigure,
     record: 'Outcome review',
     fields: ['Original claim', 'What happened', 'Verdict', 'Links back to'],
     line: 'The decision is revisited against what actually happened, judged on the original thesis rather than the current price.',
@@ -1342,7 +1242,7 @@ const LIFECYCLE = [
 function LifecycleWalk() {
   const [active, setActive] = useState(0)
   const tabs = useRef<(HTMLButtonElement | null)[]>([])
-  const { stage, record, line, so, fields, icon: Icon } = LIFECYCLE[active]
+  const { stage, screen, Figure, record, line, so, fields, icon: Icon } = LIFECYCLE[active]
   const upstream = active > 0 ? LIFECYCLE[active - 1] : null
 
   function move(to: number) {
@@ -1383,6 +1283,13 @@ function LifecycleWalk() {
               type="button"
               role="tab"
               data-lifecycle-stage=""
+              /*
+               * The screen this stage opens, carried on the tab so a gate
+               * can check all six are present and in order without clicking
+               * through. `data-surface` on the deleted #product tabs did
+               * the same job; the name changed with the thing it names.
+               */
+              data-screen={LIFECYCLE[i].screen}
               id={`stage-tab-${i}`}
               aria-selected={on}
               aria-controls="stage-panel"
@@ -1444,19 +1351,42 @@ function LifecycleWalk() {
               <Icon className={`h-[17px] w-[17px] ${ACCENT_ICON}`} aria-hidden="true" />
             </span>
             <h3 className="text-[17px] font-semibold tracking-tight text-white">{stage}</h3>
-            <span className="rounded bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-slate-400 ring-1 ring-inset ring-white/[0.08]">
-              {record}
+            <span className="text-[13px] text-slate-500">
+              you open{' '}
+              <span className="font-medium text-slate-300">{screen}</span>
             </span>
           </div>
 
           {/*
-            Prose left, the record right. The panel runs the full section
-            width now that the chain has moved below it, and a single 56ch
-            column inside a 1440px band is the stacking problem this section
-            just got rid of, one level down.
+            ── The SCREEN leads, because it is the thing a reader cannot
+            imagine from the words ─────────────────────────────────────────
+
+            The panel used to be prose left, record card right. The drawn
+            screen now takes the left and larger half, with the prose and
+            the record stacked beside it, so each stage answers the three
+            questions in the order a buyer asks them: what do I open, what
+            does it do for me, and what does it leave behind.
+
+            `min-h` on the figure side for the reason the deleted #product
+            section needed one: without a floor the section resizes when you
+            pick a stage, and the floor must clear the TALLEST figure, not
+            whichever one you happen to be looking at. That mistake shipped
+            once already — a 330px floor against figures measured at 246,
+            353, 236, 317, 337 and 387, so five fitted and one did not, and
+            the section jumped on one stage in six.
+
+            The figures are NOT `aria-hidden`. They were on the first pass,
+            which removed the product's only depiction from every screen
+            reader and silently broke the imagery gate, because
+            `getAllByRole('figure')` skips aria-hidden subtrees and the gate
+            found nothing to check.
           */}
-          <div className="mt-6 grid gap-x-14 gap-y-8 lg:grid-cols-12">
-            <div className="lg:col-span-7">
+          <div className="mt-7 grid gap-x-14 gap-y-10 lg:grid-cols-12">
+            <div data-figure-column="" className="lg:col-span-7 lg:min-h-[390px]">
+              <Figure />
+            </div>
+
+            <div className="lg:col-span-5">
               <p className="max-w-[58ch] text-[15px] leading-[1.75] text-slate-300">{line}</p>
 
               {/*
@@ -1480,14 +1410,15 @@ function LifecycleWalk() {
               <p className="mt-6 max-w-[58ch] border-l border-amber-300/30 pl-4 text-[13px] leading-[1.75] text-slate-400">
                 {so}
               </p>
-            </div>
 
-            {/*
-              The record's own columns: the section's claim made visible
-              rather than asserted.
-            */}
-            <div className="lg:col-span-5">
-              <div className="rounded-xl bg-white/[0.02] p-5 ring-1 ring-inset ring-white/[0.06]">
+              {/*
+                The record's own columns: the section's claim made visible
+                rather than asserted. It sits under the prose in the same
+                column, so the stage reads top to bottom as one answer —
+                what it does for you, then what it leaves behind — rather
+                than as two cards competing for the same glance.
+              */}
+              <div className="mt-7 rounded-xl bg-white/[0.02] p-5 ring-1 ring-inset ring-white/[0.06]">
                 <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500">
                   Stored as
                 </p>
@@ -1581,60 +1512,23 @@ const MEMORY: [typeof Lock, string, string][] = [
   [Users, 'Handoffs start from context', 'A name passed between analysts or PMs arrives with its history rather than as a blank page.'],
 ]
 
-/**
- * Where the work happens. SHORT LINES, because this is a map.
+/*
+ * `SCREENS` lived here: six screen names, each with a line about what it
+ * holds and a drawn figure. The names and the figures moved onto the
+ * matching `LIFECYCLE` stage; the `shows` lines did not, and that was a
+ * decision rather than an oversight.
  *
- * Every entry was a 20-word sentence stacking three or four attributes, so
- * six of them read as an argument rather than as a list of places. The
- * section before it already made the argument; this one only has to let a
- * reader picture the screens. Each line is now one clause.
+ * Each `shows` line described what is on a screen — "Ideas moving from
+ * exploring to ready-to-recommend, with conviction and staleness visible"
+ * — next to a figure that DRAWS exactly that. Captioning a picture with its
+ * own contents is the kind of writing that survives because nobody asks
+ * what it is for. The stage keeps the sentence that says why the screen
+ * matters, which the picture cannot say.
+ *
+ * One line was worth rescuing and is now the Trade Book stage's own: the
+ * firm's committed trades are the only place the product says what it
+ * ACTUALLY DID rather than what it decided to do.
  */
-const SCREENS: { name: string; shows: string; Figure: () => JSX.Element }[] = [
-  {
-    name: 'Asset workspace',
-    shows: "The security, the firm's exposure, coverage and the written case in one view.",
-    Figure: AssetWorkspaceFigure,
-  },
-  {
-    name: 'Idea Pipeline',
-    shows: 'Ideas moving from exploring to ready-to-recommend, with conviction and staleness visible.',
-    Figure: IdeaPipelineFigure,
-  },
-  /*
-   * "preserved exactly as the PM received it" was here, and the repetition
-   * gate caught it: that is the lifecycle's Recommend stage and the
-   * diagram's frozen row, stated a third and fourth time. This entry says
-   * what is on the screen; the FIGURE now carries the guarantee, as a
-   * property of the record rather than as a fourth sentence about it.
-   */
-  {
-    name: 'Recommendation',
-    shows: 'What the analyst submitted, with its conviction, sizing and target.',
-    Figure: RecommendationFigure,
-  },
-  {
-    name: 'Decision Inbox',
-    shows: 'Recommendations waiting on a portfolio manager, with accept, reject and defer all recorded.',
-    Figure: DecisionInboxFigure,
-  },
-  /*
-   * Was 'Decision record', which is not a screen. It described the same rows
-   * the Decision Inbox entry above already describes, read historically, and
-   * it left the firm's committed trades off the map entirely -- the one
-   * surface a portfolio manager opens most and the only place the product
-   * says what the firm ACTUALLY DID rather than what it decided to do.
-   */
-  {
-    name: 'Trade Book',
-    shows: 'Every trade the firm committed to, each one carrying the decision that authorized it.',
-    Figure: TradeBookFigure,
-  },
-  {
-    name: 'Outcomes',
-    shows: 'A structured verdict on whether the thesis played out, attached to the decision.',
-    Figure: OutcomeFigure,
-  },
-]
 
 /*
  * `INTELLIGENCE` lived here: three capability cards for the assistant.
@@ -1754,8 +1648,14 @@ export function LandingPage() {
               <a href="#research" className="hidden rounded-md px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:text-white md:block">
                 Research
               </a>
-              <a href="#product" className="hidden rounded-md px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:text-white md:block">
-                Product
+              {/*
+                "Product" pointed at #product, which no longer exists. It is
+                replaced by Memory rather than repointed at #lifecycle,
+                because "How it works" already goes there and two nav items
+                landing on one section is a nav that lies about the page.
+              */}
+              <a href="#memory" className="hidden rounded-md px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:text-white md:block">
+                Memory
               </a>
               <a href="#partners" className="hidden rounded-md px-3 py-2 text-[13px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
                 Design partners
@@ -2197,96 +2097,44 @@ export function LandingPage() {
           />
         </section>
 
-        {/* ── 5. The product ─────────────────────────────────────────────── */}
-        <Section
-          id="product"
-          divide={false}
-          /*
-            Was label "The product", title "One workspace, built around the
-            security and the decision".
+        {/*
+          ── 5. THE PRODUCT SECTION WAS DELETED, and this note is why ──────
 
-            That heading described the product's SHAPE to somebody who had
-            already decided to care. The section underneath it is the only
-            place on the page that says what a user opens, and its heading
-            gave a reader no reason to read it: a visitor could scroll past
-            the one concrete answer on the page because the sign above it
-            was abstract. The label now asks the reader's own question and
-            the title says how many answers follow.
-          */
-          /*
-            ── "Six screens" counted something nobody asked the size of ────
+          It was "What you actually work in": a tablist of six screens, each
+          with a line about what it holds. The reader could not see the
+          point of it, and the reason turned out to be structural rather
+          than editorial.
 
-            The count was meant to say "this is a finite, knowable product".
-            It reads instead as a specification, and worse, as a ceiling: a
-            reader who has not seen the product cannot tell whether six is
-            generous or thin, so the number invites a judgement they have no
-            basis to make. It also made the heading about the product's
-            inventory rather than about their day.
+          It was the lifecycle section again. One to one, in the same order:
 
-            The tabs still show there are six, which is where a count
-            belongs — stated by the control rather than announced.
-          */
-          label="What you actually work in"
-          title="Pick a screen. This is what is on it."
-          /*
-            Two sentences became one, and both cuts were duplication the
-            repetition gate found. "the frozen case" is the fifth statement
-            of the freezing guarantee, and "the record assembles itself as a
-            side effect of the work" is the light band's own headline,
-            reworded, one section earlier.
-          */
-          lead="Analysts work where the name lives, and portfolio managers decide from a queue rather than from a forwarded document."
-        >
-          {/*
-            ── The one thing on this page a visitor can operate ────────────
+            Research  / Research note    -> Asset workspace
+            Develop   / Idea             -> Idea Pipeline
+            Recommend / Recommendation   -> Recommendation
+            Decide    / Decision         -> Decision Inbox
+            Execute   / Accepted trade   -> Trade Book
+            Review    / Outcome review   -> Outcomes
 
-            This was a two-column list of six headed paragraphs, which was
-            the page's SIXTH consecutive section of that exact shape. The
-            writing was fine and that was the problem: a reader could not
-            tell the sections apart, so good sentences blurred into one
-            surface.
+          Six stages, six records, six screens, perfectly aligned. A reader
+          who had understood the lifecycle learned exactly one new fact
+          here, that each stage has a screen, which they had already
+          assumed. No amount of rewriting the heading fixes a section whose
+          content is another section's content.
 
-            It is now a screen browser. Picking a name shows a drawn
-            representation of that screen beside its description. The
-            descriptions are unchanged and all six are still here, one per
-            panel, so nothing was traded away for the interaction.
+          What it DID add was depiction: the lifecycle draws a schema, those
+          figures draw the product. So the figures moved into the lifecycle
+          walk, against the stage each one illustrates, and every screen
+          name and drawing survives. The page lost a section and about 100
+          words, and gained a lifecycle that answers all three questions a
+          buyer actually asks in the order they ask them: what do I open,
+          what does it do for me, what does it leave behind.
 
-            ONE widget, deliberately. A page where several things look
-            operable and only one is teaches a visitor to stop trying.
+          If a future edit wants a dedicated look-at-the-product section,
+          it needs a job the lifecycle does not already do — showing two or
+          three screens LARGE, for density and craft, would be one. Six
+          small ones mapped to six stages is the thing that failed.
+        */}
 
-            Tabs, not links or a carousel: the six are concurrent views onto
-            the same records, so there is no order to step through, and a
-            tablist is the role that means "pick one of these". Arrow-key
-            handling and roving tabindex come with it, in `ScreenBrowser`.
-          */}
-          <ScreenBrowser />
-
-          {/*
-            The section-level note that used to live here announced that no
-            product screenshots appeared on the page and that captures were
-            pending. That is an internal status report, and it is gone.
-
-            The page still contains zero `<img>` elements and nothing that
-            imitates product chrome, and the test suite holds both. The
-            difference is that the page no longer TELLS a visitor about the
-            absence. When captures are taken they belong in this section as
-            images; see `docs/commercial/demo-checklist.md` for which are
-            safe to take.
-          */}
-          {/*
-            One sentence. This was two, and the first ("each surface is a view
-            onto the same records") is the light band's closing line again.
-            The example is the part that was doing work, so the example is
-            what stayed.
-          */}
-          <p className="mt-12 max-w-[60ch] text-[14px] leading-[1.75] text-slate-400">
-            A decision in the inbox and the same decision in the historical
-            record are one row read two ways, so moving between surfaces never
-            means re-entering anything.
-          </p>
-        </Section>
-
-        {/* ── 6. Institutional memory ────────────────────────────────────── */}
+        {/* ── 5. Institutional memory ────────────────────────────────────── */}
         <Section
           id="memory"
           label="Institutional memory"
@@ -2485,7 +2333,7 @@ export function LandingPage() {
               <nav aria-label="Footer" className="flex flex-wrap gap-x-8 gap-y-2 text-[13px] text-slate-500">
                 <a href="#lifecycle" className="transition-colors hover:text-white">How it works</a>
                 <a href="#research" className="transition-colors hover:text-white">Research</a>
-                <a href="#product" className="transition-colors hover:text-white">Product</a>
+                <a href="#memory" className="transition-colors hover:text-white">Memory</a>
                 <a href="#partners" className="transition-colors hover:text-white">Design partners</a>
                 <Link to="/login" className="transition-colors hover:text-white">Sign in</Link>
               </nav>
