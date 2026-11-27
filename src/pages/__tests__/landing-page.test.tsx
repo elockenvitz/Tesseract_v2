@@ -212,6 +212,51 @@ describe('the decision lifecycle is complete and closes', () => {
  * that name, and the prospect discovers it in the demo. An exact set also
  * makes adding a seventh surface a deliberate act rather than a drive-by.
  */
+/*
+ * ── White on white, which every other assertion passed straight over ─────
+ *
+ * The capture section is the page's one LIGHT band, #f7f8fa with its own
+ * self-contained palette. A figure added to it reused the surface the dark
+ * sections use, `bg-white/[0.025]` with `text-white`, and the whole card
+ * rendered invisible: white text on 2.5% white over near-white.
+ *
+ * Nothing caught it. Every content assertion about that section passed,
+ * because the text was in the DOM and perfectly legible to a test. It was
+ * found by looking at a screenshot.
+ *
+ * jsdom does not resolve Tailwind classes to computed colours, so a true
+ * contrast check is not available here. What IS checkable is the structural
+ * rule the band already documents: inside the light band, white text is
+ * legitimate only on an opaque dark surface. Anything else is this bug.
+ */
+describe('the light band stays legible', () => {
+  const OPAQUE_DARK = /\bbg-(slate|gray|zinc|neutral)-(8|9)00\b|\bbg-\[#0[0-9a-f]{5}\]/
+
+  it('puts white text in the light band only on an opaque dark surface', async () => {
+    await renderConfigured()
+    const band = document.getElementById('research')
+    expect(band, 'the light band must render').toBeTruthy()
+
+    const offenders: string[] = []
+    for (const el of band?.querySelectorAll('[class*="text-white"]') ?? []) {
+      let onDark = false
+      for (let n: Element | null = el; n && n !== band?.parentElement; n = n.parentElement) {
+        if (OPAQUE_DARK.test(n.getAttribute('class') ?? '')) { onDark = true; break }
+      }
+      if (!onDark) {
+        offenders.push(
+          `${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim().slice(0, 40)}"`,
+        )
+      }
+    }
+
+    expect(
+      offenders,
+      `white text on a light background in the capture band:\n  ${offenders.join('\n  ')}`,
+    ).toEqual([])
+  })
+})
+
 describe('the page says what a user actually opens', () => {
   it('names six real screens, in order, each with what it holds', async () => {
     await renderConfigured()

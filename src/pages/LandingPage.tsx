@@ -9,10 +9,19 @@ import {
   TradeBookFigure,
 } from '../components/landing/ScreenFigures'
 import {
-  ArrowLeftRight, ArrowRight, BookOpen, Boxes, FileSignature, Gavel, History,
-  Layers, Link2, ListChecks, Lock, Quote, RotateCcw, ShieldCheck,
-  Sparkles, Target, Users,
+  AssistantFlow,
+  CaptureTrade,
+  CostOfForgetting,
+  MemoryLedger,
+} from '../components/landing/SectionVisuals'
+import {
+  ArrowLeftRight, ArrowRight, BookOpen, FileSignature, Gavel, History,
+  Layers, ListChecks, Lock, Quote, RotateCcw, ShieldCheck,
+  Target, Users,
 } from 'lucide-react'
+// `Boxes`, `Link2` and `Sparkles` went with the three assistant capability
+// cards, the same way `LineChart` went below. The icon list keeps working as
+// the quiet check it is: content that leaves the page leaves this line too.
 // `LineChart` was dropped with the "Review and learning" memory item, which
 // was the lifecycle's Review stage restated. An unused import is an eslint
 // error here, so the icon list is a quiet check on content that left.
@@ -1233,20 +1242,16 @@ const LIFECYCLE = [
   },
 ]
 
-/**
- * Four ways the reasoning goes missing. ONE SENTENCE EACH.
+/*
+ * `PROBLEMS` lived here: four ways the reasoning goes missing, one sentence
+ * each. Replaced by `CostOfForgetting` in `SectionVisuals`, which names
+ * three COSTS and draws each one.
  *
- * Every item here was two sentences, and in a two-column grid that is the
- * difference between a list a reader scans and a list a reader abandons. The
- * second sentence was carrying the sting in each case, so each pair was
- * joined rather than halved: nothing was cut except the comma splice.
+ * DELETED rather than left in place, because the type ceiling flagged it as
+ * unread the moment the section stopped rendering it, and a tidy unused
+ * array is how a page ends up with two sources of truth for its own
+ * argument. Git has it if the wording is ever wanted back.
  */
-const PROBLEMS: [string, string][] = [
-  ['Research evolves', 'The note that justified the position has been edited six times since, and the version the PM actually read is gone.'],
-  ['Recommendations change', 'A target moves, conviction shifts, sizing is revised, and nobody can say which version was the one that got approved.'],
-  ['PMs disagree', 'A rejection carries as much information as an approval, and it usually lives in a reply to a message.'],
-  ['Positions get adjusted', 'Six months on, the book looks nothing like the trade that was authorized, and nobody can retrace the path.'],
-]
 
 /**
  * The capture layer.
@@ -1357,19 +1362,17 @@ const SCREENS: { name: string; shows: string; Figure: () => JSX.Element }[] = [
   },
 ]
 
-/**
- * What the assistant does, stated as capability rather than as a roadmap.
+/*
+ * `INTELLIGENCE` lived here: three capability cards for the assistant.
+ * Replaced by `AssistantFlow` in `SectionVisuals`, which shows the part a
+ * buyer actually asks about, namely whose model it runs on and what becomes
+ * of the answer.
  *
- * The "Not yet built" column that used to sit beside this is gone, and the
- * three items it listed were REMOVED from the page rather than reworded,
- * which is the honest way to comply with "no reference to what isn't built".
- * Everything below is something the assistant does today.
+ * The three capabilities themselves were NOT dropped. Their gate is a
+ * content requirement rather than a label, and it caught the rewrite losing
+ * them: "it knows where you are", "reads the record, not the internet" and
+ * "cites what it used" are stated verbatim in the section's closing copy.
  */
-const INTELLIGENCE: [typeof Sparkles, string, string][] = [
-  [Boxes, 'It knows where you are', 'The assistant sits in the workspace with the security you are looking at, and the portfolio it sits in, as context.'],
-  [Link2, 'It reads the record, not the internet', 'Retrieval runs over your own research, ideas, recommendations and decisions, and works because they are typed and linked.'],
-  [ShieldCheck, 'It cites what it used', 'Answers point at the records they came from, so a claim can be checked rather than taken on trust.'],
-]
 
 /** Primary and secondary button classes, so every CTA matches exactly. */
 const BTN_PRIMARY =
@@ -1629,14 +1632,20 @@ export function LandingPage() {
             `pl-[calc(0.75rem+1.4em)]` hanging indent that existed only to
             align a paragraph under a two-character number.
           */}
-          <div className="grid gap-x-16 gap-y-9 sm:grid-cols-2">
-            {PROBLEMS.map(([h, p]) => (
-              <div key={h} className="border-l border-white/[0.09] pl-5">
-                <h3 className="text-[15px] font-semibold tracking-tight text-white">{h}</h3>
-                <p className="mt-2 max-w-[50ch] text-[14px] leading-[1.75] text-slate-400">{p}</p>
-              </div>
-            ))}
-          </div>
+          {/*
+            ── Four descriptions became three COSTS, each one shown ────────
+
+            This listed four ways reasoning goes missing, as four sentences
+            in four identical boxes: research evolves, recommendations
+            change, PMs disagree, positions get adjusted. All true, and all
+            the same observation at four angles, which reads as one problem
+            described at length rather than as a reason to buy anything.
+
+            They are now three distinct costs with a diagram each: poor
+            organization, no memory, lost alpha. The third is the one that
+            matters commercially and the old list never named it.
+          */}
+          <CostOfForgetting />
 
           {/* The consequence, pulled out larger: it is the argument. */}
           {/*
@@ -1857,7 +1866,30 @@ export function LandingPage() {
                 </div>
               </div>
 
-              <div className="mt-14 grid gap-x-14 gap-y-10 sm:grid-cols-2 lg:grid-cols-3 sm:mt-16">
+              {/*
+                ── The proof goes BEFORE the list, not after it ────────────
+
+                The heading above already promises that capture is not extra
+                work. The six surfaces then followed immediately, and six
+                headed items read as six more things to keep up to date,
+                which fuels exactly the fear the heading was trying to
+                settle. A reader does not get to the reassurance because the
+                list arrives first and answers the question differently.
+
+                `CaptureTrade` shows the trade in one glance: the note an
+                analyst was writing anyway on the left, the typed records it
+                produced on the right, and nothing in between for them to
+                do. The list is then a map of where that happens rather than
+                a worklist, which is what it always was.
+              */}
+              <div className="mt-14 sm:mt-16">
+                <CaptureTrade />
+              </div>
+
+              <p className="mt-16 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Where the writing already happens
+              </p>
+              <div className="mt-8 grid gap-x-14 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
                 {CAPTURE.map(([Icon, h, p]) => {
                   const I = Icon as typeof BookOpen
                   return (
@@ -1970,19 +2002,33 @@ export function LandingPage() {
           title="The firm's accumulated decisions as an asset it owns"
           lead="Every investment organization can buy the same market data. What cannot be bought is a connected history of this firm's own judgement: what it considered, what it chose, what it declined, and what it learned."
         >
-          {/* Three across from `sm` up. At six items this was 2-up then 3-up,
-              which left a ragged last row; three items want one clean row. */}
-          <div className="grid gap-x-16 gap-y-10 sm:grid-cols-3">
-            {MEMORY.map(([Icon, h, p]) => {
-              const I = Icon as typeof Lock
-              return (
-                <div key={h}>
-                  <I className="h-[18px] w-[18px] text-primary-300" aria-hidden="true" />
-                  <h3 className="mt-4 text-[15px] font-semibold tracking-tight text-white">{h}</h3>
-                  <p className="mt-2.5 max-w-[44ch] text-[14px] leading-[1.75] text-slate-400">{p}</p>
-                </div>
-              )
-            })}
+          {/*
+            The three claims KEPT, and given something to stand next to.
+
+            The argument here is entirely about elapsed time: none of this is
+            worth anything in month one and it is the firm's most valuable
+            asset in year three. Three paragraphs cannot show accumulation,
+            so the ledger does, and the claims sit beside it rather than
+            carrying the section alone.
+          */}
+          <div className="grid gap-x-14 gap-y-10 lg:grid-cols-[1fr_1fr]">
+            <ul className="space-y-8">
+              {MEMORY.map(([Icon, h, p]) => {
+                const I = Icon as typeof Lock
+                return (
+                  <li key={h}>
+                    <div className="flex items-center gap-3">
+                      <I className="h-[18px] w-[18px] shrink-0 text-primary-300" aria-hidden="true" />
+                      <h3 className="text-[15px] font-semibold tracking-tight text-white">{h}</h3>
+                    </div>
+                    <p className="mt-2.5 max-w-[44ch] text-[14px] leading-[1.75] text-slate-400">{p}</p>
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="lg:pt-1">
+              <MemoryLedger />
+            </div>
           </div>
           <p className="mt-14 max-w-[64ch] text-[13px] leading-[1.75] text-slate-500">
             Tesseract makes a firm's reasoning retrievable. It does not promise
@@ -1999,25 +2045,37 @@ export function LandingPage() {
           title="An assistant whose advantage is that your record is structured"
           lead="ACT AI sits over the decision corpus. A general model can read a folder of documents; it cannot tell you which recommendation a decision approved, because that relationship does not exist in a folder. Here it does."
         >
-          <div className="grid gap-5 lg:grid-cols-3">
-            {INTELLIGENCE.map(([Icon, h, p]) => {
-              const I = Icon as typeof Sparkles
-              return (
-                <div key={h} className={`${GLASS} p-7`}>
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.05] ring-1 ring-inset ring-white/10">
-                    <I className={`h-[17px] w-[17px] ${ACCENT_ICON}`} aria-hidden="true" />
-                  </span>
-                  <h3 className="mt-5 text-[15px] font-semibold tracking-tight text-white">{h}</h3>
-                  <p className="mt-2.5 text-[14px] leading-[1.75] text-slate-400">{p}</p>
-                </div>
-              )
-            })}
-          </div>
+          {/*
+            ── Three capability cards became the three STEPS of using it ───
 
-          <div className="mt-10 grid gap-x-16 gap-y-6 lg:grid-cols-2">
+            The cards said it knows where you are, it reads the record not
+            the internet, and it cites what it used. All still true, and all
+            still said: they are the lead and the closing lines now. What
+            they could not do was show the part a buyer actually asks about,
+            which is whose model it runs on and what happens to the answer
+            afterwards.
+
+            EVERY CLAIM IN `AssistantFlow` WAS CHECKED AGAINST PRODUCTION,
+            not against this repo, because the two disagree. The note on that
+            component lists the tables. The short version: bring-your-own
+            model, per-user control of what it may read, and tagged
+            conversations are all deployed; ARTIFACTS ARE NOT, so they are
+            not on the page.
+          */}
+          <AssistantFlow />
+
+          <div className="mt-14 grid gap-x-16 gap-y-6 lg:grid-cols-2">
+            {/*
+              The three capabilities the cards used to carry, kept verbatim
+              and moved here. Their gate is a content requirement rather than
+              a label, so the words survive the restyle: dropping them in the
+              rewrite is exactly what it exists to catch, and it did.
+            */}
             <p className="max-w-[60ch] text-[14px] leading-[1.75] text-slate-400">
-              It runs on your organization’s own provider key, held encrypted,
-              so the firm controls which model its reasoning reaches.
+              It knows where you are, it reads the record, not the internet,
+              and it cites what it used. It runs on your organization&rsquo;s own
+              provider key, held encrypted, so the firm controls which model
+              its reasoning reaches.
             </p>
             <p className="max-w-[60ch] text-[13px] leading-[1.75] text-slate-500">
               ACT AI assists the people who make the decisions. It does not
