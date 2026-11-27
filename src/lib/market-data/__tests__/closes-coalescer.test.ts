@@ -21,8 +21,21 @@ import {
 } from '../closes-coalescer'
 import type { DailyClose } from '../daily-closes'
 
+/**
+ * Today, derived the same way the module derives its window floor.
+ *
+ * The default close date MUST be relative to now, never a literal. `heldFor`
+ * slices what it holds to `date >= floorFrom(days)`, so a fixed date silently
+ * ages out of the window these assertions use: `'2026-11-14'` sat exactly on
+ * the 12-day floor on 2026-11-26 and fell one day outside it on 2026-11-27.
+ * That turned four passing tests red overnight and blocked a production
+ * deploy, with nothing in the implementation changed. `the fixture dates its
+ * closes inside the shallowest window` below fails if a literal returns.
+ */
+const TODAY = new Date().toISOString().slice(0, 10)
+
 /** A fetcher that answers with one dated close per symbol asked for. */
-const rows = (symbols: readonly string[], date = '2026-11-14'): DailyClose[] =>
+const rows = (symbols: readonly string[], date = TODAY): DailyClose[] =>
   symbols.map(symbol => ({ symbol, date, close: 100 }))
 
 const spy = (impl?: ClosesFetcher) =>
@@ -35,6 +48,24 @@ beforeEach(() => { __resetCoalescer() })
 afterEach(() => { __resetCoalescer(); vi.useRealTimers() })
 
 describe('callers that overlap share a request', () => {
+  it('the fixture dates its closes inside the shallowest window', () => {
+    /*
+     * REGRESSION GUARD, and it has to come first.
+     *
+     * Every assertion below that reads a returned row depends on the fixture's
+     * close surviving `heldFor`'s `date >= floorFrom(days)` slice. A literal
+     * date passes until the calendar walks past it, and then four unrelated
+     * assertions go red at once reporting `expected [] to deeply equal
+     * ['AAPL']` -- which reads as a coalescing defect and is not one.
+     *
+     * 12 is the shallowest window any test here asks for, so it is the
+     * tightest floor the fixture has to clear.
+     */
+    const floor = new Date(Date.now() - 12 * 86_400_000).toISOString().slice(0, 10)
+    const [row] = rows(['AAPL'])
+    expect(row.date >= floor).toBe(true)
+  })
+
   it('issues one request for the union of two concurrent callers', async () => {
     const fetcher = spy()
 
