@@ -2344,7 +2344,12 @@ export function LandingPage() {
               <p className="mt-16 text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-500">
                 Where the writing already happens
               </p>
-              <div className="mt-8 grid gap-x-14 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+              {/* Two columns, not three. With six items a 3-col grid was
+                  a tidy 3x2; cutting to four left a 3+1 orphan with a
+                  third of a row empty beside it. 2x2 is square, and the
+                  wider column also lets each description sit on two
+                  lines instead of three. */}
+              <div className="mt-8 grid gap-x-14 gap-y-10 sm:grid-cols-2">
                 {CAPTURE.map(([Icon, h, p]) => {
                   const I = Icon as typeof BookOpen
                   return (
