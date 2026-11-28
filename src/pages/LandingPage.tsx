@@ -12,16 +12,20 @@ import {
 import { RoleSwitch } from '../components/landing/RoleSwitch'
 import { ReassessFigure } from '../components/landing/ReassessFigure'
 import {
+  AssistantCanvas,
   AssistantFlow,
   CaptureTrade,
-  CostOfForgetting,
   MemoryLedger,
 } from '../components/landing/SectionVisuals'
 import {
   ArrowLeftRight, ArrowRight, BookOpen, FileSignature, Gavel, History,
-  Layers, ListChecks, Lock, Quote, RotateCcw, ShieldCheck,
+  Layers, Lock, Quote, RotateCcw, ShieldCheck,
   Users,
 } from 'lucide-react'
+// `ListChecks` went with the "Structured diligence" capture item, which the
+// platform canvas now draws as a research-process pane instead of stating.
+// Removed rather than left in place: the type ceiling flags an unread import
+// immediately, which is exactly what makes this list a useful quiet check.
 // `Boxes`, `Link2` and `Sparkles` went with the three assistant capability
 // cards, the same way `LineChart` went below. The icon list keeps working as
 // the quiet check it is: content that leaves the page leaves this line too.
@@ -324,8 +328,34 @@ function ContactCta({
 /** The horizontal padding, shared so the background grid lines up with text. */
 const GUTTER = 'px-6 sm:px-8 lg:px-12'
 
+/*
+ * ── TWO WIDTHS, 2026-11-27, because one width wasted the screen ─────────
+ *
+ * Everything was `max-w-7xl`, which is 1280px. Measured at 1920 that left
+ * 320px of empty page on each side and, more to the point, it capped every
+ * product figure at 1280 minus 96px of gutter. The canvas is the thing a
+ * visitor is supposed to look at and it was the same width as a paragraph.
+ *
+ * `MEASURE` is 1312px for text and ordinary bands: wider than before,
+ * still inside the range where a 17px line does not run past a comfortable
+ * measure, because the text itself is held to a `ch` limit rather than to
+ * the container.
+ *
+ * `CANVAS` is 1408px and exists only for the full-bleed product figures.
+ * The difference is deliberately NOT large — a canvas that breaks the page
+ * grid by 300px reads as a mistake. 96px is enough that the figure clearly
+ * sits outside the text column and claims the extra light.
+ *
+ * The background column grid follows `MEASURE`, not `CANVAS`, so the
+ * hairlines keep landing on the text edge.
+ */
+const MEASURE = 'max-w-[82rem]'
+
 /** The page gutter, one definition so every band lines up with the nav. */
-const SHELL = `mx-auto w-full max-w-7xl ${GUTTER}`
+const SHELL = `mx-auto w-full ${MEASURE} ${GUTTER}`
+
+/** Wider, for product figures only. See the note on `MEASURE`. */
+const CANVAS = `mx-auto w-full max-w-[88rem] ${GUTTER}`
 
 /* ───────────────────────────── the atmosphere ───────────────────────────── */
 
@@ -482,6 +512,86 @@ const STARS = (() => {
   return out
 })()
 
+/**
+ * The sky, as a LOCAL layer rather than a fixed one.
+ *
+ * ── Why this was split out, 2026-11-27 ──────────────────────────────────
+ *
+ * The starfield and the galactic band were `fixed inset-0`, so they sat
+ * behind every one of the page's twelve sections for the entire scroll. The
+ * review was that the atmosphere "persists through too much of the page",
+ * reduces the contrast between sections, and makes the site read as a
+ * technology concept rather than a mature investment platform. That is
+ * exactly right, and the mechanism is the fixed positioning: an effect that
+ * never changes stops being an effect and becomes the paper.
+ *
+ * So the sky is now a layer a section opts into, and only three do:
+ *
+ *   HERO                     the brand statement
+ *   INSTITUTIONAL INTELLIGENCE  the one section whose subject is time
+ *   CLOSING CTA              the return to the brand
+ *
+ * Every product section between them sits on a clean, neutral dark
+ * surface, which is what lets the figures read as software. The vignette,
+ * the column grid and the grain stay global, because those are lighting
+ * and texture rather than imagery.
+ *
+ * `density` scales the star count, so the two supporting moments are
+ * quieter than the hero without being a different composition.
+ */
+function Starscape({ density = 1 }: { density?: number }) {
+  const stars = density >= 1 ? STARS : STARS.slice(0, Math.round(STARS.length * density))
+  return (
+    <>
+      {/*
+        GALACTIC BAND. One soft diagonal of dust across the frame.
+
+        A starfield with no structure is a scatter of dots. The band is what
+        makes it read as a sky, and it is also what the stars are clustered
+        along, so the two layers describe the same object rather than
+        sitting on top of each other.
+
+        White at three percent, feathered at both edges by the gradient's
+        own transparent stops. `rotate` on a generously oversized element,
+        so the band's ends are off-frame and it never reads as a stripe with
+        two visible terminations.
+      */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+        <div
+          className="absolute left-[-30%] top-[-30%] h-[160%] w-[160%] rotate-[-21deg]"
+          style={{
+            background:
+              'linear-gradient(to bottom,' +
+              'transparent 38%,' +
+              'rgba(255,255,255,0.012) 44%,' +
+              'rgba(255,255,255,0.030) 50%,' +
+              'rgba(255,255,255,0.012) 56%,' +
+              'transparent 62%)',
+          }}
+        />
+      </div>
+
+      {/*
+        STARFIELD. One SVG, seeded. See `STARS` for why the distribution is
+        skewed and clustered rather than uniform, and why it must not be
+        random. `preserveAspectRatio="none"` is wrong here and is not used:
+        positions are percentages, so the sky stretches with the box while
+        each star stays a circle of fixed pixel radius.
+      */}
+      <svg
+        aria-hidden="true"
+        data-starfield=""
+        className="pointer-events-none absolute inset-0 -z-10 h-full w-full"
+        focusable="false"
+      >
+        {stars.map((s, i) => (
+          <circle key={i} cx={`${s.x}%`} cy={`${s.y}%`} r={s.r} fill="#fff" opacity={s.o} />
+        ))}
+      </svg>
+    </>
+  )
+}
+
 function PageAtmosphere() {
   return (
     <>
@@ -510,54 +620,12 @@ function PageAtmosphere() {
       />
 
       {/*
-        2. GALACTIC BAND. One soft diagonal of dust across the frame.
+        2. COLUMN GRID, dimmed from 5.5% to 3.5%.
 
-        A starfield with no structure is a scatter of dots. The band is what
-        makes it read as a sky, and it is also what the stars are clustered
-        along, so the two layers describe the same object rather than
-        sitting on top of each other.
-
-        White at three percent, feathered at both edges by the gradient's
-        own transparent stops. `rotate` on a generously oversized element,
-        so the band's ends are off-frame and it never reads as a stripe with
-        two visible terminations.
-      */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 overflow-hidden"
-      >
-        <div
-          className="absolute left-[-30%] top-[-30%] h-[160%] w-[160%] rotate-[-21deg]"
-          style={{
-            background:
-              'linear-gradient(to bottom,' +
-              'transparent 38%,' +
-              'rgba(255,255,255,0.012) 44%,' +
-              'rgba(255,255,255,0.030) 50%,' +
-              'rgba(255,255,255,0.012) 56%,' +
-              'transparent 62%)',
-          }}
-        />
-      </div>
-
-      {/*
-        3. STARFIELD. One SVG, 220 circles, seeded. See `STARS` for why the
-        distribution is skewed and clustered rather than uniform, and why it
-        must not be random.
-      */}
-      <svg
-        aria-hidden="true"
-        data-starfield=""
-        className="pointer-events-none fixed inset-0 z-0 h-full w-full"
-        focusable="false"
-      >
-        {STARS.map((s, i) => (
-          <circle key={i} cx={`${s.x}%`} cy={`${s.y}%`} r={s.r} fill="#fff" opacity={s.o} />
-        ))}
-      </svg>
-
-      {/*
-        4. COLUMN GRID, dimmed from 5.5% to 3.5%.
+        The galactic band and the starfield USED TO BE LAYERS 2 AND 3 HERE,
+        fixed behind the whole page. They now belong to `Starscape`, which
+        three sections opt into. See the note on that component: an
+        atmosphere that never changes is not an atmosphere.
 
         Kept on purpose, and the tension is the point: an observatory grid
         over a photograph of space is precisely this product's register. It
@@ -567,7 +635,7 @@ function PageAtmosphere() {
         rather than laying a grid over it.
       */}
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-0 flex justify-center">
-        <div className={`flex h-full w-full max-w-7xl ${GUTTER} justify-between`}>
+        <div className={`flex h-full w-full ${MEASURE} ${GUTTER} justify-between`}>
           {[0, 1, 2, 3, 4].map(i => (
             <div
               key={i}
@@ -577,7 +645,7 @@ function PageAtmosphere() {
         </div>
       </div>
 
-      {/* 5. Grain, which in this context reads as sensor noise, which is
+      {/* 3. Grain, which in this context reads as sensor noise, which is
              what it would be.
 
              The opacity is INLINE rather than an `opacity-[0.035]` class,
@@ -901,8 +969,54 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
  * of a template; a rule that resolves into the background reads as
  * intentional.
  */
+/*
+ * ── THREE WEIGHTS, 2026-11-27, because one component made one page ──────
+ *
+ * Every section rendered through this helper got the same 40px heading, the
+ * same asymmetric split and the same 7rem of air, which is why the review
+ * landed on "most sections follow essentially the same composition" and
+ * "section headlines should not all be the same size merely because they
+ * share the same component". Both are the same defect: the component was
+ * doing the designing.
+ *
+ * So the section's ROLE is now a prop, and the role sets the type scale,
+ * the alignment and the vertical rhythm together:
+ *
+ *   brand    a statement the page wants remembered. 48-56px, CENTRED,
+ *            narrow measure, and the most air on the page. Two sections
+ *            get this and they are the two that are not about features.
+ *   major    the default product section. 40px, asymmetric split.
+ *   compact  explanation and reassurance. 30px, split, less air, because
+ *            a section whose job is to settle a question should not take
+ *            as much room as one whose job is to make an argument.
+ *
+ * `wide` swaps the children's container for `CANVAS`, so a product figure
+ * can break the text column without every section doing it.
+ */
+const WEIGHTS = {
+  brand: {
+    title: 'text-[2rem] leading-[1.08] sm:text-5xl lg:text-[3.5rem]',
+    pt: 'pt-24 sm:pt-36',
+    pb: 'pb-24 sm:pb-36',
+    gap: 'mt-16 sm:mt-20',
+  },
+  major: {
+    title: 'text-3xl leading-[1.1] sm:text-[2.5rem]',
+    pt: 'pt-20 sm:pt-28',
+    pb: 'pb-20 sm:pb-28',
+    gap: 'mt-14 sm:mt-16',
+  },
+  compact: {
+    title: 'text-2xl leading-[1.15] sm:text-[1.875rem]',
+    pt: 'pt-16 sm:pt-20',
+    pb: 'pb-16 sm:pb-20',
+    gap: 'mt-10 sm:mt-12',
+  },
+} as const
+
 function Section({
   id, label, title, lead, children, divide = true, tone = 'base',
+  weight = 'major', center = false, wide = false, sky = 0,
 }: {
   id: string
   label?: string
@@ -911,9 +1025,16 @@ function Section({
   children?: React.ReactNode
   divide?: boolean
   tone?: Tone
+  weight?: keyof typeof WEIGHTS
+  center?: boolean
+  wide?: boolean
+  /** Star density, 0 for none. Only the brand moments ask for a sky. */
+  sky?: number
 }) {
+  const W = WEIGHTS[weight]
   return (
-    <section id={id} className="relative isolate">
+    <section id={id} className="relative isolate scroll-mt-24">
+      {sky > 0 && <Starscape density={sky} />}
       {/*
         The section's own tone: a LUMINANCE step, not a colour field.
 
@@ -947,28 +1068,64 @@ function Section({
           className={`${SHELL} h-px bg-gradient-to-r from-transparent via-white/10 to-transparent`}
         />
       )}
-      <div className={`${SHELL} py-20 sm:py-28`}>
-        <div className="grid gap-x-16 gap-y-6 lg:grid-cols-12">
-          <div className="lg:col-span-7">
-            {label && <Eyebrow>{label}</Eyebrow>}
+      <div className={`${SHELL} ${W.pt} ${children ? '' : W.pb}`}>
+        {/*
+          CENTRED or SPLIT, and the choice is the section's job rather than
+          the component's habit. A centred narrow column reads as a
+          statement; an asymmetric split reads as an argument with evidence
+          beside it. The page alternates between them deliberately now, so
+          the composition tells a reader what kind of section they are in
+          before they have read a word of it.
+        */}
+        {center ? (
+          <div className="mx-auto max-w-3xl text-center">
+            {label && (
+              <div className="flex justify-center">
+                <Eyebrow>{label}</Eyebrow>
+              </div>
+            )}
             <h2
-              /* sm:text-[2.5rem] = 40px, up from text-4xl's 36, so the step
-                 from a section title to its now-17px lead still reads. */
-              className={`text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-white sm:text-[2.5rem] ${
-                label ? 'mt-5' : ''
+              className={`text-pretty font-semibold tracking-[-0.025em] text-white ${W.title} ${
+                label ? 'mt-7' : ''
               }`}
             >
               {title}
             </h2>
+            {lead && (
+              <p className="mx-auto mt-7 max-w-[58ch] text-[18px] leading-[1.7] text-slate-400">
+                {lead}
+              </p>
+            )}
           </div>
-          {lead && (
-            <div className="lg:col-span-5 lg:pt-2">
-              <p className="max-w-[56ch] text-[17px] leading-[1.75] text-slate-400">{lead}</p>
+        ) : (
+          <div className="grid gap-x-16 gap-y-6 lg:grid-cols-12">
+            <div className="lg:col-span-7">
+              {label && <Eyebrow>{label}</Eyebrow>}
+              <h2
+                className={`text-pretty font-semibold tracking-[-0.02em] text-white ${W.title} ${
+                  label ? 'mt-5' : ''
+                }`}
+              >
+                {title}
+              </h2>
             </div>
-          )}
-        </div>
-        {children && <div className="mt-14 sm:mt-16">{children}</div>}
+            {lead && (
+              <div className="lg:col-span-5 lg:pt-2">
+                <p className="max-w-[56ch] text-[17px] leading-[1.75] text-slate-400">{lead}</p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+      {/*
+        The children live OUTSIDE the text shell when `wide`, so a product
+        canvas can claim the extra 96px without the heading above it
+        drifting off the page grid. `-mt` pulls them back up to where the
+        in-shell version would have put them.
+      */}
+      {children && (
+        <div className={`${wide ? CANVAS : SHELL} ${W.gap} ${W.pb}`}>{children}</div>
+      )}
     </section>
   )
 }
@@ -1098,7 +1255,7 @@ function RecordChain() {
                 {record}
               </p>
               {via && (
-                <p className="mt-1.5 font-mono text-[14px] leading-relaxed text-slate-500">
+                <p className="mt-1.5 font-mono text-[14px] leading-relaxed text-slate-400">
                   {via}
                 </p>
               )}
@@ -1121,7 +1278,7 @@ function RecordChain() {
           Later edits create new versions and never alter what the PM
           actually read.
         </p>
-        <p className="flex items-start gap-2.5 text-[14px] leading-relaxed text-slate-500">
+        <p className="flex items-start gap-2.5 text-[14px] leading-relaxed text-slate-400">
           <RotateCcw className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           The review returns to the note, so the next decision on this name
           starts from what the firm already learned.
@@ -1367,7 +1524,7 @@ function LifecycleWalk() {
               />
               <span
                 className={`mt-2.5 block text-[12px] font-semibold tabular-nums tracking-[0.12em] ${
-                  on ? ACCENT_NUM : 'text-slate-600'
+                  on ? ACCENT_NUM : 'text-slate-400'
                 }`}
               >
                 {String(i + 1).padStart(2, '0')}
@@ -1403,7 +1560,7 @@ function LifecycleWalk() {
               <Icon className={`h-[17px] w-[17px] ${ACCENT_ICON}`} aria-hidden="true" />
             </span>
             <h3 className="text-[18px] font-semibold tracking-tight text-white">{stage}</h3>
-            <span className="text-[16px] text-slate-500">
+            <span className="text-[16px] text-slate-400">
               you open{' '}
               <span className="font-medium text-slate-300">{screen}</span>
             </span>
@@ -1446,7 +1603,7 @@ function LifecycleWalk() {
                 could not say: every stage after the first hangs off a
                 record that already exists, and the first is where it starts.
               */}
-              <p className="mt-5 flex items-center gap-2 text-[14px] text-slate-500">
+              <p className="mt-5 flex items-center gap-2 text-[14px] text-slate-400">
                 <span aria-hidden="true" className="text-amber-300">&#8627;</span>
                 {upstream ? (
                   <>
@@ -1471,7 +1628,7 @@ function LifecycleWalk() {
                 than as two cards competing for the same glance.
               */}
               <div className="mt-7 rounded-xl bg-white/[0.02] p-5 ring-1 ring-inset ring-white/[0.06]">
-                <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-slate-500">
+                <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
                   Stored as
                 </p>
                 <p className="mt-2 font-mono text-[14px] text-white">{record}</p>
@@ -1547,11 +1704,30 @@ function LifecycleWalk() {
  * colleague read, that a cross-name view is its own object, and that a
  * repeated process has a visible state.
  */
+/*
+ * ── FOUR ITEMS TO THREE, 2026-11-27, and I created this redundancy ──────
+ *
+ * "Structured diligence — checklists and requirements make a repeated
+ * process something the firm can see the state of" is deleted here,
+ * because the platform canvas two screens above now DRAWS exactly that: a
+ * research-process pane with "Earnings preparation, in progress, 2 of 7
+ * requirements open" on it.
+ *
+ * That pane is new in the same pass as this cut, so this is not an old
+ * duplication being tidied up — it is me adding a picture of a claim and
+ * then leaving the sentence version in place downstream, which is the
+ * exact repetition this page keeps paying for. The sentence goes, the
+ * capability stays, and the retargeted gate follows it to the canvas so
+ * the cut cannot be used to drop the claim entirely.
+ *
+ * It also pays for words. The page came in 62 over its 1,700 ratchet after
+ * the second-pass rewrite, and the rule here is to cut before raising a
+ * ceiling.
+ */
 const CAPTURE: [typeof BookOpen, string, string][] = [
   [Quote, 'Fast capture, kept in place', 'A thought during a call lands on the right security in a couple of keystrokes and stays attached to it.'],
   [History, 'Versions instead of overwrites', 'Editing a note adds a version, so nothing a colleague relied on is silently replaced.'],
   [Layers, 'Themes across names', 'A view that spans several securities is its own subject, rather than being retyped into four separate notes.'],
-  [ListChecks, 'Structured diligence', 'Checklists and requirements make a repeated process something the firm can see the state of.'],
 ]
 
 /**
@@ -1640,6 +1816,55 @@ const BTN_PRIMARY =
   'inline-flex items-center justify-center gap-2 rounded-lg bg-amber-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-amber-950/40 transition-all hover:bg-amber-300 hover:shadow-amber-900/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]'
 const BTN_GHOST =
   'inline-flex items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-200 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/5 hover:ring-white/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]'
+
+/**
+ * ── THE TEXT SCALE, AFTER MEASURING IT ──────────────────────────────────
+ *
+ * 100 of 328 rendered text nodes were below WCAG AA contrast. The floor
+ * was `text-slate-400` on the near-black page at 2.65:1 against a 4.5
+ * requirement, and it was carrying, among other things, every link in the
+ * legal row of the footer.
+ *
+ * Measured on #050710:
+ *     slate-600  #475569   2.65:1   fails badly
+ *     slate-500  #64748b   4.31:1   fails, and fails invisibly
+ *     slate-400  #94a3b8   7.66:1   passes
+ *     slate-300  #cbd5e1  12.1 :1   passes
+ *
+ * So the dark sections now stop at slate-400. Collapsing two tiers into
+ * one sounds like a loss of hierarchy and is not: five greys between
+ * white and the background were never five readable steps, they were
+ * three readable steps and two that the page was pretending to have.
+ * Secondary and tertiary are now separated by size and weight, which
+ * survive a bright room and an uncalibrated laptop panel.
+ *
+ * THE LIGHT RESEARCH BAND IS THE EXCEPTION and it inverts: on #f7f8fa,
+ * slate-400 is 2.56:1 and FAILS, while slate-500 and slate-600 pass
+ * comfortably. A blanket sweep across the file would have fixed the dark
+ * sections by breaking the light one. Hence these three tokens: they mark
+ * the five places where the page's usual greys do not apply.
+ */
+/*
+ * Measured on #f7f8fa, not on pure white. That distinction cost a round:
+ * slate-500 is 4.88:1 on #ffffff and 4.48:1 on this band, so the first
+ * version of these tokens failed AA by 0.02 in all three places. The band
+ * colour is the one to measure against, and 4.48 is the kind of miss that
+ * only a measurement finds, because it looks completely fine.
+ */
+const LIGHT_LABEL = 'text-slate-600' /* 6.46:1 on #f7f8fa */
+const LIGHT_BODY = 'text-slate-600' /* 6.46:1 */
+const LIGHT_MUTED = 'text-slate-600' /* 6.46:1, the quietest this band goes */
+
+/**
+ * One footer link, with a real touch box.
+ *
+ * `min-h-[36px]` with `inline-flex` gives a 36px target without changing
+ * the type size. Measured at 21px before this, across all five viewports,
+ * on all ten links. See the long note at the footer nav for why that
+ * happened again and how it was caught.
+ */
+const FOOTER_LINK =
+  'inline-flex min-h-[36px] items-center transition-colors hover:text-white'
 
 export function LandingPage() {
   const markRef = useRef<HTMLDivElement>(null)
@@ -1792,21 +2017,55 @@ export function LandingPage() {
               <a href="#act-ai" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white lg:block">
                 ACT AI
               </a>
-              <a href="#partners" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
+              <a href="#partners" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white lg:block">
                 Design partners
               </a>
+              {/*
+                ── THE PRIMARY ACTION IS NOW IN THE NAV ───────────────────
+
+                It was Sign in and nothing else, so the one thing the page
+                wants a stranger to do was only available at the top of
+                the hero and at the very bottom. A visitor who scrolls to
+                the middle, decides they are interested and looks up found
+                a login button.
+
+                Sign in stays and goes QUIETER — plain text rather than a
+                ringed button — because it is for people who already have
+                an account and it was competing with the conversion
+                action for the same attention. The gold button is the
+                page's primary style, unchanged, so the nav and the hero
+                agree about what the main action is.
+
+                Hidden below `sm`, where the nav has room for the logo and
+                one control: on a phone Sign in is the one that cannot be
+                reached any other way without scrolling the full page,
+                and the hero's own Request a demo is one screen away.
+              */}
               <Link
                 to="/login"
-                className="ml-2 rounded-lg px-3.5 py-2 text-[16px] font-semibold text-slate-200 ring-1 ring-inset ring-white/15 transition-colors hover:bg-white/5 hover:ring-white/30"
+                className="rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white"
               >
                 Sign in
               </Link>
+              <ContactCta
+                topic="demo"
+                label="Request a demo"
+                onOpen={openRequest}
+                className="ml-2 hidden items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 py-2 text-[16px] font-semibold text-slate-950 transition-colors hover:bg-amber-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710] sm:inline-flex"
+              >
+                {/* No arrow: at nav scale the glyph crowds the label. */}
+                <span className="hidden" />
+              </ContactCta>
             </div>
           </nav>
         </header>
 
         {/* ── 1. Hero ─────────────────────────────────────────────────────── */}
         <section id="top" className="relative isolate overflow-hidden">
+          {/* The sky, at full density, and only here and in two other
+              places. See `Starscape`. */}
+          <Starscape />
+
           {/*
             THE HERO FIGURE: the mark inside the black hole.
 
@@ -1918,12 +2177,58 @@ export function LandingPage() {
                  teams". Saying it twice in six words cost the line its
                  rhythm and bought nothing.
             */}
-            <h1 className="mt-7 max-w-[18ch] text-pretty text-[2.5rem] font-semibold leading-[1.04] tracking-[-0.03em] text-white sm:text-6xl lg:text-7xl">
-              Better decisions today.
-              <span className="mt-2 block text-slate-400">
-                A smarter firm <span className="text-white">every year after.</span>
+            {/*
+              ── THE HEADLINE IS APPROVED COPY. DO NOT REWRITE IT ─────────
+              Every word below, and in the two paragraphs after it, is
+              signed-off brand copy. The job here is the SETTING, not the
+              writing:
+
+              ONE HEADLINE, TWO SENTENCES. They are two `span`s inside one
+              `h1`, so a screen reader reads one heading and the accent is
+              typography rather than a second element. The gold is a SOLID
+              amber-200, not a gradient: see the deleted `ACCENT_TEXT`
+              note above for what a gradient did to the end of a long
+              line. A solid value puts the emphasis where it was written
+              to go and keeps it there at every width.
+
+              `lg:text-6xl` rather than 7xl, which is a line-break
+              decision and not a timidity one. At 72px "Every investment
+              decision has a story." measures about 1,370px against 1,216
+              of available column, so it wrapped, orphaning "a story." on
+              its own line and breaking the one-sentence-one-line reading
+              the two-part headline depends on. At 60px it measures about
+              1,140 and holds. Measured, not guessed.
+
+              `text-balance` rather than a `ch` cap: a max-width would
+              force a wrap at the widths where the line actually fits, and
+              below `lg` the point is for the two halves of each sentence
+              to break evenly rather than at a fixed character count.
+            */}
+            {/*
+              ── THE PHONE STEP CAME DOWN FROM 40px TO 36px ───────────────
+              Measured at 390x844: at 40px the first sentence broke over two
+              lines and the second over THREE, so the headline was five
+              lines deep before a visitor reached the subheadline. At 36px
+              it is two and two, which is a balanced pair and about 70px
+              shorter. A headline that fills a phone screen on its own is
+              not more impressive, it is just further from the product.
+            */}
+            <h1 className="mt-7 text-balance text-[2.25rem] font-semibold leading-[1.06] tracking-[-0.03em] text-white sm:text-5xl lg:text-6xl">
+              <span className="block">Every investment decision has a story.</span>
+              <span className="mt-1.5 block text-amber-200">
+                Leverage the intelligence behind it.
               </span>
             </h1>
+
+            {/*
+              The subheadline. One short declarative, set clearly below the
+              headline and clearly above the supporting paragraph, so the
+              hero has three steps of weight rather than two things of
+              similar size competing.
+            */}
+            <p className="mt-8 text-xl font-medium tracking-[-0.01em] text-slate-200 sm:text-[1.375rem]">
+              Better decisions start with Tesseract.
+            </p>
 
             {/*
               Two sentences, and the second one is the payoff.
@@ -1950,78 +2255,79 @@ export function LandingPage() {
               spine but asked the reader to care about an architecture
               before they had been offered an outcome.
             */}
-            <p className="mt-9 max-w-[58ch] text-lg leading-[1.7] text-slate-300">
-              Give your analysts more time to think, your portfolio managers
-              the context to act, and your firm an investment process that
-              gets sharper with every decision it makes.
+            {/*
+              ── THE OLD LEAD WAS PRESCRIPTIVE, AND THAT WAS THE NOTE ─────
+              It read "Give your analysts more time to think, your
+              portfolio managers the context to act, and your firm an
+              investment process that gets sharper..." — three
+              imperatives aimed at a reader who has not agreed to
+              anything yet, and it addressed three personas in copy that
+              is supposed to be general.
+
+              The approved replacement describes the DESTINATION instead,
+              in the same three layers (the individual's environment, the
+              team's foundation, the institution's intelligence) without
+              telling anyone what to do about it. It is reproduced
+              verbatim.
+            */}
+            <p className="mt-6 max-w-[62ch] text-[17px] leading-[1.75] text-slate-400">
+              A better environment for investment thinking, a stronger
+              foundation for decision-making, and a lasting source of
+              institutional intelligence.
             </p>
 
-            <div className="mt-11 flex flex-wrap items-center gap-3">
+            <div className="mt-10 flex flex-wrap items-center gap-3">
               <ContactCta topic="demo" label="Request a demo" className={BTN_PRIMARY} onOpen={openRequest} />
-              <a href="#lifecycle" className={BTN_GHOST}>
+              {/* Points at #platform, not #lifecycle. "Explore the
+                  platform" landing a reader on the mechanics of a
+                  six-stage record chain was the wrong first screen; the
+                  product reveal is directly below and is what the label
+                  promises. */}
+              <a href="#platform" className={BTN_GHOST}>
                 Explore the platform
               </a>
             </div>
 
             {/*
-              Category positioning, above the fold.
+              ── THE DEFENSIVE BLOCK IS GONE FROM THE HERO, 2026-11-27 ────
 
-              This says what Tesseract is NOT, which is a different thing
-              from saying what is unfinished. A PM who learns at minute
-              forty of a demo that this is not a market-data terminal has
-              spent forty minutes on the wrong question. The previous
-              version of this paragraph also called the platform
-              "early-stage" with a "working core workflow"; that part is
-              gone and should not come back.
+              It read, at 24px directly under the calls to action:
+
+                "Not a market-data terminal. Not an execution system.
+                 The record of why your firm acted."
+
+              I argued for that line twice, on the grounds that saying what
+              category you are in stops a PM arriving at a demo expecting a
+              Bloomberg substitute. That argument is still true about the
+              SENTENCE and was wrong about the POSITION, and the review is
+              right about why: it is the third thing a stranger reads, it
+              defines the product by two absences, and its one positive
+              clause reduces Tesseract to a record of something that
+              already happened. Tesseract is not primarily the record of
+              why a firm acted. It improves the work leading to the
+              decision, the decision, and what the firm learns afterwards.
+              Leading with a boundary sells the smallest reading of it.
+
+              THE CLAIM IS NOT DELETED. It moves into the platform section
+              below as a clarifier, sized as a clarifier, next to the
+              figure that shows what Tesseract IS. A reader who wants to
+              know how it sits beside their terminal and their OMS finds
+              the answer one screen later, which is early enough.
+
+              What replaces it here is a transition rather than another
+              argument. It names the span the product covers — thinking,
+              action, and what is learned — and hands the reader to the
+              product reveal. It is suggested copy from the brief and it is
+              kept because it does a job: without it the hero ends on two
+              buttons and the next section starts cold.
             */}
-            {/*
-              ── Was a 13px apology in a 64ch column against the left rule ──
-
-              The sentence was right and the setting was wrong. Category
-              positioning is the most confident thing the hero says, and it
-              was set smaller and greyer than everything around it, which
-              made a deliberate claim read as a caveat somebody added later.
-
-              The claim is unchanged and the phrasing is now three short
-              declaratives at size, across the full measure, with the three
-              things the record answers spread beneath them. "Not a
-              market-data terminal" and "execution system" survive verbatim
-              because a gate holds them on the hero, and because they are
-              still the fastest way to stop a PM arriving at a demo
-              expecting a Bloomberg substitute.
-            */}
-            <div className="mt-16 border-t border-white/10 pt-10">
-              <p className="max-w-[46ch] text-pretty text-xl font-medium leading-[1.45] tracking-[-0.01em] text-slate-200 sm:text-2xl">
-                Not a market-data terminal. Not an execution system.
+            <div className="mt-16 border-t border-white/10 pt-9">
+              <p className="max-w-[52ch] text-pretty text-[20px] font-medium leading-[1.55] text-slate-300">
+                From investment thinking to investment action.
                 <span className="block text-slate-400">
-                  The record of why your firm acted.
+                  And everything learned along the way.
                 </span>
               </p>
-
-              {/*
-                ── A THREE-ITEM `dl` WAS HERE AND WAS CUT, 2026-11-27 ──────
-
-                It read: "Why it was bought / Who decided, and on what /
-                Whether the thesis held", each with a line of gloss.
-
-                Every one of those is now SHOWN rather than asserted, and
-                within two screens of here. The platform canvas directly
-                below lists the research note, the recommendation, the
-                decision and the outcome review hanging off one name; the
-                reassess section renders the original case beside what
-                changed eight months later.
-
-                Three abstract promises immediately above the concrete
-                proof of the same three things is the repetition this page
-                keeps paying for. The hero is better for ending on the
-                category line and handing the reader straight to the
-                product.
-
-                The hero also had to lose roughly this many words:
-                the page crossed its 1,600-word ratchet when the roles and
-                reassess sections landed, and the rule on this repo is to
-                cut before raising a ratchet. This was the fat.
-              */}
             </div>
           </div>
         </section>
@@ -2048,114 +2354,131 @@ export function LandingPage() {
             second where a paragraph needs forty words and is still
             believed less.
         */}
-        <section id="platform" className="relative scroll-mt-24">
-          <div className={`${SHELL} py-24 sm:py-32`}>
-            <Eyebrow>The platform</Eyebrow>
-            <div className="mt-6 grid gap-x-16 gap-y-7 lg:grid-cols-12">
-              {/* Was "Your whole investment process, in one place that
-                  understands how it fits together" — 13 words over three
-                  lines, and the last seven of them were a claim the
-                  canvas underneath proves better than any clause can. */}
-              <h2 className="text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.025em] text-white sm:text-[2.5rem] lg:col-span-7">
-                One name. Every piece of work your firm did on it.
-              </h2>
-              <div className="lg:col-span-5">
-                <p className="max-w-[46ch] text-[17px] leading-[1.75] text-slate-400">
-                  Investment teams do not need another place to put things.
-                  They need the research, the idea, the recommendation, the
-                  decision and the review to be one connected object instead
-                  of five systems that have never met.
-                </p>
-                <p className="mt-5 max-w-[46ch] text-[17px] leading-[1.75] text-slate-400">
-                  From the first question on a name to what you learned from
-                  owning it.
-                </p>
-              </div>
-            </div>
+        {/*
+          ── THE PRODUCT REVEAL ────────────────────────────────────────────
 
-            <div className="mt-14">
-              <WorkspaceCanvas />
+          CENTRED, which no other product section on this page is. The
+          heading is the page's second brand moment and the figure beneath
+          it is the widest thing here, so the composition is a title over a
+          stage rather than a column of text with a picture beside it. That
+          is the one layout on the page that says "look at this".
+
+          THE HEADING CHANGED. It was "One name. Every piece of work your
+          firm did on it." That is a true description of the figure and an
+          abstract description of the product: it tells a stranger the
+          scope is one security, when the thing they need to grasp in this
+          screen is that the scope is their whole investment process. "The
+          complete investment picture" is the claim the canvas can actually
+          cash, and it is approved copy.
+        */}
+        <section id="platform" className="relative scroll-mt-24">
+          <div className={`${SHELL} pt-24 sm:pt-32`}>
+            <div className="mx-auto max-w-3xl text-center">
+              <div className="flex justify-center">
+                <Eyebrow>The platform</Eyebrow>
+              </div>
+              <h2 className="mt-7 text-balance text-[2rem] font-semibold leading-[1.08] tracking-[-0.03em] text-white sm:text-5xl lg:text-[3.25rem]">
+                The complete investment picture.
+              </h2>
+              <p className="mx-auto mt-7 max-w-[62ch] text-[18px] leading-[1.7] text-slate-300">
+                Research, valuation, investment ideas, portfolio decisions and
+                the reasoning behind them, brought together in one investment
+                environment.
+              </p>
+            </div>
+          </div>
+
+          {/*
+            The canvas gets `CANVAS` width, which is the only place on the
+            page that breaks the text column, and it breaks it by 96px
+            rather than by a dramatic amount. See the note on `MEASURE`.
+          */}
+          <div className={`${CANVAS} mt-14 sm:mt-16`}>
+            <WorkspaceCanvas />
+          </div>
+
+          {/*
+            ── WHERE THE CATEGORY LINE WENT ────────────────────────────────
+
+            This is the hero's old "not a market-data terminal" claim,
+            demoted to a clarifier and placed where it belongs: beside the
+            thing that shows what Tesseract IS, for the reader who has just
+            understood that and is now asking how it sits next to what they
+            already pay for.
+
+            Set at 16px in three short lines against a rule, not at 24px
+            under the hero's buttons. The content is deliberately WIDER
+            than the old version too: terminals and execution systems were
+            the only two incumbents named, and the question a PM actually
+            asks includes their OMS and their existing research drive.
+          */}
+          <div className={`${SHELL} pb-24 sm:pb-32`}>
+            <div className="mt-14 grid gap-x-16 gap-y-7 border-t border-white/10 pt-10 lg:grid-cols-12">
+              <p className="text-[17px] font-medium leading-[1.6] text-slate-300 lg:col-span-5">
+                Tesseract sits alongside what a desk already runs on.
+              </p>
+              <p className="max-w-[62ch] text-[16px] leading-[1.75] text-slate-400 lg:col-span-7">
+                It is not a market-data terminal, an order management system or
+                an execution venue, and it does not replace one. It holds the
+                research, the judgement and the decisions those systems have
+                never been able to carry.
+              </p>
             </div>
           </div>
         </section>
 
-        {/* ── 3. The problem ──────────────────────────────────────────────── */}
+        {/* ── 3. The opportunity, which used to be the problem ──────────────
+
+            ── WHAT CHANGED, AND IT IS THE BIGGEST EDITORIAL CUT ON THE PAGE
+
+            This section was headed "The reasoning behind a decision is the
+            first thing a firm loses", and it carried three named COSTS with
+            an SVG diagram each: tools that scatter the argument, reasoning
+            that leaves with the person, and luck that reads as skill.
+
+            I built those diagrams and I am deleting them, for three
+            reasons that are all in the review:
+
+            1. THE SECTION WAS LECTURING. Three framed drawings of what is
+               broken about the reader's firm, immediately after the product
+               reveal, is a screen spent telling a stranger they are doing
+               it wrong. The emphasis on loss and failure was
+               disproportionate, and a prospect does not buy from the
+               person diagnosing them.
+            2. TWO OF THE THREE WERE ABSTRACT. A ring of five labelled
+               boxes with a dashed hole in the middle, and a chain with
+               missing links, clarify nothing a sentence does not. The
+               standing rule here is that a diagram has to show something
+               prose cannot, and those two did not meet it.
+            3. THE THIRD ONE MOVED, WHICH IS WHY IT IS NOT A LOSS. "Luck
+               reads as skill" was the commercially sharp idea in the set,
+               and it belongs where it can be DEMONSTRATED rather than
+               drawn: the decision review section now carries it, on a
+               named decision, with the original case beside what changed.
+               That is the same argument with evidence instead of an
+               allegory.
+
+            `compact` and `center`: one short editorial statement rather
+            than a full product section. The section's job is to establish
+            why this category exists, and that is a 40-word job.
+
+            The headline is approved copy and it reframes loss as upside
+            without softening the insight: the intelligence exists, it is
+            simply not usable yet.
+        */}
         <Section
           id="problem"
-          label="Why it matters"
-          title="The reasoning behind a decision is the first thing a firm loses"
-          lead="Investment organizations have research, market data, spreadsheets, notes, chat and trading systems. What they rarely have is one durable record of why a position was taken."
+          weight="compact"
+          center
+          label="The opportunity"
+          title="The untapped intelligence within every investment firm."
+          lead="Investment teams generate an extraordinary amount of intelligence through research, discussion, judgement and decisions. Much of it stays fragmented across systems, disconnected from the actions it informed and difficult to build on."
         >
-          {/*
-            NUMBERS MEAN SEQUENCE, and this is not one.
-
-            The page carried three numbered lists: these four problems 01-04,
-            the five lifecycle stages 01-05, and six product surfaces 01-06.
-            Numbering everything makes a page read as one long enumerated
-            document and, worse, implies an order that only one of the three
-            actually has. The lifecycle keeps its numerals because its order
-            is the argument; these four are concurrent failures, and the
-            product surfaces are parallel views.
-
-            A left rule replaces the numeral, which also retires a
-            `pl-[calc(0.75rem+1.4em)]` hanging indent that existed only to
-            align a paragraph under a two-character number.
-          */}
-          {/*
-            ── Four descriptions became three COSTS, each one shown ────────
-
-            This listed four ways reasoning goes missing, as four sentences
-            in four identical boxes: research evolves, recommendations
-            change, PMs disagree, positions get adjusted. All true, and all
-            the same observation at four angles, which reads as one problem
-            described at length rather than as a reason to buy anything.
-
-            They are now three distinct costs with a diagram each: poor
-            organization, no memory, lost alpha. The third is the one that
-            matters commercially and the old list never named it.
-          */}
-          <CostOfForgetting />
-
-          {/* The consequence, pulled out larger: it is the argument. */}
-          {/*
-            Two clauses, not three. The middle one, about separating a thesis
-            that played out from one that was never tested, is the first
-            clause again in different words, and a 42-word sentence set at
-            24px loses its reader before the verdict arrives.
-          */}
-          {/*
-            ── Was one 32-word sentence with two subordinate clauses ───────
-
-            "A firm that cannot reconstruct its own reasoning cannot tell a
-            correct call from a lucky one, and cannot hand a name to the
-            next analyst without starting over."
-
-            Both halves were true and the sentence asked a reader to hold a
-            negative subject across two negative predicates before the point
-            arrived. At 24px that loses people mid-clause.
-
-            Now: a short claim, then the consequence as its own line. The
-            compounding idea is the sharper one and it was buried at the
-            end, so it goes last and alone.
-          */}
-          {/*
-            Side by side, not stacked in a 52ch column.
-
-            The claim and its elaboration were two paragraphs down the left
-            third of a 1440px band, which left two thirds of the section's
-            closing statement empty and made the most quotable line on the
-            page look like a caption. Across the full measure the claim gets
-            the scale it is written for, and the elaboration sits beside it
-            as a second voice rather than under it as a footnote.
-          */}
-          <div className="mt-20 grid gap-x-16 gap-y-6 border-t border-white/10 pt-12 lg:grid-cols-12">
-            <p className="text-pretty text-2xl leading-[1.25] tracking-[-0.02em] text-slate-100 sm:text-3xl lg:col-span-7 lg:text-[2.5rem]">
-              A firm that cannot say why it was right cannot repeat it.
-            </p>
-            <p className="max-w-[44ch] text-pretty text-[17px] leading-[1.8] text-slate-400 lg:col-span-5 lg:pt-2">
-              Judgement is the only thing a firm compounds that it cannot buy.
-              Without a record, every name starts over and every lesson is
-              learned once.
+          <div className="mx-auto max-w-4xl">
+            <p className="text-pretty text-center text-[20px] leading-[1.6] text-slate-300 sm:text-[1.375rem]">
+              Tesseract turns that intelligence into something a firm can use:
+              by the individual investor, across the investment team, and by
+              the organization over time.
             </p>
           </div>
         </Section>
@@ -2175,22 +2498,71 @@ export function LandingPage() {
             three skins of one component is how this page shipped a
             duplicate section once before.
         */}
+        {/*
+          ── The heading was a DESCRIPTION OF THE COMPONENT ────────────────
+
+          "Three seats. Three different days. One system underneath." names
+          what the widget does. It is also, read cold, a claim about
+          software architecture, which is nobody's reason to buy. The lead
+          underneath it was worse: it explained the firm's own purchasing
+          dynamics back to the reader ("only one of them signs"), which is
+          an internal sales observation printed on a public page.
+
+          Both are replaced with approved copy that states the VALUE of the
+          experience instead, and the lead names the three responsibilities
+          rather than the three signatures.
+        */}
         <Section
           id="roles"
+          wide
           label="Built for the desk"
-          title="Three seats. Three different days. One system underneath."
-          lead="An analyst, a portfolio manager and a CIO want different things from the same software, and only one of them signs. The other two decide whether it survives the pilot."
+          title="A better investment experience. At every level."
+          lead="The same investment intelligence, experienced through the distinct responsibilities of analysts, portfolio managers and investment leadership."
         >
           <RoleSwitch />
         </Section>
 
         {/* ── 5. The connected decision lifecycle ─────────────────────────── */}
+        {/*
+          ── The heading was an INTERNAL PRODUCT SPECIFICATION ─────────────
+
+          "Research, develop, recommend, decide, execute, review. Linked,
+          not filed." is a list of our own stage names followed by a
+          database claim. It reads to a visitor the way a schema reads,
+          because that is what it is.
+
+          The replacement is approved copy and it says what the sequence is
+          FOR. The lead keeps the mechanism, because the mechanism is the
+          differentiator, but it is now the second thing said rather than
+          the first.
+
+          ── SIX STAGES, NOT SEVEN, AND THIS IS A DELIBERATE DEPARTURE ─────
+
+          The brief proposes seven, adding "Learn — the resulting knowledge
+          informs future research and decisions." I have not added it, and
+          the reason is the honesty rule this page is built on rather than
+          an editorial preference: every stage on this rail corresponds to
+          a typed record the product really writes, and the panel for each
+          one names that record and its fields. There is no `learning`
+          row. A seventh tab would be the only stage on the rail with
+          nothing behind it, which is exactly the kind of claim the rest of
+          this page refuses to make.
+
+          The idea is not dropped. Learning is drawn as the RETURN LEG in
+          `RecordChain` below, where the review points back at the research
+          note, and it is the whole subject of the institutional
+          intelligence section. It is a property of the loop, not a step in
+          it, and drawing it as a step would also contradict the brief's
+          own instruction to preserve flexibility and not imply every idea
+          marches through every stage.
+        */}
         <Section
           id="lifecycle"
           tone="raised"
+          wide
           label="The connected decision lifecycle"
-          title="Research, develop, recommend, decide, execute, review. Linked, not filed."
-          lead="Each stage is a typed record that points at the one before it. That linkage is the product: it is what makes a decision reviewable a year later rather than merely archived."
+          title="Where investment thinking becomes action."
+          lead="Investment decisions take shape through research, evolving conviction, discussion and judgement. Tesseract connects those moments, so each stage arrives carrying the one before it."
         >
           {/*
             ── Was a stack of six headed text blocks beside the diagram ────
@@ -2235,11 +2607,30 @@ export function LandingPage() {
           any class on <html>. The gradient strips at both edges are what
           make the change arrive instead of cut.
         */}
-        <section id="research" className="relative">
-          <div
-            aria-hidden="true"
-            className="h-24 bg-gradient-to-b from-transparent to-[#f7f8fa] sm:h-32"
-          />
+        <section id="research" className="relative scroll-mt-24">
+          {/*
+            ── THE HAZY GRADIENT TRANSITION IS GONE, 2026-11-27 ───────────
+
+            Both edges of this band were a 96-128px vertical gradient from
+            the page colour into #f7f8fa. The intent was that the change
+            should "arrive rather than cut". What it actually produced was
+            a long smear of mid-grey at both ends, which is the least
+            decisive thing a layout can do: the reader spends 100px not
+            knowing which section they are in, and the inversion loses the
+            one quality that made it worth doing, which is that it is
+            sudden.
+
+            The edge is now DECLARED instead of blurred: a hairline, the
+            section's own label in the dark register, and then the band
+            starts. That is an editorial transition — it tells you a new
+            chapter is beginning and then begins it.
+          */}
+          <div className={`${SHELL} pb-10 pt-4`}>
+            <div
+              aria-hidden="true"
+              className="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"
+            />
+          </div>
           <div className="relative isolate bg-[#f7f8fa]">
             {/*
               The light band needs its own atmosphere for exactly the same
@@ -2273,7 +2664,7 @@ export function LandingPage() {
               aria-hidden="true"
               className="pointer-events-none absolute inset-0 -z-10 flex justify-center"
             >
-              <div className={`flex h-full w-full max-w-7xl ${GUTTER} justify-between`}>
+              <div className={`flex h-full w-full ${MEASURE} ${GUTTER} justify-between`}>
                 {[0, 1, 2, 3, 4].map(i => (
                   <div
                     key={i}
@@ -2287,7 +2678,7 @@ export function LandingPage() {
               className="pointer-events-none absolute inset-0 -z-10"
               style={{ backgroundImage: GRAIN, backgroundRepeat: 'repeat', opacity: 0.028 }}
             />
-            <div className={`${SHELL} pb-20 pt-4 sm:pb-28`}>
+            <div className={`${SHELL} pb-20 pt-20 sm:pb-28 sm:pt-24`}>
               <div className="grid gap-x-16 gap-y-6 lg:grid-cols-12">
                 <div className="lg:col-span-7">
                   <div className="flex items-center gap-3">
@@ -2295,28 +2686,37 @@ export function LandingPage() {
                       aria-hidden="true"
                       className="h-px w-8 bg-gradient-to-r from-amber-500/90 to-amber-500/0"
                     />
-                    <p className="text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Research and capture
+                    {/* `LIGHT_*` tokens, not the page's usual slate-400/500:
+                        this band is #f7f8fa, where the dark sections'
+                        greys invert into 2.5:1. See the token definitions. */}
+                    <p className={`text-[14px] font-semibold uppercase tracking-[0.18em] ${LIGHT_LABEL}`}>
+                      Research and knowledge continuity
                     </p>
                   </div>
                   {/*
-                    Was "out of work an ANALYST was going to do anyway".
-                    Narrowing it to the analyst made the section read as a
-                    feature for one seat, when the same claim covers the PM
-                    writing a rationale and the committee leaving a note.
-                    "Work already done" is the general form and it is the
-                    stronger promise.
+                    ── The heading was about DOCUMENTATION ────────────────
+
+                    "The record assembles itself out of work already done"
+                    states a real product principle and it states it from
+                    the record's point of view. The reader is an investor,
+                    not a record. Approved copy puts the subject back where
+                    it belongs: the intelligence is captured because of how
+                    the work happens, not because anybody maintained
+                    anything.
                   */}
-                  <h2 className="mt-5 text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-slate-900 sm:text-[2.5rem]">
-                    The record assembles itself out of work already done
+                  <h2 className="mt-5 text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.025em] text-slate-900 sm:text-[2.5rem]">
+                    Intelligence captured in the natural course of investing.
                   </h2>
                 </div>
                 <div className="lg:col-span-5 lg:pt-2">
-                  <p className="max-w-[56ch] text-[17px] leading-[1.75] text-slate-600">
-                    No firm adopts a system that asks its people to write
-                    things down a second time, after the fact, for somebody
-                    else’s benefit. So capture is not a step. It is where the
-                    writing already happens.
+                  {/* Tightened from 42 words. The list of what contributes
+                      (notes, theses, processes) is the three-item grid
+                      below, so naming them here was the section's own
+                      contents read out in advance. */}
+                  <p className={`max-w-[56ch] text-[17px] leading-[1.75] ${LIGHT_BODY}`}>
+                    Research becomes more valuable when it stays connected to
+                    the thinking it informs, and nothing here is written a
+                    second time for somebody else&rsquo;s benefit.
                   </p>
                 </div>
               </div>
@@ -2341,15 +2741,16 @@ export function LandingPage() {
                 <CaptureTrade />
               </div>
 
-              <p className="mt-16 text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              <p className={`mt-16 text-[14px] font-semibold uppercase tracking-[0.18em] ${LIGHT_LABEL}`}>
                 Where the writing already happens
               </p>
-              {/* Two columns, not three. With six items a 3-col grid was
-                  a tidy 3x2; cutting to four left a 3+1 orphan with a
-                  third of a row empty beside it. 2x2 is square, and the
-                  wider column also lets each description sit on two
-                  lines instead of three. */}
-              <div className="mt-8 grid gap-x-14 gap-y-10 sm:grid-cols-2">
+              {/* THREE COLUMNS NOW, because there are three items. This
+                  went 3-col (six items, tidy 3x2) to 2-col (four items,
+                  square) to 3-col again, and the rule each time was the
+                  same: match the column count to the item count or the
+                  last row orphans. Three across also reads as parallel,
+                  which these are. */}
+              <div className="mt-8 grid gap-x-12 gap-y-10 sm:grid-cols-3">
                 {CAPTURE.map(([Icon, h, p]) => {
                   const I = Icon as typeof BookOpen
                   return (
@@ -2359,25 +2760,35 @@ export function LandingPage() {
                         <I className="h-[17px] w-[17px] text-amber-600" aria-hidden="true" />
                       </span>
                       <h3 className="mt-4 text-[18px] font-semibold tracking-tight text-slate-900">{h}</h3>
-                      <p className="mt-2 max-w-[44ch] text-[16px] leading-[1.75] text-slate-600">{p}</p>
+                      <p className={`mt-2 max-w-[44ch] text-[16px] leading-[1.75] ${LIGHT_BODY}`}>{p}</p>
                     </div>
                   )
                 })}
               </div>
 
-              {/* The turn back to the lifecycle, so this band is part of the
-                  argument rather than a feature list parked in the middle. */}
-              <p className="mt-14 max-w-[60ch] text-pretty text-lg leading-[1.6] text-slate-700 sm:text-xl">
-                Every one of these is a typed record rather than a document,
-                which is the only reason the chain above can exist: a
-                recommendation can cite a note because the note is a row.
+              {/*
+                ── DEMOTED FROM 20px TO 16px, ON PURPOSE ──────────────────
+
+                This sentence is the architectural reason everything else
+                on the page is possible, and it was set as the section's
+                closing statement at 20px. That made the database model the
+                CENTREPIECE of the section about an analyst's working day,
+                which is the wrong thing to leave a reader holding: typed
+                entities are an advantage of the design, not the customer's
+                experience of it.
+
+                So it stays — a page that never says why the linkage is
+                possible is asking to be believed on nothing — but it is a
+                footnote now, at body size, in the quiet grey. The
+                experience leads; the architecture explains.
+              */}
+              <p className={`mt-12 max-w-[66ch] border-t border-slate-900/[0.08] pt-6 text-[16px] leading-[1.75] ${LIGHT_MUTED}`}>
+                Each of these is a typed record rather than a document, which
+                is the only reason the chain above can exist: a recommendation
+                can cite a note because the note is a row.
               </p>
             </div>
           </div>
-          <div
-            aria-hidden="true"
-            className="h-24 bg-gradient-to-b from-[#f7f8fa] to-transparent sm:h-32"
-          />
         </section>
 
         {/*
@@ -2435,46 +2846,179 @@ export function LandingPage() {
             Placed immediately before institutional memory, because this
             is the concrete instance and that section is the general case.
         */}
-        <Section
-          id="reassess"
-          tone="raised"
-          label="Changing your mind, well"
-          title="When the facts change, know exactly what to revisit"
-          lead="Markets move and theses age. Deciding whether a position is still right means knowing why it was taken, in the words used at the time rather than the ones memory supplies later."
-        >
-          <ReassessFigure />
+        {/* ── 6. ACT AI ────────────────────────────────────────────────────
+            MOVED UP, out of the appendix slot after institutional memory.
 
-          <div className="mt-14 grid gap-x-16 gap-y-8 lg:grid-cols-2">
-            <p className="max-w-[48ch] text-pretty text-2xl leading-[1.35] tracking-[-0.015em] text-white sm:text-[2rem]">
-              A bad outcome is not a bad decision.
+            It used to sit tenth, behind the memory section, which framed
+            it as a technical afterthought bolted to a records product.
+            It is now part of the main product story, directly after the
+            research band and before the decision review, because "the
+            assistant can see the whole connected record" is the payoff of
+            everything the three preceding sections just established. A
+            reader meets it while the linkage is still in mind.
+
+            The heading was "An assistant whose advantage is that your
+            record is structured", which is accurate, technical, and sells
+            the schema rather than the capability. Approved copy leads with
+            what becomes possible.
+        */}
+        <Section
+          id="act-ai"
+          tone="raised"
+          wide
+          label="ACT AI"
+          title="Intelligence that knows the context."
+          lead="ACT AI works inside the research, reasoning and decisions of an investment team, which is what makes its analysis relevant rather than merely fluent."
+        >
+          <AssistantCanvas />
+
+          {/*
+            THE CONTROLS, UNDERNEATH AND INTRODUCED AS SUCH.
+
+            These three were the whole section once. They are the answers a
+            buyer needs and they are not the reason anyone wants the
+            product, so they are a supporting row now with a label that
+            says so. BYOK in particular is deliberately NOT the headline
+            claim any more: it is one control among three, because the
+            product direction may well move past it and a page that sold
+            the assistant on a key would have to be rebuilt when it does.
+          */}
+          <div className="mt-16 border-t border-white/10 pt-10">
+            <p className="text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+              And the firm stays in control of it
             </p>
-            <p className="max-w-[52ch] text-[17px] leading-[1.75] text-slate-400">
-              Separating the two requires the original case, and most firms
-              cannot produce it. Without it every review collapses into
-              whether the position made money, which teaches a desk to avoid
-              being wrong rather than to think well.
+            <div className="mt-8">
+              <AssistantFlow />
+            </div>
+          </div>
+
+          <div className="mt-14 grid gap-x-16 gap-y-6 lg:grid-cols-2">
+            {/*
+              The three capabilities the original cards carried, kept
+              verbatim. Their gate is a content requirement rather than a
+              label, so the words survive every restyle: dropping them in
+              a rewrite is exactly what it exists to catch, and it has
+              caught it before.
+            */}
+            <p className="max-w-[60ch] text-[16px] leading-[1.75] text-slate-400">
+              It knows where you are, it reads the record, not the internet,
+              and it cites what it used. It runs on your organization&rsquo;s own
+              provider key, held encrypted, so the firm controls which model
+              its reasoning reaches.
+            </p>
+            {/*
+              THE VISION LINE, AND WHY IT IS HERE RATHER THAN IN THE PITCH.
+
+              The brief asks that current functionality stay distinguishable
+              from the longer-term ambition. This is that line, and it is
+              phrased as a boundary rather than a roadmap: what the
+              assistant does not do today. Saying "coming soon" would
+              violate the standing rule on this page against status
+              language; saying what it does not do is a fact about the
+              product.
+            */}
+            <p className="max-w-[60ch] text-[16px] leading-[1.75] text-slate-400">
+              ACT AI assists the people who make the decisions. It does not
+              manage portfolios, place orders, or produce recommendations on
+              its own authority.
             </p>
           </div>
         </Section>
 
-        {/* ── 8. Institutional memory ────────────────────────────────────── */}
+        {/* ── 7. Decision review ──────────────────────────────────────────
+            THE DIFFERENTIATOR THE PAGE DID NOT HAVE.
+
+            Every other claim here can be met by a PM saying "we have a
+            research system". This one cannot. Opening a position eight
+            months later and reading what you ACTUALLY believed when you
+            took it — not what you now remember believing — is the thing
+            no folder of documents and no meeting culture produces.
+
+            It is a figure rather than a paragraph because the gap is
+            invisible until the two columns sit side by side. "You can
+            revisit the original reasoning" is a feature sentence; a
+            conviction that moved from High to Medium against a named
+            assumption that failed is an argument.
+
+            ── "A BAD OUTCOME IS NOT A BAD DECISION" WAS TOO CATEGORICAL ──
+
+            That line was the section's pull quote and the review is right
+            that it overclaims in the other direction: sometimes a bad
+            outcome is exactly the evidence that the decision was bad, and
+            a page that denies it sounds like it is making excuses. "The
+            outcome tells only part of the story" is the precise version,
+            and the copy under it now says what the product does and does
+            NOT do — it preserves the context that lets a firm evaluate
+            the process, and it does not claim to separate skill from luck
+            on anyone's behalf. That distinction also absorbs the deleted
+            "luck reads as skill" diagram from the old problem section.
+        */}
+        <Section
+          id="reassess"
+          wide
+          label="Decision review"
+          title="Conviction evolves. So should the investment case."
+          lead="Markets change, assumptions age and views develop. A complete picture of the original decision is a stronger foundation for deciding what comes next."
+        >
+          <ReassessFigure />
+
+          <div className="mt-14 grid gap-x-16 gap-y-8 border-t border-white/10 pt-12 lg:grid-cols-12">
+            <p className="text-pretty text-2xl leading-[1.3] tracking-[-0.02em] text-white sm:text-3xl lg:col-span-6 lg:text-[2.25rem]">
+              The outcome tells only part of the story.
+            </p>
+            <p className="max-w-[52ch] text-[17px] leading-[1.8] text-slate-400 lg:col-span-6 lg:pt-2">
+              Investment results reflect judgement and uncertainty together.
+              Keeping the context a decision was made in is what lets a firm
+              examine the process on its own terms, rather than reading every
+              review back from the return.
+            </p>
+          </div>
+        </Section>
+
+        {/* ── 8. Institutional intelligence ────────────────────────────────
+            THE PAGE'S SECOND BRAND MOMENT, and the only section besides the
+            hero and the close that gets a sky behind it.
+
+            `weight="brand"` and `center`: a 56px centred headline with the
+            most air on the page. That is a deliberate change of gear after
+            six product sections, and it is this section rather than another
+            because this is the one whose subject is not a feature. It is
+            what the firm owns in three years.
+
+            The heading was "The firm's accumulated decisions as an asset it
+            owns", which is strategically right and reads backwards: it
+            describes a pile of past decisions. Approved copy points
+            forward, at growth, which is the same claim with the tense
+            fixed.
+        */}
         <Section
           id="memory"
-          label="Institutional memory"
-          title="The firm's accumulated decisions as an asset it owns"
-          lead="Every investment organization can buy the same market data. What cannot be bought is a connected history of this firm's own judgement: what it considered, what it chose, what it declined, and what it learned."
+          weight="brand"
+          center
+          sky={0.75}
+          label="Institutional intelligence"
+          title="Institutional intelligence that grows with every decision."
+          /* Tightened from 35 words. The cut clause named the strategies
+             and people a firm moves through, which the ledger beneath
+             shows better than any clause: three years, two analysts, one
+             name. */
+          lead="The research, judgement and experience of an investment team become more valuable when they stay connected and accessible over time, beyond any individual investor."
         >
-          {/*
-            The three claims KEPT, and given something to stand next to.
+          <div className="grid items-start gap-x-16 gap-y-12 lg:grid-cols-12">
+            {/*
+              The ledger leads, and it is wider than the claims beside it.
 
-            The argument here is entirely about elapsed time: none of this is
-            worth anything in month one and it is the firm's most valuable
-            asset in year three. Three paragraphs cannot show accumulation,
-            so the ledger does, and the claims sit beside it rather than
-            carrying the section alone.
-          */}
-          <div className="grid gap-x-14 gap-y-10 lg:grid-cols-[1fr_1fr]">
-            <ul className="space-y-8">
+              This section's whole argument is about elapsed time, and no
+              paragraph shows accumulation. The drawing does: year three
+              has visibly more on it than year one. So the figure is the
+              evidence and the two claims are the gloss, which is the
+              reverse of how this section was laid out before.
+            */}
+            <div className="lg:col-span-7">
+              <MemoryLedger />
+            </div>
+
+            <ul className="space-y-9 text-left lg:col-span-5 lg:pt-2">
               {MEMORY.map(([Icon, h, p]) => {
                 const I = Icon as typeof Lock
                 return (
@@ -2488,124 +3032,35 @@ export function LandingPage() {
                 )
               })}
             </ul>
-            <div className="lg:pt-1">
-              <MemoryLedger />
-            </div>
           </div>
-          <p className="mt-14 max-w-[64ch] text-[16px] leading-[1.75] text-slate-500">
-            Tesseract makes a firm's reasoning retrievable. It does not promise
-            better returns, and no part of this platform should be read as a
-            forecast of investment performance.
+
+          {/*
+            THE LINE THAT KEEPS THIS SECTION HONEST, and it is the one place
+            on the page where a compounding argument could tip into a
+            performance claim. "Accumulating a record makes you a better
+            investor" is not something anyone has shown, and the brief
+            forbids implying it. So the section claims retrievability and
+            refuses the rest, in plain words, at body size.
+          */}
+          <p className="mx-auto mt-16 max-w-[68ch] border-t border-white/10 pt-8 text-center text-[16px] leading-[1.75] text-slate-400">
+            Tesseract makes a firm&rsquo;s reasoning retrievable and connected. It
+            does not promise better returns, and no part of this platform
+            should be read as a forecast of investment performance.
           </p>
         </Section>
 
-        {/* ── 7. ACT AI ──────────────────────────────────────────────────── */}
-        <Section
-          id="act-ai"
-          tone="raised"
-          label="ACT AI"
-          title="An assistant whose advantage is that your record is structured"
-          /* Tightened from 37 words. The cut clause argued, abstractly,
-             that a folder cannot express which recommendation a decision
-             approved. The question strip below now demonstrates that,
-             which is both shorter and more convincing. */
-          lead="A general model can read your documents. It cannot tell you which recommendation a decision approved, because in a folder that relationship does not exist. Here it does."
-        >
-          {/*
-            ── Three capability cards became the three STEPS of using it ───
+        {/*
+          ── THE ACT AI SECTION USED TO SIT HERE, 2026-11-27 ───────────────
 
-            The cards said it knows where you are, it reads the record not
-            the internet, and it cites what it used. All still true, and all
-            still said: they are the lead and the closing lines now. What
-            they could not do was show the part a buyer actually asks about,
-            which is whose model it runs on and what happens to the answer
-            afterwards.
+          It was the tenth section, behind institutional memory, which read
+          as a technical appendix bolted onto a records product. It has
+          moved up to position six, between the research band and the
+          decision review, where the reader has just been shown the linkage
+          the assistant depends on. Its question strip, its old heading and
+          its three capability cards all went with the move; see the
+          section in its new place for what replaced them and why.
+        */}
 
-            EVERY CLAIM IN `AssistantFlow` WAS CHECKED AGAINST PRODUCTION,
-            not against this repo, because the two disagree. The note on that
-            component lists the tables. The short version: bring-your-own
-            model, per-user control of what it may read, and tagged
-            conversations are all deployed; ARTIFACTS ARE NOT, so they are
-            not on the page.
-          */}
-          <AssistantFlow />
-
-          <div className="mt-14 grid gap-x-16 gap-y-6 lg:grid-cols-2">
-            {/*
-              The three capabilities the cards used to carry, kept verbatim
-              and moved here. Their gate is a content requirement rather than
-              a label, so the words survive the restyle: dropping them in the
-              rewrite is exactly what it exists to catch, and it did.
-            */}
-            {/*
-              ── WHAT THE SECTION WAS MISSING: ACTUAL QUESTIONS ────────────
-
-              Everything above describes the assistant's PROPERTIES —
-              which model, what it reads, where the answer lands. None of
-              it demonstrates that the thing understands an investment
-              process, and for this audience that is the only claim worth
-              making.
-
-              These are chosen because each one is answerable ONLY from a
-              linked record, and a reader in the industry can see that
-              immediately:
-
-                coverage-wide staleness  needs coverage joined to research
-                the case against         needs the rejections kept
-                what we believed then    needs the frozen submission
-
-              A folder of documents answers none of them. That is the
-              section's argument, shown rather than asserted, which is
-              what paid for the shorter lead above.
-
-              Phrased as a desk actually speaks, first person plural, no
-              question mark gimmickry and no invented answers — this
-              shows what you can ASK, not what it would reply.
-            */}
-            {/*
-              THREE, NOT FOUR. "Where has our conviction changed, and on
-              what?" was cut because the page sat six words over its
-              ratchet and the rule here is to cut rather than raise a
-              ceiling that was itself just raised. Conviction-over-time is
-              also the one of the four already shown elsewhere: the
-              reassess figure renders it moving High -> Medium, dated.
-            */}
-            {/*
-              `lg:col-span-2`: the wrapper is a two-column grid, so without
-              it these three landed as a 2+1 orphan in the left column with
-              the closing paragraph crammed alongside. Spanning both gives
-              one clean row of three, which is also the right reading
-              order — three parallel questions, not a list that continues.
-            */}
-            <ul className="grid gap-3 sm:grid-cols-3 lg:col-span-2">
-              {[
-                'Which companies in my coverage need a thesis review?',
-                'What were the strongest arguments against this recommendation?',
-                'What did we believe when we added to this position?',
-              ].map(q => (
-                <li
-                  key={q}
-                  className="flex items-start gap-2.5 rounded-lg bg-white/[0.03] px-4 py-3 ring-1 ring-inset ring-white/[0.07]"
-                >
-                  <span aria-hidden="true" className="mt-[0.45rem] size-1.5 shrink-0 rounded-full bg-amber-300/80" />
-                  <span className="text-[16px] leading-[1.6] text-slate-300">{q}</span>
-                </li>
-              ))}
-            </ul>
-
-            <p className="max-w-[60ch] text-[16px] leading-[1.75] text-slate-400">
-              It knows where you are, it reads the record, not the internet,
-              and it cites what it used. It runs on your organization&rsquo;s own
-              provider key, held encrypted, so the firm controls which model
-              its reasoning reaches.
-            </p>
-            <p className="max-w-[60ch] text-[16px] leading-[1.75] text-slate-500">
-              ACT AI assists the people who make the decisions. It does not
-              manage portfolios, place orders, or produce recommendations on
-              its own authority.
-            </p>
-          </div>
-        </Section>
 
         {/*
           ── 8. Become a design partner ────────────────────────────────────
@@ -2647,21 +3102,37 @@ export function LandingPage() {
             own notes say the audit is partial. The copy says what is
             enforced and where, never that it is complete.
         */}
+        {/*
+          ── Trust, REFRAMED FROM FEAR TO CONTROL ──────────────────────────
+
+          The heading was "Built for a firm that cannot hand its research to
+          anyone", which recognises a real constraint and leads with what
+          the firm is afraid of. "Proprietary intelligence. Firm-level
+          control." is the same subject stated as a capability, which is
+          both more confident and more accurate about what the product
+          provides.
+
+          RESTRAINED AND HIGHLY LEGIBLE, deliberately: no sky, no figure, a
+          30px heading and three short definitions. A trust section that
+          goes on at length reads as defensive, and security detail
+          dominating a marketing page is its own kind of warning sign.
+        */}
         <section id="trust" className="relative scroll-mt-24">
           <div
             aria-hidden="true"
             className={`${SHELL} h-px bg-gradient-to-r from-transparent via-white/10 to-transparent`}
           />
-          <div className={`${SHELL} py-24 sm:py-28`}>
-            <div className="grid gap-x-16 gap-y-8 lg:grid-cols-12">
+          <div className={`${SHELL} py-20 sm:py-24`}>
+            <div className="grid gap-x-16 gap-y-7 lg:grid-cols-12">
               <div className="lg:col-span-5">
-                <Eyebrow>Your intelligence, your control</Eyebrow>
-                <h2 className="mt-6 text-pretty text-3xl font-semibold leading-[1.15] tracking-[-0.025em] text-white sm:text-[2.5rem]">
-                  Built for a firm that cannot hand its research to anyone
+                <Eyebrow>Institutional trust</Eyebrow>
+                <h2 className="mt-6 text-pretty text-2xl font-semibold leading-[1.15] tracking-[-0.025em] text-white sm:text-[1.875rem]">
+                  Proprietary intelligence. Firm-level control.
                 </h2>
               </div>
-              <p className="max-w-[48ch] text-[17px] leading-[1.75] text-slate-400 lg:col-span-7 lg:pt-10">
-                Proprietary research is the asset. These are the controls that
+              <p className="max-w-[52ch] text-[17px] leading-[1.75] text-slate-400 lg:col-span-7 lg:pt-8">
+                Research, judgement and decision-making are among a firm&rsquo;s
+                most valuable proprietary assets. These are the controls that
                 exist today, stated as what they do rather than as a posture.
               </p>
             </div>
@@ -2697,7 +3168,7 @@ export function LandingPage() {
               costs nothing and is the only version that survives
               diligence.
             */}
-            <p className="mt-12 max-w-[66ch] text-[16px] leading-[1.75] text-slate-500">
+            <p className="mt-12 max-w-[66ch] text-[16px] leading-[1.75] text-slate-400">
               Tesseract holds no security certification today. We will show
               you how the controls above are implemented, in detail, as part
               of a design-partner conversation.
@@ -2705,48 +3176,119 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section id="partners" className="relative">
+        {/* ── 10. The close ────────────────────────────────────────────────
+
+            ── TWO CONVERSION SECTIONS BECAME ONE ───────────────────────────
+
+            The page ended with a design-partner panel and then, after a
+            rule, a second centred block headed "See the decision loop on a
+            real security". Two conversion moments in a row is one too
+            many: the first asked for a commitment, the second asked for a
+            meeting, and the reader had to decide twice in forty vertical
+            inches. It also meant the LAST thing on the page was a
+            description of a demo agenda, which is the least ambitious note
+            available to close on.
+
+            One section now. The brand statement at full weight, the demo
+            as the single primary action, and the founding-partner
+            invitation as a distinct panel beneath it for the smaller
+            audience that it is actually for.
+
+            `#partners` SURVIVES AS THE PANEL'S ID, so the nav and footer
+            links still resolve to something with content in it. That is
+            not cosmetic: a gate on this page walks every in-page anchor
+            and fails on one that points at nothing.
+
+            The headline is approved copy, and it is the first closing line
+            this page has had that promises an outcome rather than
+            describing a meeting. The practical description of the demo is
+            kept, demoted to supporting copy, because a PM deciding whether
+            to give up thirty minutes does want to know what happens in
+            them.
+        */}
+        <section id="contact" className="relative scroll-mt-24">
+          {/* The third and last sky. See `Starscape`: the page opens on the
+              brand, states the institutional case on it, and returns to it
+              to close. Everything between is clean dark product surface. */}
+          <Starscape density={0.6} />
           <div
             aria-hidden="true"
             className={`${SHELL} h-px bg-gradient-to-r from-transparent via-white/10 to-transparent`}
           />
-          <div className={`${SHELL} py-24 sm:py-32`}>
-            <div className={`${GLASS} overflow-hidden px-8 py-14 sm:px-14 sm:py-20`}>
-              {/* A soft accent field inside the panel, so the page's most
-                  important block is also its most luminous. */}
+          <div className={`${SHELL} py-24 sm:py-36`}>
+            <div className="mx-auto max-w-3xl text-center">
+              <h2 className="text-balance text-[2rem] font-semibold leading-[1.08] tracking-[-0.03em] text-white sm:text-5xl lg:text-[3.5rem]">
+                A better way to invest.
+                <span className="block text-amber-200">An advantage that endures.</span>
+              </h2>
+              <p className="mx-auto mt-8 max-w-[58ch] text-[18px] leading-[1.7] text-slate-300">
+                A more connected investment process, from the first research
+                insight to the intelligence a firm builds over the years that
+                follow.
+              </p>
+              <div className="mt-11 flex flex-wrap items-center justify-center gap-3">
+                <ContactCta topic="demo" label="Request a demo" className={BTN_PRIMARY} onOpen={openRequest} />
+                <Link to="/login" className={BTN_GHOST}>
+                  Sign in
+                </Link>
+              </div>
+              <p className="mx-auto mt-8 max-w-[60ch] text-[16px] leading-[1.75] text-slate-400">
+                Thirty minutes on one security, start to finish: the research,
+                the recommendation, the decision, the position it authorized
+                and the review that follows it.
+              </p>
+            </div>
+
+            {/*
+              ── The founding-partner invitation ──────────────────────────
+
+              A panel inside the close rather than a section of its own.
+              It is addressed to a much smaller audience than the demo CTA
+              above it, so it gets less of the page and its own surface
+              instead of equal billing.
+
+              The claim is deliberately about PARTICIPATION, not scarcity:
+              no number of seats, no waitlist, no suggestion that anyone
+              else has already signed. What is offered is real and
+              verifiable — the product shaped around the firm's own
+              recommendation and decision process, and a say in what gets
+              built.
+            */}
+            <div
+              id="partners"
+              className={`${GLASS} mt-20 scroll-mt-24 overflow-hidden px-7 py-12 sm:mt-24 sm:px-12 sm:py-14`}
+            >
+              {/* The one coloured field left anywhere on the page, and it is
+                  here because this is the block that should be the most
+                  luminous. Everything else is white, grey or near-black. */}
               <div
                 aria-hidden="true"
                 className="pointer-events-none absolute inset-0"
                 style={{
                   background:
-                    /*
-                     * The one place a coloured wash survives, and it is
-                     * deliberate: this is the conversion panel, the single
-                     * block on the page that should be the most luminous.
-                     * It is the brand blue rather than a second hue, and
-                     * it is the ONLY coloured field left anywhere on the
-                     * page, which is what makes it read as emphasis
-                     * instead of as decoration. Everything else is white,
-                     * grey or near-black.
-                     */
                     'radial-gradient(40rem 20rem at 50% -20%, rgba(56,118,246,0.17), transparent 65%)',
                 }}
               />
-              <div className="relative mx-auto max-w-3xl text-center">
-                <Eyebrow>
-                  <span className="sr-only">Section: </span>Founding design partners
-                </Eyebrow>
-                <h2 className="mt-6 text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-white sm:text-5xl">
-                  Become a founding design partner
-                </h2>
-                <p className="mx-auto mt-6 max-w-[58ch] text-[17px] leading-[1.7] text-slate-300">
-                  We are working with a small number of investment teams to shape
-                  how Tesseract reaches the institutional market. You get the
-                  product modelled around your own recommendation and decision
-                  process, and direct say over what gets built next.
-                </p>
-
-                <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+              <div className="relative grid items-center gap-x-14 gap-y-8 lg:grid-cols-12">
+                <div className="lg:col-span-7">
+                  <Eyebrow>
+                    <span className="sr-only">Section: </span>Founding design partners
+                  </Eyebrow>
+                  <h3 className="mt-5 text-pretty text-2xl font-semibold leading-[1.15] tracking-[-0.02em] text-white sm:text-[1.875rem]">
+                    Shape a new category of investment technology.
+                  </h3>
+                  <p
+                    data-section-lead
+                    className="mt-5 max-w-[62ch] text-[17px] leading-[1.7] text-slate-300"
+                  >
+                    We are working with a small number of investment teams on
+                    how Tesseract reaches the institutional market. A founding
+                    partner gets the product modelled around their own
+                    recommendation and decision process, and a direct say over
+                    what gets built next.
+                  </p>
+                </div>
+                <div className="lg:col-span-5 lg:justify-self-end">
                   <ContactCta
                     topic="partnership"
                     onOpen={openRequest}
@@ -2754,32 +3296,6 @@ export function LandingPage() {
                     className="inline-flex items-center justify-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-black/30 transition-colors hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]"
                   />
                 </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ── 9. Closing CTA ─────────────────────────────────────────────── */}
-        <section id="contact" className="relative">
-          <div
-            aria-hidden="true"
-            className={`${SHELL} h-px bg-gradient-to-r from-transparent via-white/10 to-transparent`}
-          />
-          <div className={`${SHELL} py-24 sm:py-32`}>
-            <div className="mx-auto max-w-3xl text-center">
-              <h2 className="text-pretty text-3xl font-semibold leading-[1.1] tracking-[-0.02em] text-white sm:text-5xl">
-                See the decision loop on a real security
-              </h2>
-              <p className="mx-auto mt-6 max-w-[56ch] text-[17px] leading-[1.7] text-slate-400">
-                Thirty minutes, one name, start to finish: research, a
-                recommendation, a portfolio-manager decision, the trade it
-                authorized, and the record it leaves behind.
-              </p>
-              <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-                <ContactCta topic="demo" label="Request a demo" className={BTN_PRIMARY} onOpen={openRequest} />
-                <Link to="/login" className={BTN_GHOST}>
-                  Sign in
-                </Link>
               </div>
             </div>
           </div>
@@ -2795,20 +3311,67 @@ export function LandingPage() {
                   <TesseractLogo size={22} />
                   <span className="text-[16px] font-semibold tracking-[-0.01em] text-white">Tesseract</span>
                 </div>
-                <p className="mt-3 text-[16px] text-slate-500">
-                  A decision operating system for investment teams.
+                <p className="mt-3 max-w-[34ch] text-[16px] leading-[1.6] text-slate-400">
+                  The decision operating system for investment teams.
                 </p>
               </div>
-              <nav aria-label="Footer" className="flex flex-wrap gap-x-8 gap-y-2 text-[16px] text-slate-500">
-                <a href="#platform" className="transition-colors hover:text-white">Platform</a>
-                <a href="#roles" className="transition-colors hover:text-white">Who it's for</a>
-                <a href="#lifecycle" className="transition-colors hover:text-white">How it works</a>
-                <a href="#reassess" className="transition-colors hover:text-white">Decision reviews</a>
-                <a href="#memory" className="transition-colors hover:text-white">Memory</a>
-                <a href="#act-ai" className="transition-colors hover:text-white">ACT AI</a>
-                <a href="#partners" className="transition-colors hover:text-white">Design partners</a>
-                <Link to="/login" className="transition-colors hover:text-white">Sign in</Link>
-              </nav>
+              {/*
+                ── The footer nav was ONE UNDIFFERENTIATED ROW ─────────────
+
+                Eight links wrapping across a single line, in the order the
+                sections happen to appear, which makes the last thing a
+                reader sees before the legal text read as a leftover list.
+                It is two labelled columns now, Platform and Company, which
+                is what a serious company's footer looks like and costs
+                nothing but a heading.
+
+                Still generated as plain anchors to sections of this page,
+                and still no invented destinations: every item here resolves
+                to something on this page or to a route that exists, which
+                a gate checks by walking them.
+
+                ── AND THE TOUCH TARGETS, WHICH I BROKE HERE ───────────────
+
+                The first version of this two-column footer rendered all ten
+                links at 21px tall. That is the same defect, in the same
+                kind of element, that took seven fixes across this site last
+                week, and I reintroduced it the moment I wrote a new link
+                list from scratch.
+
+                It was found by re-running the sweep against the built page,
+                not by any unit test, because jsdom has no layout and cannot
+                see the height of anything. `FOOTER_LINK` gives each one a
+                real 36px box, which clears the 24px bar the committed
+                `scripts/check-touch-targets.mjs` enforces, without the
+                44px version's effect of turning a five-item list into a
+                column of buttons.
+              */}
+              <div className="grid gap-x-16 gap-y-8 sm:grid-cols-2">
+                <nav aria-label="Platform">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    Platform
+                  </p>
+                  <ul className="mt-3 text-[16px] text-slate-400">
+                    <li><a href="#platform" className={FOOTER_LINK}>Overview</a></li>
+                    <li><a href="#roles" className={FOOTER_LINK}>Who it&rsquo;s for</a></li>
+                    <li><a href="#lifecycle" className={FOOTER_LINK}>How it works</a></li>
+                    <li><a href="#act-ai" className={FOOTER_LINK}>ACT AI</a></li>
+                    <li><a href="#reassess" className={FOOTER_LINK}>Decision review</a></li>
+                  </ul>
+                </nav>
+                <nav aria-label="Footer">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    Company
+                  </p>
+                  <ul className="mt-3 text-[16px] text-slate-400">
+                    <li><a href="#memory" className={FOOTER_LINK}>Institutional intelligence</a></li>
+                    <li><a href="#trust" className={FOOTER_LINK}>Institutional trust</a></li>
+                    <li><a href="#partners" className={FOOTER_LINK}>Design partners</a></li>
+                    <li><a href="#contact" className={FOOTER_LINK}>Request a demo</a></li>
+                    <li><Link to="/login" className={FOOTER_LINK}>Sign in</Link></li>
+                  </ul>
+                </nav>
+              </div>
             </div>
             {/*
               The one remaining disclosure, and it stays.
@@ -2824,7 +3387,7 @@ export function LandingPage() {
               style choice: a disclaimer nobody can read is a disclaimer
               that does not do its job. The grey is enough to keep it quiet.
             */}
-            <p className="mt-10 border-t border-white/[0.06] pt-6 text-[16px] leading-[1.75] text-slate-600">
+            <p className="mt-10 border-t border-white/[0.06] pt-6 text-[16px] leading-[1.75] text-slate-400">
               Tesseract is research and workflow software. It is not an investment adviser or a broker-dealer, it gives no investment advice, and it places no orders. Nothing on this page is an offer of securities, investment advice, or a performance representation.
             </p>
 
@@ -2869,7 +3432,7 @@ export function LandingPage() {
                 changing the type size; the gap narrows to compensate so
                 the row still reads as fine print.
               */
-              className="mt-6 flex flex-wrap gap-x-1 text-[14px] text-slate-600"
+              className="mt-6 flex flex-wrap gap-x-1 text-[14px] text-slate-400"
             >
               {LEGAL_DOCUMENTS.map(doc => (
                 <Link

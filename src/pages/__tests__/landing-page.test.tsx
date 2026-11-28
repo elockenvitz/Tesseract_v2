@@ -92,22 +92,80 @@ describe('the positioning a visitor reads in the first screen', () => {
    * that would be lost if someone later trimmed the headline back to a
    * single clause about decisions.
    */
-  it('promises an outcome in two horizons, near and far', async () => {
+  /*
+   * ── RETARGETED AGAIN, 2026-11-27, AND THE KIND OF GATE CHANGED ────────
+   *
+   * This pinned the SHAPE of the headline: a near horizon and a far one,
+   * the far one about the firm. That was the right gate for a headline I
+   * had written, where the words were mine and only the argument needed
+   * protecting.
+   *
+   * The hero is now APPROVED BRAND COPY, signed off with an explicit
+   * instruction not to rewrite or substitute any of it. When the exact
+   * words are the requirement, a gate on the shape is the weaker test: it
+   * would pass happily while someone "improved" the phrasing, which is
+   * exactly the failure worth catching.
+   *
+   * So this pins the strings. All of them, in the elements they belong to,
+   * because the hero is a hierarchy and folding the subheadline into the
+   * headline would also be a substitution.
+   */
+  it('renders the approved hero copy exactly, in its own hierarchy', async () => {
     await renderConfigured()
+    const hero = document.getElementById('top')
+
+    /* The eyebrow. "The", not "A": the definite article is the
+       positioning, and it is part of the approved line. */
+    expect(hero?.textContent).toContain(
+      'The decision operating system for investment teams',
+    )
+
+    /* One h1, carrying BOTH sentences, because they are one headline. */
     const h1 = screen.getByRole('heading', { level: 1 }).textContent ?? ''
+    expect(h1).toContain('Every investment decision has a story.')
+    expect(h1).toContain('Leverage the intelligence behind it.')
 
-    expect(h1).toMatch(/\btoday\b/i)
-    expect(h1).toMatch(/every year after|tomorrow|over time/i)
+    /* The subheadline and the supporting copy, as their own paragraphs
+       rather than folded into the headline. */
+    const paras = [...(hero?.querySelectorAll('p') ?? [])]
+      .map(p => (p.textContent ?? '').replace(/\s+/g, ' ').trim())
+    expect(paras).toContain('Better decisions start with Tesseract.')
+    expect(paras).toContain(
+      'A better environment for investment thinking, a stronger foundation ' +
+        'for decision-making, and a lasting source of institutional intelligence.',
+    )
 
-    /*
-     * The far horizon must be about the FIRM, not the reader personally.
-     * "Better decisions today, better decisions tomorrow" would pass the
-     * two assertions above and would have thrown away the argument.
-     */
-    expect(h1).toMatch(/\bfirm\b/i)
+    /* And the headline must not go back to leading with the record. */
+    expect(h1).not.toMatch(/remember|archive|never lose/i)
+  })
 
-    /* And it must not go back to leading with the record. */
-    expect(h1).not.toMatch(/remember|record|archive|never lose/i)
+  /*
+   * THE ACCENT IS THE SECOND SENTENCE, AND IT IS NOT A GRADIENT.
+   *
+   * The brief asks that the two sentences read as one cohesive headline
+   * with the second emphasised through the gold accent. That is a visual
+   * requirement, so it is asserted as one.
+   *
+   * It is deliberately NOT a gradient, and that half is the part most
+   * likely to be undone by a later edit reaching for something fancier.
+   * See the `ACCENT_TEXT` tombstone in `LandingPage.tsx`: a
+   * `bg-gradient-to-br` clipped to text puts its faintest value at the end
+   * of the last line, which on a line this long faded out the words the
+   * positioning turns on. A solid value puts the emphasis where it was
+   * written to go and keeps it there at every width.
+   */
+  it('emphasises the second sentence of the headline with a solid accent', async () => {
+    await renderConfigured()
+    const h1 = screen.getByRole('heading', { level: 1 })
+    const accent = [...h1.querySelectorAll('span')].find(s =>
+      (s.textContent ?? '').includes('Leverage the intelligence'))
+    expect(accent, 'the accent sentence must be its own span inside the h1').toBeTruthy()
+    expect(accent?.className, 'the accent is a warm solid, not slate').toMatch(/text-amber-\d{3}/)
+    expect(
+      accent?.className,
+      'a clipped gradient fades out the end of the line — see the ACCENT_TEXT note',
+    ).not.toMatch(/bg-gradient|bg-clip-text/)
+    expect(h1.className).not.toMatch(/bg-clip-text/)
   })
 
   /*
@@ -136,12 +194,60 @@ describe('the positioning a visitor reads in the first screen', () => {
    * and this now pins it by meaning rather than by one phrasing: the hero
    * must still claim the record of WHY the firm acted.
    */
-  it('says which category it is in, on the hero rather than in a footnote', async () => {
+  /*
+   * ── INVERTED 2026-11-27, AND THIS ONE IS ME BEING OVERRULED ───────────
+   *
+   * I argued for "Not a market-data terminal. Not an execution system. The
+   * record of why your firm acted." on the hero, twice, and wrote this
+   * test to hold it there. The argument was that a PM who discovers the
+   * category at minute forty of a demo has wasted forty minutes.
+   *
+   * That argument is right about the SENTENCE and wrong about the
+   * POSITION, which is what the review said. Three problems, all of them
+   * real:
+   *
+   *   It defines the product by two absences, as the third thing a
+   *   stranger reads.
+   *   Its one positive clause, "the record of why your firm acted",
+   *   reduces Tesseract to an account of something already finished.
+   *   Tesseract improves the work BEFORE the decision, the decision, and
+   *   what is learned after it.
+   *   It sends the reader back to a recordkeeping reading of the product
+   *   at the exact moment the hero has just promised them something
+   *   larger.
+   *
+   * So the gate is inverted rather than deleted, and it is now STRONGER
+   * than it was, because it pins two things instead of one:
+   *
+   *   1. the clarification still exists somewhere on the page, so this
+   *      is a move and not a quiet deletion of an honest claim; and
+   *   2. it is NOT in the hero, so a future edit cannot drift it back
+   *      above the fold.
+   *
+   * It lives in the platform section now, beside the figure that shows
+   * what Tesseract is, which is where a reader asking "how does this sit
+   * next to my terminal" actually is.
+   */
+  it('clarifies the category away from the hero, not in it', async () => {
     await renderConfigured()
     const hero = document.getElementById('top')
-    expect(hero?.textContent).toMatch(/not a market-data terminal/i)
-    expect(hero?.textContent).toMatch(/execution system/i)
-    expect(hero?.textContent).toMatch(/record of why/i)
+    const platform = document.getElementById('platform')
+
+    expect(
+      platform?.textContent,
+      'the category clarification must survive the move off the hero',
+    ).toMatch(/not a market-data terminal/i)
+    expect(platform?.textContent).toMatch(/execution venue|execution system/i)
+    expect(
+      platform?.textContent,
+      'it must say what Tesseract does hold, not only what it is not',
+    ).toMatch(/research, the judgement and the decisions/i)
+
+    expect(
+      hero?.textContent,
+      'defining the product by two absences is not what the hero is for',
+    ).not.toMatch(/not a market-data terminal/i)
+    expect(hero?.textContent).not.toMatch(/record of why/i)
   })
 
   it('offers both calls to action named in the brief', async () => {
@@ -1124,13 +1230,30 @@ describe('the research and capture section', () => {
    * lost, so the second assertion below follows it to where it went —
    * otherwise this retarget would quietly permit deleting it outright.
    */
+  /*
+   * ── RETARGETED AGAIN, 2026-11-27, four items to three ────────────────
+   *
+   * "Structured diligence" was dropped because the platform canvas now
+   * draws a research-process pane carrying the open requirements on a
+   * workflow. That pane and this cut landed in the same pass, so the
+   * second assertion below FOLLOWS THE CLAIM to where it went: without
+   * it, this retarget would silently permit deleting the capability
+   * rather than relocating it, which is the move this file exists to
+   * prevent.
+   */
   it('names the capture surfaces an analyst actually touches', async () => {
     await renderConfigured()
     const research = document.getElementById('research')
     const headings = [...(research?.querySelectorAll('h3') ?? [])].map(h => h.textContent ?? '')
-    expect(headings.length).toBeGreaterThanOrEqual(4)
+    expect(headings.length).toBeGreaterThanOrEqual(3)
     expect(headings.join(' | ')).toMatch(/versions instead of overwrites/i)
     expect(headings.join(' | ')).toMatch(/capture/i)
+
+    /* The diligence claim, now shown rather than stated. */
+    expect(
+      document.getElementById('platform')?.textContent,
+      'structured diligence moved into the canvas as a drawn pane, so it must be there',
+    ).toMatch(/requirements? open/i)
   })
 
   it('still shows research living on the security, now in the canvas', async () => {
@@ -1241,11 +1364,38 @@ describe('the background is built, not just dark', () => {
     const rails = [...document.querySelectorAll('div.justify-between')]
       .filter(el => el.querySelectorAll(':scope > .w-px').length >= 4)
     expect(rails.length, 'a column grid layer must exist').toBeGreaterThanOrEqual(2)
+
+    /*
+     * ── THE WIDTH IS DERIVED NOW, NOT HARD-CODED ────────────────────────
+     *
+     * This asserted `max-w-7xl` literally. The page widened its text
+     * column to `max-w-[82rem]` on 2026-11-27, because `max-w-7xl` is
+     * 1280px and at 1920 that wasted 320px either side while capping every
+     * product figure at the width of a paragraph.
+     *
+     * The literal assertion then failed, which was the gate doing its job
+     * at the wrong altitude: the REQUIREMENT was never that the grid is
+     * 1280px wide, it is that the grid and the text share one width so the
+     * outer hairlines land on the text edge. Re-pinning a new literal
+     * would have the same defect and would fail again the next time.
+     *
+     * So the expectation is read off the page's own content shell. The
+     * nav is the reference because it is the element the grid is supposed
+     * to line up with and it is always present.
+     */
+    const navShell = document.querySelector('nav[aria-label="Main"]')
+    const expectedWidth = /(max-w-\[[^\]]+\]|max-w-\w+)/.exec(navShell?.className ?? '')?.[1]
+    expect(expectedWidth, 'the nav must declare the shared content width').toBeTruthy()
+
     for (const rail of rails) {
       expect(rail.className).toMatch(/px-6/)
       expect(rail.className).toMatch(/sm:px-8/)
       expect(rail.className).toMatch(/lg:px-12/)
-      expect(rail.className).toMatch(/max-w-7xl/)
+      expect(
+        rail.className.split(/\s+/),
+        `the grid must share the content width (${expectedWidth}) or the outer ` +
+          'hairlines drift off the text edge',
+      ).toContain(expectedWidth)
       expect(rail.querySelectorAll(':scope > .w-px').length).toBe(5)
     }
   })

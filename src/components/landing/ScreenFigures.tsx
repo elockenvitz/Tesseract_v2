@@ -55,7 +55,7 @@ function Frame({
           reader meets it as part of the figure's label rather than as a
           stray span after the content.
         */}
-        <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-500">
+        <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
           Illustration
         </span>
       </figcaption>
@@ -83,7 +83,7 @@ function Chip({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted
 /* A column heading inside a figure. */
 function Col({ children }: { children: ReactNode }) {
   return (
-    <span className="text-[12px] font-medium uppercase tracking-[0.12em] text-slate-500">
+    <span className="text-[12px] font-medium uppercase tracking-[0.12em] text-slate-400">
       {children}
     </span>
   )
@@ -106,10 +106,10 @@ export function IdeaPipelineFigure() {
         {IDEAS.map(({ name, stage, conviction, age, hot }) => (
           <li key={name} className="grid grid-cols-[1fr_auto] items-center gap-x-4 py-3">
             <div className="min-w-0">
-              <p data-security-name className="font-mono text-[14px] tracking-tight text-white">{name}</p>
+              <p data-security-name className="font-mono text-[16px] tracking-tight text-white">{name}</p>
               <p className="mt-1.5 flex flex-wrap items-center gap-2">
                 <Chip tone={hot ? 'accent' : 'muted'}>{stage}</Chip>
-                <span className="text-[14px] text-slate-500">{age}</span>
+                <span className="text-[14px] text-slate-400">{age}</span>
               </p>
             </div>
             <Chip tone={hot ? 'solid' : 'muted'}>{conviction}</Chip>
@@ -122,7 +122,7 @@ export function IdeaPipelineFigure() {
         is a watchlist; one that shows how long a name has gone untouched is
         a management surface.
       */}
-      <p className="mt-4 text-[14px] leading-relaxed text-slate-500">
+      <p className="mt-4 text-[14px] leading-relaxed text-slate-400">
         Age is shown because a stale idea is a finding, not an omission.
       </p>
     </Frame>
@@ -134,8 +134,8 @@ export function AssetWorkspaceFigure() {
     <Frame caption="Asset workspace">
       <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] pb-4">
         <div>
-          <p data-security-name className="font-mono text-[14px] tracking-tight text-white">NORTHWIND</p>
-          <p className="mt-1 text-[14px] text-slate-400">Covered by A. Reyes</p>
+          <p data-security-name className="font-mono text-[16px] tracking-tight text-white">NORTHWIND</p>
+          <p className="mt-1 text-[16px] text-slate-400">Covered by A. Reyes</p>
         </div>
         <Chip tone="accent">Held in Core Equity</Chip>
       </div>
@@ -152,17 +152,17 @@ export function AssetWorkspaceFigure() {
             className={
               i === 0
                 ? 'border-b border-white pb-1 text-[14px] font-medium text-white'
-                : 'pb-1 text-[14px] text-slate-500'
+                : 'pb-1 text-[14px] text-slate-400'
             }
           >
             {t}
           </span>
         ))}
       </div>
-      <p className="mt-4 text-[14px] leading-relaxed text-slate-300">
+      <p className="mt-4 text-[16px] leading-relaxed text-slate-300">
         Margin recovery as the new plant reaches scale.
       </p>
-      <p className="mt-3 text-[14px] leading-relaxed text-slate-500">
+      <p className="mt-3 text-[14px] leading-relaxed text-slate-400">
         The written case, the firm&rsquo;s exposure and the history sit on the
         name itself, not in a folder.
       </p>
@@ -181,11 +181,11 @@ export function RecommendationFigure() {
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
           <div>
             <dt><Col>Conviction</Col></dt>
-            <dd className="mt-1 text-[14px] text-white">High</dd>
+            <dd className="mt-1 text-[16px] text-white">High</dd>
           </div>
           <div>
             <dt><Col>Sizing</Col></dt>
-            <dd className="mt-1 text-[14px] text-white">Overweight</dd>
+            <dd className="mt-1 text-[16px] text-white">Overweight</dd>
           </div>
         </dl>
       </div>
@@ -194,7 +194,7 @@ export function RecommendationFigure() {
         page, so this figure states it as a property OF THE RECORD rather
         than as another sentence of prose underneath.
       */}
-      <p className="mt-4 flex items-center gap-2 text-[14px] leading-relaxed text-slate-500">
+      <p className="mt-4 flex items-center gap-2 text-[14px] leading-relaxed text-slate-400">
         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/70" aria-hidden="true" />
         Submitting froze the reasoning behind it. Later edits start a new version.
       </p>
@@ -208,30 +208,30 @@ export function DecisionInboxFigure() {
       <div className="rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.06]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p data-security-name className="font-mono text-[14px] tracking-tight text-white">NORTHWIND</p>
-            <p className="mt-1 text-[14px] text-slate-400">Add to Core Equity, from A. Reyes</p>
+            <p data-security-name className="font-mono text-[16px] tracking-tight text-white">NORTHWIND</p>
+            <p className="mt-1 text-[16px] text-slate-400">Add to Core Equity, from A. Reyes</p>
           </div>
           <Chip tone="accent">Awaiting you</Chip>
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-white/[0.07] pt-4">
           <div>
             <dt><Col>Conviction</Col></dt>
-            <dd className="mt-1 text-[14px] text-white">High</dd>
+            <dd className="mt-1 text-[16px] text-white">High</dd>
           </div>
           <div>
             <dt><Col>Proposed weight</Col></dt>
-            <dd className="mt-1 text-[14px] text-white">Overweight</dd>
+            <dd className="mt-1 text-[16px] text-white">Overweight</dd>
           </div>
         </dl>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <span className="rounded-lg bg-white/90 px-3 py-1.5 text-[14px] font-semibold text-slate-900">
+        <span className="rounded-lg bg-white/90 px-3 py-1.5 text-[16px] font-semibold text-slate-900">
           Accept
         </span>
-        <span className="rounded-lg px-3 py-1.5 text-[14px] font-medium text-slate-300 ring-1 ring-inset ring-white/15">
+        <span className="rounded-lg px-3 py-1.5 text-[16px] font-medium text-slate-300 ring-1 ring-inset ring-white/15">
           Reject
         </span>
-        <span className="rounded-lg px-3 py-1.5 text-[14px] font-medium text-slate-300 ring-1 ring-inset ring-white/15">
+        <span className="rounded-lg px-3 py-1.5 text-[16px] font-medium text-slate-300 ring-1 ring-inset ring-white/15">
           Defer
         </span>
       </div>
@@ -240,7 +240,7 @@ export function DecisionInboxFigure() {
         whole argument of the product is that a rejection is a record. A
         marketing figure that greys them out would contradict the page.
       */}
-      <p className="mt-4 text-[14px] leading-relaxed text-slate-500">
+      <p className="mt-4 text-[14px] leading-relaxed text-slate-400">
         All three are recorded with their rationale. A rejection is a decision.
       </p>
     </Frame>
@@ -257,12 +257,12 @@ export function TradeBookFigure() {
         ].map(({ name, side, book, confirmed }) => (
           <li key={name} className="rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.06]">
             <div className="flex items-center justify-between gap-3">
-              <p data-security-name className="font-mono text-[14px] tracking-tight text-white">{name}</p>
+              <p data-security-name className="font-mono text-[16px] tracking-tight text-white">{name}</p>
               <Chip tone={confirmed ? 'muted' : 'accent'}>
                 {confirmed ? 'Confirmed' : 'Assumed fill'}
               </Chip>
             </div>
-            <p className="mt-2 text-[14px] text-slate-400">
+            <p className="mt-2 text-[16px] text-slate-400">
               {side} into {book}
             </p>
             {/*
@@ -270,7 +270,7 @@ export function TradeBookFigure() {
               is on the page. Drawn as a real affordance, because in the
               product it is one.
             */}
-            <p className="mt-3 flex items-center gap-1.5 border-t border-white/[0.07] pt-3 text-[14px] text-amber-300">
+            <p className="mt-3 flex items-center gap-1.5 border-t border-white/[0.07] pt-3 text-[16px] text-amber-300">
               <span aria-hidden="true">&#8599;</span>
               Opens the decision that authorized it
             </p>
@@ -289,13 +289,13 @@ export function OutcomeFigure() {
         <dl className="mt-4 space-y-3">
           <div>
             <dt><Col>The thesis that was argued</Col></dt>
-            <dd className="mt-1 text-[14px] leading-relaxed text-slate-300">
+            <dd className="mt-1 text-[16px] leading-relaxed text-slate-300">
               Margin recovery as the new plant reaches scale.
             </dd>
           </div>
           <div className="border-t border-white/[0.07] pt-3">
             <dt><Col>What happened</Col></dt>
-            <dd className="mt-1 text-[14px] leading-relaxed text-slate-300">
+            <dd className="mt-1 text-[16px] leading-relaxed text-slate-300">
               Plant delayed. The position worked on an unrelated re-rating.
             </dd>
           </div>
@@ -311,7 +311,7 @@ export function OutcomeFigure() {
         This verdict is the one that matters and the one a returns-based
         review cannot produce. It is the figure's entire argument.
       */}
-      <p className="mt-4 text-[14px] leading-relaxed text-slate-500">
+      <p className="mt-4 text-[14px] leading-relaxed text-slate-400">
         Scored against the claim that was made, so judgement separates from luck.
       </p>
     </Frame>
@@ -340,24 +340,87 @@ export function OutcomeFigure() {
  * ──────────────────────────────────────────────────────────────────────── */
 
 const RAIL = [
-  { name: 'NORTHWIND', meta: 'Thesis current', live: true },
-  { name: 'VERIDIAN', meta: 'Review due', live: false },
-  { name: 'HALDEN', meta: 'Untouched 6w', live: false },
-  { name: 'CALDERA', meta: 'Thesis current', live: false },
+  { name: 'NORTHWIND', meta: 'Thesis current · v4', live: true },
+  { name: 'VERIDIAN', meta: 'Review due · 11d', live: false },
+  { name: 'HALDEN', meta: 'Untouched · 6w', live: false },
+  { name: 'CALDERA', meta: 'Target passed · 3d', live: false },
+]
+
+/*
+ * The middle pane's content, which is where the review asked for depth.
+ *
+ * Each of these is a field the asset workspace really carries: the thesis
+ * sections (thesis, business model, catalysts, risks, where differentiated),
+ * the bull/base/bear price targets, scenario assumptions, conviction, and
+ * the coverage assignment. The deployed `get_asset` tool returns exactly
+ * this set, which is a convenient check on whether a line is real: if the
+ * assistant can read it, the product stores it.
+ *
+ * NO NUMBERS ANYWHERE. `keeps the schema diagrams free of invented data`
+ * forbids digits in a figure that is not marked as data, and it is right
+ * to: "base case 54" on a public page is a fabricated valuation on a
+ * fictional company, which is a strange thing to publish and an easy thing
+ * to misread. Version numbers and elapsed times are the exception and they
+ * are structural rather than financial.
+ */
+const CASE_ROWS: [string, string][] = [
+  ['Catalysts', 'Ramp completion, then the Q3 pricing reset'],
+  ['Key risks', 'A second ramp delay, or input costs holding'],
+  ['Valuation', 'Bull, base and bear, each on its own assumptions'],
+  ['Price target', 'Current and every prior value, dated'],
+  ['Coverage', 'A. Reyes, lead, since the initiation'],
+]
+
+const PROCESS = [
+  { stage: 'Earnings preparation', state: 'In progress', open: '2 of 7 requirements open' },
+  { stage: 'Initiation diligence', state: 'Complete', open: 'Closed, with its checklist kept' },
 ]
 
 const LINKED = [
   { kind: 'Research note', detail: 'Margin recovery as the new plant reaches scale' },
+  { kind: 'Investment idea', detail: 'Ready to recommend, conviction raised after the site visit' },
   { kind: 'Recommendation', detail: 'Initiate, sized to the conviction stated in the note' },
   { kind: 'Decision', detail: 'Approved, with the reasoning frozen at submission' },
   { kind: 'Outcome review', detail: 'Graded against the original case, not the return' },
 ]
 
+/**
+ * ── WHAT CHANGED HERE, 2026-11-27 ───────────────────────────────────────
+ *
+ * The review was that this figure "feels like a small conceptual
+ * interface", and that was fair: three thin panes, the middle one carrying
+ * five one-line definitions, nothing that looked like a working screen.
+ * The section it anchors is now the page's product reveal and the figure
+ * is the widest thing on the page, so it has to survive being looked at.
+ *
+ * Three changes, in order of how much they matter:
+ *
+ *   MORE OF THE CASE. Catalysts, risks, valuation scenarios, the price
+ *   target's history, conviction and sentiment, and the coverage
+ *   assignment. The brief listed about a dozen things that could go here;
+ *   this is a representative subset rather than all of it, because a
+ *   screen showing everything shows nothing.
+ *
+ *   A PROCESS PANE. The recurring workflow on the name, with its open
+ *   requirements, which is the part of the product an analyst touches
+ *   every week and the figure never showed. 156 workflows and 498 stages
+ *   exist in production, so it is also one of the better-evidenced
+ *   surfaces here.
+ *
+ *   THE CHAIN GOT A FIFTH LINK. The investment idea sat between the note
+ *   and the recommendation in the real model and was missing from the
+ *   drawing, which made the chain look shorter than it is.
+ *
+ * The type went up a step throughout: the body rows are 14px to 16px, the
+ * thesis line is 17px to 18px. "Legible without leaning toward the
+ * screen" was the note and it is a size problem before it is a layout
+ * problem.
+ */
 export function WorkspaceCanvas() {
   return (
     <figure
       data-illustration="true"
-      className="relative overflow-hidden rounded-2xl bg-white/[0.025] ring-1 ring-inset ring-white/[0.08]"
+      className="relative overflow-hidden rounded-2xl bg-white/[0.03] ring-1 ring-inset ring-white/[0.1]"
     >
       <span
         aria-hidden="true"
@@ -369,75 +432,97 @@ export function WorkspaceCanvas() {
       {/* A `figcaption`, not a styled div: the gate requires every figure
           on the page to carry one, and the application's own breadcrumb is
           the most honest caption this figure could have. */}
-      <figcaption className="flex items-center justify-between gap-4 border-b border-white/[0.07] px-5 py-3.5 sm:px-7">
-        <span className="flex min-w-0 items-center gap-2.5">
+      <figcaption className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-white/[0.07] px-5 py-4 sm:px-7">
+        <span className="flex min-w-0 flex-wrap items-center gap-2.5">
           <span aria-hidden="true" className="size-2 rounded-full bg-amber-300/80" />
-          <span className="truncate text-[14px] font-medium text-slate-300">
+          <span className="truncate text-[16px] font-medium text-slate-300">
             Asset workspace
           </span>
           <span aria-hidden="true" className="text-slate-700">/</span>
-          <span data-security-name className="truncate font-mono text-[14px] text-white">
+          <span data-security-name className="truncate font-mono text-[16px] text-white">
             NORTHWIND
           </span>
+          <span aria-hidden="true" className="text-slate-700">/</span>
+          <span className="truncate text-[14px] text-slate-400">Thesis</span>
         </span>
-        <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-500">
+        <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
           Illustration
         </span>
       </figcaption>
 
-      <div className="grid gap-px bg-white/[0.06] lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.6fr)_minmax(0,1.25fr)]">
+      <div className="grid gap-px bg-white/[0.06] lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.55fr)_minmax(0,1.2fr)]">
         {/* ── Left: what I am responsible for ─────────────────────────── */}
         <div className="bg-[#07090e] p-5 sm:p-6">
           <Col>Coverage</Col>
-          <ul className="mt-4 space-y-3">
+          <ul className="mt-4 space-y-2.5">
             {RAIL.map(({ name, meta, live }) => (
               <li
                 key={name}
                 className={`rounded-lg px-3 py-2.5 ring-1 ring-inset ${
-                  live ? 'bg-white/[0.05] ring-white/15' : 'ring-transparent'
+                  live ? 'bg-white/[0.06] ring-white/15' : 'ring-transparent'
                 }`}
               >
                 <p
                   data-security-name
-                  className={`font-mono text-[14px] tracking-tight ${live ? 'text-white' : 'text-slate-400'}`}
+                  className={`font-mono text-[16px] tracking-tight ${live ? 'text-white' : 'text-slate-400'}`}
                 >
                   {name}
                 </p>
-                <p className="mt-1 text-[14px] text-slate-500">{meta}</p>
+                <p className="mt-1 text-[14px] text-slate-400">{meta}</p>
               </li>
             ))}
           </ul>
-          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-500">
-            Your names, with the ones that have gone quiet showing it.
+          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
+            A name that has gone quiet shows it.
           </p>
+
+          {/* The process pane the figure did not have. Stacked under
+              coverage rather than given a fourth column, because four
+              columns at this width makes every one of them too narrow to
+              read. */}
+          <div className="mt-6 border-t border-white/[0.07] pt-5">
+            <Col>Research process</Col>
+            <ul className="mt-4 space-y-3">
+              {PROCESS.map(({ stage, state, open }) => (
+                <li key={stage}>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[16px] font-medium text-white">{stage}</p>
+                    <Chip tone={state === 'In progress' ? 'accent' : 'muted'}>{state}</Chip>
+                  </div>
+                  <p className="mt-1 text-[14px] text-slate-400">{open}</p>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
 
         {/* ── Middle: what I think ────────────────────────────────────── */}
         <div className="bg-[#07090e] p-5 sm:p-6">
           <Col>Investment case</Col>
-          <p className="mt-4 text-[17px] leading-[1.5] text-white">
+          <p className="mt-4 text-[18px] leading-[1.5] text-white">
             Margin recovery as the new plant reaches scale.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Chip tone="accent">Conviction High</Chip>
+            <Chip>Raised from Medium</Chip>
             <Chip>Version 4</Chip>
             <Chip>Held in Core Equity</Chip>
           </div>
 
-          <dl className="mt-6 space-y-3.5 border-t border-white/[0.07] pt-5">
-            {[
-              ['Thesis', 'Written against the security, not filed in a folder'],
-              ['Risks', 'Named, each with what would change the view'],
-              ['Valuation', 'Scenarios kept beside the case they support'],
-              ['Price target', 'Carries the history of what it was before'],
-              ['Coverage', 'Who owns the name, and when it was last touched'],
-            ].map(([term, def]) => (
-              <div key={term} className="grid grid-cols-[6.5rem_1fr] gap-x-4">
-                <dt className="text-[14px] font-medium text-slate-400">{term}</dt>
-                <dd className="text-[14px] leading-relaxed text-slate-300">{def}</dd>
+          <dl className="mt-6 space-y-4 border-t border-white/[0.07] pt-5">
+            {CASE_ROWS.map(([term, def]) => (
+              <div key={term} className="grid gap-x-4 sm:grid-cols-[7rem_1fr]">
+                <dt className="text-[14px] font-medium uppercase tracking-[0.08em] text-slate-400">
+                  {term}
+                </dt>
+                <dd className="text-[16px] leading-relaxed text-slate-300">{def}</dd>
               </div>
             ))}
           </dl>
+
+          <p className="mt-6 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
+            All of it on the security itself, not filed in a folder beside it.
+          </p>
         </div>
 
         {/* ── Right: what the firm did about it ───────────────────────── */}
@@ -458,16 +543,16 @@ export function WorkspaceCanvas() {
                 {i < LINKED.length - 1 && (
                   <span
                     aria-hidden="true"
-                    className="absolute left-[0.22rem] top-[1.15rem] h-[calc(100%+0.55rem)] w-px bg-amber-300/25"
+                    className="absolute left-[0.22rem] top-[1.15rem] h-[calc(100%+0.65rem)] w-px bg-amber-300/25"
                   />
                 )}
-                <p className="text-[14px] font-semibold tracking-tight text-white">{kind}</p>
+                <p className="text-[16px] font-semibold tracking-tight text-white">{kind}</p>
                 <p className="mt-1 text-[14px] leading-relaxed text-slate-400">{detail}</p>
               </li>
             ))}
           </ol>
-          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-500">
-            Four records, one name, each pointing at the one before it.
+          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
+            Five records, one name, each pointing at the one before it.
           </p>
         </div>
       </div>

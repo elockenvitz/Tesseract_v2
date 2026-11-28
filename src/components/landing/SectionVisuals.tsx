@@ -14,297 +14,67 @@
  * These are diagrams and drawn representations, never screenshots, and they
  * never name a real security. `ScreenFigures.tsx` carries the longer note on
  * why the placeholder names are eight letters and the gate that enforces it.
+ *
+ * ── `CostOfForgetting` AND ITS THREE SVGs WERE DELETED, 2026-11-27 ───────
+ *
+ * They drew the problem section: a ring of five tools around a dashed hole
+ * ("nothing holds the why"), a chain with its middle links missing, and two
+ * paths arriving at the same outcome ("returns cannot separate these").
+ *
+ * I built them and the review was right to cut them. Two were abstract
+ * allegories that a sentence says better, and the standing rule here is
+ * that a diagram must show what prose cannot. The third, luck reading as
+ * skill, was the sharp one, and it did not die: it is now ARGUED ON A
+ * NAMED DECISION in `ReassessFigure`, with the original case beside what
+ * changed, which is the same point with evidence instead of a metaphor.
+ *
+ * Deleted rather than left unused, because an unread export is how a page
+ * ends up with two sources of truth for its own argument, and because the
+ * type ceiling flags it the moment nothing renders it. Git has the
+ * drawings if they are ever wanted.
  */
 import type { ReactNode } from 'react'
 
-/* ─────────────────────────────────────────────── 1. The cost of forgetting */
-
-/**
- * Three named costs, each with its own small diagram.
- *
- * The section previously listed four ways reasoning goes missing, as four
- * sentences. Four descriptions of one problem read as one problem described
- * at length. These are three DISTINCT costs, each shown rather than stated,
- * and the third is the one that matters commercially: a firm that cannot
- * tell a correct call from a lucky one cannot compound its judgement.
- */
-/*
- * ── "Poor organization" was ACCUSATORY, and it was also wrong ───────────
- *
- * It told a prospect their firm is badly run. Nobody buys software that
- * opens by insulting them, and the diagnosis is not even right: these firms
- * are not disorganised, they are organised around documents, which is the
- * correct way to organise documents and the wrong way to keep an argument.
- *
- * "Scattered by design" moves the blame to the tool estate, which is where
- * it belongs, and is the more useful claim: the reader recognises it
- * instead of defending against it.
- */
-const COSTS = [
-  {
-    key: 'scattered',
-    title: 'Scattered by design',
-    line: 'Every tool holds its own piece correctly, and none of them holds the argument that joins the pieces.',
-    Visual: ScatterVisual,
-  },
-  {
-    key: 'memory',
-    title: 'It leaves when people leave',
-    line: 'The reasoning was never a record, so it goes home with whoever wrote it.',
-    Visual: BrokenChainVisual,
-  },
-  {
-    key: 'alpha',
-    title: 'Luck reads as skill',
-    line: 'A call that worked for the wrong reason is indistinguishable from one that worked.',
-    Visual: LuckVisual,
-  },
-]
-
-/*
- * ── Why these are SVG now ───────────────────────────────────────────────
- *
- * The first versions were absolutely-positioned text chips. They had no
- * graphic weight at all: five grey labels floating in a box reads as a
- * rendering bug, not as a diagram, and the feedback was blunt about it.
- *
- * Each of these now draws ONE shape that carries the idea on its own, with
- * the label subordinate to the drawing rather than the other way round.
- * Gold is the only colour, and it marks the thing that is missing, so the
- * accent always points at the problem.
- */
-
-function ScatterVisual() {
-  /*
-   * Five tools, each holding a fragment correctly, with no line between
-   * any of them. The gap in the middle is the subject of the drawing: the
-   * dashed ring is where the argument would live if anything held it.
-   */
-  /*
-   * The nodes sit on a ring well clear of the centre. The first version put
-   * them at arbitrary coordinates and two of them landed on top of the
-   * dashed circle, so the drawing read as a collision rather than as a gap.
-   * Polar placement makes the clearance a property of the layout instead of
-   * something to eyeball.
-   */
-  /*
-   * The viewBox is 280x170 on all three diagrams, which is close to the
-   * aspect the box actually has. They were 196x170 and 220x180, so with the
-   * default `preserveAspectRatio` each drawing scaled to fit the HEIGHT and
-   * sat in the middle with dead space either side. The drawings looked
-   * small and tentative for no reason other than the wrong ratio.
-   */
-  const CX = 140
-  const CY = 115
-  const nodes = ['Notes', 'Chat', 'Model', 'Deck', 'Email'].map((label, i) => {
-    const a = (-Math.PI / 2) + (i * 2 * Math.PI) / 5
-    return { label, cx: CX + 104 * Math.cos(a), cy: CY + 92 * Math.sin(a) }
-  })
-
-  /*
-   * ── Making the BOX taller did not make the DRAWING bigger ─────────────
-   *
-   * First attempt went h-44 to h-60 and changed almost nothing, because an
-   * SVG with the default `preserveAspectRatio` scales to fit whichever axis
-   * binds. The viewBox was 280x170 (1.65:1) inside a box about 290x240
-   * (1.21:1), so WIDTH bound: the drawing scaled by 1.04 either way and the
-   * extra 64px became empty letterbox above and below.
-   *
-   * Two changes make the type actually readable. The viewBox is now
-   * 280x230, which is the box's own ratio, so nothing is letterboxed; and
-   * the type is specified at 12-13 user units instead of 8-9, which at this
-   * scale lands near 12px on screen instead of near 9px.
-   */
-  return (
-    <svg viewBox="0 0 280 230" className="h-60 w-full" role="presentation">
-      <circle
-        cx={CX} cy={CY} r="52"
-        fill="none" stroke="rgb(251 191 36 / 0.45)" strokeWidth="1.25" strokeDasharray="4 5"
-      />
-      <text
-        x={CX} y={CY - 4} textAnchor="middle"
-        className="fill-amber-300/90 text-[14px] font-semibold uppercase"
-        style={{ letterSpacing: '0.1em' }}
-      >
-        the why
-      </text>
-      <text x={CX} y={CY + 14} textAnchor="middle" className="fill-slate-500 text-[14px]">
-        nothing holds it
-      </text>
-
-      {nodes.map(({ label, cx, cy }) => (
-        <g key={label}>
-          <rect
-            x={cx - 30} y={cy - 12} width="60" height="24" rx="6"
-            fill="rgb(255 255 255 / 0.05)" stroke="rgb(255 255 255 / 0.12)"
-          />
-          <text x={cx} y={cy + 5} textAnchor="middle" className="fill-slate-300 text-[14px]">
-            {label}
-          </text>
-        </g>
-      ))}
-    </svg>
-  )
-}
-
-function BrokenChainVisual() {
-  /*
-   * A chain whose middle is missing. The two surviving links are solid and
-   * far apart; the gap between them is drawn AS A GAP rather than as
-   * struck-through text, because the subject is absence.
-   */
-  const rows = [
-    { label: 'The position', y: 26, kept: true },
-    { label: 'Why that size', y: 92, kept: false },
-    { label: 'The pushback', y: 152, kept: false },
-    { label: 'The thesis', y: 210, kept: true },
-  ]
-  return (
-    <svg viewBox="0 0 280 230" className="h-60 w-full" role="presentation">
-      {rows.map(({ label, y, kept }, i) => {
-        const next = rows[i + 1]
-        const solid = kept && next?.kept
-        return (
-          <g key={label}>
-            {next && (
-              <line
-                x1="22" y1={y + 14} x2="22" y2={next.y - 14}
-                stroke={solid ? 'rgb(251 191 36 / 0.5)' : 'rgb(255 255 255 / 0.1)'}
-                strokeWidth="1.25"
-                strokeDasharray={solid ? undefined : '3 6'}
-              />
-            )}
-            {kept ? (
-              <rect x="11" y={y - 11} width="22" height="22" rx="6" fill="rgb(251 191 36 / 0.9)" />
-            ) : (
-              <rect
-                x="11" y={y - 11} width="22" height="22" rx="6"
-                fill="none" stroke="rgb(255 255 255 / 0.16)" strokeDasharray="3 4"
-              />
-            )}
-            <text
-              x="46" y={y + 5}
-              className={kept ? 'fill-slate-200 text-[16px]' : 'fill-slate-600 text-[16px]'}
-            >
-              {label}
-            </text>
-            {!kept && (
-              <text
-                x="46" y={y + 21}
-                className="fill-slate-700 text-[12px] uppercase"
-                style={{ letterSpacing: '0.1em' }}
-              >
-                gone
-              </text>
-            )}
-          </g>
-        )
-      })}
-    </svg>
-  )
-}
-
-function LuckVisual() {
-  /*
-   * Two tracks that arrive at the same place. Returns alone cannot tell
-   * them apart, which is why they are drawn as two lines ending on the
-   * same point, with only the REASON differing. The gold track is the one
-   * whose thesis actually played out.
-   */
-  return (
-    /*
-     * Labels sit BELOW their own curve rather than on it. The first
-     * version put "played out" directly over the gold path and "Both
-     * worked" on top of the end point, so three things occupied the same
-     * 20px band. Each track now owns a horizontal lane.
-     */
-    <svg viewBox="0 0 280 230" className="h-60 w-full" role="presentation">
-      <text x="2" y="16" className="fill-slate-500 text-[14px] uppercase" style={{ letterSpacing: '0.1em' }}>
-        Same thesis, two paths
-      </text>
-
-      <path d="M6 62 C 90 62, 150 58, 196 56" fill="none" stroke="rgb(251 191 36 / 0.85)" strokeWidth="2" />
-      <text x="6" y="84" className="fill-amber-300 text-[14px]">the thesis played out</text>
-
-      <path
-        d="M6 162 C 80 162, 130 86, 196 60" fill="none"
-        stroke="rgb(255 255 255 / 0.22)" strokeWidth="2" strokeDasharray="4 5"
-      />
-      <text x="6" y="184" className="fill-slate-500 text-[14px]">something else did</text>
-
-      <circle cx="200" cy="58" r="6" fill="rgb(255 255 255 / 0.9)" />
-      <text x="212" y="62" className="fill-slate-200 text-[14px]">Worked</text>
-
-      <line x1="2" y1="204" x2="278" y2="204" stroke="rgb(255 255 255 / 0.08)" />
-      <text x="2" y="222" className="fill-slate-600 text-[12px] uppercase" style={{ letterSpacing: '0.1em' }}>
-        Returns cannot separate these
-      </text>
-    </svg>
-  )
-}
-
-export function CostOfForgetting() {
-  return (
-    <ul className="grid gap-x-12 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
-      {COSTS.map(({ key, title, line, Visual }) => (
-        /*
-          `flex-col` with `mt-auto` on the figure, so the three diagrams
-          share a baseline. The descriptions run two or three lines and
-          without this the first column's figure sat 25px below the other
-          two, which reads as a column that failed to lay out rather than as
-          a deliberate difference.
-        */
-        <li key={key} data-cost={key} className="flex flex-col">
-          <h3 className="text-[18px] font-semibold tracking-tight text-white">{title}</h3>
-          <p className="mt-2 max-w-[38ch] text-[16px] leading-[1.75] text-slate-400">{line}</p>
-          <div className="mt-auto pt-6">
-            <div className="rounded-xl bg-white/[0.02] p-4 ring-1 ring-inset ring-white/[0.06]">
-              <Visual />
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-/* ──────────────────────────────────────────── 2. Capture costs you nothing */
+/* ─────────────────────── 1. Capture costs you nothing ───────────────────── */
 
 /**
  * The answer to "so this is more admin for my analysts".
  *
- * The section's own headline already said the record assembles itself out of
- * work an analyst was going to do anyway, and then listed six capture
- * surfaces, which reads as six more things to keep up to date. The fear is
- * reasonable and a list cannot answer it. This shows the trade directly:
- * what an analyst types on the left, what the firm gets on the right, with
- * nothing in between for them to do.
+ * The section's own headline already promises that the intelligence is
+ * captured in the course of the work, and then lists capture surfaces,
+ * which reads as more things to keep up to date. The fear is reasonable and
+ * a list cannot answer it. This shows the trade directly: what an analyst
+ * types on the left, what the firm gets on the right, with nothing in
+ * between for them to do.
  */
 export function CaptureTrade() {
   return (
     <div className="grid gap-x-10 gap-y-8 lg:grid-cols-[1fr_auto_1fr]">
       <figure
         data-illustration="true"
-        className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-slate-900/10"
+        className="rounded-2xl bg-white p-5 ring-1 ring-inset ring-slate-900/10 sm:p-6"
       >
         <figcaption className="flex items-baseline justify-between gap-3">
           <span className="text-[16px] font-semibold tracking-tight text-slate-900">
             What somebody writes
           </span>
-          <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          {/* slate-600, not the dark sections' slate-400: this card is
+              WHITE. slate-400 on white measures 2.56:1 and this marker is
+              the one piece of text on the figure a reader must not miss. */}
+          <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-600">
             Illustration
           </span>
         </figcaption>
         <div className="mt-4 rounded-lg bg-slate-50 p-4 ring-1 ring-inset ring-slate-900/[0.06]">
-          <p data-security-name className="font-mono text-[14px] text-slate-500">
+          <p data-security-name className="font-mono text-[14px] text-slate-600">
             NORTHWIND
           </p>
-          <p className="mt-2 text-[16px] leading-[1.7] text-slate-700">
+          <p className="mt-2 text-[17px] leading-[1.7] text-slate-700">
             New plant slipped a quarter. Still think margin recovery lands, but
             the timing case is weaker. Target down to the low fifties.
           </p>
         </div>
-        <p className="mt-4 text-[14px] leading-relaxed text-slate-500">
+        <p className="mt-4 text-[14px] leading-relaxed text-slate-600">
           A note somebody was going to write regardless.
         </p>
       </figure>
@@ -335,7 +105,7 @@ export function CaptureTrade() {
       */}
       <figure
         data-illustration="true"
-        className="rounded-2xl bg-slate-900 p-5 ring-1 ring-inset ring-slate-900/10"
+        className="rounded-2xl bg-slate-900 p-5 ring-1 ring-inset ring-slate-900/10 sm:p-6"
       >
         <figcaption className="flex items-baseline justify-between gap-3">
           <span className="text-[16px] font-semibold tracking-tight text-white">
@@ -355,7 +125,7 @@ export function CaptureTrade() {
               key={what}
               className="flex items-baseline justify-between gap-3 rounded-lg bg-white/[0.06] px-3 py-2.5 ring-1 ring-inset ring-white/10"
             >
-              <span className="text-[14px] text-white">{what}</span>
+              <span className="text-[16px] text-white">{what}</span>
               <span className="text-[14px] text-slate-400">{how}</span>
             </li>
           ))}
@@ -368,10 +138,10 @@ export function CaptureTrade() {
   )
 }
 
-/* ─────────────────────────────────────────────── 3. Memory that accumulates */
+/* ───────────────────── 2. Intelligence that accumulates ─────────────────── */
 
 /**
- * Institutional memory as a thing that GROWS, which a three-item grid
+ * Institutional intelligence as a thing that GROWS, which a three-item grid
  * cannot show. The device is a ledger with a year on it, because the
  * argument is entirely about elapsed time: none of this is worth anything
  * in month one and it is the firm's most valuable asset in year three.
@@ -385,14 +155,14 @@ export function MemoryLedger() {
   return (
     <figure
       data-illustration="true"
-      className="rounded-2xl bg-white/[0.025] p-5 ring-1 ring-inset ring-white/[0.08] sm:p-6"
+      className="rounded-2xl bg-white/[0.03] p-5 ring-1 ring-inset ring-white/[0.1] sm:p-7"
     >
       <figcaption className="flex items-baseline justify-between gap-3">
         {/* Said "One name, one year" while the figure draws three of them. */}
         <span className="text-[16px] font-semibold tracking-tight text-white">
           One name, three years
         </span>
-        <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-500">
+        <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
           Illustration
         </span>
       </figcaption>
@@ -415,7 +185,7 @@ export function MemoryLedger() {
         three labelled entries hang off the last row, so the detail and the
         accumulation are the same picture rather than two.
       */}
-      <div className="mt-5 space-y-2.5">
+      <div className="mt-5 space-y-3">
         {[
           { year: 'Year one', marks: 4, gold: 1 },
           { year: 'Year two', marks: 9, gold: 3 },
@@ -423,14 +193,14 @@ export function MemoryLedger() {
         ].map(({ year, marks, gold }) => (
           <div key={year} className="flex items-center gap-3">
             {/* w-16 wrapped "Year three" onto two lines and threw the row off its marks. */}
-            <span className="w-20 shrink-0 text-[12px] uppercase tracking-[0.1em] text-slate-500">
+            <span className="w-20 shrink-0 text-[12px] uppercase tracking-[0.1em] text-slate-400">
               {year}
             </span>
             <span className="flex flex-wrap gap-1">
               {Array.from({ length: marks }, (_, i) => (
                 <span
                   key={i}
-                  className={`h-2.5 w-2.5 rounded-[2px] ${
+                  className={`h-3 w-3 rounded-[2px] ${
                     i < gold ? 'bg-amber-400/90' : 'bg-white/[0.09]'
                   }`}
                 />
@@ -440,11 +210,11 @@ export function MemoryLedger() {
         ))}
       </div>
 
-      <ol className="mt-5 space-y-2 border-t border-white/[0.07] pt-4">
+      <ol className="mt-6 space-y-2.5 border-t border-white/[0.07] pt-5">
         {rows.map(({ when, what, kind }) => (
           <li key={when} className="flex items-baseline gap-3">
-            <span className="w-7 shrink-0 font-mono text-[12px] text-slate-500">{when}</span>
-            <span className="min-w-0 flex-1 text-[14px] leading-snug text-slate-200">{what}</span>
+            <span className="w-7 shrink-0 font-mono text-[12px] text-slate-400">{when}</span>
+            <span className="min-w-0 flex-1 text-[16px] leading-snug text-slate-200">{what}</span>
             <span className="shrink-0 text-[12px] uppercase tracking-[0.12em] text-amber-300/80">
               {kind}
             </span>
@@ -457,7 +227,7 @@ export function MemoryLedger() {
         names are the half of its judgement that normally leaves no trace,
         and that is the part this section is actually selling.
       */}
-      <p className="mt-4 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-500">
+      <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
         The rejection is a record too, which is why the firm can study what it
         declined and not only what it owns.
       </p>
@@ -465,7 +235,200 @@ export function MemoryLedger() {
   )
 }
 
-/* ───────────────────────────────────────────────────────── 4. The assistant */
+/* ──────────────────────────── 3. ACT AI, the canvas ─────────────────────── */
+
+/**
+ * THE FLAGSHIP ACT AI DEMONSTRATION.
+ *
+ * ── Why the section needed this ─────────────────────────────────────────
+ *
+ * ACT AI was sold on its PROPERTIES: which model it runs, what it is
+ * allowed to read, where the answer is filed. Those are the three panels of
+ * `AssistantFlow` below and they are all true and all deployed. None of
+ * them demonstrates the only claim worth making to this audience, which is
+ * that the thing understands an investment process. A question strip got
+ * closer and was still a list of sentences in boxes.
+ *
+ * This shows the mechanism: where the assistant is standing, what it was
+ * asked, WHICH RECORDS IT WENT AND READ, and that the answer carries them
+ * back as citations. The argument against a general chatbot is not argued,
+ * it is visible — a model with your documents in a folder cannot produce
+ * the middle column.
+ *
+ * ── EVERY RECORD NAMED HERE IS READ BY A DEPLOYED TOOL ──────────────────
+ *
+ * This is the constraint that shaped the content, and it cut two of the
+ * questions the brief proposed. The deployed `ai-chat` function exposes
+ * twelve retrieval tools: get_asset, search_assets, get_portfolio,
+ * get_theme, search_team_notes, get_decisions, get_workflows,
+ * get_watchlists, get_coverage, get_idea_pipeline, get_pending_decisions
+ * and get_outstanding_work.
+ *
+ * NO TOOL READS `note_versions` OR `asset_field_history`. So:
+ *
+ *   NOT ON THE PAGE  "What has changed in our thesis since we initiated?"
+ *                    and "Where has conviction changed across my
+ *                    coverage?" Both need version history retrieval, which
+ *                    is not wired to the assistant. The tables exist
+ *                    (1,066 and 131 rows in production) and the product
+ *                    shows the history in its own UI; the ASSISTANT cannot
+ *                    read it, and a demo would expose that in one question.
+ *
+ *   ON THE PAGE      the three below, each mapped to a named tool. The
+ *                    arguments against a recommendation come from
+ *                    get_decisions, which returns the PM's ruling on each
+ *                    request with the context it was submitted with.
+ *                    Coverage staleness comes from get_coverage plus
+ *                    get_outstanding_work. What was believed at the time
+ *                    comes from get_decisions, because the submission
+ *                    context is frozen on the request.
+ *
+ * NO ANSWER TEXT IS SHOWN, deliberately. A drawn answer is a fabricated
+ * one, and a fabricated analytical answer on a public page is the single
+ * easiest way to lose a technical buyer. The figure shows the question and
+ * the retrieval, which is the part that is ours.
+ */
+const ASKS = [
+  {
+    q: 'What were the strongest arguments against this recommendation?',
+    reads: ['Recommendation', 'PM ruling', 'Rejections on this name'],
+  },
+  {
+    q: 'Which names in my coverage need a thesis review?',
+    reads: ['Coverage', 'Research notes', 'Open process stages'],
+  },
+  {
+    q: 'What did we believe when we added to this position?',
+    reads: ['Decision', 'Reasoning frozen at submission', 'Trade Book entry'],
+  },
+]
+
+export function AssistantCanvas() {
+  return (
+    <figure
+      data-illustration="true"
+      data-assistant-canvas
+      className="relative overflow-hidden rounded-2xl bg-white/[0.03] ring-1 ring-inset ring-white/[0.1]"
+    >
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent"
+      />
+
+      {/*
+        The context strip. This is the whole difference between ACT AI and a
+        chat window: the assistant is standing somewhere, and where it is
+        standing is a typed object rather than a conversation title.
+      */}
+      <figcaption className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-white/[0.07] px-5 py-3.5 sm:px-7">
+        <span className="flex min-w-0 flex-wrap items-center gap-2.5">
+          <span aria-hidden="true" className="size-2 rounded-full bg-amber-300/80" />
+          <span className="text-[14px] font-medium text-slate-300">ACT AI</span>
+          <span aria-hidden="true" className="text-slate-700">/</span>
+          <span data-security-name className="truncate font-mono text-[14px] text-white">
+            NORTHWIND
+          </span>
+          <span aria-hidden="true" className="text-slate-700">/</span>
+          <span className="truncate text-[14px] text-slate-400">
+            Recommendation, awaiting a ruling
+          </span>
+        </span>
+        <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
+          Illustration
+        </span>
+      </figcaption>
+
+      <div className="grid gap-px bg-white/[0.06] lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        {/* ── Left: what gets asked ───────────────────────────────────── */}
+        <div className="bg-[#07090e] p-5 sm:p-7">
+          <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-slate-400">
+            Questions it can take from here
+          </p>
+          <ul className="mt-5 space-y-3">
+            {ASKS.map(({ q }, i) => (
+              <li
+                key={q}
+                className={`rounded-xl px-4 py-3.5 ring-1 ring-inset ${
+                  i === 0
+                    ? 'bg-amber-400/[0.08] ring-amber-300/25'
+                    : 'bg-white/[0.02] ring-white/[0.07]'
+                }`}
+              >
+                <p
+                  className={`text-[16px] leading-[1.55] ${
+                    i === 0 ? 'text-white' : 'text-slate-400'
+                  }`}
+                >
+                  {q}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
+            Each of these needs a relationship between records. A folder of
+            documents holds the documents and not the relationship.
+          </p>
+        </div>
+
+        {/* ── Right: what it goes and reads ───────────────────────────── */}
+        <div className="bg-[#07090e] p-5 sm:p-7">
+          <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-amber-300/80">
+            What it reads to answer the first one
+          </p>
+          <ol className="mt-5 space-y-4">
+            {ASKS[0].reads.map((r, i) => (
+              <li key={r} className="relative pl-6">
+                <span
+                  aria-hidden="true"
+                  className="absolute left-0 top-[0.45rem] size-2 rounded-full bg-amber-300/80 ring-4 ring-amber-300/10"
+                />
+                {i < ASKS[0].reads.length - 1 && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute left-[0.22rem] top-[1.15rem] h-[calc(100%+0.6rem)] w-px bg-amber-300/25"
+                  />
+                )}
+                <p className="text-[16px] font-semibold tracking-tight text-white">{r}</p>
+              </li>
+            ))}
+          </ol>
+
+          <div className="mt-6 rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.07]">
+            <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-slate-400">
+              And the answer carries them
+            </p>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {['Cited: recommendation', 'Cited: PM rationale', 'Cited: prior rejection'].map(t => (
+                <span
+                  key={t}
+                  className="rounded bg-amber-400/10 px-2 py-0.5 text-[12px] font-medium text-amber-200 ring-1 ring-inset ring-amber-300/25"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+            <p className="mt-3.5 text-[14px] leading-relaxed text-slate-400">
+              So the reasoning can be checked against the record it came from
+              rather than taken on trust.
+            </p>
+          </div>
+
+          {/*
+            NO DRAWN ANSWER. See the note on this component: a fabricated
+            analytical answer is the fastest way to lose the only reader
+            who matters here.
+          */}
+          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
+            The reply is not reproduced here. What the assistant retrieves is
+            ours to show; what a model writes on the day is not.
+          </p>
+        </div>
+      </div>
+    </figure>
+  )
+}
+
+/* ─────────────────── 4. The assistant's supporting controls ─────────────── */
 
 /**
  * ── Every claim here was checked against PRODUCTION, not against the repo
@@ -484,10 +447,19 @@ export function MemoryLedger() {
  * code has an explicit "table is not there" branch, and advertising it would
  * be a cheque the demo cannot cash. It belongs here the week the table
  * lands, and not before.
+ *
+ * ── DEMOTED TO A SUPPORTING ROW, 2026-11-27 ─────────────────────────────
+ *
+ * This used to BE the ACT AI section. Three equal cards about the model
+ * picker, the read-scope switches and conversation tagging, carrying the
+ * whole case for the assistant. They are procurement answers, and leading
+ * with them undersold the opportunity badly — the review said so and it is
+ * right. `AssistantCanvas` above is now the demonstration and these are
+ * the controls underneath it, drawn smaller and introduced as such.
  */
 export function AssistantFlow() {
   return (
-    <ol className="grid gap-x-10 gap-y-10 lg:grid-cols-3">
+    <ol className="grid gap-x-10 gap-y-9 sm:grid-cols-3">
       {[
         {
           /*
@@ -498,8 +470,8 @@ export function AssistantFlow() {
            * one vendor's model. The key is still mentioned, as the
            * mechanism, in the line rather than the heading.
            */
-          step: 'Use the model you want',
-          line: 'Pick the provider and model the work suits, on your own key. Nothing here is tied to one vendor.',
+          step: 'The model is a choice',
+          line: 'Pick the provider and model the work suits, on your own account and key.',
           Body: () => (
             <div className="space-y-2">
               {[
@@ -512,7 +484,7 @@ export function AssistantFlow() {
                   className={`flex items-center justify-between rounded-lg px-3 py-2 text-[14px] ring-1 ring-inset ${
                     on
                       ? 'bg-amber-400/10 text-white ring-amber-300/30'
-                      : 'text-slate-500 ring-white/[0.07]'
+                      : 'text-slate-400 ring-white/[0.07]'
                   }`}
                 >
                   {name}
@@ -527,8 +499,8 @@ export function AssistantFlow() {
           ),
         },
         {
-          step: 'You choose what it reads',
-          line: 'The record is yours, so which parts it may see is a setting, not a guess.',
+          step: 'The context is a setting',
+          line: 'Which parts of the record it may read is configured, not assumed.',
           Body: () => (
             <div className="space-y-2">
               {[
@@ -560,13 +532,9 @@ export function AssistantFlow() {
            * answer is a message in a thread that is gone by Thursday. Here
            * it lands ON the objects it concerns, which makes it findable
            * from the name rather than from remembering you once asked.
-           *
-           * Drawn as the answer BECOMING something: the question, then the
-           * tags it attached itself to, then the line about where it turns
-           * up later. That last line is the whole argument of the section.
            */
-          step: 'The answer becomes part of the record',
-          line: 'It attaches to the name, the idea and the note it drew on, so the next person finds it without knowing it exists.',
+          step: 'The answer stays findable',
+          line: 'It attaches to the name, the idea and the note it drew on.',
           Body: () => (
             <div className="rounded-lg bg-white/[0.03] p-3 ring-1 ring-inset ring-white/[0.07]">
               <p className="text-[14px] leading-relaxed text-slate-300">
@@ -582,11 +550,6 @@ export function AssistantFlow() {
                   </span>
                 ))}
               </div>
-              <p className="mt-3 flex items-start gap-1.5 text-[14px] leading-relaxed text-slate-500">
-                <span aria-hidden="true" className="text-amber-300">&#8627;</span>
-                Opens with the name a year from now, beside the thesis it
-                questioned.
-              </p>
             </div>
           ),
         },
@@ -607,9 +570,9 @@ export function AssistantFlow() {
               aria-hidden="true"
               className={`h-px w-6 shrink-0 ${i === 0 ? 'bg-amber-400' : 'bg-white/20'}`}
             />
-            <h3 className="text-[18px] font-semibold tracking-tight text-white">{step}</h3>
+            <h3 className="text-[17px] font-semibold tracking-tight text-white">{step}</h3>
           </div>
-          <p className="mt-2 max-w-[40ch] text-[16px] leading-[1.75] text-slate-400">{line}</p>
+          <p className="mt-2 max-w-[40ch] text-[16px] leading-[1.7] text-slate-400">{line}</p>
           <div className="mt-auto pt-5">
             <div className="rounded-xl bg-white/[0.02] p-4 ring-1 ring-inset ring-white/[0.06]">
               <Body />
@@ -623,5 +586,5 @@ export function AssistantFlow() {
 
 /* Shared by nothing yet, exported so a section can frame a figure caption. */
 export function VisualNote({ children }: { children: ReactNode }) {
-  return <p className="mt-4 text-[14px] leading-relaxed text-slate-500">{children}</p>
+  return <p className="mt-4 text-[14px] leading-relaxed text-slate-400">{children}</p>
 }
