@@ -46,7 +46,8 @@ const ok = (name, cond, detail = '') => {
 
 const title = (html.match(/<title>([^<]*)<\/title>/) || [])[1] ?? null
 ok('the document title is the agreed string',
-  title === 'Tesseract | Investment Intelligence', `found: ${title}`)
+  title === 'Tesseract | The decision operating system for investment teams',
+  `found: ${title}`)
 ok('there is exactly one <title>',
   (html.match(/<title>/g) || []).length === 1)
 

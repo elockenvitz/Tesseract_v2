@@ -72,7 +72,8 @@ await page.goto(base, { waitUntil: 'networkidle' })
 
 const title = await page.title()
 ok('the browser reports the new tab title',
-  title === 'Tesseract | Investment Intelligence', `got: ${title}`)
+  title === 'Tesseract | The decision operating system for investment teams',
+  `got: ${title}`)
 
 // Nothing may rewrite it after the app mounts.
 await page.waitForTimeout(1500)
@@ -147,7 +148,8 @@ ok('the icon is not a filled square on either ground',
 /* ------------------------------------------- a hard refresh changes nothing */
 
 await page.reload({ waitUntil: 'networkidle' })
-ok('the title survives a reload', (await page.title()) === 'Tesseract | Investment Intelligence')
+ok('the title survives a reload',
+  (await page.title()) === 'Tesseract | The decision operating system for investment teams')
 
 await browser.close()
 server.close()

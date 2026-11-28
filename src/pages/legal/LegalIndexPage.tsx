@@ -89,7 +89,15 @@ export function LegalIndexPage() {
         </div>
 
         <div className="mt-10">
-          <Link to="/" className="text-sm font-medium text-slate-900 underline">
+          {/* 108x19 before this, under the 24px touch minimum. Note that
+              the identical link in LegalDocumentPage was fixed first and
+              did NOT fix this page: /legal renders LegalIndexPage, and
+              /legal/:documentId renders the other one. Two files, same
+              link, and only re-running the sweep caught the second. */}
+          <Link
+            to="/"
+            className="inline-flex min-h-[44px] items-center text-sm font-medium text-slate-900 underline"
+          >
             Back to Tesseract
           </Link>
         </div>

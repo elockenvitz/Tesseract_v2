@@ -37,15 +37,25 @@
     <meta http-equiv="X-Frame-Options" content="DENY" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <!--
-      The browser tab's name, and the only one: nothing in the application
-      assigns `document.title`, so this is not overridden after mount.
+      The browser tab's name, and the default for every route.
+
+      `LandingPage` overrides it on mount and restores it on unmount, so this
+      is what every OTHER route shows: the six authentication screens, the
+      legal pages and the application itself. It therefore has to carry the
+      positioning on its own.
+
+      "The decision operating system for investment teams", not the former
+      "Investment Intelligence". That was the older positioning, it claimed
+      nothing the category does not already claim, and it disagreed with the
+      landing page — so a prospect with the site open in one tab and the
+      sign-in page in another saw two different products.
 
       Distinct from the social-preview copy on purpose. `og:title` is "Tesseract"
       because a link preview already shows the site name beside it, and the tab
       has no such context — it is a 20-character strip in a row of twenty, and
       the product name alone does not say what it is.
     -->
-    <title>Tesseract | Investment Intelligence</title>
+    <title>Tesseract | The decision operating system for investment teams</title>
 
     <!--
       Link previews — iMessage, Slack, WhatsApp, X.

@@ -61,10 +61,17 @@ describe('the landing page releases the boot loader', () => {
       </MemoryRouter>,
     )
 
-    // The page renders...
-    expect(
-      screen.getByText(/Make sure your firm remembers it/i),
-    ).toBeInTheDocument()
+    /*
+     * The page renders...
+     *
+     * This probed for "Make sure your firm remembers it", the old
+     * headline, and broke when the hero was repositioned. The behaviour
+     * under test is the OVERLAY FADING, not any particular sentence, so
+     * the probe is now the h1 itself: it asserts that the page mounted
+     * with a heading, without pinning this suite to copy it has no
+     * opinion about. The landing-page suite owns what the h1 must say.
+     */
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
 
     // ...and is not buried under the overlay.
     expect(document.getElementById(LOADER_ID)?.classList.contains('is-fading')).toBe(true)

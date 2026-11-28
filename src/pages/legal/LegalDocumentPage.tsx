@@ -174,7 +174,15 @@ function InPreparation() {
           us and we will send them to you directly.
         </p>
         <div className="mt-8">
-          <Link to="/" className="text-sm font-medium text-slate-900 underline">
+          {/* 108x19 before this, under the 24px touch minimum, and the
+              only way back from a legal page. Found by running the
+              touch-target check across /legal too, after fixing the
+              landing and auth screens — the sweep is the reason it was
+              not left behind. */}
+          <Link
+            to="/"
+            className="inline-flex min-h-[44px] items-center text-sm font-medium text-slate-900 underline"
+          >
             Back to Tesseract
           </Link>
         </div>

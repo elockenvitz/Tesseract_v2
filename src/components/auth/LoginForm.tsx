@@ -201,7 +201,10 @@ export function LoginForm() {
           <div className="flex items-center justify-between">
             <Link
               to="/reset-password"
-              className="text-sm text-primary-600 hover:text-primary-500"
+              /* 141x20 before this, under the 24px touch minimum.
+                 inline-flex with a 44px floor raises the hit area
+                 without changing the type size or the row's layout. */
+              className="inline-flex min-h-[44px] items-center text-sm text-primary-600 hover:text-primary-500"
             >
               Forgot your password?
             </Link>
@@ -252,7 +255,10 @@ export function LoginForm() {
           Don't have an account?{' '}
           <Link
             to="/signup"
-            className="font-medium text-primary-600 hover:text-primary-500"
+            /* 48x19 before this. `inline-flex` here rather than
+               `inline-block` keeps it on the baseline of the sentence
+               it sits inside, with px-1 giving it horizontal room. */
+            className="inline-flex min-h-[44px] items-center px-1 font-medium text-primary-600 hover:text-primary-500"
           >
             Sign up
           </Link>

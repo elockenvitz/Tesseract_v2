@@ -47,13 +47,28 @@ export function LegalFooter({ compact = false, className = '' }: LegalFooterProp
       )}
 
       <nav aria-label="Legal" className={compact ? '' : 'mt-3'}>
-        <ul className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1">
+        {/*
+          ── TOUCH TARGETS, measured rather than assumed ──────────────────
+
+          These five links rendered 21px tall at every viewport from
+          1920 down to 390, including on all six authentication screens,
+          which is under the 24px minimum and well under the 44px a
+          thumb actually wants. They are the links a regulator and a
+          cautious buyer both go looking for, so they were the worst
+          five on the site to have as hairline targets.
+
+          `inline-flex` with `min-h-[44px]` and horizontal padding gives
+          the anchor a real box without changing the type size or the
+          visual rhythm of the row: the gap shrinks to compensate, so
+          the footer reads the same and can be hit.
+        */}
+        <ul className="flex flex-wrap items-center justify-center gap-x-1 gap-y-0">
           {LEGAL_DOCUMENTS.map(doc => (
             <li key={doc.id}>
               <Link
                 to={legalPath(doc.id)}
                 title={doc.summary}
-                className="hover:text-gray-900 hover:underline dark:hover:text-gray-200"
+                className="inline-flex min-h-[44px] items-center rounded px-3 hover:text-gray-900 hover:underline dark:hover:text-gray-200"
               >
                 {FOOTER_LABELS[doc.id] ?? doc.title}
               </Link>

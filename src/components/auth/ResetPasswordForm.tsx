@@ -89,7 +89,10 @@ export function ResetPasswordForm() {
       <div className="text-center">
         <Link
           to="/login"
-          className="text-sm text-primary-600 hover:text-primary-500"
+          /* 90x19 before this, under the 24px touch minimum. Same fix as
+             the other two auth links: a 44px floor on the hit area, with
+             the type size and the centred layout unchanged. */
+          className="inline-flex min-h-[44px] items-center px-2 text-sm text-primary-600 hover:text-primary-500"
         >
           Back to sign in
         </Link>

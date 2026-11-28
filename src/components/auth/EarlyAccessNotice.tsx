@@ -46,10 +46,16 @@ const BUTTON_CLASS =
 export function EarlyAccessNotice() {
   const [requesting, setRequesting] = useState(false)
 
+  /*
+   * Left-aligned, matching `AuthLayout`'s title and the form fields on every
+   * sibling auth page. It was centred when the shell was a centred card; the
+   * shell is now a left-aligned column, and a centred block inside it reads as
+   * a different page.
+   */
   return (
-    <div className="space-y-6 text-center">
-      <div className="w-14 h-14 rounded-full bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center mx-auto">
-        <KeyRound className="w-7 h-7 text-primary-600" />
+    <div className="space-y-6">
+      <div className="w-12 h-12 rounded-xl bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center">
+        <KeyRound className="w-6 h-6 text-primary-600" />
       </div>
 
       <div className="space-y-2">
@@ -58,7 +64,7 @@ export function EarlyAccessNotice() {
           invitation, so there's no sign-up form yet.
         </p>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          If you have an invitation, open the link in your email — it takes you
+          If you have an invitation, open the link in your email. It takes you
           straight into your workspace.
         </p>
       </div>
@@ -94,7 +100,12 @@ export function EarlyAccessNotice() {
 
       <p className="text-sm text-gray-600 dark:text-gray-400">
         Already have an account?{' '}
-        <Link to="/login" className="font-medium text-primary-600 hover:text-primary-500">
+        {/* 44x19 before this, under the 24px touch minimum. inline-flex
+            keeps it on the baseline of the sentence it sits inside. */}
+        <Link
+          to="/login"
+          className="inline-flex min-h-[44px] items-center px-1 font-medium text-primary-600 hover:text-primary-500"
+        >
           Sign in
         </Link>
       </p>
