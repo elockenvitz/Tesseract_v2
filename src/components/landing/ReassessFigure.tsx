@@ -48,10 +48,13 @@
  * the rest. It does not claim to separate skill from luck on anyone's
  * behalf, and this figure must not either.
  *
- * Same honesty rules as every figure here: fictional eight-letter name,
- * no invented performance numbers, visible illustration marker, and every
- * field corresponds to something really stored.
+ * Same honesty rules as every figure here: no price, no return, no
+ * checkable claim about the real company, a visible illustrative marker,
+ * and every field corresponding to something really stored. The name is
+ * the page's flagship, so a reader arriving here has already followed this
+ * same position through the workspace, the recommendation and the trade.
  */
+import { FLAGSHIP, ILLUSTRATIVE } from './ScreenFigures'
 
 /**
  * The decision, as corresponding pairs.
@@ -64,23 +67,23 @@
 const ROWS: { field: string; then: string; now: string; moved?: boolean }[] = [
   {
     field: 'Thesis',
-    then: 'Margin recovery as the new plant reaches scale',
+    then: 'Azure AI demand turns today’s capex into durable margin',
     now: 'Intact in direction, slower in timing',
   },
   {
     field: 'Key assumption',
-    then: 'The ramp completes inside two quarters',
-    now: 'Wrong. It slipped a third quarter',
+    then: 'Monetization follows the build inside two quarters',
+    now: 'Wrong. It took a third quarter',
     moved: true,
   },
   {
     field: 'Principal risk',
-    then: 'A second delay, or input costs holding',
+    then: 'Capex outrunning monetization, or supply limiting the build',
     now: 'The first one happened, and it was on the list',
   },
   {
     field: 'Valuation',
-    then: 'Base case built on the two-quarter ramp',
+    then: 'Base case built on the two-quarter path',
     now: 'Rebuilt on the later schedule',
     moved: true,
   },
@@ -112,7 +115,7 @@ export function ReassessFigure() {
         <span className="flex min-w-0 flex-wrap items-center gap-2.5">
           <span aria-hidden="true" className="size-2 rounded-full bg-amber-300/80" />
           <span data-security-name className="truncate font-mono text-[16px] text-white">
-            NORTHWIND
+            {FLAGSHIP.ticker}
           </span>
           <span aria-hidden="true" className="text-slate-700">/</span>
           <span className="truncate text-[16px] font-medium text-slate-300">
@@ -120,7 +123,7 @@ export function ReassessFigure() {
           </span>
         </span>
         <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
-          Illustration
+          {ILLUSTRATIVE}
         </span>
       </figcaption>
 
@@ -192,12 +195,12 @@ export function ReassessFigure() {
 
       <div className="grid gap-y-4 border-t border-white/[0.07] px-5 py-5 sm:px-7 md:grid-cols-2 md:gap-x-10">
         <p className="text-[14px] leading-relaxed text-slate-400">
-          The left column was frozen at submission. Later edits to the note
-          created versions and never altered it.
+          The left column was frozen at submission. Later edits created
+          versions and never altered it.
         </p>
         <p className="text-[14px] leading-relaxed text-slate-400">
           The assumption that failed was one the analyst had already named, so
-          the live question is sizing rather than whether to have been in it.
+          the live question is sizing.
         </p>
       </div>
     </figure>

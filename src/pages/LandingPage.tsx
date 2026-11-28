@@ -17,6 +17,7 @@ import {
   CaptureTrade,
   MemoryLedger,
 } from '../components/landing/SectionVisuals'
+import { MobileNav } from '../components/landing/MobileNav'
 import {
   ArrowLeftRight, ArrowRight, BookOpen, FileSignature, Gavel, History,
   Layers, Lock, Quote, RotateCcw, ShieldCheck,
@@ -356,6 +357,22 @@ const SHELL = `mx-auto w-full ${MEASURE} ${GUTTER}`
 
 /** Wider, for product figures only. See the note on `MEASURE`. */
 const CANVAS = `mx-auto w-full max-w-[88rem] ${GUTTER}`
+
+/**
+ * The section links, in one array.
+ *
+ * The desktop bar and the mobile panel both read this, so the two cannot
+ * list different sections. They did before, by construction: the desktop
+ * bar hard-coded five anchors at four breakpoints and there was no mobile
+ * panel to disagree with.
+ */
+const NAV_SECTIONS = [
+  ['#platform', 'Platform'],
+  ['#roles', "Who it's for"],
+  ['#lifecycle', 'How it works'],
+  ['#act-ai', 'ACT AI'],
+  ['#partners', 'Design partners'],
+] as const
 
 /* ───────────────────────────── the atmosphere ───────────────────────────── */
 
@@ -2005,21 +2022,28 @@ export function LandingPage() {
                 the instruction not to invent pages to fill a menu is the
                 right one.
               */}
-              <a href="#platform" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white sm:block">
-                Platform
-              </a>
-              <a href="#roles" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white md:block">
-                Who it's for
-              </a>
-              <a href="#lifecycle" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white lg:block">
-                How it works
-              </a>
-              <a href="#act-ai" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white lg:block">
-                ACT AI
-              </a>
-              <a href="#partners" className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white lg:block">
-                Design partners
-              </a>
+              {/*
+                ── ONE BREAKPOINT NOW, NOT FOUR ────────────────────────────
+
+                These five were revealed at `sm`, `md`, `lg`, `lg` and
+                `lg`, so a tablet showed the first two items of a
+                five-item menu and no way to reach the other three. That
+                is worse than a menu button, because a partial list reads
+                as the whole list.
+
+                All five now appear together at `lg` and `MobileNav`
+                carries them below it. The desktop navigation a visitor
+                sees at 1280 and up is unchanged.
+              */}
+              {NAV_SECTIONS.map(([href, label]) => (
+                <a
+                  key={href}
+                  href={href}
+                  className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white lg:block"
+                >
+                  {label}
+                </a>
+              ))}
               {/*
                 ── THE PRIMARY ACTION IS NOW IN THE NAV ───────────────────
 
@@ -2043,7 +2067,7 @@ export function LandingPage() {
               */}
               <Link
                 to="/login"
-                className="rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white"
+                className="hidden rounded-md px-3 py-2 text-[16px] font-medium text-slate-400 transition-colors hover:text-white sm:block"
               >
                 Sign in
               </Link>
@@ -2056,6 +2080,20 @@ export function LandingPage() {
                 {/* No arrow: at nav scale the glyph crowds the label. */}
                 <span className="hidden" />
               </ContactCta>
+
+              <MobileNav
+                items={NAV_SECTIONS}
+                cta={
+                  <ContactCta
+                    topic="demo"
+                    label="Request a demo"
+                    onOpen={openRequest}
+                    className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-lg bg-amber-400 px-4 text-[17px] font-semibold text-slate-950 transition-colors hover:bg-amber-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#050710]"
+                  >
+                    <span className="hidden" />
+                  </ContactCta>
+                }
+              />
             </div>
           </nav>
         </header>
@@ -2398,30 +2436,31 @@ export function LandingPage() {
           </div>
 
           {/*
-            ── WHERE THE CATEGORY LINE WENT ────────────────────────────────
+            ── THE CATEGORY LINE IS GONE, AND THAT IS THE POINT ────────────
 
-            This is the hero's old "not a market-data terminal" claim,
-            demoted to a clarifier and placed where it belongs: beside the
-            thing that shows what Tesseract IS, for the reader who has just
-            understood that and is now asking how it sits next to what they
-            already pay for.
+            This slot carried "It is not a market-data terminal, an order
+            management system or an execution venue, and it does not
+            replace one." Three absences and a disclaimer, placed directly
+            under the product reveal, which is the worst possible moment to
+            hand a reader an objection they had not raised.
 
-            Set at 16px in three short lines against a rule, not at 24px
-            under the hero's buttons. The content is deliberately WIDER
-            than the old version too: terminals and execution systems were
-            the only two incumbents named, and the question a PM actually
-            asks includes their OMS and their existing research drive.
+            The accurate statement about execution responsibility did not
+            disappear; it moved to the footer, beside the adviser and
+            broker-dealer disclosure, which is where a compliance reader
+            looks for it and where it costs the pitch nothing.
+
+            What stands here instead is the affirmative version of the same
+            claim: not which categories Tesseract is outside of, but what
+            the environment does.
           */}
           <div className={`${SHELL} pb-24 sm:pb-32`}>
             <div className="mt-14 grid gap-x-16 gap-y-7 border-t border-white/10 pt-10 lg:grid-cols-12">
               <p className="text-[17px] font-medium leading-[1.6] text-slate-300 lg:col-span-5">
-                Tesseract sits alongside what a desk already runs on.
+                A unified investment environment.
               </p>
               <p className="max-w-[62ch] text-[16px] leading-[1.75] text-slate-400 lg:col-span-7">
-                It is not a market-data terminal, an order management system or
-                an execution venue, and it does not replace one. It holds the
-                research, the judgement and the decisions those systems have
-                never been able to carry.
+                Research informs judgement, judgement informs action, and the
+                experience of both informs the next decision.
               </p>
             </div>
           </div>
@@ -2885,7 +2924,7 @@ export function LandingPage() {
           */}
           <div className="mt-16 border-t border-white/10 pt-10">
             <p className="text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              And the firm stays in control of it
+              What makes the analysis worth having
             </p>
             <div className="mt-8">
               <AssistantFlow />
@@ -2902,9 +2941,7 @@ export function LandingPage() {
             */}
             <p className="max-w-[60ch] text-[16px] leading-[1.75] text-slate-400">
               It knows where you are, it reads the record, not the internet,
-              and it cites what it used. It runs on your organization&rsquo;s own
-              provider key, held encrypted, so the firm controls which model
-              its reasoning reaches.
+              and it cites what it used.
             </p>
             {/*
               THE VISION LINE, AND WHY IT IS HERE RATHER THAN IN THE PITCH.
@@ -3132,24 +3169,44 @@ export function LandingPage() {
               </div>
               <p className="max-w-[52ch] text-[17px] leading-[1.75] text-slate-400 lg:col-span-7 lg:pt-8">
                 Research, judgement and decision-making are among a firm&rsquo;s
-                most valuable proprietary assets. These are the controls that
-                exist today, stated as what they do rather than as a posture.
+                most valuable proprietary assets. Tesseract is built so they
+                stay that way.
               </p>
             </div>
 
             <dl className="mt-14 grid gap-x-10 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+              {/*
+                ── THE THREE PILLARS WERE WRITTEN FOR AN ENGINEER ──────────
+
+                They read "One firm cannot read another", "You bring your
+                own model" and "You choose what it reads", and the first
+                one explained row-level enforcement in the database. All
+                three are true and all three were the wrong thing to put on
+                a premium public page: the first invites a reader to picture
+                unauthorized access, and the other two sell a procurement
+                detail and a settings screen.
+
+                What replaces them says the same things as customer
+                outcomes. Each one was checked against what is actually
+                deployed before it was written, and each is deliberately
+                NOT absolute: "within controlled organizational boundaries"
+                rather than "cannot", "governed by" rather than
+                "guaranteed". The implementation detail belongs in security
+                documentation and institutional diligence, where it is
+                still available in full.
+              */}
               {[
                 [
-                  'One firm cannot read another',
-                  'Isolation is enforced by the database on every table, per row, rather than by application code remembering to filter.',
+                  'Institutional confidentiality',
+                  'A firm’s proprietary research, investment decisions and institutional knowledge stay within its own organizational boundary.',
                 ],
                 [
-                  'You bring your own model',
-                  'The assistant runs against your organization’s own provider account and key, configured by your administrator.',
+                  'Controlled access',
+                  'Access to investment information follows the organization’s own permissions and responsibilities.',
                 ],
                 [
-                  'You choose what it reads',
-                  'The assistant’s access to your record is a setting your firm controls, not a fixed grant.',
+                  'Firm-specific AI context',
+                  'The assistant works within the investment context the firm makes available to it.',
                 ],
               ].map(([term, def]) => (
                 <div key={term} className="border-t border-amber-300/25 pt-5">
@@ -3281,11 +3338,10 @@ export function LandingPage() {
                     data-section-lead
                     className="mt-5 max-w-[62ch] text-[17px] leading-[1.7] text-slate-300"
                   >
-                    We are working with a small number of investment teams on
-                    how Tesseract reaches the institutional market. A founding
-                    partner gets the product modelled around their own
-                    recommendation and decision process, and a direct say over
-                    what gets built next.
+                    A founding partnership is a working relationship with the
+                    founder. Your own research and decision process modelled
+                    in the product, a first-hand look at what that environment
+                    does for a team, and a direct say in what gets built next.
                   </p>
                 </div>
                 <div className="lg:col-span-5 lg:justify-self-end">
@@ -3387,8 +3443,25 @@ export function LandingPage() {
               style choice: a disclaimer nobody can read is a disclaimer
               that does not do its job. The grey is enough to keep it quiet.
             */}
+            {/*
+              ── THE SECURITIES SENTENCE IS NEW, 2026-11-28 ───────────────
+
+              The figures on this page name real, widely held companies
+              now. That is a commercial improvement and it creates exactly
+              one obligation: a reader must not be able to mistake a drawn
+              investment case for a view on that security, for real market
+              data, or for evidence that the company is a customer. Every
+              figure carries an illustrative marker; this is the sentence
+              that states the same thing once, in the place a compliance
+              reader looks.
+
+              It also absorbs the execution clarification that used to sit
+              under the product reveal. "It places no orders" was already
+              here, which is the whole reason that marketing paragraph was
+              removable.
+            */}
             <p className="mt-10 border-t border-white/[0.06] pt-6 text-[16px] leading-[1.75] text-slate-400">
-              Tesseract is research and workflow software. It is not an investment adviser or a broker-dealer, it gives no investment advice, and it places no orders. Nothing on this page is an offer of securities, investment advice, or a performance representation.
+              Tesseract is research and workflow software. It is not an investment adviser or a broker-dealer, it gives no investment advice, and it places no orders. Nothing on this page is an offer of securities, investment advice, or a performance representation. Securities are named in the illustrations for familiarity only. The research, assumptions and decisions shown are invented, are not market data and are not recommendations, and the companies named are not customers, partners or endorsers.
             </p>
 
             {/*

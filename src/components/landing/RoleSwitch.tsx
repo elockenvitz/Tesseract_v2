@@ -51,6 +51,7 @@
  */
 import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { FLAGSHIP, ILLUSTRATIVE } from './ScreenFigures'
 
 function Col({ children }: { children: ReactNode }) {
   return (
@@ -94,7 +95,7 @@ function Figure({ caption, context, children }: { caption: string; context: stri
           <span className="truncate text-[14px] text-slate-400">{context}</span>
         </span>
         <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
-          Illustration
+          {ILLUSTRATIVE}
         </span>
       </figcaption>
       {children}
@@ -110,19 +111,19 @@ function Pane({ children, className = '' }: { children: ReactNode; className?: s
 /* ── ANALYSTS: a working day ───────────────────────────────────────────── */
 
 const QUEUE = [
-  { name: 'NORTHWIND', why: 'Earnings in four days, prep stage open', tag: 'Prep due', hot: true },
-  { name: 'VERIDIAN', why: 'Thesis untouched since the guidance cut', tag: 'Review', hot: true },
-  { name: 'HALDEN', why: 'Two diligence requirements still open', tag: 'Open', hot: false },
-  { name: 'CALDERA', why: 'Price target passed, no note since', tag: 'Revisit', hot: false },
+  { name: 'MSFT', why: 'Earnings in four days, prep stage open', tag: 'Prep due', hot: true },
+  { name: 'NVDA', why: 'Thesis untouched since the last guide', tag: 'Review', hot: true },
+  { name: 'AVGO', why: 'Two diligence requirements still open', tag: 'Open', hot: false },
+  { name: 'V', why: 'Price target passed, no note since', tag: 'Revisit', hot: false },
 ]
 
 /* Changes across coverage. Every one of these is a field the product keeps
    a dated history for, which is why the column can exist at all. */
 const MOVED = [
-  ['Conviction', 'VERIDIAN, High to Medium'],
-  ['Price target', 'CALDERA, raised, prior kept'],
-  ['Thesis', 'NORTHWIND, version 4 of 4'],
-  ['Idea stage', 'HALDEN, now developing'],
+  ['Conviction', 'NVDA, High to Medium'],
+  ['Price target', 'V, raised, prior kept'],
+  ['Thesis', 'MSFT, version 4 of 4'],
+  ['Idea stage', 'AVGO, now developing'],
 ]
 
 function AnalystWorkspace() {
@@ -203,10 +204,10 @@ function AnalystWorkspace() {
 
 /* The product's own canonical pipeline stages, in order of maturity. */
 const PIPELINE = [
-  { stage: 'Ready to recommend', names: 'NORTHWIND', on: true },
-  { stage: 'Developing', names: 'HALDEN, ORENDA', on: false },
-  { stage: 'Researching', names: 'VERIDIAN', on: false },
-  { stage: 'Exploring', names: 'CALDERA, LINDHOLM', on: false },
+  { stage: 'Ready to recommend', names: 'MSFT', on: true },
+  { stage: 'Developing', names: 'AVGO, COST', on: false },
+  { stage: 'Researching', names: 'NVDA', on: false },
+  { stage: 'Exploring', names: 'V, JPM', on: false },
 ]
 
 function PmDecision() {
@@ -249,9 +250,11 @@ function PmDecision() {
           <div className="flex items-start justify-between gap-4 border-b border-white/[0.07] pb-4">
             <div>
               <p data-security-name className="font-mono text-[14px] tracking-tight text-white">
-                NORTHWIND
+                {FLAGSHIP.ticker}
               </p>
-              <p className="mt-1 text-[14px] text-slate-400">Initiate · 180 bps · from A. Reyes</p>
+              <p className="mt-1 text-[14px] text-slate-400">
+                Add · 180 bps · from {FLAGSHIP.analyst}
+              </p>
             </div>
             <span className="shrink-0 rounded-md bg-amber-400/10 px-2 py-0.5 text-[14px] font-medium text-amber-200 ring-1 ring-inset ring-amber-300/25">
               Awaiting you
@@ -260,12 +263,12 @@ function PmDecision() {
 
           <dl className="mt-4 space-y-3.5">
             {[
-              ['The claim', 'Margin recovery as the new plant reaches scale'],
-              ['Conviction', 'High, raised from Medium after the site visit'],
-              ['Catalysts', 'Ramp completion, then the Q3 pricing reset'],
-              ['Key risks', 'A second delay to the ramp, or input costs holding'],
-              ['Valuation', 'Base case rebuilt on the current ramp schedule'],
-              ['Portfolio', 'Core Equity, no existing position'],
+              ['The claim', FLAGSHIP.thesis],
+              ['Conviction', 'High, raised from Medium after the channel work'],
+              ['Catalysts', 'Copilot seat disclosure, then the next capex guide'],
+              ['Key risks', 'Capex outrunning monetization, or supply limiting the build'],
+              ['Valuation', 'Base, bull and bear, each on its own Azure growth path'],
+              ['Portfolio', `${FLAGSHIP.book}, held, below the target weight`],
             ].map(([term, def]) => (
               <div key={term} className="grid grid-cols-[6.5rem_1fr] gap-x-4">
                 <dt className="text-[12px] font-medium uppercase tracking-[0.08em] text-slate-400">
@@ -312,14 +315,14 @@ const LEDGER = [
    score on a person. See the note in `ROLES` on why that distinction is
    load-bearing here. */
 const PROCESS = [
-  ['Recommendations ruled on', 'with the rationale kept'],
-  ['Declined and deferred', 'retrievable, not discarded'],
-  ['Reviews completed', 'graded against the original case'],
+  ['How recommendations get decided', 'the reasoning behind each ruling, kept'],
+  ['What the firm declined', 'as retrievable as what it acted on'],
+  ['What the reviews found', 'read against the original case'],
 ]
 
 function CioLedger() {
   return (
-    <Figure caption="Institutional record" context="One name, three years, two analysts">
+    <Figure caption="Institutional intelligence" context="One name, three years, two analysts">
       <div className="grid gap-px bg-white/[0.06] lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <Pane>
           <Col>Activity on one name</Col>
@@ -405,12 +408,19 @@ const ROLES = [
     shape: 'ledger',
     claim: 'An investment organization that learns.',
     lead:
-      'An institutional foundation for research, judgement and experience that extends beyond any individual investor. A more connected organization, with continuity through the changes a firm goes through.',
+      'An institutional foundation for research, judgement and experience that outlasts any individual investor. More effective teams, and continuity through the changes a firm goes through.',
     Artifact: CioLedger,
     points: [
       ['Knowledge survives a departure', 'A leaver costs the firm a person rather than a decade of context.'],
       ['The process becomes legible', 'How the firm actually decides, rather than how it describes deciding.'],
-      ['Every decision adds to the next one', 'The record a future judgement can be measured against grows by itself.'],
+      /*
+         Was "Every decision adds to the next one", which is the same
+         accumulation claim as the point above it and the section's own
+         closing line. The brief is explicit that this seat must not reduce
+         to recordkeeping, so the third point is the thing the record makes
+         possible rather than a third way of saying there is one.
+      */
+      ['Firm-specific intelligence has something to stand on', 'The assistant reasons over the firm’s own record, not a generic corpus.'],
     ],
   },
 ] as const

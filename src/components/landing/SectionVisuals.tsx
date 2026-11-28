@@ -11,9 +11,12 @@
  *
  * ── The constraint every one of them is held to ──────────────────────────
  *
- * These are diagrams and drawn representations, never screenshots, and they
- * never name a real security. `ScreenFigures.tsx` carries the longer note on
- * why the placeholder names are eight letters and the gate that enforces it.
+ * These are diagrams and drawn representations, never screenshots. They name
+ * real, widely held securities, and `ScreenFigures.tsx` carries the longer
+ * note on why that changed, what replaced the old safety property, and the
+ * gate that enforces it. The short version: no price, no return, no
+ * checkable claim about the company, and an illustrative marker on every
+ * caption.
  *
  * ── `CostOfForgetting` AND ITS THREE SVGs WERE DELETED, 2026-11-27 ───────
  *
@@ -34,6 +37,7 @@
  * drawings if they are ever wanted.
  */
 import type { ReactNode } from 'react'
+import { FLAGSHIP, ILLUSTRATIVE } from './ScreenFigures'
 
 /* ─────────────────────── 1. Capture costs you nothing ───────────────────── */
 
@@ -62,16 +66,16 @@ export function CaptureTrade() {
               WHITE. slate-400 on white measures 2.56:1 and this marker is
               the one piece of text on the figure a reader must not miss. */}
           <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-600">
-            Illustration
+            {ILLUSTRATIVE}
           </span>
         </figcaption>
         <div className="mt-4 rounded-lg bg-slate-50 p-4 ring-1 ring-inset ring-slate-900/[0.06]">
           <p data-security-name className="font-mono text-[14px] text-slate-600">
-            NORTHWIND
+            {FLAGSHIP.ticker}
           </p>
           <p className="mt-2 text-[17px] leading-[1.7] text-slate-700">
-            New plant slipped a quarter. Still think margin recovery lands, but
-            the timing case is weaker. Target down to the low fifties.
+            Monetization is a quarter behind the note. The direction holds, the
+            timing is weaker, and the sizing assumed the faster path.
           </p>
         </div>
         <p className="mt-4 text-[14px] leading-relaxed text-slate-600">
@@ -112,7 +116,7 @@ export function CaptureTrade() {
             What the firm now has
           </span>
           <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
-            Illustration
+            {ILLUSTRATIVE}
           </span>
         </figcaption>
         <ul className="mt-4 space-y-2.5">
@@ -163,12 +167,12 @@ export function MemoryLedger() {
           One name, three years
         </span>
         <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
-          Illustration
+          {ILLUSTRATIVE}
         </span>
       </figcaption>
 
       <p data-security-name className="mt-4 font-mono text-[14px] tracking-tight text-white">
-        NORTHWIND
+        {FLAGSHIP.ticker}
       </p>
 
       {/*
@@ -283,25 +287,52 @@ export function MemoryLedger() {
  *                    comes from get_decisions, because the submission
  *                    context is frozen on the request.
  *
- * NO ANSWER TEXT IS SHOWN, deliberately. A drawn answer is a fabricated
- * one, and a fabricated analytical answer on a public page is the single
- * easiest way to lose a technical buyer. The figure shows the question and
- * the retrieval, which is the part that is ours.
+ * ── THE ANSWER IS DRAWN NOW, AND HERE IS WHY THAT IS SAFE ───────────────
+ *
+ * This figure used to show the question and the retrieval and stop there,
+ * on the argument that a drawn answer is a fabricated one. The page owner
+ * overruled it, correctly: a visitor who never sees an answer cannot tell
+ * why an assistant standing inside the firm's record beats a chat window,
+ * and the retrieval chain alone reads as plumbing.
+ *
+ * The risk was never "an answer appears". It was "an answer makes a
+ * checkable claim about a real company, or implies a capability the
+ * product does not have". So the drawn answer is built to do neither:
+ *
+ *   - it states no price, no number and nothing about Microsoft that
+ *     anybody could check against a filing. Every line is about the
+ *     FIRM'S OWN case, which is illustrative by construction
+ *   - it is reachable with the tools that are actually deployed. The
+ *     comparison is between the reasoning frozen on the decision
+ *     (`get_decisions`) and the thesis as it stands today (`get_asset`),
+ *     with the open research from `get_outstanding_work`. It is NOT a
+ *     version-history diff, because no deployed tool reads
+ *     `note_versions` or `asset_field_history`, and a figure implying one
+ *     would fail in the first demo
+ *   - the caption carries the illustrative marker like every other figure,
+ *     and the closing line says the wording on the day is the model's
+ *     while the record it reads is the firm's
  */
-const ASKS = [
-  {
-    q: 'What were the strongest arguments against this recommendation?',
-    reads: ['Recommendation', 'PM ruling', 'Rejections on this name'],
-  },
-  {
-    q: 'Which names in my coverage need a thesis review?',
-    reads: ['Coverage', 'Research notes', 'Open process stages'],
-  },
-  {
-    q: 'What did we believe when we added to this position?',
-    reads: ['Decision', 'Reasoning frozen at submission', 'Trade Book entry'],
-  },
+const PRIMARY_ASK = 'What has changed in our thesis since we added to MSFT?'
+
+/* The shape the answer takes, which is the product's shape rather than a
+   paragraph: what survived, what moved, what to look at again, what nobody
+   has done yet. */
+const ANSWER: [string, string][] = [
+  ['Still holds', 'The capex-to-margin case, and both catalysts the note named.'],
+  ['Changed', 'Monetization was argued to follow within two quarters. The current thesis has it a quarter later.'],
+  ['Reassess', 'The base case runs on the earlier schedule, and the position was sized to it.'],
+  ['Not yet researched', 'Whether supply, rather than demand, is now the binding constraint.'],
 ]
+
+const CITED = ['Decision, reasoning frozen at submission', 'Thesis, version 4', 'Open research process']
+
+/*
+ * The follow-up questions used to be listed here AND again in
+ * `AssistantFlow` below. Two lists of example questions eleven inches
+ * apart is the page arguing with itself, so the canvas now carries the one
+ * question it answers and the flow carries the rest.
+ */
 
 export function AssistantCanvas() {
   return (
@@ -326,63 +357,59 @@ export function AssistantCanvas() {
           <span className="text-[14px] font-medium text-slate-300">ACT AI</span>
           <span aria-hidden="true" className="text-slate-700">/</span>
           <span data-security-name className="truncate font-mono text-[14px] text-white">
-            NORTHWIND
+            {FLAGSHIP.ticker}
           </span>
           <span aria-hidden="true" className="text-slate-700">/</span>
           <span className="truncate text-[14px] text-slate-400">
-            Recommendation, awaiting a ruling
+            Position held in {FLAGSHIP.book}
           </span>
         </span>
         <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
-          Illustration
+          {ILLUSTRATIVE}
         </span>
       </figcaption>
 
-      <div className="grid gap-px bg-white/[0.06] lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-        {/* ── Left: what gets asked ───────────────────────────────────── */}
+      <div className="grid gap-px bg-white/[0.06] lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
+        {/* ── Left: the question, and the answer to it ────────────────── */}
         <div className="bg-[#07090e] p-5 sm:p-7">
-          <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-slate-400">
-            Questions it can take from here
-          </p>
-          <ul className="mt-5 space-y-3">
-            {ASKS.map(({ q }, i) => (
-              <li
-                key={q}
-                className={`rounded-xl px-4 py-3.5 ring-1 ring-inset ${
-                  i === 0
-                    ? 'bg-amber-400/[0.08] ring-amber-300/25'
-                    : 'bg-white/[0.02] ring-white/[0.07]'
-                }`}
-              >
-                <p
-                  className={`text-[16px] leading-[1.55] ${
-                    i === 0 ? 'text-white' : 'text-slate-400'
-                  }`}
-                >
-                  {q}
-                </p>
-              </li>
+          <div className="rounded-xl bg-amber-400/[0.08] px-4 py-3.5 ring-1 ring-inset ring-amber-300/25">
+            <p className="text-[17px] leading-[1.55] text-white">{PRIMARY_ASK}</p>
+          </div>
+
+          {/* The answer, in the four parts a PM actually wants separated.
+              Labelled rather than written as prose, because the shape is
+              half the argument: a generic assistant returns a paragraph,
+              this one returns a position on each part of the case. */}
+          <dl className="mt-5 space-y-4">
+            {ANSWER.map(([label, body]) => (
+              <div key={label} className="grid gap-x-4 gap-y-1 sm:grid-cols-[9.5rem_1fr]">
+                <dt className="text-[12px] font-medium uppercase tracking-[0.1em] text-amber-300/80">
+                  {label}
+                </dt>
+                <dd className="text-[16px] leading-[1.65] text-slate-300">{body}</dd>
+              </div>
             ))}
-          </ul>
-          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
-            Each of these needs a relationship between records. A folder of
-            documents holds the documents and not the relationship.
+          </dl>
+
+          <p className="mt-6 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
+            Every line traces to the record it came from, so the reasoning can
+            be checked rather than taken on trust.
           </p>
         </div>
 
-        {/* ── Right: what it goes and reads ───────────────────────────── */}
+        {/* ── Right: where the answer came from, and what else it takes ─ */}
         <div className="bg-[#07090e] p-5 sm:p-7">
-          <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-amber-300/80">
-            What it reads to answer the first one
+          <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-slate-400">
+            Where it looked
           </p>
           <ol className="mt-5 space-y-4">
-            {ASKS[0].reads.map((r, i) => (
+            {CITED.map((r, i) => (
               <li key={r} className="relative pl-6">
                 <span
                   aria-hidden="true"
                   className="absolute left-0 top-[0.45rem] size-2 rounded-full bg-amber-300/80 ring-4 ring-amber-300/10"
                 />
-                {i < ASKS[0].reads.length - 1 && (
+                {i < CITED.length - 1 && (
                   <span
                     aria-hidden="true"
                     className="absolute left-[0.22rem] top-[1.15rem] h-[calc(100%+0.6rem)] w-px bg-amber-300/25"
@@ -393,34 +420,9 @@ export function AssistantCanvas() {
             ))}
           </ol>
 
-          <div className="mt-6 rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.07]">
-            <p className="text-[12px] font-medium uppercase tracking-[0.12em] text-slate-400">
-              And the answer carries them
-            </p>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {['Cited: recommendation', 'Cited: PM rationale', 'Cited: prior rejection'].map(t => (
-                <span
-                  key={t}
-                  className="rounded bg-amber-400/10 px-2 py-0.5 text-[12px] font-medium text-amber-200 ring-1 ring-inset ring-amber-300/25"
-                >
-                  {t}
-                </span>
-              ))}
-            </div>
-            <p className="mt-3.5 text-[14px] leading-relaxed text-slate-400">
-              So the reasoning can be checked against the record it came from
-              rather than taken on trust.
-            </p>
-          </div>
-
-          {/*
-            NO DRAWN ANSWER. See the note on this component: a fabricated
-            analytical answer is the fastest way to lose the only reader
-            who matters here.
-          */}
-          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
-            The reply is not reproduced here. What the assistant retrieves is
-            ours to show; what a model writes on the day is not.
+          <p className="mt-6 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
+            The wording on the day is the model&rsquo;s. What it reads is the
+            firm&rsquo;s own record.
           </p>
         </div>
       </div>
@@ -463,67 +465,62 @@ export function AssistantFlow() {
       {[
         {
           /*
-           * Was "Your model, your key", which led with BYOK. That is a
-           * procurement detail and it was carrying the first panel, where
-           * the reader is deciding whether to keep reading. Broadened to
-           * the thing a buyer actually wants to hear: you are not locked to
-           * one vendor's model. The key is still mentioned, as the
-           * mechanism, in the line rather than the heading.
+           * ── THE PROVIDER PANEL IS DELETED, 2026-11-28 ──────────────────
+           *
+           * It read "The model is a choice. Pick the provider and model the
+           * work suits, on your own account and key", over a list of three
+           * vendors. Two things were wrong with it and the page owner named
+           * both: a provider account is a procurement answer rather than a
+           * reason to want the product, and anchoring the public pitch to
+           * the current bring-your-own-key implementation means rewriting
+           * this section the day that changes.
+           *
+           * The capability is unchanged and undisclosed nowhere it matters:
+           * it stays in onboarding, in the product's own settings, and in
+           * the trust section as firm-level control over the AI context. It
+           * is simply not a selling point any more.
+           *
+           * What replaces it is the first of the three directions the brief
+           * asked for: what the assistant is grounded in.
            */
-          step: 'The model is a choice',
-          line: 'Pick the provider and model the work suits, on your own account and key.',
+          step: 'Grounded in the firm’s own work',
+          line: 'It reads the case, the reasoning and the history on the name before it answers.',
           Body: () => (
-            <div className="space-y-2">
-              {[
-                { name: 'Anthropic', on: true },
-                { name: 'OpenAI', on: false },
-                { name: 'Google', on: false },
-              ].map(({ name, on }) => (
-                <div
-                  key={name}
-                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-[14px] ring-1 ring-inset ${
-                    on
-                      ? 'bg-amber-400/10 text-white ring-amber-300/30'
-                      : 'text-slate-400 ring-white/[0.07]'
-                  }`}
-                >
-                  {name}
-                  {on && (
-                    <span className="text-[12px] uppercase tracking-[0.12em] text-amber-300">
-                      In use
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
+            <ul className="space-y-2">
+              {['Investment thesis', 'Research notes', 'Decisions and their rationale', 'Outcome reviews'].map(
+                label => (
+                  <li
+                    key={label}
+                    className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[14px] text-slate-300 ring-1 ring-inset ring-white/[0.07]"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="size-1.5 shrink-0 rounded-full bg-amber-300/80"
+                    />
+                    {label}
+                  </li>
+                ),
+              )}
+            </ul>
           ),
         },
         {
-          step: 'The context is a setting',
-          line: 'Which parts of the record it may read is configured, not assumed.',
+          step: 'A sharper investment conversation',
+          line: 'The questions worth asking need a relationship between records, not a summary of one.',
           Body: () => (
-            <div className="space-y-2">
+            <ul className="space-y-2">
               {[
-                ['Thesis', true],
-                ['Outcomes', true],
-                ['Notes', true],
-                ['Discussions', false],
-              ].map(([label, on]) => (
-                <div
-                  key={String(label)}
-                  className="flex items-center gap-2.5 text-[14px] text-slate-300"
+                'Which assumption is doing the most work here?',
+                'What did we say would make us wrong?',
+              ].map(q => (
+                <li
+                  key={q}
+                  className="rounded-lg bg-white/[0.02] px-3 py-2 text-[14px] leading-[1.5] text-slate-300 ring-1 ring-inset ring-white/[0.07]"
                 >
-                  <span
-                    className={`flex h-4 w-7 shrink-0 items-center rounded-full px-0.5 ${
-                      on ? 'justify-end bg-amber-400/80' : 'justify-start bg-white/10'
-                    }`}
-                  >
-                    <span className="h-3 w-3 rounded-full bg-white" />
-                  </span>
-                  {label}
-                </div>
+                  {q}
+                </li>
               ))}
-            </div>
+            </ul>
           ),
         },
         {
@@ -533,8 +530,8 @@ export function AssistantFlow() {
            * it lands ON the objects it concerns, which makes it findable
            * from the name rather than from remembering you once asked.
            */
-          step: 'The answer stays findable',
-          line: 'It attaches to the name, the idea and the note it drew on.',
+          step: 'Inside the investment work',
+          line: 'An answer attaches to the name, the idea and the note it drew on.',
           Body: () => (
             <div className="rounded-lg bg-white/[0.03] p-3 ring-1 ring-inset ring-white/[0.07]">
               <p className="text-[14px] leading-relaxed text-slate-300">

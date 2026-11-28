@@ -228,26 +228,65 @@ describe('the positioning a visitor reads in the first screen', () => {
    * what Tesseract is, which is where a reader asking "how does this sit
    * next to my terminal" actually is.
    */
-  it('clarifies the category away from the hero, not in it', async () => {
+  /*
+   * ── INVERTED 2026-11-28, and the net got larger ───────────────────────
+   *
+   * This case used to REQUIRE "not a market-data terminal" in the platform
+   * section, on the argument that a reader needs to be told which category
+   * the product is in. The page owner removed that copy: three absences
+   * and a disclaimer printed directly under the product reveal hand a
+   * visitor an objection they had not raised, and define the product by
+   * what it sits outside of.
+   *
+   * Deleting the case would leave the rule unenforced, so it is pointed
+   * the other way, which is the same move this file already made for the
+   * status confessions. It now denies a VOCABULARY of defining-by-absence
+   * across the whole page rather than checking one sentence, and it
+   * requires that the accurate execution statement still exists in the
+   * footer, where it moved. Both halves matter: without the second,
+   * deleting the disclosure outright would pass.
+   */
+  const DEFENSIVE: [RegExp, string][] = [
+    [/not a market-data terminal/i, 'Not a market-data terminal.'],
+    [/\bdoes not replace\b/i, 'and it does not replace one'],
+    [/\bis not an order management\b/i, 'It is not an order management system'],
+    [/\bis not an execution\b/i, 'It is not an execution venue'],
+    [/\bunlike a (terminal|spreadsheet|chat)\b/i, 'Unlike a terminal, Tesseract keeps the reasoning'],
+  ]
+
+  it('has a defensive-copy list that actually matches the copy it forbids', () => {
+    for (const [pattern, sample] of DEFENSIVE) {
+      expect(sample, `this pattern is inert, it cannot match ${JSON.stringify(sample)}`)
+        .toMatch(pattern)
+    }
+  })
+
+  it('defines the product by what it does, not by what it is not', async () => {
     await renderConfigured()
-    const hero = document.getElementById('top')
-    const platform = document.getElementById('platform')
+    const hero = document.getElementById('top')?.textContent ?? ''
+    const platform = document.getElementById('platform')?.textContent ?? ''
+    const footer = document.querySelector('footer')?.textContent ?? ''
+
+    for (const [pattern] of DEFENSIVE) {
+      expect(pageText(), `the page defines Tesseract by an absence: ${pattern}`)
+        .not.toMatch(pattern)
+    }
 
     expect(
-      platform?.textContent,
-      'the category clarification must survive the move off the hero',
-    ).toMatch(/not a market-data terminal/i)
-    expect(platform?.textContent).toMatch(/execution venue|execution system/i)
-    expect(
-      platform?.textContent,
-      'it must say what Tesseract does hold, not only what it is not',
-    ).toMatch(/research, the judgement and the decisions/i)
+      platform,
+      'the affirmative statement has to stand where the denial used to',
+    ).toMatch(/unified investment environment/i)
+    expect(platform).toMatch(/research informs judgement/i)
 
     expect(
-      hero?.textContent,
-      'defining the product by two absences is not what the hero is for',
-    ).not.toMatch(/not a market-data terminal/i)
-    expect(hero?.textContent).not.toMatch(/record of why/i)
+      footer,
+      'the execution statement is still owed to a compliance reader, and the footer is where it went',
+    ).toMatch(/places no orders/i)
+
+    expect(
+      hero,
+      'defining the product by an absence is not what the hero is for',
+    ).not.toMatch(/record of why/i)
   })
 
   it('offers both calls to action named in the brief', async () => {
@@ -814,11 +853,56 @@ describe('the trust section claims only what was verified', () => {
     ).toMatch(/no security certification/i)
   })
 
-  it('describes isolation as enforced by the database, not by the app', async () => {
+  /*
+   * ── INVERTED 2026-11-28 ───────────────────────────────────────────────
+   *
+   * This required the words "database" and "per row" in the trust
+   * section, because the mechanism really is enforced below the
+   * application and saying so is stronger than saying "we filter
+   * carefully". That reasoning holds for a security questionnaire. It does
+   * not hold on a page a portfolio manager reads: "one firm cannot read
+   * another" makes a reader picture the failure, and the sentence after it
+   * explained row-level enforcement to someone who has not asked.
+   *
+   * So the requirement moves up a level. The three pillars must be present
+   * as customer outcomes, and the implementation vocabulary must be
+   * absent. The mechanism is unchanged and is still documented where a
+   * diligence reader will look for it.
+   *
+   * NOT ABSOLUTE, and this is checked too. "cannot read" and "guarantee"
+   * are forbidden by `FORBIDDEN` above, which is what keeps the softer
+   * wording from drifting back into a promise.
+   */
+  const IMPLEMENTATION: [RegExp, string][] = [
+    [/\brow[- ]level\b/i, 'Row-level security on every table'],
+    [/\bper row\b/i, 'enforced per row, by the database'],
+    [/\bdatabase\b/i, 'isolation is enforced by the database'],
+    [/\bSQL\b/i, 'SQL policies decide what you see'],
+    [/\bAPI key\b/i, 'your own API key, held encrypted'],
+    [/\bprovider account\b/i, 'your organization’s own provider account'],
+    [/\bRLS\b/, 'RLS is enabled on every table'],
+  ]
+
+  it('has an implementation-vocabulary list that matches the copy it forbids', () => {
+    for (const [pattern, sample] of IMPLEMENTATION) {
+      expect(sample, `this pattern is inert, it cannot match ${JSON.stringify(sample)}`)
+        .toMatch(pattern)
+    }
+  })
+
+  it('states the controls as outcomes, not as implementation', async () => {
     await renderConfigured()
     const trust = document.getElementById('trust')?.textContent ?? ''
-    expect(trust).toMatch(/database/i)
-    expect(trust).toMatch(/per row|every table/i)
+
+    expect(trust, 'the confidentiality pillar is the one a buyer asks about first')
+      .toMatch(/institutional confidentiality/i)
+    expect(trust).toMatch(/controlled access/i)
+    expect(trust).toMatch(/firm-specific ai context/i)
+
+    for (const [pattern] of IMPLEMENTATION) {
+      expect(trust, `the trust section explains the plumbing: ${pattern}`)
+        .not.toMatch(pattern)
+    }
   })
 })
 
@@ -1820,38 +1904,70 @@ describe('nothing on the page imitates real data', () => {
    *
    * So it walks every tab and re-reads the figures after each click.
    */
-  it('marks every illustrative figure and names no real security', async () => {
+  /*
+   * ── THE PROHIBITION ON REAL TICKERS IS GONE, AND WHAT REPLACED IT ──────
+   *
+   * This case used to assert that no `[data-security-name]` held a member
+   * of a hard-coded `REAL_TICKERS` set, so the figures named NORTHWIND,
+   * VERIDIAN, HALDEN and CALDERA. The page owner's judgement, which is
+   * correct and is the reason this changed: eight-letter invented names
+   * read as a toy to an investor, and a toy does not survive being shown
+   * to a portfolio manager. The figures name MSFT, NVDA, AVGO, V, COST and
+   * JPM now, with investment cases written to make sense for those
+   * businesses.
+   *
+   * The ticker ban was never the safety property. It was one cheap way of
+   * reaching the real one: a reader must not be able to mistake a drawn
+   * case for a view on a security, for market data, or for evidence that
+   * the company is a customer. That property is now enforced in three
+   * places, all of them here:
+   *
+   *   1. Every figure that names a security carries the illustrative
+   *      marker IN ITS CAPTION, so it arrives with the name rather than
+   *      three sections away.
+   *   2. No figure may contain anything that reads as market data: a
+   *      currency amount, a percentage, or a year.
+   *   3. The page carries the securities disclosure, naming the figures as
+   *      invented and the companies as not customers, partners or
+   *      endorsers. Without this, "comply by deleting the disclosure"
+   *      would pass.
+   *
+   * ── This gate was VACUOUS on its first draft. That is why it clicks. ───
+   *
+   * The screen browser renders ONE panel at a time, so a test that
+   * inspects `getAllByRole('figure')` on the initial render sees the
+   * default tab's figure and nothing else. Five of the six drawn screens
+   * were never looked at.
+   *
+   * Proven, not assumed: with `NVDA` substituted into the Idea Pipeline
+   * figure, the first version of this test PASSED, because Idea Pipeline
+   * is not the default tab. A gate that checks one of six paths is
+   * decoration. So it walks every tab and re-reads the figures after each
+   * click, and that remains the most load-bearing line in the file.
+   */
+  const MARKET_DATA: [RegExp, string][] = [
+    [/[$€£]\s?\d/, 'Price target $540'],
+    [/\d\s?%/, 'Up 12% since initiation'],
+    [/\b(19|20)\d{2}\b/, 'Initiated March 2024'],
+    [/\b(USD|EUR|GBP)\b/, 'Cost basis 410 USD'],
+  ]
+
+  it('has a market-data list that matches the copy it forbids', () => {
+    for (const [pattern, sample] of MARKET_DATA) {
+      expect(sample, `this pattern is inert, it cannot match ${JSON.stringify(sample)}`)
+        .toMatch(pattern)
+    }
+  })
+
+  it('marks every figure that names a security, and quotes no market data', async () => {
     const user = userEvent.setup()
     await renderConfigured()
-
-    /*
-     * A deliberately small, blunt list. Any real ticker in a figure beside
-     * a conviction reads as a view on that security, and this product is
-     * not an investment adviser. The placeholder names are eight letters
-     * precisely so they cannot be mistaken for tickers.
-     *
-     * MATCHED AGAINST `[data-security-name]`, NOT against the figure's
-     * textContent, and that distinction is the whole reason this works.
-     *
-     * The first version tested `f.textContent` with `/\bNVDA\b/`. It passed
-     * with NVDA on screen. `textContent` concatenates sibling elements with
-     * no separator, so the name ran straight into the next line as
-     * "NVDAReady to recommend", and the trailing `\b` has no boundary to
-     * find against a letter. The gate was reading the right element and
-     * still could not see what was in it.
-     *
-     * Reading the name element alone removes the concatenation entirely, so
-     * the comparison is exact rather than a pattern hunting through prose.
-     */
-    const REAL_TICKERS = new Set([
-      'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOG', 'GOOGL', 'META',
-      'TSLA', 'SPY', 'ASML', 'BRK', 'JPM',
-    ])
 
     const tabs = screen.getAllByRole('tab')
     expect(tabs.length, 'there must be screens to walk').toBeGreaterThan(0)
 
     let illustrationsSeen = 0
+    let namedSecuritiesSeen = 0
 
     for (const tab of tabs) {
       const which = tab.textContent?.trim() ?? '?'
@@ -1861,16 +1977,31 @@ describe('nothing on the page imitates real data', () => {
       expect(figures.length, `${which}: a figure must render`).toBeGreaterThan(0)
 
       for (const f of figures) {
-        expect(
-          f.querySelector('figcaption'),
-          `${which}: every figure needs a caption`,
-        ).not.toBeNull()
-        for (const el of f.querySelectorAll('[data-security-name]')) {
-          const named = (el.textContent ?? '').trim().toUpperCase()
+        const caption = f.querySelector('figcaption')
+        expect(caption, `${which}: every figure needs a caption`).not.toBeNull()
+
+        const text = f.textContent ?? ''
+        for (const [pattern] of MARKET_DATA) {
           expect(
-            REAL_TICKERS.has(named),
-            `${which}: "${named}" is a real security, and a figure must not name one`,
-          ).toBe(false)
+            text,
+            `${which}: a figure quotes something that reads as market data: ${pattern}`,
+          ).not.toMatch(pattern)
+        }
+
+        /*
+         * The name and the marker have to arrive together. Read off
+         * `[data-security-name]` rather than the figure's textContent: the
+         * first version of the old gate pattern-matched textContent and
+         * missed `NVDA` entirely, because textContent concatenates
+         * siblings with no separator ("NVDAReady to recommend") and the
+         * trailing `\b` had no boundary to find against a letter.
+         */
+        if (f.querySelectorAll('[data-security-name]').length > 0) {
+          namedSecuritiesSeen += 1
+          expect(
+            caption?.textContent ?? '',
+            `${which}: this figure names a security without the illustrative marker beside it`,
+          ).toMatch(/illustrative/i)
         }
       }
 
@@ -1879,7 +2010,7 @@ describe('nothing on the page imitates real data', () => {
         expect(
           f.querySelector('figcaption')?.textContent ?? '',
           `${which}: the marker belongs in the caption, where a screen reader meets it`,
-        ).toMatch(/illustration/i)
+        ).toMatch(/illustrative/i)
       }
     }
 
@@ -1888,6 +2019,21 @@ describe('nothing on the page imitates real data', () => {
       illustrationsSeen,
       'every screen must show a marked illustration',
     ).toBeGreaterThanOrEqual(tabs.length)
+
+    /* And the security-name branch above must have actually run. */
+    expect(
+      namedSecuritiesSeen,
+      'no figure named a security, so the marker requirement checked nothing',
+    ).toBeGreaterThan(0)
+
+    expect(
+      document.querySelector('footer')?.textContent ?? '',
+      'naming real companies obliges the page to say the cases are invented',
+    ).toMatch(/are invented/i)
+    expect(
+      document.querySelector('footer')?.textContent ?? '',
+      'and that the companies named are not customers of Tesseract',
+    ).toMatch(/not customers, partners or endorsers/i)
   })
 
   it('keeps the schema diagrams free of invented data', async () => {
@@ -1997,21 +2143,53 @@ describe('the assistant is described by what it does', () => {
   })
 
   /*
-   * BYOK is a FACT about how it runs, and it is stated as one. The previous
-   * version said this inside a "Not yet built" column as the reason
-   * platform-provisioned AI was missing, which turned a reasonable
-   * architectural position (the firm keeps control of its own key and spend)
-   * into an apology.
+   * ── INVERTED 2026-11-28 ───────────────────────────────────────────────
+   *
+   * This required "own provider key" and "controls which model" in the ACT
+   * AI section. The history is worth keeping: the line started life inside
+   * a "Not yet built" column as the reason platform-provisioned AI was
+   * missing, this gate was written to stop it reading as an apology, and
+   * it succeeded at that.
+   *
+   * It is still the wrong thing to sell. Bringing your own provider
+   * account is a procurement answer; a reader deciding whether this is
+   * interesting does not care, and an administrator does not read a
+   * landing page. Worse, anchoring the public pitch to the current
+   * implementation means rewriting the section the day that changes.
+   *
+   * The capability is untouched. It is simply not a selling point, so the
+   * gate now forbids the vocabulary and requires the capability that took
+   * its place.
    */
-  it('states the provider-key position as control, not as a gap', async () => {
+  const PROCUREMENT: [RegExp, string][] = [
+    [/bring your own (model|key)/i, 'You bring your own model'],
+    [/\bown provider (key|account)\b/i, 'It runs on your own provider key'],
+    [/\bAPI key\b/i, 'configured with your API key'],
+    [/\bBYOK\b/, 'BYOK is supported'],
+    [/\byour administrator\b/i, 'configured by your administrator'],
+  ]
+
+  it('has a procurement-copy list that matches the copy it forbids', () => {
+    for (const [pattern, sample] of PROCUREMENT) {
+      expect(sample, `this pattern is inert, it cannot match ${JSON.stringify(sample)}`)
+        .toMatch(pattern)
+    }
+  })
+
+  it('sells the assistant on what it reads, not on whose account it runs on', async () => {
     await renderConfigured()
-    const actAi = document.getElementById('act-ai')
-    expect(actAi?.textContent).toMatch(/own provider key/i)
-    // Was /keeps control of which model/. The sentence was shortened to
-    // "the firm controls which model its reasoning reaches", so the pattern
-    // now accepts either verb. The requirement is unchanged: the BYOK line
-    // has to read as the firm being in control, not as a missing feature.
-    expect(actAi?.textContent).toMatch(/(keeps control of|controls) which model/i)
+    for (const [pattern] of PROCUREMENT) {
+      expect(pageText(), `the page sells a procurement detail: ${pattern}`)
+        .not.toMatch(pattern)
+    }
+
+    const actAi = document.getElementById('act-ai')?.textContent ?? ''
+    expect(
+      actAi,
+      'what replaced it has to be present, or this is a deletion dressed as a refinement',
+    ).toMatch(/grounded in the firm/i)
+    expect(actAi).toMatch(/investment thesis/i)
+    expect(actAi).toMatch(/decisions and their rationale/i)
   })
 
   it('does not claim the assistant manages portfolios or trades', async () => {
@@ -2205,6 +2383,148 @@ describe('every link on the page resolves', () => {
      * Adding a destination means adding a case for it, not an entry here.
      */
     expect(offsite).toEqual([])
+  })
+})
+
+/**
+ * ── THE NAVIGATION BELOW `lg` ───────────────────────────────────────────
+ *
+ * What was shipped: below `lg` the header held the mark and a Sign in
+ * link, and every section anchor was `hidden`. On a phone the page is
+ * roughly 21,000px tall, so a visitor who wanted the trust section had to
+ * scroll the whole page to find it, and the primary action was not in the
+ * header at all. At `md` it was worse than absent: two of five links
+ * showed, which reads as the whole menu rather than a fragment.
+ *
+ * jsdom applies no stylesheet, so NOTHING here can see a breakpoint, a
+ * `hidden` class or a 48px row. These cases check the half jsdom can
+ * model, which is the behaviour: the disclosure contract, the
+ * destinations, focus movement and dismissal. The visual half (the button
+ * appearing below `lg` and not above it, the panel's position, the row
+ * height, no horizontal overflow) was measured in a real browser at 1920,
+ * 1440, 1280, 768 and 390 and is recorded in the delivery notes.
+ */
+describe('the navigation a phone gets', () => {
+  const openMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+    const button = screen.getByRole('button', { name: /open main menu/i })
+    await user.click(button)
+    return button
+  }
+
+  it('is a disclosure that names the panel it controls', async () => {
+    const user = userEvent.setup()
+    await renderConfigured()
+
+    const button = screen.getByRole('button', { name: /open main menu/i })
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+
+    const panelId = button.getAttribute('aria-controls')
+    expect(panelId, 'a disclosure that controls nothing is a button').toBeTruthy()
+    expect(
+      document.getElementById(panelId!),
+      'aria-controls must point at an element that exists',
+    ).not.toBeNull()
+
+    await user.click(button)
+    expect(
+      screen.getByRole('button', { name: /close main menu/i }).getAttribute('aria-expanded'),
+      'the state has to be announced, not just drawn',
+    ).toBe('true')
+  })
+
+  it('carries every destination the desktop bar carries, plus both actions', async () => {
+    const user = userEvent.setup()
+    await renderConfigured()
+    const button = await openMenu(user)
+
+    const panel = document.getElementById(button.getAttribute('aria-controls')!)!
+    const hrefs = [...panel.querySelectorAll('a[href]')].map(a => a.getAttribute('href'))
+
+    /*
+     * Read off the page rather than hard-coded: the desktop bar and the
+     * panel both render `NAV_SECTIONS`, and the requirement is that they
+     * cannot disagree. A literal list here would pass while the two
+     * drifted apart.
+     */
+    const header = document.querySelector('header')!
+    const sections = [
+      ...new Set(
+        [...header.querySelectorAll('a[href^="#"]')]
+          .filter(a => !panel.contains(a))
+          .map(a => a.getAttribute('href')!)
+          // `#top` is the wordmark returning to the hero. It is the logo,
+          // not a section, and it belongs in the bar rather than the menu.
+          .filter(href => href !== '#top'),
+      ),
+    ]
+    expect(sections.length, 'there must be sections to navigate to').toBeGreaterThanOrEqual(5)
+
+    for (const href of sections) {
+      expect(hrefs, `the phone menu cannot reach ${href}`).toContain(href)
+    }
+
+    expect(hrefs, 'someone with an account needs the way in').toContain('/login')
+    expect(
+      [...panel.querySelectorAll('button')].map(b => b.textContent ?? '').join(' '),
+      'the primary action belongs in the menu, which is where it was missing',
+    ).toMatch(/request a demo/i)
+  })
+
+  it('moves focus into the panel when it opens', async () => {
+    const user = userEvent.setup()
+    await renderConfigured()
+    const button = await openMenu(user)
+
+    const panel = document.getElementById(button.getAttribute('aria-controls')!)!
+    expect(
+      panel.contains(document.activeElement),
+      'opening a menu and leaving focus outside it strands a keyboard user',
+    ).toBe(true)
+  })
+
+  it('closes on Escape and hands focus back to the button', async () => {
+    const user = userEvent.setup()
+    await renderConfigured()
+    await openMenu(user)
+
+    await user.keyboard('{Escape}')
+
+    const button = screen.getByRole('button', { name: /open main menu/i })
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    expect(
+      document.activeElement,
+      'focus has to come back, or the next Tab starts from the top of the document',
+    ).toBe(button)
+  })
+
+  it('closes when a destination is chosen', async () => {
+    const user = userEvent.setup()
+    await renderConfigured()
+    const button = await openMenu(user)
+
+    const panel = document.getElementById(button.getAttribute('aria-controls')!)!
+    await user.click(panel.querySelector<HTMLElement>('a[href^="#"]')!)
+
+    expect(
+      screen.getByRole('button', { name: /open main menu/i }).getAttribute('aria-expanded'),
+      'a menu left open over the section it just scrolled to is the whole screen on a phone',
+    ).toBe('false')
+  })
+
+  it('keeps the panel out of the tab order while it is shut', async () => {
+    await renderConfigured()
+    const button = screen.getByRole('button', { name: /open main menu/i })
+    const panel = document.getElementById(button.getAttribute('aria-controls')!)!
+
+    /*
+     * `visibility: hidden` does this in a browser and jsdom cannot see it,
+     * so the panel sets `tabIndex={-1}` on its own items as well. That is
+     * the half this can check, and it is the half that would otherwise let
+     * a visitor Tab through seven invisible links on the desktop site.
+     */
+    for (const a of panel.querySelectorAll('a')) {
+      expect(a.getAttribute('tabindex'), `${a.textContent} is reachable while shut`).toBe('-1')
+    }
   })
 })
 

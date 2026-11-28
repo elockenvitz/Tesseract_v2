@@ -16,18 +16,55 @@
  * portfolio manager can take, a trade carrying the decision that authorized
  * it, an outcome judged against the original thesis.
  *
- * THE COMPANY NAMES ARE FICTIONAL, AND DELIBERATELY NOT TICKER-SHAPED.
- * Real tickers were the obvious choice and are the wrong one: "NVDA,
- * conviction High" on a public page is a view on a real security, and this
- * product is not an investment adviser and gives no investment advice. An
- * eight-letter name in a ticker column is self-evidently a placeholder to
- * anyone in the industry, which is exactly the read we want.
+ * ── THE NAMES ARE REAL NOW, AND THE REASONING CHANGED WITH THEM ──────────
  *
- * Every figure carries a visible illustration marker AND `data-illustration`
- * for the test gate. See `nothing on the page imitates real data` in
- * `landing-page.test.tsx` for the gate this replaced and why.
+ * These figures used fictional eight-letter names — NORTHWIND, VERIDIAN,
+ * HALDEN, CALDERA — on the argument that a real ticker beside a conviction
+ * reads as a view on a real security. The page owner overruled it, and the
+ * reason is commercial rather than cosmetic: a portfolio manager scanning a
+ * workspace full of invented companies is reading a wireframe, and a
+ * wireframe cannot show that this is the environment they would actually
+ * work in. `MSFT` beside a thesis they can evaluate is the difference
+ * between a diagram of a product and a product.
+ *
+ * THE SAFETY PROPERTY MOVES RATHER THAN DISAPPEARS, and it moves to where
+ * it is actually readable:
+ *
+ *   - every figure is marked ILLUSTRATIVE INVESTMENT DATA, in the caption,
+ *     where a screen reader meets it as part of the figure's label
+ *   - no price, no return, no market quote, no date anybody could check
+ *     against a real tape. The numbers here are workflow quantities —
+ *     a version count, how long a name has gone untouched, how many
+ *     requirements are open — and never financial ones
+ *   - the footer says, in its own sentence, that the securities named are
+ *     illustrative, are not recommendations, and that the companies shown
+ *     are not customers, partners or endorsers of Tesseract
+ *
+ * The one thing that would break this is a figure that states a checkable
+ * fact about a real company. Everything written here is a representative
+ * investment case of the kind a team would hold, not a claim about what is
+ * true of Microsoft today.
+ *
+ * ── ONE NAME CARRIES THE WHOLE STORY ─────────────────────────────────────
+ *
+ * MSFT is the flagship, and it is the same MSFT in every figure on the
+ * page: the workspace, the pipeline, the recommendation, the inbox, the
+ * trade, the outcome, the assistant and the decision review. A reader
+ * scrolling the page follows one investment case from the first research
+ * note to the review eight months later. The other names — NVDA, AVGO,
+ * COST, V — exist to show coverage, a book and a team, and they are never
+ * given a thesis of their own.
  */
 import type { ReactNode } from 'react'
+
+/**
+ * The marker every figure carries.
+ *
+ * One constant rather than nine string literals, because the gate in
+ * `landing-page.test.tsx` requires it in every caption and the failure mode
+ * of nine copies is that the tenth figure is written without one.
+ */
+export const ILLUSTRATIVE = 'Illustrative investment data'
 
 /* The surface every figure sits on, so they read as one family. */
 function Frame({
@@ -48,7 +85,7 @@ function Frame({
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent"
       />
-      <figcaption className="flex items-baseline justify-between gap-3">
+      <figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <span className="text-[16px] font-semibold tracking-tight text-white">{caption}</span>
         {/*
           The illustration marker is INSIDE the figcaption, so a screen
@@ -56,7 +93,7 @@ function Frame({
           stray span after the content.
         */}
         <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
-          Illustration
+          {ILLUSTRATIVE}
         </span>
       </figcaption>
       <div className="mt-5">{children}</div>
@@ -89,10 +126,27 @@ function Col({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * The flagship case, in one place.
+ *
+ * Every figure that states the thesis reads it from here, so the workspace,
+ * the outcome screen and the decision review cannot drift into three
+ * different arguments about the same position — which is exactly what
+ * happened to the fictional version, where the pipeline and the workspace
+ * disagreed about what stage the name was at.
+ */
+export const FLAGSHIP = {
+  ticker: 'MSFT',
+  company: 'Microsoft',
+  thesis: 'Azure AI demand turns today’s capex into durable margin.',
+  analyst: 'A. Reyes',
+  book: 'Core Equity',
+} as const
+
 const IDEAS = [
-  { name: 'NORTHWIND', stage: 'Ready to recommend', conviction: 'High', age: 'touched 3d ago', hot: true },
-  { name: 'VERIDIAN', stage: 'Developing', conviction: 'Medium', age: 'touched 11d ago', hot: false },
-  { name: 'HALDEN', stage: 'Exploring', conviction: 'Low', age: 'touched 6w ago', hot: false },
+  { name: 'MSFT', stage: 'Ready to recommend', conviction: 'High', age: 'touched 3d ago', hot: true },
+  { name: 'AVGO', stage: 'Developing', conviction: 'Medium', age: 'touched 11d ago', hot: false },
+  { name: 'COST', stage: 'Exploring', conviction: 'Low', age: 'touched 6w ago', hot: false },
 ]
 
 export function IdeaPipelineFigure() {
@@ -134,10 +188,12 @@ export function AssetWorkspaceFigure() {
     <Frame caption="Asset workspace">
       <div className="flex items-start justify-between gap-3 border-b border-white/[0.07] pb-4">
         <div>
-          <p data-security-name className="font-mono text-[16px] tracking-tight text-white">NORTHWIND</p>
-          <p className="mt-1 text-[16px] text-slate-400">Covered by A. Reyes</p>
+          <p data-security-name className="font-mono text-[16px] tracking-tight text-white">
+            {FLAGSHIP.ticker}
+          </p>
+          <p className="mt-1 text-[16px] text-slate-400">Covered by {FLAGSHIP.analyst}</p>
         </div>
-        <Chip tone="accent">Held in Core Equity</Chip>
+        <Chip tone="accent">Held in {FLAGSHIP.book}</Chip>
       </div>
       {/*
         Tabs drawn as STATIC labels, because this figure is not the
@@ -159,12 +215,10 @@ export function AssetWorkspaceFigure() {
           </span>
         ))}
       </div>
-      <p className="mt-4 text-[16px] leading-relaxed text-slate-300">
-        Margin recovery as the new plant reaches scale.
-      </p>
+      <p className="mt-4 text-[16px] leading-relaxed text-slate-300">{FLAGSHIP.thesis}</p>
       <p className="mt-3 text-[14px] leading-relaxed text-slate-400">
-        The written case, the firm&rsquo;s exposure and the history sit on the
-        name itself, not in a folder.
+        The case, the exposure and the history sit on the security itself, not
+        filed in a folder beside it.
       </p>
     </Frame>
   )
@@ -175,7 +229,9 @@ export function RecommendationFigure() {
     <Frame caption="Recommendation">
       <div className="rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.06]">
         <div className="flex items-start justify-between gap-3">
-          <p data-security-name className="font-mono text-[14px] tracking-tight text-white">NORTHWIND</p>
+          <p data-security-name className="font-mono text-[14px] tracking-tight text-white">
+            {FLAGSHIP.ticker}
+          </p>
           <Chip tone="muted">Submitted</Chip>
         </div>
         <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
@@ -208,8 +264,12 @@ export function DecisionInboxFigure() {
       <div className="rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.06]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p data-security-name className="font-mono text-[16px] tracking-tight text-white">NORTHWIND</p>
-            <p className="mt-1 text-[16px] text-slate-400">Add to Core Equity, from A. Reyes</p>
+            <p data-security-name className="font-mono text-[16px] tracking-tight text-white">
+              {FLAGSHIP.ticker}
+            </p>
+            <p className="mt-1 text-[16px] text-slate-400">
+              Add to {FLAGSHIP.book}, from {FLAGSHIP.analyst}
+            </p>
           </div>
           <Chip tone="accent">Awaiting you</Chip>
         </div>
@@ -252,8 +312,8 @@ export function TradeBookFigure() {
     <Frame caption="Trade Book">
       <ul className="space-y-3">
         {[
-          { name: 'NORTHWIND', side: 'Buy', book: 'Core Equity', confirmed: true },
-          { name: 'VERIDIAN', side: 'Trim', book: 'Core Equity', confirmed: false },
+          { name: 'MSFT', side: 'Buy', book: 'Core Equity', confirmed: true },
+          { name: 'NVDA', side: 'Trim', book: 'Core Equity', confirmed: false },
         ].map(({ name, side, book, confirmed }) => (
           <li key={name} className="rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.06]">
             <div className="flex items-center justify-between gap-3">
@@ -285,24 +345,25 @@ export function OutcomeFigure() {
   return (
     <Frame caption="Outcomes">
       <div className="rounded-xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/[0.06]">
-        <p data-security-name className="font-mono text-[14px] tracking-tight text-white">NORTHWIND</p>
+        <p data-security-name className="font-mono text-[14px] tracking-tight text-white">
+          {FLAGSHIP.ticker}
+        </p>
         <dl className="mt-4 space-y-3">
           <div>
             <dt><Col>The thesis that was argued</Col></dt>
-            <dd className="mt-1 text-[16px] leading-relaxed text-slate-300">
-              Margin recovery as the new plant reaches scale.
-            </dd>
+            <dd className="mt-1 text-[16px] leading-relaxed text-slate-300">{FLAGSHIP.thesis}</dd>
           </div>
           <div className="border-t border-white/[0.07] pt-3">
-            <dt><Col>What happened</Col></dt>
+            <dt><Col>What changed</Col></dt>
             <dd className="mt-1 text-[16px] leading-relaxed text-slate-300">
-              Plant delayed. The position worked on an unrelated re-rating.
+              Monetization arrived later than argued. The position worked on
+              multiple expansion.
             </dd>
           </div>
           <div className="border-t border-white/[0.07] pt-3">
             <dt><Col>Verdict</Col></dt>
             <dd className="mt-1.5">
-              <Chip tone="accent">Right outcome, wrong reason</Chip>
+              <Chip tone="accent">Right outcome, different reason</Chip>
             </dd>
           </div>
         </dl>
@@ -312,7 +373,7 @@ export function OutcomeFigure() {
         review cannot produce. It is the figure's entire argument.
       */}
       <p className="mt-4 text-[14px] leading-relaxed text-slate-400">
-        Scored against the claim that was made, so judgement separates from luck.
+        Read against the case that was argued, so the return is not the whole verdict.
       </p>
     </Frame>
   )
@@ -333,17 +394,13 @@ export function OutcomeFigure() {
  * (what I think), and the linked chain on the right (what the firm did
  * about it). The connection is the composition, not a caption claiming a
  * connection.
- *
- * Same rules as everything else in this file: fictional eight-letter
- * names, no invented numbers presented as data, visible illustration
- * marker, every field corresponds to something really stored.
  * ──────────────────────────────────────────────────────────────────────── */
 
 const RAIL = [
-  { name: 'NORTHWIND', meta: 'Thesis current · v4', live: true },
-  { name: 'VERIDIAN', meta: 'Review due · 11d', live: false },
-  { name: 'HALDEN', meta: 'Untouched · 6w', live: false },
-  { name: 'CALDERA', meta: 'Target passed · 3d', live: false },
+  { name: 'MSFT', meta: 'Thesis current · v4', live: true },
+  { name: 'NVDA', meta: 'Review due · 11d', live: false },
+  { name: 'COST', meta: 'Untouched · 6w', live: false },
+  { name: 'V', meta: 'Price target passed · 3d', live: false },
 ]
 
 /*
@@ -356,19 +413,19 @@ const RAIL = [
  * this set, which is a convenient check on whether a line is real: if the
  * assistant can read it, the product stores it.
  *
- * NO NUMBERS ANYWHERE. `keeps the schema diagrams free of invented data`
- * forbids digits in a figure that is not marked as data, and it is right
- * to: "base case 54" on a public page is a fabricated valuation on a
- * fictional company, which is a strange thing to publish and an easy thing
- * to misread. Version numbers and elapsed times are the exception and they
- * are structural rather than financial.
+ * NO FINANCIAL NUMBERS. The scenarios are named by the assumption that
+ * separates them rather than by a price, because a price target on a real
+ * security, published on a marketing page, is a view on that security no
+ * disclaimer entirely undoes. Naming the assumption is also the more
+ * interesting half: a reader learns that the product stores WHY the bull
+ * case is the bull case.
  */
 const CASE_ROWS: [string, string][] = [
-  ['Catalysts', 'Ramp completion, then the Q3 pricing reset'],
-  ['Key risks', 'A second ramp delay, or input costs holding'],
-  ['Valuation', 'Bull, base and bear, each on its own assumptions'],
+  ['Catalysts', 'Copilot seat disclosure, then the next capex guide'],
+  ['Key risks', 'Capex outrunning monetization, or power and supply limits'],
+  ['Valuation', 'Bull, base and bear, each on its own Azure growth path'],
   ['Price target', 'Current and every prior value, dated'],
-  ['Coverage', 'A. Reyes, lead, since the initiation'],
+  ['Coverage', `${FLAGSHIP.analyst}, lead, since the initiation`],
 ]
 
 const PROCESS = [
@@ -377,45 +434,13 @@ const PROCESS = [
 ]
 
 const LINKED = [
-  { kind: 'Research note', detail: 'Margin recovery as the new plant reaches scale' },
-  { kind: 'Investment idea', detail: 'Ready to recommend, conviction raised after the site visit' },
+  { kind: 'Research note', detail: 'The capex-to-margin case, and the evidence behind it' },
+  { kind: 'Investment idea', detail: 'Ready to recommend, conviction raised after the channel work' },
   { kind: 'Recommendation', detail: 'Initiate, sized to the conviction stated in the note' },
   { kind: 'Decision', detail: 'Approved, with the reasoning frozen at submission' },
-  { kind: 'Outcome review', detail: 'Graded against the original case, not the return' },
+  { kind: 'Outcome review', detail: 'Read against the original case, not against the return' },
 ]
 
-/**
- * ── WHAT CHANGED HERE, 2026-11-27 ───────────────────────────────────────
- *
- * The review was that this figure "feels like a small conceptual
- * interface", and that was fair: three thin panes, the middle one carrying
- * five one-line definitions, nothing that looked like a working screen.
- * The section it anchors is now the page's product reveal and the figure
- * is the widest thing on the page, so it has to survive being looked at.
- *
- * Three changes, in order of how much they matter:
- *
- *   MORE OF THE CASE. Catalysts, risks, valuation scenarios, the price
- *   target's history, conviction and sentiment, and the coverage
- *   assignment. The brief listed about a dozen things that could go here;
- *   this is a representative subset rather than all of it, because a
- *   screen showing everything shows nothing.
- *
- *   A PROCESS PANE. The recurring workflow on the name, with its open
- *   requirements, which is the part of the product an analyst touches
- *   every week and the figure never showed. 156 workflows and 498 stages
- *   exist in production, so it is also one of the better-evidenced
- *   surfaces here.
- *
- *   THE CHAIN GOT A FIFTH LINK. The investment idea sat between the note
- *   and the recommendation in the real model and was missing from the
- *   drawing, which made the chain look shorter than it is.
- *
- * The type went up a step throughout: the body rows are 14px to 16px, the
- * thesis line is 17px to 18px. "Legible without leaning toward the
- * screen" was the note and it is a size problem before it is a layout
- * problem.
- */
 export function WorkspaceCanvas() {
   return (
     <figure
@@ -440,13 +465,13 @@ export function WorkspaceCanvas() {
           </span>
           <span aria-hidden="true" className="text-slate-700">/</span>
           <span data-security-name className="truncate font-mono text-[16px] text-white">
-            NORTHWIND
+            {FLAGSHIP.ticker}
           </span>
           <span aria-hidden="true" className="text-slate-700">/</span>
           <span className="truncate text-[14px] text-slate-400">Thesis</span>
         </span>
         <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
-          Illustration
+          {ILLUSTRATIVE}
         </span>
       </figcaption>
 
@@ -499,14 +524,12 @@ export function WorkspaceCanvas() {
         {/* ── Middle: what I think ────────────────────────────────────── */}
         <div className="bg-[#07090e] p-5 sm:p-6">
           <Col>Investment case</Col>
-          <p className="mt-4 text-[18px] leading-[1.5] text-white">
-            Margin recovery as the new plant reaches scale.
-          </p>
+          <p className="mt-4 text-[18px] leading-[1.5] text-white">{FLAGSHIP.thesis}</p>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <Chip tone="accent">Conviction High</Chip>
             <Chip>Raised from Medium</Chip>
             <Chip>Version 4</Chip>
-            <Chip>Held in Core Equity</Chip>
+            <Chip>Held in {FLAGSHIP.book}</Chip>
           </div>
 
           <dl className="mt-6 space-y-4 border-t border-white/[0.07] pt-5">
@@ -519,10 +542,10 @@ export function WorkspaceCanvas() {
               </div>
             ))}
           </dl>
-
-          <p className="mt-6 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
-            All of it on the security itself, not filed in a folder beside it.
+          <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
+            All of it on the security itself.
           </p>
+
         </div>
 
         {/* ── Right: what the firm did about it ───────────────────────── */}
