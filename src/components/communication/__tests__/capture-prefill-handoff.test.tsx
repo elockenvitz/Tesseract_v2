@@ -23,7 +23,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, cleanup } from '@testing-library/react'
+import { act, render, screen, cleanup } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { CapturePrefill } from '../../../lib/capture/prefill'
 
@@ -38,6 +38,24 @@ vi.mock('../../thoughts/QuickThoughtCapture', () => ({
       data-asset-id={String(props.initialAssetId ?? '')}
     />
   ),
+}))
+
+/*
+ * The trade-idea form, replaced by a marker.
+ *
+ * Two reasons, and neither of them is speed. The real
+ * `QuickTradeIdeaCapture` calls `useLocation()`, so rendering it needs a
+ * router this file has no other use for -- and until the last case below was
+ * fixed it was never actually rendered, which is what hid that.
+ *
+ * The marker is also the BARRIER that case needs. The four capture modes are
+ * mutually exclusive, so this element appearing is proof that a second,
+ * different request reached the screen and the quick-thought form came down
+ * with its draft. Nothing else in the rendered output distinguishes "the form
+ * from the first request" from "the form from the second".
+ */
+vi.mock('../../thoughts/QuickTradeIdeaCapture', () => ({
+  QuickTradeIdeaCapture: () => <div data-testid="trade-idea-form" />,
 }))
 
 /* Everything below is scaffolding this component needs to mount at all: a
@@ -145,10 +163,20 @@ describe('a promotion arriving while the pane is open', () => {
     mountPane()
     useSidebarStore.getState().openCaptureSidebar('idea', promoted)
     await screen.findByTestId('capture-form')
-    /* A re-render from any source. If the component read the draft from the
-       store at render time, the cleared one-shot would empty the box here. */
-    useSidebarStore.setState({ sidebarOpen: true })
-    await Promise.resolve()
+    /*
+     * A re-render from any source. If the component read the draft from the
+     * store at render time, the cleared one-shot would empty the box here.
+     *
+     * `act` rather than the microtask that used to stand here. This case
+     * asserts that something did NOT change, so an insufficient wait does not
+     * make it flaky -- it makes it VACUOUS: the re-render never happens, the
+     * box still holds the words it was given, and the case passes without
+     * having tested anything. `act` returns when React has no work left, so
+     * the re-render this case is about has provably happened.
+     */
+    await act(async () => {
+      useSidebarStore.setState({ sidebarOpen: true })
+    })
     expect(form()!.getAttribute('data-content')).toBe(promoted.text)
   })
 })
@@ -184,7 +212,26 @@ describe('a capture the reader opens by hand', () => {
     expect(form()!.getAttribute('data-content')).toBe(promoted.text)
 
     useSidebarStore.getState().openCaptureSidebar('trade_idea')
-    await Promise.resolve()
+    /*
+     * Wait for the OTHER form to be on screen, not for a microtask.
+     *
+     * `await Promise.resolve()` stood here, and it is what made this case
+     * intermittent on build machines. A microtask is not a point in the
+     * application's life; it is one hop of whatever the scheduler happened to
+     * be doing. The quick-thought form is mounted for the first request AND
+     * for the third, so the `findByTestId('capture-form')` below matched the
+     * form that was still holding the first draft and returned immediately --
+     * which left the assertion reading whichever render had landed by then.
+     * One extra scheduling hop, which is exactly what a loaded build machine
+     * supplies, and it read the first draft.
+     *
+     * The trade-idea marker is a real barrier: it cannot be on screen until
+     * the second request has been consumed and committed, and the
+     * quick-thought form cannot still be there when it is.
+     */
+    await screen.findByTestId('trade-idea-form')
+    expect(form(), 'the quick-thought form has to come down, draft and all').toBeNull()
+
     useSidebarStore.getState().openCaptureSidebar('idea')
     await screen.findByTestId('capture-form')
     expect(form()!.getAttribute('data-content')).toBe('')
