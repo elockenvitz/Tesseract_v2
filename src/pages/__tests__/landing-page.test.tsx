@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, cleanup, within } from '@testing-library/react'
+import { act, render, screen, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 /* The registry, so the footer-link case asserts against the real document
@@ -2509,6 +2509,51 @@ describe('the navigation a phone gets', () => {
       screen.getByRole('button', { name: /open main menu/i }).getAttribute('aria-expanded'),
       'a menu left open over the section it just scrolled to is the whole screen on a phone',
     ).toBe('false')
+  })
+
+  it('closes itself when the viewport grows into the desktop bar', async () => {
+    const user = userEvent.setup()
+
+    /*
+     * jsdom's matchMedia is a stub that reports `matches: false` for
+     * everything, so this test installs one that answers a width. Without
+     * it the case cannot distinguish a component that handles the
+     * transition from one that ignores it, which would make the gate
+     * decoration.
+     */
+    let width = 390
+    const listeners = new Set<() => void>()
+    vi.stubGlobal('matchMedia', (q: string) => ({
+      media: q,
+      // A GETTER, because a real MediaQueryList's `matches` is live. The
+      // first version of this stub froze it at construction, the
+      // component read the stale value when the listener fired, and the
+      // test failed against correct code.
+      get matches() { return width >= 1024 },
+      addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+      removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+      addListener: (fn: () => void) => listeners.add(fn),
+      removeListener: (fn: () => void) => listeners.delete(fn),
+      dispatchEvent: () => false,
+      onchange: null,
+    }))
+
+    await renderConfigured()
+    await openMenu(user)
+    expect(
+      screen.getByRole('button', { name: /close main menu/i }).getAttribute('aria-expanded'),
+      'the menu has to be open for the transition to mean anything',
+    ).toBe('true')
+
+    width = 1440
+    await act(async () => { listeners.forEach(fn => fn()) })
+
+    expect(
+      screen.getByRole('button', { name: /open main menu/i }).getAttribute('aria-expanded'),
+      'a menu opened on a phone must not still be open when the desktop bar takes over',
+    ).toBe('false')
+
+    vi.unstubAllGlobals()
   })
 
   it('keeps the panel out of the tab order while it is shut', async () => {

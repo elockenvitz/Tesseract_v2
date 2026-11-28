@@ -90,6 +90,29 @@ export function MobileNav({
     }
   }, [open])
 
+  /*
+    Close when the viewport crosses into desktop.
+
+    Without this the panel is `lg:hidden` and so is its button, so a
+    visitor who opens the menu at 390 and rotates to a wide tablet, or
+    drags a desktop window narrow and back, leaves `open` true with
+    nothing on screen to close it. Shrink again and the menu is sitting
+    there, opened by a gesture two sizes ago. 1024px is Tailwind's `lg`,
+    which is where the two navigations swap.
+  */
+  useEffect(() => {
+    if (!open) return
+    /* Guarded: this suite's jsdom provides no `matchMedia` at all, and an
+       unguarded call throws inside a passive effect, which unmounts the
+       header rather than failing one assertion. */
+    if (typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const onChange = () => { if (mq.matches) setOpen(false) }
+    onChange()
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [open])
+
   /* Tab cycles within the panel. Not a library trap: this is one short
      list with no nested widgets, and the whole behaviour is the two edges. */
   const onPanelKeyDown = (e: ReactKeyboardEvent) => {
