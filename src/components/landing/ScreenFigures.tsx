@@ -138,7 +138,10 @@ function Col({ children }: { children: ReactNode }) {
 export const FLAGSHIP = {
   ticker: 'MSFT',
   company: 'Microsoft',
-  thesis: 'Azure AI demand turns today’s capex into durable margin.',
+  /* 56 characters, which wrapped to a second line in the PM ruling at
+     1280 and nowhere else, and that was the last 21px keeping the
+     stakeholder section from one stable height. Same claim, shorter. */
+  thesis: 'Azure AI demand turns capex into durable margin.',
   analyst: 'A. Reyes',
   book: 'Core Equity',
 } as const

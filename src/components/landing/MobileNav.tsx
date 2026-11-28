@@ -12,7 +12,7 @@
  * ── Why a disclosure and not a drawer ────────────────────────────────────
  *
  * A full-screen drawer needs a scroll lock, and this page's scroll
- * behaviour is already load-bearing: `data-public-scroll` exists because
+ * behavior is already load-bearing: `data-public-scroll` exists because
  * the app shell's mobile CSS froze the public page at one screen, and that
  * shipped. A panel that hangs off the sticky header needs none of that
  * machinery, so it cannot reintroduce the bug.
@@ -114,7 +114,7 @@ export function MobileNav({
   }, [open])
 
   /* Tab cycles within the panel. Not a library trap: this is one short
-     list with no nested widgets, and the whole behaviour is the two edges. */
+     list with no nested widgets, and the whole behavior is the two edges. */
   const onPanelKeyDown = (e: ReactKeyboardEvent) => {
     if (e.key !== 'Tab') return
     const focusable = [...(panelRef.current?.querySelectorAll<HTMLElement>('a, button') ?? [])]

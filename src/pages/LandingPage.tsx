@@ -18,6 +18,7 @@ import {
   MemoryLedger,
 } from '../components/landing/SectionVisuals'
 import { MobileNav } from '../components/landing/MobileNav'
+import { HEADER_PX, isStackedLayout, pinnedHeight, revealPanel } from '../components/landing/revealPanel'
 import {
   ArrowLeftRight, ArrowRight, BookOpen, FileSignature, Gavel, History,
   Layers, Lock, Quote, RotateCcw, ShieldCheck,
@@ -57,7 +58,7 @@ import { LEGAL_DOCUMENTS, legalPath, FOOTER_LABELS } from '../legal/documents'
  * and a panel announcing that no screenshots existed. All of that is gone
  * by instruction, and none of it should come back.
  *
- * That is NOT a licence to claim things that do not work. The constraint
+ * That is NOT a license to claim things that do not work. The constraint
  * simply moved: where a capability is not real, the capability is OMITTED
  * rather than listed-and-qualified. Platform-provisioned AI, proactive
  * surfacing of prior decisions and firm-level pattern analysis were all
@@ -422,7 +423,7 @@ const NAV_SECTIONS = [
  * ── The layers, outermost first ─────────────────────────────────────────
  *
  *  1. DEEP FIELD. A vignette rather than a glow: the frame darkens at its
- *     edges so the centre has air. This is the layer the aurora was
+ *     edges so the center has air. This is the layer the aurora was
  *     pretending to be, done as lighting instead of as colour.
  *  2. GALACTIC BAND. One soft diagonal band of dust across the frame at
  *     about twenty degrees, in white at three percent. It is what makes the
@@ -614,7 +615,7 @@ function PageAtmosphere() {
     <>
       {/*
         1. DEEP FIELD. A vignette, not a glow: the edges of the frame fall
-        away so the centre has air.
+        away so the center has air.
 
         This is what the aurora was pretending to be. A coloured blob adds a
         hue the composition never asked for; a luminance figure states where
@@ -999,7 +1000,7 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
  * So the section's ROLE is now a prop, and the role sets the type scale,
  * the alignment and the vertical rhythm together:
  *
- *   brand    a statement the page wants remembered. 48-56px, CENTRED,
+ *   brand    a statement the page wants remembered. 48-56px, CENTERED,
  *            narrow measure, and the most air on the page. Two sections
  *            get this and they are the two that are not about features.
  *   major    the default product section. 40px, asymmetric split.
@@ -1017,16 +1018,40 @@ const WEIGHTS = {
     pb: 'pb-24 sm:pb-36',
     gap: 'mt-16 sm:mt-20',
   },
+  /*
+    ── THE SCALE IS NOW THREE DISTINCT RHYTHMS, NOT ONE SLOW ONE ─────────
+
+    Measured at 1440x900 before this change: the empty band between the
+    last ink of one section and the first ink of the next ran 193 to
+    265px at EVERY boundary on the page, which is a fifth to a third of
+    a screen of nothing, eleven times. The page did not read as spacious;
+    it read as slow, and the uniformity was the problem rather than the
+    amount.
+
+    So the three weights now separate properly instead of stepping by a
+    notch:
+
+      brand    untouched at 36. These are the moments the page is
+               allowed to pause on, and a pause only works if
+               everything around it does not.
+      major    28 -> 24. Consecutive product demonstrations. A reader
+               moving from one piece of software to the next does not
+               need a third of a screen to recover.
+      compact  20 -> 16. Supporting explanation between demonstrations.
+
+    Roughly 400px comes out of the page and none of it from a section a
+    visitor is reading.
+  */
   major: {
     title: 'text-3xl leading-[1.1] sm:text-[2.5rem]',
-    pt: 'pt-20 sm:pt-28',
-    pb: 'pb-20 sm:pb-28',
+    pt: 'pt-20 sm:pt-24',
+    pb: 'pb-20 sm:pb-24',
     gap: 'mt-14 sm:mt-16',
   },
   compact: {
     title: 'text-2xl leading-[1.15] sm:text-[1.875rem]',
-    pt: 'pt-16 sm:pt-20',
-    pb: 'pb-16 sm:pb-20',
+    pt: 'pt-14 sm:pt-16',
+    pb: 'pb-14 sm:pb-16',
     gap: 'mt-10 sm:mt-12',
   },
 } as const
@@ -1087,8 +1112,8 @@ function Section({
       )}
       <div className={`${SHELL} ${W.pt} ${children ? '' : W.pb}`}>
         {/*
-          CENTRED or SPLIT, and the choice is the section's job rather than
-          the component's habit. A centred narrow column reads as a
+          CENTERED or SPLIT, and the choice is the section's job rather than
+          the component's habit. A centered narrow column reads as a
           statement; an asymmetric split reads as an argument with evidence
           beside it. The page alternates between them deliberately now, so
           the composition tells a reader what kind of section they are in
@@ -1217,8 +1242,11 @@ function RecordChain() {
         left and a pill reading "Record shape" on the right, which are the
         same statement twice with a piece of chrome around the second.
       */}
+      {/* Was "How one decision is stored", which names the mechanism
+          rather than the thing a reader wants. The diagram is unchanged;
+          it is the intelligence behind a decision either way. */}
       <figcaption className="text-[16px] font-semibold tracking-tight text-white">
-        How one decision is stored
+        The intelligence behind a decision
       </figcaption>
 
       {/*
@@ -1416,7 +1444,7 @@ const LIFECYCLE = [
     record: 'Decision',
     fields: ['Verdict', 'Rationale', 'Decided by', 'References'],
     line: 'The portfolio manager accepts, rejects or defers, and the rationale is captured with the decision rather than in a reply.',
-    so: 'Rejections and deferrals become records the firm can study, which is where its unexamined judgement sits.',
+    so: 'Rejections and deferrals become records the firm can study, which is where its unexamined judgment sits.',
   },
   {
     icon: ArrowLeftRight,
@@ -1436,7 +1464,7 @@ const LIFECYCLE = [
     record: 'Outcome review',
     fields: ['Original claim', 'What happened', 'Verdict', 'Links back to'],
     line: 'The decision is revisited against what actually happened, judged on the original thesis rather than the current price.',
-    so: 'Judgement becomes separable from luck, because the claim and the result sit in one record.',
+    so: 'Judgment becomes separable from luck, because the claim and the result sit in one record.',
   },
 ]
 
@@ -1456,13 +1484,34 @@ const LIFECYCLE = [
 function LifecycleWalk() {
   const [active, setActive] = useState(0)
   const tabs = useRef<(HTMLButtonElement | null)[]>([])
+  const sticky = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
   const { stage, screen, Figure, record, line, so, fields, icon: Icon } = LIFECYCLE[active]
   const upstream = active > 0 ? LIFECYCLE[active - 1] : null
+  const prev = active > 0 ? LIFECYCLE[active - 1] : null
+  const next = active < LIFECYCLE.length - 1 ? LIFECYCLE[active + 1] : null
+
+  /*
+    One entry point for every way a stage can change: the rail, the
+    arrow keys, and the two stage controls under the demonstration on a
+    phone. They differ only in whether focus should follow to the rail,
+    which it must not for the stage controls, because moving focus to a
+    pinned tab would scroll the page out from under the thumb that just
+    pressed the button.
+  */
+  function goTo(to: number, { focusTab }: { focusTab: boolean }) {
+    const i = (to + LIFECYCLE.length) % LIFECYCLE.length
+    if (i === active) return
+    setActive(i)
+    if (focusTab) tabs.current[i]?.focus({ preventScroll: true })
+    if (!isStackedLayout()) return
+    requestAnimationFrame(() => {
+      revealPanel(panel.current, HEADER_PX + pinnedHeight(sticky.current))
+    })
+  }
 
   function move(to: number) {
-    const next = (to + LIFECYCLE.length) % LIFECYCLE.length
-    setActive(next)
-    tabs.current[next]?.focus()
+    goTo(to, { focusTab: true })
   }
 
   function onKeyDown(e: React.KeyboardEvent) {
@@ -1481,6 +1530,26 @@ function LifecycleWalk() {
         row, the travelled ones lit, so position in the lifecycle is visible
         without reading a numeral.
       */}
+      {/*
+        STICKY FROM `lg` UP, for the same reason the stakeholder selector
+        is: pick a stage, scroll into the demonstration, and the rail has
+        left the viewport, so reaching the next stage means scrolling
+        back up. It is scoped to this component's root, so it releases at
+        the end of the section and never follows the reader into the next
+        one, and the surface is opaque because the figure scrolls
+        underneath it.
+
+        NOT ON A PHONE, and that was measured. Six tabs wrap to three
+        rows below `sm`, which pins 270px to the top of an 844px screen —
+        a third of the viewport permanently spent on navigation, to save
+        a scroll. Below `lg` the rail scrolls away and the stage controls
+        under the demonstration do the navigating instead, which is what
+        they are for.
+      */}
+      <div
+        ref={sticky}
+        className="z-20 -mx-4 bg-[#050710] px-4 pb-3 pt-2 sm:-mx-6 sm:px-6 lg:sticky lg:top-[4.5rem]"
+      >
       <div
         role="tablist"
         aria-label="The decision lifecycle"
@@ -1516,7 +1585,7 @@ function LifecycleWalk() {
                */
               aria-label={s}
               tabIndex={on ? 0 : -1}
-              onClick={() => setActive(i)}
+              onClick={() => goTo(i, { focusTab: false })}
               /*
                 Same affordance fix as the role tabs: an unselected tab
                 was bare text with a `bg-white/12` rule above it, which on
@@ -1557,6 +1626,7 @@ function LifecycleWalk() {
           )
         })}
       </div>
+      </div>
 
       <div className="mt-10">
         {/*
@@ -1567,10 +1637,18 @@ function LifecycleWalk() {
           at, which was the bug in the screens column.
         */}
         <div
+          ref={panel}
           role="tabpanel"
           id="stage-panel"
           aria-labelledby={`stage-tab-${active}`}
-          className="lg:min-h-[300px]"
+          /*
+            480, not 300. Measured across all six stages at 1440: the
+            panels run 454, 461, 454, 454, 454 and 477, so the old floor
+            was below every one of them and did nothing. The 23px spread
+            moved the record chain under it on two stages in six, which
+            is the small page jump the stakeholder section was fixed for.
+          */
+          className="lg:min-h-[480px]"
         >
           <div className="flex flex-wrap items-center gap-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-400/10 ring-1 ring-inset ring-amber-300/25">
@@ -1646,7 +1724,7 @@ function LifecycleWalk() {
               */}
               <div className="mt-7 rounded-xl bg-white/[0.02] p-5 ring-1 ring-inset ring-white/[0.06]">
                 <p className="text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
-                  Stored as
+                  On the record
                 </p>
                 <p className="mt-2 font-mono text-[14px] text-white">{record}</p>
                 <ul className="mt-3.5 flex flex-wrap gap-1.5 border-t border-white/[0.07] pt-3.5">
@@ -1661,6 +1739,75 @@ function LifecycleWalk() {
                 </ul>
               </div>
             </div>
+          </div>
+
+          {/*
+            ── STAGE CONTROLS, PHONE AND TABLET ONLY ────────────────────
+
+            The rail is sticky now, so the selector is always reachable.
+            It is not always USABLE on a phone: six targets across two
+            columns means finding "Decide" in a pinned grid while the
+            demonstration you were reading scrolls behind it. The natural
+            gesture after finishing a stage is "next", and that control
+            did not exist.
+
+            `lg:hidden`, because the desktop rail is one row of six where
+            every stage is a single click and an arrow key away, and
+            adding a second control there would be furniture.
+
+            The ADJACENT STAGE IS NAMED rather than labelled Previous and
+            Next: "Decide" tells a reader what they are about to see, and
+            at 390 the two names plus arrows fit one row comfortably. The
+            accessible name carries both, so a screen reader hears the
+            direction as well as the destination.
+
+            The ends are HIDDEN, not disabled. A disabled control on
+            Research is a dead target that still takes a tap; `invisible`
+            holds the grid column so the remaining button does not jump
+            across the row when you reach either end.
+          */}
+          <div className="mt-8 grid grid-cols-2 items-center gap-3 border-t border-white/[0.07] pt-5 lg:hidden">
+            <button
+              type="button"
+              onClick={() => goTo(active - 1, { focusTab: false })}
+              aria-label={prev ? `Previous stage: ${prev.stage}` : undefined}
+              className={`inline-flex min-h-[48px] items-center gap-2 justify-self-start rounded-lg px-3 text-[16px] font-medium text-slate-300 ring-1 ring-inset ring-white/[0.08] transition-colors hover:bg-white/[0.04] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                prev ? '' : 'invisible pointer-events-none'
+              }`}
+              tabIndex={prev ? 0 : -1}
+            >
+              <span aria-hidden="true" className="text-amber-300">&#8592;</span>
+              {prev?.stage ?? ''}
+            </button>
+            <button
+              type="button"
+              onClick={() => goTo(active + 1, { focusTab: false })}
+              aria-label={next ? `Next stage: ${next.stage}` : undefined}
+              className={`inline-flex min-h-[48px] items-center gap-2 justify-self-end rounded-lg px-3 text-[16px] font-medium text-slate-300 ring-1 ring-inset ring-white/[0.08] transition-colors hover:bg-white/[0.04] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                next ? '' : 'invisible pointer-events-none'
+              }`}
+              tabIndex={next ? 0 : -1}
+            >
+              {next?.stage ?? ''}
+              <span aria-hidden="true" className="text-amber-300">&#8594;</span>
+            </button>
+            {/*
+              Position in the sequence, spanning both columns under the
+              arrows. The sticky rail shows it too, but a reader at the
+              bottom of a tall demonstration is looking here, and "04 of
+              06" answers "how much of this is left" without a scroll.
+            */}
+            <p
+              aria-live="polite"
+              className="col-span-2 text-center text-[12px] font-medium uppercase tracking-[0.12em] text-slate-400"
+            >
+              {stage}
+              <span aria-hidden="true"> &middot; </span>
+              <span className="tabular-nums">
+                {String(active + 1).padStart(2, '0')} of{' '}
+                {String(LIFECYCLE.length).padStart(2, '0')}
+              </span>
+            </p>
           </div>
         </div>
 
@@ -1943,7 +2090,7 @@ export function LandingPage() {
    *
    * ── Why an attribute rather than editing the rule ─────────────────────
    *
-   * The app shell's behaviour must not change, so the lock stays the
+   * The app shell's behavior must not change, so the lock stays the
    * default and this page opts OUT of it for as long as it is mounted.
    * The cleanup matters: navigating from here to the signed-in app must
    * hand the lock back, or the shell inherits a scrolling document and
@@ -2140,7 +2287,7 @@ export function LandingPage() {
           </BlackHole>
 
           {/*
-            A cold light down the centre of the hero.
+            A cold light down the center of the hero.
 
             Was a blue-tinted ellipse. It is neutral white now, like
             everything else in the atmosphere, because a tint here was the
@@ -2309,7 +2456,7 @@ export function LandingPage() {
               verbatim.
             */}
             <p className="mt-6 max-w-[62ch] text-[17px] leading-[1.75] text-slate-400">
-              A better environment for investment thinking, a stronger
+              A better environment for investment research, a stronger
               foundation for decision-making, and a lasting source of
               institutional intelligence.
             </p>
@@ -2361,7 +2508,7 @@ export function LandingPage() {
             */}
             <div className="mt-16 border-t border-white/10 pt-9">
               <p className="max-w-[52ch] text-pretty text-[20px] font-medium leading-[1.55] text-slate-300">
-                From investment thinking to investment action.
+                From research to conviction to action.
                 <span className="block text-slate-400">
                   And everything learned along the way.
                 </span>
@@ -2395,7 +2542,7 @@ export function LandingPage() {
         {/*
           ── THE PRODUCT REVEAL ────────────────────────────────────────────
 
-          CENTRED, which no other product section on this page is. The
+          CENTERED, which no other product section on this page is. The
           heading is the page's second brand moment and the figure beneath
           it is the widest thing here, so the composition is a title over a
           stage rather than a column of text with a picture beside it. That
@@ -2410,7 +2557,10 @@ export function LandingPage() {
           cash, and it is approved copy.
         */}
         <section id="platform" className="relative scroll-mt-24">
-          <div className={`${SHELL} pt-24 sm:pt-32`}>
+          {/* 32 -> 26. The hero-to-product transition was the longest
+              empty band on the page at 256px, and it is the one place a
+              visitor is most likely to give up. */}
+          <div className={`${SHELL} pt-20 sm:pt-[6.5rem]`}>
             <div className="mx-auto max-w-3xl text-center">
               <div className="flex justify-center">
                 <Eyebrow>The platform</Eyebrow>
@@ -2459,7 +2609,7 @@ export function LandingPage() {
                 A unified investment environment.
               </p>
               <p className="max-w-[62ch] text-[16px] leading-[1.75] text-slate-400 lg:col-span-7">
-                Research informs judgement, judgement informs action, and the
+                Research informs judgment, judgment informs action, and the
                 experience of both informs the next decision.
               </p>
             </div>
@@ -2511,7 +2661,7 @@ export function LandingPage() {
           center
           label="The opportunity"
           title="The untapped intelligence within every investment firm."
-          lead="Investment teams generate an extraordinary amount of intelligence through research, discussion, judgement and decisions. Much of it stays fragmented across systems, disconnected from the actions it informed and difficult to build on."
+          lead="Investment teams generate an extraordinary amount of intelligence through research, discussion, judgment and decisions. Much of it stays fragmented across systems, disconnected from the actions it informed and difficult to build on."
         >
           <div className="mx-auto max-w-4xl">
             <p className="text-pretty text-center text-[20px] leading-[1.6] text-slate-300 sm:text-[1.375rem]">
@@ -2556,7 +2706,7 @@ export function LandingPage() {
           wide
           label="Built for the desk"
           title="A better investment experience. At every level."
-          lead="The same investment intelligence, experienced through the distinct responsibilities of analysts, portfolio managers and investment leadership."
+          lead="One investment environment, built around the distinct responsibilities of analysts, portfolio managers and investment leadership."
         >
           <RoleSwitch />
         </Section>
@@ -2600,8 +2750,8 @@ export function LandingPage() {
           tone="raised"
           wide
           label="The connected decision lifecycle"
-          title="Where investment thinking becomes action."
-          lead="Investment decisions take shape through research, evolving conviction, discussion and judgement. Tesseract connects those moments, so each stage arrives carrying the one before it."
+          title="Where research becomes action."
+          lead="Investment decisions take shape through research, evolving conviction, discussion and judgment. Tesseract connects those moments, so each stage arrives carrying the one before it."
         >
           {/*
             ── Was a stack of six headed text blocks beside the diagram ────
@@ -2754,7 +2904,7 @@ export function LandingPage() {
                       contents read out in advance. */}
                   <p className={`max-w-[56ch] text-[17px] leading-[1.75] ${LIGHT_BODY}`}>
                     Research becomes more valuable when it stays connected to
-                    the thinking it informs, and nothing here is written a
+                    the decisions it informs, and nothing here is written a
                     second time for somebody else&rsquo;s benefit.
                   </p>
                 </div>
@@ -2811,7 +2961,7 @@ export function LandingPage() {
                 This sentence is the architectural reason everything else
                 on the page is possible, and it was set as the section's
                 closing statement at 20px. That made the database model the
-                CENTREPIECE of the section about an analyst's working day,
+                CENTERPIECE of the section about an analyst's working day,
                 which is the wrong thing to leave a reader holding: typed
                 entities are an advantage of the design, not the customer's
                 experience of it.
@@ -2824,7 +2974,7 @@ export function LandingPage() {
               <p className={`mt-12 max-w-[66ch] border-t border-slate-900/[0.08] pt-6 text-[16px] leading-[1.75] ${LIGHT_MUTED}`}>
                 Each of these is a typed record rather than a document, which
                 is the only reason the chain above can exist: a recommendation
-                can cite a note because the note is a row.
+                can cite a note because the note is a record of its own.
               </p>
             </div>
           </div>
@@ -2924,7 +3074,7 @@ export function LandingPage() {
           */}
           <div className="mt-16 border-t border-white/10 pt-10">
             <p className="text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              What makes the analysis worth having
+              A more informed investment conversation
             </p>
             <div className="mt-8">
               <AssistantFlow />
@@ -2940,24 +3090,33 @@ export function LandingPage() {
               caught it before.
             */}
             <p className="max-w-[60ch] text-[16px] leading-[1.75] text-slate-400">
-              It knows where you are, it reads the record, not the internet,
-              and it cites what it used.
+              Relevant investment context, with answers grounded in the
+              firm&rsquo;s own research.
             </p>
             {/*
-              THE VISION LINE, AND WHY IT IS HERE RATHER THAN IN THE PITCH.
+              ── THE BOUNDARY MOVED TO THE FOOTER, 2026-11-28 ──────────────
 
-              The brief asks that current functionality stay distinguishable
-              from the longer-term ambition. This is that line, and it is
-              phrased as a boundary rather than a roadmap: what the
-              assistant does not do today. Saying "coming soon" would
-              violate the standing rule on this page against status
-              language; saying what it does not do is a fact about the
-              product.
+              This slot read "ACT AI assists the people who make the
+              decisions. It does not manage portfolios, place orders, or
+              produce recommendations on its own authority." Three
+              absences, at the same weight as the value proposition, at
+              the end of the section meant to make a reader want the
+              thing.
+
+              The statement is accurate and it is a material disclosure,
+              so it is not gone: it sits in the footer beside the adviser
+              and broker-dealer language, which is where a compliance
+              reader looks and where it costs the pitch nothing. Its gate
+              reads the whole page, so it still fails if the sentence is
+              ever deleted outright.
+
+              What stands here is the same relationship stated the way
+              round a buyer wants to hear it.
             */}
             <p className="max-w-[60ch] text-[16px] leading-[1.75] text-slate-400">
-              ACT AI assists the people who make the decisions. It does not
-              manage portfolios, place orders, or produce recommendations on
-              its own authority.
+              Investment intelligence with human judgment at its center. It
+              supports the analysis, questions the assumptions and brings what
+              the firm already knows into the decision.
             </p>
           </div>
         </Section>
@@ -3004,7 +3163,7 @@ export function LandingPage() {
               The outcome tells only part of the story.
             </p>
             <p className="max-w-[52ch] text-[17px] leading-[1.8] text-slate-400 lg:col-span-6 lg:pt-2">
-              Investment results reflect judgement and uncertainty together.
+              Investment results reflect judgment and uncertainty together.
               Keeping the context a decision was made in is what lets a firm
               examine the process on its own terms, rather than reading every
               review back from the return.
@@ -3016,7 +3175,7 @@ export function LandingPage() {
             THE PAGE'S SECOND BRAND MOMENT, and the only section besides the
             hero and the close that gets a sky behind it.
 
-            `weight="brand"` and `center`: a 56px centred headline with the
+            `weight="brand"` and `center`: a 56px centered headline with the
             most air on the page. That is a deliberate change of gear after
             six product sections, and it is this section rather than another
             because this is the one whose subject is not a feature. It is
@@ -3039,7 +3198,7 @@ export function LandingPage() {
              and people a firm moves through, which the ledger beneath
              shows better than any clause: three years, two analysts, one
              name. */
-          lead="The research, judgement and experience of an investment team become more valuable when they stay connected and accessible over time, beyond any individual investor."
+          lead="The research, judgment and experience of an investment team become more valuable when they stay connected and accessible over time, beyond any individual investor."
         >
           <div className="grid items-start gap-x-16 gap-y-12 lg:grid-cols-12">
             {/*
@@ -3143,7 +3302,7 @@ export function LandingPage() {
           ── Trust, REFRAMED FROM FEAR TO CONTROL ──────────────────────────
 
           The heading was "Built for a firm that cannot hand its research to
-          anyone", which recognises a real constraint and leads with what
+          anyone", which recognizes a real constraint and leads with what
           the firm is afraid of. "Proprietary intelligence. Firm-level
           control." is the same subject stated as a capability, which is
           both more confident and more accurate about what the product
@@ -3159,7 +3318,11 @@ export function LandingPage() {
             aria-hidden="true"
             className={`${SHELL} h-px bg-gradient-to-r from-transparent via-white/10 to-transparent`}
           />
-          <div className={`${SHELL} py-20 sm:py-24`}>
+          {/* Asymmetric on purpose. The section above is the page's
+              second brand moment and keeps its full pb-36, so the space
+              comes out of this section's top: the transition shortens
+              without flattening the pause. */}
+          <div className={`${SHELL} pb-20 pt-16 sm:pb-24 sm:pt-20`}>
             <div className="grid gap-x-16 gap-y-7 lg:grid-cols-12">
               <div className="lg:col-span-5">
                 <Eyebrow>Institutional trust</Eyebrow>
@@ -3168,7 +3331,7 @@ export function LandingPage() {
                 </h2>
               </div>
               <p className="max-w-[52ch] text-[17px] leading-[1.75] text-slate-400 lg:col-span-7 lg:pt-8">
-                Research, judgement and decision-making are among a firm&rsquo;s
+                Research, judgment and decision-making are among a firm&rsquo;s
                 most valuable proprietary assets. Tesseract is built so they
                 stay that way.
               </p>
@@ -3238,7 +3401,7 @@ export function LandingPage() {
             ── TWO CONVERSION SECTIONS BECAME ONE ───────────────────────────
 
             The page ended with a design-partner panel and then, after a
-            rule, a second centred block headed "See the decision loop on a
+            rule, a second centered block headed "See the decision loop on a
             real security". Two conversion moments in a row is one too
             many: the first asked for a commitment, the second asked for a
             meeting, and the reader had to decide twice in forty vertical
@@ -3339,7 +3502,7 @@ export function LandingPage() {
                     className="mt-5 max-w-[62ch] text-[17px] leading-[1.7] text-slate-300"
                   >
                     A founding partnership is a working relationship with the
-                    founder. Your own research and decision process modelled
+                    founder. Your own research and decision process modeled
                     in the product, a first-hand look at what that environment
                     does for a team, and a direct say in what gets built next.
                   </p>
@@ -3461,7 +3624,7 @@ export function LandingPage() {
               removable.
             */}
             <p className="mt-10 border-t border-white/[0.06] pt-6 text-[16px] leading-[1.75] text-slate-400">
-              Tesseract is research and workflow software. It is not an investment adviser or a broker-dealer, it gives no investment advice, and it places no orders. Nothing on this page is an offer of securities, investment advice, or a performance representation. Securities are named in the illustrations for familiarity only. The research, assumptions and decisions shown are invented, are not market data and are not recommendations, and the companies named are not customers, partners or endorsers.
+              Tesseract is research and workflow software. It is not an investment adviser or a broker-dealer, it gives no investment advice, and it places no orders. ACT AI assists the people who make the decisions; it does not manage portfolios, place orders, or produce recommendations on its own authority. Nothing here is an offer of securities or a performance representation. Securities are named in the illustrations for familiarity only. The research, assumptions and decisions shown are invented. Targets, weights, returns and position sizes are hypothetical assumptions, not market data or recommendations, and the companies named are not customers, partners or endorsers.
             </p>
 
             {/*

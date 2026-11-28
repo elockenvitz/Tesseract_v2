@@ -60,7 +60,7 @@ export function CaptureTrade() {
       >
         <figcaption className="flex items-baseline justify-between gap-3">
           <span className="text-[16px] font-semibold tracking-tight text-slate-900">
-            What somebody writes
+            Research in the moment
           </span>
           {/* slate-600, not the dark sections' slate-400: this card is
               WHITE. slate-400 on white measures 2.56:1 and this marker is
@@ -113,7 +113,7 @@ export function CaptureTrade() {
       >
         <figcaption className="flex items-baseline justify-between gap-3">
           <span className="text-[16px] font-semibold tracking-tight text-white">
-            What the firm now has
+            Connected investment history
           </span>
           <span className="shrink-0 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-400">
             {ILLUSTRATIVE}
@@ -135,7 +135,7 @@ export function CaptureTrade() {
           ))}
         </ul>
         <p className="mt-4 text-[14px] leading-relaxed text-slate-400">
-          Typed records, created by the writing. Nobody filed anything.
+          Created by the writing. Nobody filed anything.
         </p>
       </figure>
     </div>
@@ -228,7 +228,7 @@ export function MemoryLedger() {
 
       {/*
         The rejection is listed FIRST and labelled, because a firm's declined
-        names are the half of its judgement that normally leaves no trace,
+        names are the half of its judgment that normally leaves no trace,
         and that is the part this section is actually selling.
       */}
       <p className="mt-5 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
@@ -392,8 +392,7 @@ export function AssistantCanvas() {
           </dl>
 
           <p className="mt-6 border-t border-white/[0.07] pt-4 text-[14px] leading-relaxed text-slate-400">
-            Every line traces to the record it came from, so the reasoning can
-            be checked rather than taken on trust.
+            Every line traces to the record it came from.
           </p>
         </div>
 
@@ -480,33 +479,47 @@ export function AssistantFlow() {
            * the trust section as firm-level control over the AI context. It
            * is simply not a selling point any more.
            *
-           * What replaces it is the first of the three directions the brief
-           * asked for: what the assistant is grounded in.
+           * ── AND THE THREE PANELS ARE NOW THE THREE DIMENSIONS ──────────
+           *
+           * The canvas above answers one question about a position that
+           * already exists, which left the whole section reading as a
+           * recall tool: ask it what you decided, and it will tell you.
+           * That is the smallest part of what it does and the least
+           * interesting reason to buy it.
+           *
+           * So the row underneath is research and analysis, investment
+           * judgment, and institutional intelligence. The first two are
+           * deliberately PROSPECTIVE, because the question a reader needs
+           * answered is whether this is useful before a decision as well
+           * as after one.
+           *
+           * Every question listed is answerable by a retrieval tool the
+           * deployed assistant actually has: coverage, open process
+           * stages, team notes, theses, decisions, the idea pipeline and
+           * outstanding work. Nothing here needs a tool that does not
+           * exist.
            */
-          step: 'Grounded in the firm’s own work',
-          line: 'It reads the case, the reasoning and the history on the name before it answers.',
+          step: 'Research and analysis',
+          line: 'Investment questions, answered against the firm’s own work.',
           Body: () => (
             <ul className="space-y-2">
-              {['Investment thesis', 'Research notes', 'Decisions and their rationale', 'Outcome reviews'].map(
-                label => (
-                  <li
-                    key={label}
-                    className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[14px] text-slate-300 ring-1 ring-inset ring-white/[0.07]"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="size-1.5 shrink-0 rounded-full bg-amber-300/80"
-                    />
-                    {label}
-                  </li>
-                ),
-              )}
+              {[
+                'What does our research already say about this name?',
+                'Which of our theses does this news touch?',
+              ].map(q => (
+                <li
+                  key={q}
+                  className="rounded-lg bg-white/[0.02] px-3 py-2 text-[14px] leading-[1.5] text-slate-300 ring-1 ring-inset ring-white/[0.07]"
+                >
+                  {q}
+                </li>
+              ))}
             </ul>
           ),
         },
         {
-          step: 'A sharper investment conversation',
-          line: 'The questions worth asking need a relationship between records, not a summary of one.',
+          step: 'Investment judgment',
+          line: 'It examines the assumptions, tests the conviction and names the gaps.',
           Body: () => (
             <ul className="space-y-2">
               {[
@@ -530,12 +543,12 @@ export function AssistantFlow() {
            * it lands ON the objects it concerns, which makes it findable
            * from the name rather than from remembering you once asked.
            */
-          step: 'Inside the investment work',
-          line: 'An answer attaches to the name, the idea and the note it drew on.',
+          step: 'Institutional intelligence',
+          line: 'Earlier research and decisions inform the question, and the answer attaches to them.',
           Body: () => (
             <div className="rounded-lg bg-white/[0.03] p-3 ring-1 ring-inset ring-white/[0.07]">
               <p className="text-[14px] leading-relaxed text-slate-300">
-                Where did the margin case first weaken?
+                Has anyone here looked at this before?
               </p>
               <div className="mt-3 flex flex-wrap gap-1.5 border-t border-white/[0.07] pt-3">
                 {['Asset', 'Idea', 'Research note'].map(t => (

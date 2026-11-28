@@ -20,7 +20,7 @@
  *
  * The review asked for this to become one of the most compelling parts of
  * the page, with more narrative depth and, specifically, for the
- * connection between the original thinking and the current judgement to be
+ * connection between the original thinking and the current judgment to be
  * VISUALLY OBVIOUS. It was two columns of five rows with a hairline
  * between them, which states adjacency and not linkage: nothing in the
  * drawing said the right column was reading the left one.
@@ -67,7 +67,7 @@ import { FLAGSHIP, ILLUSTRATIVE } from './ScreenFigures'
 const ROWS: { field: string; then: string; now: string; moved?: boolean }[] = [
   {
     field: 'Thesis',
-    then: 'Azure AI demand turns today’s capex into durable margin',
+    then: 'Azure AI demand turns capex into durable margin',
     now: 'Intact in direction, slower in timing',
   },
   {
@@ -82,9 +82,14 @@ const ROWS: { field: string; then: string; now: string; moved?: boolean }[] = [
     now: 'The first one happened, and it was on the list',
   },
   {
+    /* Same hypothetical base case the Decision Inbox submitted one seat
+       over, carried through to its review: $540 on the two-quarter path,
+       rebuilt at $505 once the path slipped. The figure declares the
+       numbers hypothetical in its own footnote, which is what the
+       market-data gate requires of any figure that prints one. */
     field: 'Valuation',
-    then: 'Base case built on the two-quarter path',
-    now: 'Rebuilt on the later schedule',
+    then: 'Base case $540, on the two-quarter path',
+    now: 'Rebuilt at $505, on the later schedule',
     moved: true,
   },
   {
@@ -95,8 +100,8 @@ const ROWS: { field: string; then: string; now: string; moved?: boolean }[] = [
   },
   {
     field: 'Action',
-    then: 'Approved. Initiated, sized to the stated conviction',
-    now: 'Position held. Sizing is the open question',
+    then: 'Approved. Initiated at 180 bps',
+    now: 'Held at 310 bps. Sizing is the open question',
   },
 ]
 
@@ -195,12 +200,12 @@ export function ReassessFigure() {
 
       <div className="grid gap-y-4 border-t border-white/[0.07] px-5 py-5 sm:px-7 md:grid-cols-2 md:gap-x-10">
         <p className="text-[14px] leading-relaxed text-slate-400">
-          The left column was frozen at submission. Later edits created
-          versions and never altered it.
+          Frozen at submission. Later edits created versions and never
+          altered it.
         </p>
         <p className="text-[14px] leading-relaxed text-slate-400">
-          The assumption that failed was one the analyst had already named, so
-          the live question is sizing.
+          The assumption that failed was one the analyst had named, so
+          the live question is sizing. Figures are hypothetical.
         </p>
       </div>
     </figure>

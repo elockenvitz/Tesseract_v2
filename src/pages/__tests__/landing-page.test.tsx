@@ -131,7 +131,7 @@ describe('the positioning a visitor reads in the first screen', () => {
       .map(p => (p.textContent ?? '').replace(/\s+/g, ' ').trim())
     expect(paras).toContain('Better decisions start with Tesseract.')
     expect(paras).toContain(
-      'A better environment for investment thinking, a stronger foundation ' +
+      'A better environment for investment research, a stronger foundation ' +
         'for decision-making, and a lasting source of institutional intelligence.',
     )
 
@@ -276,7 +276,7 @@ describe('the positioning a visitor reads in the first screen', () => {
       platform,
       'the affirmative statement has to stand where the denial used to',
     ).toMatch(/unified investment environment/i)
-    expect(platform).toMatch(/research informs judgement/i)
+    expect(platform).toMatch(/research informs judgment/i)
 
     expect(
       footer,
@@ -403,7 +403,7 @@ describe('the decision lifecycle is complete and closes', () => {
       /nobody argues later about which draft/i,
       /rejections and deferrals become records/i,
       /a position traces back to the argument/i,
-      /judgement becomes separable from luck/i,
+      /judgment becomes separable from luck/i,
     ]
 
     for (let i = 0; i < stages.length; i++) {
@@ -1909,7 +1909,7 @@ describe('nothing on the page imitates real data', () => {
    *
    * This case used to assert that no `[data-security-name]` held a member
    * of a hard-coded `REAL_TICKERS` set, so the figures named NORTHWIND,
-   * VERIDIAN, HALDEN and CALDERA. The page owner's judgement, which is
+   * VERIDIAN, HALDEN and CALDERA. The page owner's judgment, which is
    * correct and is the reason this changed: eight-letter invented names
    * read as a toy to an investor, and a toy does not survive being shown
    * to a portfolio manager. The figures name MSFT, NVDA, AVGO, V, COST and
@@ -1945,15 +1945,37 @@ describe('nothing on the page imitates real data', () => {
    * decoration. So it walks every tab and re-reads the figures after each
    * click, and that remains the most load-bearing line in the file.
    */
+  /*
+   * ── RESCOPED 2026-11-28: THE LINE IS FACTUAL vs HYPOTHETICAL ──────────
+   *
+   * This list used to forbid every digit that read as financial, which
+   * swept up exactly the figures a buy-side reader needs: valuation
+   * targets, scenario weights, expected return, position size. A
+   * valuation band with its numbers stripped out is a diagram of a
+   * product rather than the product.
+   *
+   * What must never appear is FACTUAL market data about a real listed
+   * company, because the page names real securities and has no price
+   * feed behind it. A calendar year reads as a real dated event and a
+   * currency code reads as a quote, so both stay banned outright.
+   *
+   * Money and percentages become CONDITIONAL: a figure may carry them
+   * only if that figure itself declares them hypothetical, where the
+   * reader meets the number rather than in a footer nobody reaches.
+   * The two lists are therefore checked differently below.
+   */
   const MARKET_DATA: [RegExp, string][] = [
-    [/[$€£]\s?\d/, 'Price target $540'],
-    [/\d\s?%/, 'Up 12% since initiation'],
     [/\b(19|20)\d{2}\b/, 'Initiated March 2024'],
     [/\b(USD|EUR|GBP)\b/, 'Cost basis 410 USD'],
   ]
 
+  const NEEDS_HYPOTHETICAL: [RegExp, string][] = [
+    [/[$€£]\s?\d/, 'Price target $540'],
+    [/\d\s?%/, 'Up 12% since initiation'],
+  ]
+
   it('has a market-data list that matches the copy it forbids', () => {
-    for (const [pattern, sample] of MARKET_DATA) {
+    for (const [pattern, sample] of [...MARKET_DATA, ...NEEDS_HYPOTHETICAL]) {
       expect(sample, `this pattern is inert, it cannot match ${JSON.stringify(sample)}`)
         .toMatch(pattern)
     }
@@ -1968,6 +1990,7 @@ describe('nothing on the page imitates real data', () => {
 
     let illustrationsSeen = 0
     let namedSecuritiesSeen = 0
+    let hypotheticalFiguresSeen = 0
 
     for (const tab of tabs) {
       const which = tab.textContent?.trim() ?? '?'
@@ -1986,6 +2009,23 @@ describe('nothing on the page imitates real data', () => {
             text,
             `${which}: a figure quotes something that reads as market data: ${pattern}`,
           ).not.toMatch(pattern)
+        }
+
+        /*
+         * A money amount or a percentage is allowed, but only in a
+         * figure that says on its own face that the numbers are
+         * assumptions. The declaration has to be IN THE FIGURE: a
+         * reader who sees "$620" and "+38%" beside MSFT decides in that
+         * moment whether they are looking at a quote, and a disclaimer
+         * two thousand pixels down the page does not reach them.
+         */
+        for (const [pattern] of NEEDS_HYPOTHETICAL) {
+          if (!pattern.test(text)) continue
+          hypotheticalFiguresSeen += 1
+          expect(
+            text,
+            `${which}: this figure prints a financial number (${pattern}) without declaring it hypothetical, so it reads as market data`,
+          ).toMatch(/hypothetical/i)
         }
 
         /*
@@ -2024,6 +2064,17 @@ describe('nothing on the page imitates real data', () => {
     expect(
       namedSecuritiesSeen,
       'no figure named a security, so the marker requirement checked nothing',
+    ).toBeGreaterThan(0)
+
+    /*
+     * So must the hypothetical branch. Without this the conditional
+     * rule is satisfied by a page carrying no financial figures at all,
+     * which is the state it was written to move away from: it would go
+     * green on the very regression it exists to prevent.
+     */
+    expect(
+      hypotheticalFiguresSeen,
+      'no figure printed a financial number, so the hypothetical declaration checked nothing',
     ).toBeGreaterThan(0)
 
     expect(
@@ -2136,10 +2187,28 @@ describe('nothing on the page imitates real data', () => {
 describe('the assistant is described by what it does', () => {
   it('states the three capabilities that exist today', async () => {
     await renderConfigured()
-    const actAi = document.getElementById('act-ai')
-    expect(actAi?.textContent).toMatch(/it knows where you are/i)
-    expect(actAi?.textContent).toMatch(/reads the record, not the internet/i)
-    expect(actAi?.textContent).toMatch(/cites what it used/i)
+    /*
+     * ── RETARGETED 2026-11-28 ─────────────────────────────────────────
+     *
+     * These three used to be one sentence: "It knows where you are, it
+     * reads the record, not the internet, and it cites what it used."
+     * That sentence has been rewritten, but the REQUIREMENT is the same
+     * and is the load-bearing half of this test: the section must still
+     * claim all three capabilities, which are the three that exist
+     * today, and must not quietly drop one in a restyle.
+     *
+     * Citation in particular moved rather than went. It is the claim
+     * that makes the grounding claim checkable, so the gate follows it
+     * to the canvas instead of accepting its loss.
+     */
+    const actAi = document.getElementById('act-ai')?.textContent ?? ''
+    expect(actAi, 'context-awareness').toMatch(/relevant investment context/i)
+    expect(actAi, 'grounded in the firm, not the internet').toMatch(
+      /grounded in the firm|own research|own work/i,
+    )
+    expect(actAi, 'and it shows its sources').toMatch(
+      /traces to the record|where it looked|cites what it used/i,
+    )
   })
 
   /*
@@ -2183,13 +2252,33 @@ describe('the assistant is described by what it does', () => {
         .not.toMatch(pattern)
     }
 
+    /*
+     * What replaced it has to be present, or this is a deletion dressed
+     * as a refinement. RETARGETED 2026-11-28: the supporting row used to
+     * be "grounded in the firm's own work" over a list of record types,
+     * which answered where the assistant looks and left the section
+     * reading as a recall tool. It is now the three dimensions, and the
+     * first two are prospective on purpose.
+     */
     const actAi = document.getElementById('act-ai')?.textContent ?? ''
+    for (const dimension of [
+      /research and analysis/i,
+      /investment judgment/i,
+      /institutional intelligence/i,
+    ]) {
+      expect(actAi, `the supporting row is missing a dimension: ${dimension}`).toMatch(dimension)
+    }
+
+    /*
+     * And at least one question that is asked BEFORE a decision, not
+     * about one already taken. Without this the three headings could sit
+     * over three retrospective examples and the section would read
+     * exactly as it did before.
+     */
     expect(
       actAi,
-      'what replaced it has to be present, or this is a deletion dressed as a refinement',
-    ).toMatch(/grounded in the firm/i)
-    expect(actAi).toMatch(/investment thesis/i)
-    expect(actAi).toMatch(/decisions and their rationale/i)
+      'every example is retrospective, which is the perception this row exists to correct',
+    ).toMatch(/what does our research already say|which of our theses does this news touch/i)
   })
 
   it('does not claim the assistant manages portfolios or trades', async () => {
